@@ -1,0 +1,24 @@
+import { describe, expect, it, vi } from "vitest";
+import { connectConversationFeed } from "./conversation-feed.js";
+
+describe("connectConversationFeed", () => {
+  it("初期会話と切り替え先の feed を読み込み、保存対象外を prune する", () => {
+    let switchTo: ((id: string) => void) | undefined;
+    const history = {
+      currentId: "current",
+      list: () => [{ id: "old" }],
+      onSwitch: (listener: (id: string) => void) => { switchTo = listener; },
+    };
+    const store = {
+      prune: vi.fn(),
+      load: vi.fn((id: string) => [{ type: "output" as const, seq: 1, text: id }]),
+    };
+    const feed = { replace: vi.fn() };
+    connectConversationFeed(history, store, feed);
+    expect(store.prune).toHaveBeenCalledWith(["current", "old"]);
+    expect(feed.replace).toHaveBeenCalledWith([{ type: "output", seq: 1, text: "current" }]);
+    switchTo?.("old");
+    expect(store.prune).toHaveBeenLastCalledWith(["old", "old"]);
+    expect(feed.replace).toHaveBeenLastCalledWith([{ type: "output", seq: 1, text: "old" }]);
+  });
+});

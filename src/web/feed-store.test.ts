@@ -40,9 +40,18 @@ describe("FeedStore", () => {
     const dir = makeDir();
     const store = new FeedStore(dir);
     store.append("a", output(1));
-    writeFileSync(join(dir, "a.jsonl"), `${readFileSync(join(dir, "a.jsonl"), "utf8")}{broken\n{"type":"unknown"}\n{"type":"event","event":null}\n{"type":"event","event":{}}\n`);
+    writeFileSync(join(dir, "a.jsonl"), `${readFileSync(join(dir, "a.jsonl"), "utf8")}{broken\n{"type":"unknown"}\n{"type":"event","event":null}\n{"type":"event","event":{}}\n{"type":"event","event":{"kind":"agent"}}\n`);
     store.append("a", output(2));
     expect(store.load("a")).toEqual([output(1), output(2)]);
+  });
+
+  it("保存時に終わっていないターンを読み込み時に interrupted にする", () => {
+    const store = new FeedStore(makeDir());
+    store.append("a", { type: "event", seq: 1, event: { kind: "agent", agent: "claude", at: "2026-10-05T12:00:00Z", event: { type: "turn_started" } } });
+    store.append("a", { type: "event", seq: 2, event: { kind: "agent", agent: "claude", at: "2026-10-05T12:00:01Z", event: { type: "text", text: "途中" } } });
+    const loaded = store.load("a");
+    expect(loaded.at(-1)).toMatchObject({ type: "event", event: { kind: "agent", agent: "claude", event: { type: "turn", result: { status: "interrupted" } } } });
+    expect(store.load("a")).toHaveLength(3);
   });
 
   it("読めないファイルは空の feed として扱う（起動や会話の切り替えを妨げない）", () => {

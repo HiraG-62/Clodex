@@ -17,6 +17,7 @@ import { attachEventLog, defaultLogPath, type DisplayMode } from "./logging/even
 import { startMcpServer } from "./mcp/server.js";
 import { resolveProjectRoot } from "./project/project-root.js";
 import { FeedStore, feedDirPath } from "./web/feed-store.js";
+import { connectConversationFeed } from "./web/conversation-feed.js";
 import { DEFAULT_RECENT_ITEMS, WebFeed } from "./web/web-feed.js";
 import { startWebServer } from "./web/web-server.js";
 import { connectWebFeed } from "./web/web-ui.js";
@@ -74,12 +75,7 @@ const main = async (): Promise<void> => {
       feedSaveFailed = true;
     }
   });
-  const loadConversationFeed = (id: string) => {
-    feedStore.prune([id, ...history.list().map((c) => c.id)]);
-    feed.replace(feedStore.load(id));
-  };
-  loadConversationFeed(history.currentId);
-  history.onSwitch(loadConversationFeed);
+  connectConversationFeed(history, feedStore, feed);
   // 入力途中の行を壊さないよう、プロンプトの上に出力してから入力行を描き直す
   const printTerminal = (line: string) => {
     if (!interactive) {

@@ -1,6 +1,7 @@
 // Web UI の feed を会話ごとに JSON Lines で保存する（DESIGN.md §18 Web UI の feed）
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, extname, join } from "node:path";
+import type { AgentId } from "../agents/agent-adapter.js";
 import { DEFAULT_RECENT_ITEMS, type HistoryItem } from "./web-feed.js";
 
 const FEED_EXT = ".jsonl";
@@ -19,7 +20,13 @@ const parseLine = (line: string): HistoryItem | undefined => {
     const item: unknown = JSON.parse(line);
     if (!isObject(item)) return undefined;
     if (item.type === "output" && typeof item.text === "string") return item as HistoryItem;
-    if (item.type === "event" && isObject(item.event) && EVENT_KINDS.has(item.event.kind)) return item as HistoryItem;
+    if (item.type === "event" && isObject(item.event) && EVENT_KINDS.has(item.event.kind)) {
+      if (item.event.kind === "agent" && (
+        !isObject(item.event.event) || typeof item.event.event.type !== "string"
+        || (item.event.agent !== "claude" && item.event.agent !== "codex") || typeof item.event.at !== "string"
+      )) return undefined;
+      return item as HistoryItem;
+    }
     return undefined;
   } catch {
     return undefined;
@@ -27,6 +34,19 @@ const parseLine = (line: string): HistoryItem | undefined => {
 };
 
 const toLines = (items: HistoryItem[]) => items.map((item) => `${JSON.stringify(item)}\n`).join("");
+
+const interruptUnfinished = (items: HistoryItem[]): HistoryItem[] => {
+  const open = new Map<AgentId, { at: string }>();
+  for (const item of items) {
+    if (item.type !== "event" || item.event.kind !== "agent") continue;
+    const { agent, at, event } = item.event;
+    if (event.type === "turn") open.delete(agent);
+    if (event.type === "turn_started" || event.type === "text" || event.type === "tool") open.set(agent, { at });
+  }
+  return [...items, ...[...open].map(([agent, { at }]): HistoryItem => ({
+    type: "event", seq: 0, event: { kind: "agent", agent, at, event: { type: "turn", result: { status: "interrupted", text: "" } } },
+  }))];
+};
 
 export class FeedStore {
   constructor(private readonly dir: string, private readonly limit = DEFAULT_RECENT_ITEMS) {}
@@ -44,7 +64,7 @@ export class FeedStore {
       const lines = readFileSync(path, "utf8").split("\n").filter((line) => line.trim());
       const items = lines.map(parseLine).filter((item) => item !== undefined).slice(-this.limit);
       if (lines.length > this.limit * COMPACT_FACTOR) writeFileSync(path, toLines(items));
-      return items;
+      return interruptUnfinished(items).slice(-this.limit);
     } catch {
       return [];
     }

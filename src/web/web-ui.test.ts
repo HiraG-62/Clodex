@@ -42,4 +42,28 @@ describe("connectWebFeed", () => {
       vi.useRealTimers();
     }
   });
+
+  it("agent の状態専用 event は feed に保存せず state だけ更新する", () => {
+    vi.useFakeTimers();
+    try {
+      const bus = new EventBus();
+      const feed = new WebFeed();
+      const states: FeedItem[] = [];
+      connectWebFeed(bus, feed, () => STATE);
+      feed.subscribe((item) => { if (item.type === "state") states.push(item); });
+      for (const event of [
+        { type: "session", sessionId: "s" } as const,
+        { type: "context", tokens: 12 } as const,
+        { type: "rate_limit", weekly: { usedPercent: 10, resetsAt: 1 } } as const,
+        { type: "exit", code: 0 } as const,
+      ]) bus.publish({ kind: "agent", agent: "claude", event });
+      expect(feed.recent()).toEqual([]);
+      vi.runAllTimers();
+      expect(states).toHaveLength(1);
+      bus.publish({ kind: "agent", agent: "claude", event: { type: "turn_started" } });
+      expect(feed.recent()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
