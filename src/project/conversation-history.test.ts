@@ -116,6 +116,18 @@ describe("ConversationHistory", () => {
     expect(history.list().map((c) => c.sessions.claude)).toEqual(["c-2", "c-1"]);
   });
 
+  it("startNew と switchTo は今の会話が変わったことを通知する", () => {
+    const { history, session } = setup();
+    session("claude", "c-1");
+    const first = history.currentId;
+    const switched: string[] = [];
+    history.onSwitch((id) => switched.push(id));
+    history.startNew();
+    history.switchTo(first);
+    history.switchTo("missing");
+    expect(switched).toEqual([expect.not.stringMatching(first), first]);
+  });
+
   it("clearSession はその Agent の session を今の会話から外して保存する", () => {
     const { history, path, session } = setup();
     session("claude", "c-1");

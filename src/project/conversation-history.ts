@@ -56,6 +56,7 @@ export class ConversationHistory {
   private current: Conversation;
   private readonly now: () => Date;
   private readonly createId: () => string;
+  private readonly switchListeners: Array<(id: string) => void> = [];
 
   constructor(private readonly path: string, { resumeLatest, now = () => new Date(), createId = randomUUID }: ConversationHistoryOptions) {
     this.now = now;
@@ -68,6 +69,16 @@ export class ConversationHistory {
   // /new: 新しい会話を始める。前の会話は履歴に残る（session も入力も無いうちは保存しない）
   startNew(): void {
     this.current = this.emptyConversation();
+    this.notifySwitch();
+  }
+
+  // 今の会話が変わったとき（/new、/resume）に呼ぶ
+  onSwitch(listener: (id: string) => void): void {
+    this.switchListeners.push(listener);
+  }
+
+  private notifySwitch(): void {
+    for (const listener of this.switchListeners) listener(this.current.id);
   }
 
   // /new <agent>: その Agent の session を今の会話から外して保存する（再起動しても古い session に戻らない）
@@ -96,7 +107,9 @@ export class ConversationHistory {
   // 選んだ会話を今の会話にする。以後の session と入力はそちらに記録する
   switchTo(id: string): Conversation | undefined {
     const found = this.conversations.find((c) => c.id === id);
-    if (found) this.current = found;
+    if (!found) return undefined;
+    this.current = found;
+    this.notifySwitch();
     return found;
   }
 

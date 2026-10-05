@@ -474,6 +474,7 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
         renderState();
         return;
       }
+      if (item.type === "reset") opened.clear();
       items = applyFeedItem(items, item);
       renderLog();
     };

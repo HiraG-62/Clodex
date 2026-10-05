@@ -24,6 +24,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   type Turn = Extract<TimelineItem, { kind: "turn" }>;
 
   if (item.type === "state") return items;
+  if (item.type === "reset") return [];
   if (item.type === "output") {
     const last = items[items.length - 1];
     if (last?.kind === "output") return [...items.slice(0, -1), { ...last, text: `${last.text}\n${item.text}` }];

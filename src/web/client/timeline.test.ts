@@ -13,6 +13,10 @@ const output = (text: string): FeedItem => ({ type: "output", seq: ++seq, text }
 const run = (items: FeedItem[]) => items.reduce<TimelineItem[]>(applyFeedItem, []);
 
 describe("applyFeedItem", () => {
+  it("reset でログを空にする", () => {
+    expect(applyFeedItem(run([output("a")]), { type: "reset" })).toEqual([]);
+  });
+
   it("人間の入力と、Agent のターン（作業と最終応答）を組み立てる", () => {
     const timeline = run([
       human("claude", "直して"),

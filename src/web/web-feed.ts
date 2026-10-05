@@ -17,9 +17,10 @@ export interface WebState {
 export type FeedItem =
   | { type: "event"; seq: number; event: CoordinatorEvent; envelope?: string }
   | { type: "output"; seq: number; text: string }
-  | { type: "state"; state: WebState };
+  | { type: "state"; state: WebState }
+  | { type: "reset" };
 
-type HistoryItem = Exclude<FeedItem, { type: "state" }>;
+export type HistoryItem = Extract<FeedItem, { type: "event" | "output" }>;
 export type FeedHandler = (item: FeedItem) => void;
 
 export class WebFeed {
@@ -28,19 +29,35 @@ export class WebFeed {
   private seq = 0;
   private state: WebState | undefined;
 
-  constructor(private readonly limit = DEFAULT_RECENT_ITEMS) {}
+  // onRecord: 新しく publish した event / output を受け取る（保存用）
+  constructor(
+    private readonly limit = DEFAULT_RECENT_ITEMS,
+    private readonly onRecord: (item: HistoryItem) => void = () => {},
+  ) {}
 
   publishEvent(event: CoordinatorEvent, envelope?: string): void {
-    this.remember({ type: "event", seq: ++this.seq, event, ...(envelope ? { envelope } : {}) });
+    this.record({ type: "event", seq: ++this.seq, event, ...(envelope ? { envelope } : {}) });
   }
 
   publishOutput(text: string): void {
-    this.remember({ type: "output", seq: ++this.seq, text });
+    this.record({ type: "output", seq: ++this.seq, text });
+  }
+
+  private record(item: HistoryItem): void {
+    this.onRecord(item);
+    this.remember(item);
   }
 
   publishState(state: WebState): void {
     this.state = state;
     this.deliver({ type: "state", state });
+  }
+
+  // 会話の切り替え: 画面にログを消させ、切り替え先の履歴を送り直す
+  replace(items: readonly HistoryItem[]): void {
+    this.items.splice(0);
+    this.deliver({ type: "reset" });
+    for (const item of items.slice(-this.limit)) this.remember({ ...item, seq: ++this.seq });
   }
 
   recent(): HistoryItem[] {

@@ -15,7 +15,8 @@ import { EventBus } from "./coordinator/event-bus.js";
 import { attachEventLog, defaultLogPath, type DisplayMode } from "./logging/event-log.js";
 import { startMcpServer } from "./mcp/server.js";
 import { resolveProjectRoot } from "./project/project-root.js";
-import { WebFeed } from "./web/web-feed.js";
+import { FeedStore, feedDirPath } from "./web/feed-store.js";
+import { DEFAULT_RECENT_ITEMS, WebFeed } from "./web/web-feed.js";
 import { startWebServer } from "./web/web-server.js";
 import { connectWebFeed } from "./web/web-ui.js";
 import { loadOrCreateWebToken } from "./web/web-token.js";
@@ -38,7 +39,8 @@ const main = async (): Promise<void> => {
   const primary = args.primary ?? config.primary ?? DEFAULT_PRIMARY;
 
   const bus = new EventBus();
-  const history = new ConversationHistory(conversationStatePath(homedir(), projectRoot), { resumeLatest: args.resume });
+  const statePath = conversationStatePath(homedir(), projectRoot);
+  const history = new ConversationHistory(statePath, { resumeLatest: args.resume });
   const resumeSessionIds = history.currentSessions;
   history.attach(bus);
   let coordinator: Coordinator | undefined;
@@ -58,7 +60,25 @@ const main = async (): Promise<void> => {
 
   const interactive = Boolean(process.stdin.isTTY);
   const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: PROMPT, terminal: interactive });
-  const feed = new WebFeed();
+  // Web UI の feed は会話ごとに保存し、起動時と会話の切り替え時に読み込む（DESIGN.md §18）
+  const feedStore = new FeedStore(feedDirPath(statePath));
+  let feedSaveFailed = false;
+  const feed = new WebFeed(DEFAULT_RECENT_ITEMS, (item) => {
+    try {
+      feedStore.append(history.currentId, item);
+    } catch (error) {
+      // 保存できなくても作業は続ける。警告は 1 回だけ
+      if (!feedSaveFailed) process.stderr.write(`feed save failed: ${errorMessage(error)}
+`);
+      feedSaveFailed = true;
+    }
+  });
+  const loadConversationFeed = (id: string) => {
+    feedStore.prune([id, ...history.list().map((c) => c.id)]);
+    feed.replace(feedStore.load(id));
+  };
+  loadConversationFeed(history.currentId);
+  history.onSwitch(loadConversationFeed);
   // 入力途中の行を壊さないよう、プロンプトの上に出力してから入力行を描き直す
   const printTerminal = (line: string) => {
     if (!interactive) {

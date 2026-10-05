@@ -1029,8 +1029,10 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
 | `event` | Event Bus の event（§17）。formal message には相手に渡した Task envelope の全文（`envelope`）を付ける |
 | `output` | コマンドの出力（`/help` 等、Shell が表示する行） |
 | `state` | 状態のスナップショット（下記）。変化があるたびに送る（短い間隔の変化はまとめる） |
+| `reset` | 今の会話が変わった（`/new`、`/resume`）。画面はログを消し、続けて送られる切り替え先の会話の履歴を表示する |
 
-- 接続時に直近 1,000 件の `event` / `output` と最新の `state` を送り、以後は新しいものを流す
+- 接続時に今の会話の直近 1,000 件の `event` / `output` と最新の `state` を送り、以後は新しいものを流す
+- `event` / `output` は会話ごとにファイルにも保存する（§18）。`clodex` を起動し直しても、`/resume` で戻っても、その会話の流れを表示できる
 - 状態のスナップショット: primary、各 Agent の状態・権限・session・利用枠・コンテキスト（`/status` と同じ内容）、会話の一覧と今の会話
 
 ### 入力
@@ -1095,6 +1097,14 @@ simple event log
 - Claude は system prompt を session の最初に記録して resume 後も使う（`--system-prompt-snapshot` の既定）。役割（§13）を変えた後は `/new` で始め直すと確実に反映される
 - 壊れたファイルは空の履歴として扱う（起動を妨げない）
 - message の未配送分、Budget の chain、利用状況は保存しない（in-memory）
+
+Web UI の feed（§17）:
+
+- 会話ごとに `event` / `output` を JSON Lines で追記する。保存先: 会話の履歴と同じ名前の `.feed` ディレクトリの `<会話 id>.jsonl`（例: `E--dev-Clodex-1a2b3c4d.feed/<id>.jsonl`）
+- 起動時と会話の切り替え時に、今の会話の直近 1,000 件を読み込む。読み込んだ項目には新しい通し番号を振り直す
+- 読み込み時に 2,000 行を超えていたら直近 1,000 件だけに書き直す（ファイルが増え続けないように）
+- 会話の履歴（最大 20 件）から外れた会話の feed は、会話の切り替え時に削除する
+- 壊れた行は読み飛ばす。読めないファイルは空の feed として扱い、保存に失敗しても作業は続ける
 
 将来的には SQLite。
 
