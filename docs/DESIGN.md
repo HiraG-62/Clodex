@@ -555,18 +555,29 @@ Adapter の必須処理:
 - 反映: Claude は即時（`set_permission_mode`）、Codex は次のターンから（`turn/start` の `sandboxPolicy`。以降のターンにも引き継がれる）
 - 停止中の Agent は、次の起動時にそのレベルで起動する
 - 起動処理の途中で変更された場合は、起動が終わった時点で反映する
+- `/permission` で切り替えた値は project ごとに保存し、次の起動でも使う（下記「Agent の設定の保存」）
 
 ## Model / Effort
 
 人が `/model`・`/effort` で、会話の途中でも Agent の model と reasoning effort を切り替えられる。
 
 - 既定は各 CLI のユーザー設定（`~/.claude/settings.json`、`~/.codex/config.toml`）。起動オプション `--claude-model` / `--codex-model` で起動時の model を上書きできる
-- 切り替えた値は Clodex を終了するまで保持し、`/new`・`/resume`・プロセスの再起動後も使う。Clodex を起動し直すと既定に戻る（設定ファイルには保存しない）
+- 切り替えた値は `/new`・`/resume`・プロセスの再起動後も使う。project ごとに保存し、Clodex を起動し直しても使う（下記「Agent の設定の保存」）。失敗した切り替え（Claude が受け付けなかった値）は保存しない
 - 反映は次のターンから。実行中のターンには影響しない。停止中の Agent は次の起動時にその値で起動する
 - `/model` は model 名を検証しない（CLI が受け付けなければ、そのターンの失敗として表示される）。model 名は Agent ごとに違うので Agent の指定を必須にする
 - `/effort` の値: Claude は `low` / `medium` / `high` / `xhigh` / `max`（`claude --effort`）。Codex は `ReasoningEffort`（文字列。model ごとに対応する値が違う）。Agent を省略したときは両 Agent が受け付ける値だけを許す
 - `/status` と Web UI に、各 Agent の今の model と effort を表示する。CLI の既定のままで実際の値が分からなければ `default`
 - 反映の方法（docs/spikes/model-effort.md で実測）: Codex は `turn/start` の `model` / `effort`（以降のターンにも引き継がれる）。Claude は `/model <model>` / `/effort <level>` を user message として mailbox の 1 ターンで直列に送る。CLI の result 文言で成功を確認し、無効値は failed の turn として表示する
+
+## Agent の設定の保存
+
+人が `/permission`・`/model`・`/effort` で切り替えた値を project ごとに保存し、`clodex` を起動し直しても使う。
+
+- 保存先: 会話の履歴（§18）と同じ名前の `.settings.json`（例: `~/.clodex/state/E--dev-Clodex-1a2b3c4d.settings.json`）。内容は `{ "claude": { "permission", "model", "effort" }, "codex": { ... } }`
+- 保存するのは人が切り替えた値だけ。CLI から読み取った実際の model / effort（`/status` の表示用）は保存しない
+- 起動時の優先順位: 起動オプション（`--claude-model` 等）> 保存した値 > 設定ファイル（`permission`）> 既定値
+- 保存した値で起動したときは、起動時の案内に表示する（例: `saved settings: claude permission full`）。`full` が黙って引き継がれないようにする
+- 書き込みは一時ファイルに書いてから置き換える。壊れたファイルは保存した値が無いものとして扱う
 
 ---
 

@@ -9,16 +9,22 @@ import { BudgetManager, type BudgetLimits } from "./budget-manager.js";
 import { DEFAULT_USAGE_ALERT, UsageMonitor, type UsageAlert, type UsageSnapshot } from "./usage-monitor.js";
 import type { EventBus } from "./event-bus.js";
 
+// 起動時の Agent の設定（DESIGN.md §9 Agent の設定の保存）
+export interface AgentStartSettings {
+  permission?: PermissionLevel;
+  model?: string;
+  effort?: string;
+}
+
 export interface CoordinatorOptions {
   projectRoot: string;
   agents: Record<AgentId, AgentAdapter>;
   bus: EventBus;
   mcpUrlFor: (agent: AgentId) => string;
-  models?: Partial<Record<AgentId, string>>;
   instructions?: Partial<Record<AgentId, string>>;
   createMessageId?: () => string;
   limits?: BudgetLimits;
-  permission?: PermissionLevel;
+  settings?: Partial<Record<AgentId, AgentStartSettings>>;
   usageAlert?: Partial<UsageAlert>;
   // clodex --resume: 各 Agent の最初の起動で継続する session（DESIGN.md §18）
   resumeSessionIds?: Partial<Record<AgentId, string>>;
@@ -30,14 +36,16 @@ export class Coordinator {
   private readonly usage: UsageMonitor;
 
   constructor(private readonly options: CoordinatorOptions) {
-    const { agents, bus, projectRoot, mcpUrlFor, models, instructions, limits, permission } = options;
+    const { agents, bus, projectRoot, mcpUrlFor, instructions, limits, settings } = options;
     this.budget = new BudgetManager(limits);
     this.usage = new UsageMonitor(bus, { ...DEFAULT_USAGE_ALERT, ...options.usageAlert });
     for (const id of AGENT_IDS) {
       agents[id].onEvent((event) => bus.publish({ kind: "agent", agent: id, event }));
       // 起動前なので値を保持するだけ（次の起動時に使われる）
+      const { permission, model, effort } = settings?.[id] ?? {};
       if (permission) void agents[id].setPermission(permission);
-      if (models?.[id]) void agents[id].setModel(models[id]);
+      if (model) void agents[id].setModel(model);
+      if (effort) void agents[id].setEffort(effort);
     }
     const createMailbox = (id: AgentId) => {
       const instruction = instructions?.[id];

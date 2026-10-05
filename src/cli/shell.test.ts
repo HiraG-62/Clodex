@@ -108,10 +108,12 @@ const setup = () => {
   const printed: string[] = [];
   let verbose = false;
   const history = new FakeHistory();
+  const saved: Array<{ agents: readonly AgentId[]; change: object }> = [];
   const shell = createShell({
     coordinator, primary: "claude", print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history, runner,
+    saveSettings: (agents, change) => saved.push({ agents, change }),
   });
-  return { coordinator, printed, shell, history, runner };
+  return { coordinator, printed, shell, history, runner, saved };
 };
 
 describe("createShell", () => {
@@ -186,12 +188,27 @@ describe("createShell", () => {
     expect(printed).toEqual(["model: claude -> haiku", "effort: codex -> low", "effort: all agents -> high"]);
   });
 
-  it("設定ターンが failed のとき成功表示を出さない", async () => {
-    const { coordinator, printed, shell } = setup();
+  it("設定ターンが failed のとき成功表示を出さず、保存もしない", async () => {
+    const { coordinator, printed, shell, saved } = setup();
     coordinator.settingResult = { status: "failed", text: "Model not found" };
     await shell.handleLine("/model claude missing-model");
     await shell.handleLine("/effort claude high");
     expect(printed).toEqual([]);
+    expect(saved).toEqual([]);
+  });
+
+  it("切り替えた権限・model・effort を対象の Agent ごとに保存する", async () => {
+    const { shell, saved } = setup();
+    await shell.handleLine("/permission full");
+    await shell.handleLine("/permission codex read-only");
+    await shell.handleLine("/model claude haiku");
+    await shell.handleLine("/effort low");
+    expect(saved).toEqual([
+      { agents: ["claude", "codex"], change: { permission: "full" } },
+      { agents: ["codex"], change: { permission: "read-only" } },
+      { agents: ["claude"], change: { model: "haiku" } },
+      { agents: ["claude", "codex"], change: { effort: "low" } },
+    ]);
   });
 
   it("/primary は通常のテキストの送り先を切り替える", async () => {

@@ -1,10 +1,11 @@
 // 会話（1 回の clodex の起動で使った Claude と Codex の session の組）の履歴（DESIGN.md §18）
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import type { AgentId } from "../agents/agent-adapter.js";
 import type { EventBus } from "../coordinator/event-bus.js";
+import { writeFileAtomic } from "./atomic-write.js";
 
 export const MAX_CONVERSATIONS = 20;
 const TITLE_LENGTH = 60;
@@ -130,13 +131,6 @@ export class ConversationHistory {
       .filter(isWorthSaving)
       .sort(byNewest)
       .slice(0, MAX_CONVERSATIONS);
-    mkdirSync(dirname(this.path), { recursive: true });
-    const tempPath = `${this.path}.${randomUUID()}.tmp`;
-    try {
-      writeFileSync(tempPath, `${JSON.stringify({ conversations: this.conversations }, null, 2)}\n`);
-      renameSync(tempPath, this.path);
-    } finally {
-      if (existsSync(tempPath)) unlinkSync(tempPath);
-    }
+    writeFileAtomic(this.path, `${JSON.stringify({ conversations: this.conversations }, null, 2)}\n`);
   }
 }

@@ -62,7 +62,7 @@ const setup = async () => {
     agents: { claude: new ClaudeAdapter(), codex: new CodexAdapter() },
     bus,
     mcpUrlFor: (agent) => mcp.urlFor(agent),
-    models: { claude: "haiku" },
+    settings: { claude: { model: "haiku" } },
   });
   cleanup = async () => {
     await coordinator!.stop();

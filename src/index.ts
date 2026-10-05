@@ -23,6 +23,7 @@ import { startWebServer } from "./web/web-server.js";
 import { connectWebFeed } from "./web/web-ui.js";
 import { loadOrCreateWebToken } from "./web/web-token.js";
 import { ConversationHistory, conversationStatePath } from "./project/conversation-history.js";
+import { AgentSettingsStore, agentSettingsPath, resolveStartSettings, type SavedAgentSettings } from "./project/agent-settings.js";
 
 const PROMPT = "clodex> ";
 const DEFAULT_WEB_PORT = 4319;
@@ -32,6 +33,12 @@ const EXIT_FAILURE = 1;
 const FORCE_EXIT_DELAY_MS = 3_000;
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+// 保存した設定で起動したことを案内する（full が黙って引き継がれないように）
+const describeSavedSettings = (saved: SavedAgentSettings): string | undefined => {
+  const parts = AGENT_IDS.flatMap((id) => Object.entries(saved[id] ?? {}).map(([key, value]) => `${id} ${key} ${value}`));
+  return parts.length ? `saved settings: ${parts.join(", ")}` : undefined;
+};
 
 const main = async (): Promise<void> => {
   const args = parseCliArgs(process.argv.slice(2));
@@ -45,6 +52,8 @@ const main = async (): Promise<void> => {
   const history = new ConversationHistory(statePath, { resumeLatest: args.resume });
   const resumeSessionIds = history.currentSessions;
   history.attach(bus);
+  const settingsStore = new AgentSettingsStore(agentSettingsPath(statePath));
+  const savedSettings = settingsStore.load();
   let coordinator: Coordinator | undefined;
   const mcp = await startMcpServer((from, input) => coordinator!.receiveMessage(from, input));
   coordinator = new Coordinator({
@@ -52,10 +61,10 @@ const main = async (): Promise<void> => {
     agents: { claude: new ClaudeAdapter(), codex: new CodexAdapter() },
     bus,
     mcpUrlFor: (agent) => mcp.urlFor(agent),
-    models: args.models,
+    // 優先順位: 起動オプション > 保存した値 > 設定ファイル（DESIGN.md §9 Agent の設定の保存）
+    settings: resolveStartSettings({ saved: savedSettings, models: args.models, ...(config.permission ? { configPermission: config.permission } : {}) }),
     instructions: Object.fromEntries(AGENT_IDS.map((id) => [id, buildRoleInstructions(id, config.roles)])),
     limits: { ...DEFAULT_LIMITS, ...config.limits },
-    ...(config.permission ? { permission: config.permission } : {}),
     ...(config.usageAlert ? { usageAlert: config.usageAlert } : {}),
     resumeSessionIds,
   });
@@ -100,6 +109,8 @@ const main = async (): Promise<void> => {
   // 起動時の案内は terminal 向けなので Web UI には出さない
   printTerminal(`Clodex v0.1  project: ${projectRoot}  primary: ${primary}`);
   printTerminal(`log: ${logPath}`);
+  const savedNotice = describeSavedSettings(savedSettings);
+  if (savedNotice) printTerminal(savedNotice);
   if (args.resume) {
     const resumed = AGENT_IDS.filter((id) => resumeSessionIds[id]);
     printTerminal(`resume: ${resumed.length ? resumed.join(", ") : "no saved conversation (starting a new one)"}`);
@@ -111,7 +122,16 @@ const main = async (): Promise<void> => {
     return displayMode === "verbose";
   };
   const runner = createCommandRunner({ cwd: projectRoot, print });
-  const shell = createShell({ coordinator, primary, print, toggleVerbose, history, runner });
+  const shell = createShell({
+    coordinator, primary, print, toggleVerbose, history, runner,
+    saveSettings: (agents, change) => {
+      try {
+        settingsStore.update(agents, change);
+      } catch (error) {
+        print(`settings save failed: ${errorMessage(error)}`);
+      }
+    },
+  });
   const { refreshState } = connectWebFeed(bus, feed, () => ({
     project: projectRoot,
     primary: shell.getPrimary(),

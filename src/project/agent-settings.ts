@@ -1,0 +1,57 @@
+// 人が切り替えた Agent の設定（権限・model・effort）を project ごとに保存する（DESIGN.md §9 Agent の設定の保存）
+import { existsSync, readFileSync } from "node:fs";
+import { z } from "zod";
+import { PERMISSION_LEVELS, type AgentId, type PermissionLevel } from "../agents/agent-adapter.js";
+import { writeFileAtomic } from "./atomic-write.js";
+
+const settingsSchema = z.strictObject({
+  permission: z.enum(PERMISSION_LEVELS).optional(),
+  model: z.string().min(1).optional(),
+  effort: z.string().min(1).optional(),
+});
+const savedSchema = z.strictObject({ claude: settingsSchema.optional(), codex: settingsSchema.optional() });
+
+export type AgentSettings = z.infer<typeof settingsSchema>;
+export type SavedAgentSettings = z.infer<typeof savedSchema>;
+
+export const agentSettingsPath = (conversationStatePath: string): string =>
+  conversationStatePath.replace(/\.json$/, ".settings.json");
+
+export class AgentSettingsStore {
+  constructor(private readonly path: string) {}
+
+  // 壊れていても起動は妨げない（保存した値が無いものとして扱う）
+  load(): SavedAgentSettings {
+    if (!existsSync(this.path)) return {};
+    try {
+      const parsed = savedSchema.safeParse(JSON.parse(readFileSync(this.path, "utf8")));
+      return parsed.success ? parsed.data : {};
+    } catch {
+      return {};
+    }
+  }
+
+  update(agents: readonly AgentId[], change: AgentSettings): void {
+    const saved = this.load();
+    for (const id of agents) saved[id] = { ...saved[id], ...change };
+    writeFileAtomic(this.path, `${JSON.stringify(saved, null, 2)}\n`);
+  }
+}
+
+export interface StartSettingsSources {
+  saved: SavedAgentSettings;
+  configPermission?: PermissionLevel;
+  // 起動オプション（--claude-model 等）
+  models: Partial<Record<AgentId, string>>;
+}
+
+// 優先順位: 起動オプション > 保存した値 > 設定ファイル
+export const resolveStartSettings = ({ saved, configPermission, models }: StartSettingsSources): Record<AgentId, AgentSettings> => {
+  const resolve = (id: AgentId): AgentSettings => {
+    const permission = saved[id]?.permission ?? configPermission;
+    const model = models[id] ?? saved[id]?.model;
+    const effort = saved[id]?.effort;
+    return { ...(permission ? { permission } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
+  };
+  return { claude: resolve("claude"), codex: resolve("codex") };
+};

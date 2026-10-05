@@ -1,5 +1,5 @@
 // 人間の入力を Coordinator の操作に変換する（DESIGN.md §8）。readline 等の I/O は index.ts が持つ
-import type { AgentId, AgentStatus, PermissionLevel, TurnResult } from "../agents/agent-adapter.js";
+import { AGENT_IDS, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult } from "../agents/agent-adapter.js";
 import type { UsageSnapshot } from "../coordinator/usage-monitor.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
 import { parseInput } from "./input.js";
@@ -48,6 +48,14 @@ export interface ShellOptions {
   toggleVerbose: () => boolean;
   history: ConversationList;
   runner: CommandRunner;
+  // 人が切り替えた設定を保存する（DESIGN.md §9 Agent の設定の保存）
+  saveSettings?: (agents: readonly AgentId[], change: SettingsChange) => void;
+}
+
+export interface SettingsChange {
+  permission?: PermissionLevel;
+  model?: string;
+  effort?: string;
 }
 
 export type ShellOutcome = "continue" | "exit";
@@ -98,8 +106,11 @@ const shortTime = (iso: string) => {
 const agentsOf = (c: Conversation) => (Object.keys(c.sessions) as AgentId[]).sort().join(", ");
 const titleOf = (c: Conversation) => `"${c.title ?? "(no input)"}"`;
 
-export const createShell = ({ coordinator, primary: initialPrimary, print, toggleVerbose, history, runner }: ShellOptions) => {
+export const createShell = ({
+  coordinator, primary: initialPrimary, print, toggleVerbose, history, runner, saveSettings = () => {},
+}: ShellOptions) => {
   let primary = initialPrimary;
+  const targets = (agent: AgentId | undefined): readonly AgentId[] => (agent ? [agent] : AGENT_IDS);
 
   const listConversations = () => {
     history.list().forEach((c, i) => {
@@ -176,15 +187,18 @@ export const createShell = ({ coordinator, primary: initialPrimary, print, toggl
         return "continue";
       case "permission":
         await coordinator.setPermission(command.level, command.agent);
+        saveSettings(targets(command.agent), { permission: command.level });
         print(`permission: ${command.agent ?? "all agents"} -> ${command.level}`);
         return "continue";
       case "model":
         if ((await coordinator.setModel(command.model, command.agent))?.status !== "failed") {
+          saveSettings([command.agent], { model: command.model });
           print(`model: ${command.agent} -> ${command.model}`);
         }
         return "continue";
       case "effort":
         if ((await coordinator.setEffort(command.level, command.agent))?.status !== "failed") {
+          saveSettings(targets(command.agent), { effort: command.level });
           print(`effort: ${command.agent ?? "all agents"} -> ${command.level}`);
         }
         return "continue";

@@ -55,14 +55,14 @@ describe("Coordinator", () => {
     expect(claude.starts[0]).not.toHaveProperty("instructions");
   });
 
-  it("起動オプションの model は setModel で保持し、AgentStartOptions には渡さない", async () => {
+  it("起動時の設定（model・effort）は setModel / setEffort で保持し、AgentStartOptions には渡さない", async () => {
     const claude = new FakeAgentAdapter("claude");
     const codex = new FakeAgentAdapter("codex");
     const coordinator = new Coordinator({
       projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor,
-      models: { claude: "haiku" },
+      settings: { claude: { model: "haiku", effort: "high" }, codex: { effort: "low" } },
     });
-    expect(claude.model).toBe("haiku");
+    expect([claude.model, claude.effort, codex.model, codex.effort]).toEqual(["haiku", "high", undefined, "low"]);
     void coordinator.sendToAgent("claude", "hi");
     await flush();
     expect(claude.starts[0]).not.toHaveProperty("model");
@@ -280,11 +280,14 @@ describe("Coordinator", () => {
     ]);
   });
 
-  it("起動時の権限レベルを全 Agent に設定する", () => {
+  it("起動時の権限レベルを Agent ごとに設定する", () => {
     const claude = new FakeAgentAdapter("claude");
     const codex = new FakeAgentAdapter("codex");
-    new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor, permission: "read-only" });
-    expect([claude.permission, codex.permission]).toEqual(["read-only", "read-only"]);
+    new Coordinator({
+      projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor,
+      settings: { claude: { permission: "full" }, codex: { permission: "read-only" } },
+    });
+    expect([claude.permission, codex.permission]).toEqual(["full", "read-only"]);
   });
 
   it("whenIdle は Agent 間の配送の連鎖が終わるまで待つ", async () => {
