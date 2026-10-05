@@ -1,6 +1,6 @@
 // 会話（1 回の clodex の起動で使った Claude と Codex の session の組）の履歴（DESIGN.md §18）
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import type { AgentId } from "../agents/agent-adapter.js";
@@ -126,11 +126,17 @@ export class ConversationHistory {
 
   private update(change: Partial<Conversation>): void {
     this.current = { ...this.current, ...change, updatedAt: this.now().toISOString() };
-    this.conversations = [this.current, ...this.conversations.filter((c) => c.id !== this.current.id)]
+    this.conversations = [this.current, ...loadConversations(this.path).filter((c) => c.id !== this.current.id)]
       .filter(isWorthSaving)
       .sort(byNewest)
       .slice(0, MAX_CONVERSATIONS);
     mkdirSync(dirname(this.path), { recursive: true });
-    writeFileSync(this.path, `${JSON.stringify({ conversations: this.conversations }, null, 2)}\n`);
+    const tempPath = `${this.path}.${randomUUID()}.tmp`;
+    try {
+      writeFileSync(tempPath, `${JSON.stringify({ conversations: this.conversations }, null, 2)}\n`);
+      renameSync(tempPath, this.path);
+    } finally {
+      if (existsSync(tempPath)) unlinkSync(tempPath);
+    }
   }
 }

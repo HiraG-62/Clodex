@@ -36,13 +36,25 @@ describe("conversationStatePath", () => {
     expect(conversationStatePath(HOME, "C:\\a-b")).not.toBe(conversationStatePath(HOME, "C:\\a\\b"));
   });
 
-  it("大文字小文字だけが違うパスは同じファイルになる", () => {
+  it("大文字小文字だけが違うパスはハッシュ部分が一致する", () => {
     expect(basename(conversationStatePath(HOME, "E:\\dev\\Clodex")).slice(-13))
       .toBe(basename(conversationStatePath(HOME, "e:\\dev\\clodex")).slice(-13));
   });
 });
 
 describe("ConversationHistory", () => {
+  it("別プロセス相当の更新後に書くとき、他方の会話を消さない", () => {
+    const path = makePath();
+    const first = setup(path, false, 0);
+    const second = setup(path, false, 10);
+    first.session("claude", "c-first");
+    second.session("codex", "x-second");
+    first.human("first title");
+    const saved = new ConversationHistory(path, { resumeLatest: false }).list();
+    expect(saved.map((conversation) => conversation.id)).toContain(first.history.currentId);
+    expect(saved.map((conversation) => conversation.id)).toContain(second.history.currentId);
+    expect(saved.find((conversation) => conversation.id === first.history.currentId)?.title).toBe("first title");
+  });
   it("session と最初の人間の入力（60 文字まで）を今の会話として保存する", () => {
     const { history, path, session, human } = setup();
     human(`fix the bug ${"x".repeat(100)}`);
