@@ -549,32 +549,58 @@ Agent Message
 
 Formal message channel を別に持つ。
 
-想定 Message Types:
+## Message Types
 
-```text
-QUESTION
-REVIEW_REQUEST
-DELEGATE
-RESULT
-ISSUE
-ACK
-```
+| type | 用途 | `replyTo` |
+|---|---|---|
+| `QUESTION` | 相手 Agent への質問 | 任意 |
+| `REVIEW_REQUEST` | レビュー依頼 | 任意 |
+| `DELEGATE` | 実装・調査の委譲 | 任意 |
+| `RESULT` | 依頼への結果返却 | 必須 |
+| `ISSUE` | 問題の報告 | 任意 |
+| `ACK` | 受領のみの通知 | 必須 |
+
+## Message Schema
+
+`protocol/messages.ts` に zod schema として定義する。MCP tool `send_message` の入力 schema と同一。
+
+Agent が指定するフィールド:
+
+| field | 必須 | 内容 |
+|---|---|---|
+| `to` | ✓ | `claude` / `codex`。送信元と同じ Agent は不可 |
+| `type` | ✓ | Message Types のいずれか |
+| `taskId` | ✓ | Task ID |
+| `body` | ✓ | 依頼内容・質問・結果の要約（自然文、最大 4,000 文字。§3.3 Minimal Context） |
+| `replyTo` | RESULT / ACK で必須 | 返信元の message ID |
+| `commit` | | 参照する commit hash |
+| `files` | | 参照する file path（project root からの相対パス） |
+| `status` | | RESULT のみ。`approved` / `changes_requested` / `done` / `failed` |
+| `issues` | | RESULT / ISSUE のみ。`{ file, line?, severity, summary }` の配列。severity は `low` / `medium` / `high` / `critical` |
+
+Coordinator が付与するフィールド（Agent の自己申告は使わない）:
+
+| field | 内容 |
+|---|---|
+| `id` | message ID（`msg_` + ランダム 8 桁） |
+| `from` | 送信元。MCP の URL path で決める（§12） |
+| `repository` | project root（§7） |
+| `createdAt` | ISO 8601 |
 
 例:
 
 ```json
 {
-  "id": "msg_01",
+  "id": "msg_1a2b3c4d",
   "type": "REVIEW_REQUEST",
   "from": "claude",
   "to": "codex",
   "taskId": "AUTH-142",
-  "objective": "refresh token処理のrace conditionを確認",
-  "repository": "C:\\dev\\my-app",
+  "body": "refresh token処理のrace conditionを確認",
+  "repository": "C:\dev\my-app",
   "commit": "a82f39c",
-  "files": [
-    "src/auth/refresh.ts"
-  ]
+  "files": ["src/auth/refresh.ts"],
+  "createdAt": "2026-10-05T07:00:00.000Z"
 }
 ```
 
@@ -582,12 +608,13 @@ ACK
 
 ```json
 {
-  "id": "msg_02",
+  "id": "msg_5e6f7a8b",
   "type": "RESULT",
-  "replyTo": "msg_01",
+  "replyTo": "msg_1a2b3c4d",
   "from": "codex",
   "to": "claude",
   "taskId": "AUTH-142",
+  "body": "競合あり。修正が必要",
   "status": "changes_requested",
   "issues": [
     {
@@ -596,7 +623,9 @@ ACK
       "severity": "high",
       "summary": "同時refreshでtoken rotationが競合する"
     }
-  ]
+  ],
+  "repository": "C:\dev\my-app",
+  "createdAt": "2026-10-05T07:05:00.000Z"
 }
 ```
 
@@ -829,6 +858,17 @@ v0.1 は最低限、
 
 程度の observable event log でよい。
 
+## Event Bus
+
+Coordinator 内の observable event は in-memory の Event Bus（`coordinator/event-bus.ts`）に集約する。Event log（`logging/event-log.ts`）や将来の TUI は Bus の購読者として実装する。
+
+| kind | 内容 |
+|---|---|
+| `agent` | Agent Adapter が出した `AgentEvent`（§9）と、どの Agent か |
+| `message` | Coordinator が受理した formal message（§11） |
+
+全 event に Coordinator が `at`（ISO 8601）を付ける。購読者の例外は他の購読者と publish 元に波及させない。
+
 ---
 
 # 18. Persistence
@@ -1052,6 +1092,7 @@ src/
 │
 ├── coordinator/
 │   ├── coordinator.ts
+│   ├── event-bus.ts
 │   ├── message-router.ts
 │   ├── task-manager.ts
 │   └── budget-manager.ts
@@ -1062,8 +1103,7 @@ src/
 │   └── codex-adapter.ts
 │
 ├── protocol/
-│   ├── messages.ts
-│   └── schemas.ts
+│   └── messages.ts
 │
 ├── context/
 │   └── context-resolver.ts

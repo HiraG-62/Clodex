@@ -1,6 +1,7 @@
 // AgentAdapter の境界定義（DESIGN.md §9）
 
-export type AgentId = "claude" | "codex";
+export const AGENT_IDS = ["claude", "codex"] as const;
+export type AgentId = (typeof AGENT_IDS)[number];
 export type AgentStatus = "stopped" | "starting" | "idle" | "busy";
 
 // Coordinator が両 Agent に提供する MCP server と tool の名前（DESIGN.md §12）
