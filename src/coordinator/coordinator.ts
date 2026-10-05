@@ -96,10 +96,15 @@ export class Coordinator {
     // 起動中や配送待ちも含めて、受け付けた作業がある Agent は止めない
     const busy = targets.filter((id) => this.options.agents[id].status === "busy" || !this.mailboxes[id].isIdle);
     if (busy.length) return `${busy.join(", ")} is busy. Use /interrupt first.`;
-    await Promise.all(targets.map((id) => this.options.agents[id].stop()));
-    for (const id of targets) {
-      this.mailboxes[id].switchSession(sessions[id]);
-      this.usage.clearContext(id);
+    for (const id of targets) this.mailboxes[id].pause();
+    try {
+      await Promise.all(targets.map((id) => this.options.agents[id].stop()));
+      for (const id of targets) {
+        this.mailboxes[id].switchSession(sessions[id]);
+        this.usage.clearContext(id);
+      }
+    } finally {
+      for (const id of targets) this.mailboxes[id].resume();
     }
     return undefined;
   }

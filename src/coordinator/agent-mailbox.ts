@@ -14,6 +14,7 @@ interface QueueItem {
 export class AgentMailbox {
   private readonly queue: QueueItem[] = [];
   private draining = false;
+  private paused = false;
   private closed = false;
   // /resume で選ばれた session。次回の起動で一度だけ使う（sessionId が undefined なら新しい session）
   private nextSession: { sessionId: string | undefined } | undefined;
@@ -59,29 +60,51 @@ export class AgentMailbox {
     this.nextSession = { sessionId };
   }
 
+  pause(): void {
+    this.paused = true;
+  }
+
+  resume(): void {
+    this.paused = false;
+    void this.drain();
+  }
+
   // 未配送分を破棄し、以後は Agent を起動しない（停止中の再起動を防ぐ）
   close(): void {
     this.closed = true;
     for (const item of this.queue.splice(0)) item.resolve(CLOSED_RESULT);
+    if (!this.draining) for (const resolve of this.idleWaiters.splice(0)) resolve();
   }
 
   private async drain(): Promise<void> {
-    if (this.draining) return;
+    if (this.draining || this.paused) return;
     this.draining = true;
-    for (let item = this.queue.shift(); item; item = this.queue.shift()) {
-      this.current = item.message;
-      const result = item.kind === "compact" ? await this.compact() : await this.deliver(item.text);
-      this.current = undefined;
-      item.resolve(result);
+    try {
+      for (let item = this.queue.shift(); item; item = this.paused ? undefined : this.queue.shift()) {
+        this.current = item.message;
+        try {
+          const result = item.kind === "compact" ? await this.compact() : await this.deliver(item.text);
+          item.resolve(result);
+        } finally {
+          this.current = undefined;
+        }
+      }
+    } finally {
+      this.draining = false;
+      if (this.isIdle) for (const resolve of this.idleWaiters.splice(0)) resolve();
     }
-    this.draining = false;
-    for (const resolve of this.idleWaiters.splice(0)) resolve();
   }
 
   // 停止中の Agent を compact のためだけに起動しない
   private async compact(): Promise<TurnResult> {
     if (this.agent.status === "stopped") return { status: "failed", text: `${this.agent.id} is not running` };
-    return this.agent.compact();
+    try {
+      return await this.agent.compact();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.onError(message);
+      return { status: "failed", text: message };
+    }
   }
 
   private async deliver(text: string): Promise<TurnResult> {

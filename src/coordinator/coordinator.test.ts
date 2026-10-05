@@ -258,6 +258,27 @@ describe("Coordinator", () => {
     expect(codex.starts[0]).not.toHaveProperty("resumeSessionId");
   });
 
+  it("switchSessions の stop 待機中に届いた項目は新 session で配送する", async () => {
+    const { claude, coordinator } = setup();
+    claude.status = "idle";
+    claude.sessionId = "old";
+    let finishStop: (() => void) | undefined;
+    claude.stop = () => new Promise<void>((resolve) => {
+      finishStop = () => { claude.status = "stopped"; resolve(); };
+    });
+    const switching = coordinator.switchSessions({ claude: "new" }, ["claude"]);
+    const delivered = coordinator.sendToAgent("claude", "during stop");
+    await flush();
+    expect(claude.sent).toEqual([]);
+    finishStop?.();
+    await switching;
+    await flush();
+    expect(claude.starts[0]).toMatchObject({ resumeSessionId: "new" });
+    expect(claude.sent).toEqual(["during stop"]);
+    claude.completeTurn();
+    await delivered;
+  });
+
   it("起動中や配送待ちの作業があれば switchSessions を拒否し、Agent を止めない", async () => {
     const { claude, coordinator } = setup();
     const started: Array<() => void> = [];

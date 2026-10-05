@@ -142,6 +142,23 @@ describe("AgentMailbox", () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
+  it("compact の reject を failed に変換し、次の項目へ進んで whenIdle を解放する", async () => {
+    const { agent, mailbox, onError } = setup();
+    agent.status = "idle";
+    agent.compact = () => Promise.reject(new Error("compact failed"));
+    const compacted = mailbox.enqueueCompact();
+    const next = mailbox.enqueue("next");
+    const idle = mailbox.whenIdle();
+    await expect(compacted).resolves.toEqual({ status: "failed", text: "compact failed" });
+    expect(onError).toHaveBeenCalledWith("compact failed");
+    await flush();
+    expect(agent.sent).toEqual(["next"]);
+    agent.completeTurn();
+    await next;
+    await idle;
+    expect(mailbox.isIdle).toBe(true);
+  });
+
   it("前のターンが終わるまで次を送らない（FIFO）", async () => {
     const { agent, mailbox } = setup();
     const first = mailbox.enqueue("first");
