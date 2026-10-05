@@ -57,6 +57,9 @@ const STYLE = `
     border-bottom: 1px solid var(--line); background: var(--panel); min-width: 0; }
   .brand { font-weight: 600; letter-spacing: -.01em; font-size: 15px; }
   .path { color: var(--muted); font-size: 12px; min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #projects { max-width: min(32vw, 280px); min-width: 100px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--panel); color: var(--fg); padding: 5px; font-size: 13px; }
+  #projects[hidden] { display: none; }
   .ghost { border: 1px solid var(--line); background: transparent; border-radius: 6px; padding: 5px 10px; font-size: 13px; color: var(--fg-2); flex: none; }
   .ghost[aria-pressed="true"] { background: var(--invert-bg); color: var(--invert-fg); border-color: var(--invert-bg); }
 
@@ -264,6 +267,8 @@ const body = (messages: Messages) => {
 <div class="app">
   <header class="topbar">
     <span class="brand">Clodex</span>
+    <select id="projects" aria-label="${m("web.top.projects")}"></select>
+    <button class="ghost" type="button" id="open-project">${m("web.top.openProject")}</button>
     <span class="path mono" id="path"></span>
     <button class="ghost" type="button" id="detail" aria-pressed="false" title="${m("web.top.detailTitle")}">${m("web.top.detail")}</button>
     <button class="ghost" type="button" id="open-artifacts">${m("web.top.artifacts")}</button>

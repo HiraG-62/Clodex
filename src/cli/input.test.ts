@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { parseInput } from "./input.js";
 
 describe("parseInput", () => {
+  it("/project を一覧とパス指定に解釈する", () => {
+    expect(parseInput("/project", "claude")).toEqual({ kind: "project" });
+    expect(parseInput("/project C:\\dev\\app", "claude")).toEqual({ kind: "project", path: "C:\\dev\\app" });
+  });
   it.each([
     ["", { kind: "empty" }],
     ["   ", { kind: "empty" }],

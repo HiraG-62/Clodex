@@ -68,12 +68,17 @@ export interface ShellOptions {
   print: (line: string) => void;
   // terminal の詳細表示を切り替え、切り替え後の状態を返す
   toggleVerbose: () => boolean;
-  history: ConversationList;
+  history: ConversationList | (() => ConversationList);
   runner: CommandRunner;
   // 人が切り替えた設定を保存する（DESIGN.md §9 Agent の設定の保存）
   saveSettings?: (agents: readonly AgentId[], change: SettingsChange) => void;
   // @path の参照先が読んでよいファイルなら実パス（DESIGN.md §28 v0.3 A・C）
   resolveReference?: (path: string) => Promise<string | undefined>;
+  projects?: {
+    list(): Array<{ projectRoot: string; open: boolean; current: boolean }>;
+    open(path: string): Promise<{ projectRoot: string; primary: AgentId }>;
+    hasCurrent?(): boolean;
+  };
 }
 
 export interface SettingsChange {
@@ -138,15 +143,17 @@ const agentsOf = (c: Conversation) => (Object.keys(c.sessions) as AgentId[]).sor
 const titleOf = (c: Conversation) => `"${c.title ?? t("shell.untitled")}"`;
 
 export const createShell = ({
-  coordinator, primary: initialPrimary, print, toggleVerbose, history, runner, saveSettings = () => {}, resolveReference = async () => undefined,
+  coordinator, primary: initialPrimary, print, toggleVerbose, history: historySource, runner, saveSettings = () => {}, resolveReference = async () => undefined,
   busyElsewhere = () => false,
+  projects,
 }: ShellOptions) => {
   let primary = initialPrimary;
+  const history = typeof historySource === "function" ? historySource : () => historySource;
   const targets = (agent: AgentId | undefined): readonly AgentId[] => (agent ? [agent] : AGENT_IDS);
 
   const listConversations = () => {
-    history.list().forEach((c, i) => {
-      const current = c.id === history.currentId ? t("shell.current") : "";
+    history().list().forEach((c, i) => {
+      const current = c.id === history().currentId ? t("shell.current") : "";
       print(`${i + 1}) ${shortTime(c.updatedAt)}  ${agentsOf(c)}  ${titleOf(c)}${current}`);
     });
     print(t("shell.resumeHint"));
@@ -156,31 +163,35 @@ export const createShell = ({
     if (agent) {
       const error = await coordinator().switchSessions({}, [agent]);
       if (error) return print(error);
-      history.clearSession(agent);
+      history().clearSession(agent);
       return print(t("shell.agentFresh", { agent }));
     }
-    const error = await history.startNew({ worktree });
+    const error = await history().startNew({ worktree });
     if (error) return print(t("shell.worktreeFailed", { error }));
-    const { workDir, branch } = history.list().find((c) => c.id === history.currentId) ?? {};
+    const { workDir, branch } = history().list().find((c) => c.id === history().currentId) ?? {};
     print(workDir && branch ? t("shell.newWorktree", { workDir, branch }) : t("shell.newConversation"));
   };
 
   const resumeConversation = async (index: number) => {
     const picked = pickConversation(index);
     if (!picked) return;
-    if (picked.id === history.currentId) return print(t("shell.alreadyHere"));
-    await history.switchTo(picked.id);
+    if (picked.id === history().currentId) return print(t("shell.alreadyHere"));
+    await history().switchTo(picked.id);
     print(t("shell.resumed", { title: titleOf(picked) }));
   };
 
   const pickConversation = (index: number) => {
-    const picked = history.list()[index - 1];
+    const picked = history().list()[index - 1];
     if (!picked) print(t("shell.noConversation", { index }));
     return picked;
   };
 
   const handleLine = async (line: string): Promise<ShellOutcome> => {
     const command = parseInput(line, primary);
+    if (projects?.hasCurrent && !projects.hasCurrent() && !["project", "help", "exit", "empty"].includes(command.kind)) {
+      print(t("shell.noProjectSelected"));
+      return "continue";
+    }
     switch (command.kind) {
       case "empty":
         return "continue";
@@ -207,7 +218,7 @@ export const createShell = ({
       case "status":
         print(t("shell.primary", { agent: primary }));
         {
-          const { workDir, branch } = history.list().find((c) => c.id === history.currentId) ?? {};
+          const { workDir, branch } = history().list().find((c) => c.id === history().currentId) ?? {};
           if (workDir && branch) print(t("shell.worktree", { workDir, branch }));
         }
         for (const { id, status, sessionId, permission, model, effort, usage } of coordinator().status()) {
@@ -219,6 +230,19 @@ export const createShell = ({
           print(formatContext(usage));
         }
         for (const input of coordinator().pendingInputs()) print(t("shell.queued", { id: input.id, agent: input.agent, text: input.text }));
+        return "continue";
+      case "project":
+        if (command.path) {
+          if (!projects) return "continue";
+          const opened = await projects.open(command.path);
+          primary = opened.primary;
+          print(t("shell.projectOpened", { project: opened.projectRoot }));
+          return "continue";
+        }
+        if (!projects?.list().length) print(t("shell.noProjects"));
+        else for (const project of projects.list()) {
+          print(`${project.projectRoot}${project.current ? t("shell.projectCurrent") : project.open ? "" : t("shell.projectSaved")}`);
+        }
         return "continue";
       case "cancel": {
         const canceled = coordinator().cancelInput(command.id);
@@ -240,18 +264,18 @@ export const createShell = ({
         else await resumeConversation(command.index);
         return "continue";
       case "rename":
-        history.rename(command.title);
+        history().rename(command.title);
         print(t("shell.renamed", { title: command.title }));
         return "continue";
       case "delete": {
         const picked = pickConversation(command.index);
         if (!picked) return "continue";
-        print(history.remove(picked.id) ?? t("shell.deleted", { title: titleOf(picked) }));
+        print(history().remove(picked.id) ?? t("shell.deleted", { title: titleOf(picked) }));
         return "continue";
       }
       case "pin": {
         const picked = pickConversation(command.index);
-        const pinned = picked ? history.togglePin(picked.id) : undefined;
+        const pinned = picked ? history().togglePin(picked.id) : undefined;
         if (picked && pinned !== undefined) print(t(pinned ? "shell.pinned" : "shell.unpinned", { title: titleOf(picked) }));
         return "continue";
       }

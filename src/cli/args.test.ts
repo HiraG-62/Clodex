@@ -3,13 +3,19 @@ import { parseCliArgs } from "./args.js";
 
 describe("parseCliArgs", () => {
   it("未指定の option は undefined（既定値は設定ファイルとあわせて決める）", () => {
-    expect(parseCliArgs([])).toEqual({ models: {}, resume: false, web: false });
+    expect(parseCliArgs([])).toEqual({ models: {}, resume: false, web: false, serve: false });
   });
 
   it("全 option を読む", () => {
     expect(parseCliArgs([
       "--project", "C:\\dev\\app", "--primary", "codex", "--claude-model", "haiku", "--codex-model", "gpt-5.5", "--resume", "--web",
-    ])).toEqual({ project: "C:\\dev\\app", primary: "codex", models: { claude: "haiku", codex: "gpt-5.5" }, resume: true, web: true });
+    ])).toEqual({ project: "C:\\dev\\app", primary: "codex", models: { claude: "haiku", codex: "gpt-5.5" }, resume: true, web: true, serve: false });
+  });
+
+  it("serve は project 省略可で Web を起動する", () => {
+    expect(parseCliArgs(["serve"])).toMatchObject({ serve: true, web: true });
+    expect(parseCliArgs(["serve"]).project).toBeUndefined();
+    expect(parseCliArgs(["serve", "--project", "C:\\dev\\app"])).toMatchObject({ serve: true, web: true, project: "C:\\dev\\app" });
   });
 
   it("未知の primary はエラー", () => {

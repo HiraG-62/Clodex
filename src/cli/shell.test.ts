@@ -148,15 +148,28 @@ const setup = () => {
   const history = new FakeHistory();
   const busy = { value: false };
   const saved: Array<{ agents: readonly AgentId[]; change: object }> = [];
+  const projects = {
+    list: () => [{ projectRoot: "C:\\dev\\one", open: true, current: true }, { projectRoot: "C:\\dev\\two", open: false, current: false }],
+    open: async (path: string) => ({ projectRoot: path, primary: "codex" as AgentId }),
+  };
   const shell = createShell({
     coordinator: () => coordinator, primary: "claude", busyElsewhere: () => busy.value, print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history, runner,
     saveSettings: (agents, change) => saved.push({ agents, change }),
     resolveReference: async (path) => ({ "src/a.ts": "C:/p/src/a.ts", "shot.png": "C:/up/shot.png" } as Record<string, string>)[path],
+    projects,
   });
-  return { coordinator, printed, shell, history, runner, saved, busy };
+  return { coordinator, printed, shell, history, runner, saved, busy, projects };
 };
 
 describe("createShell", () => {
+  it("/project で一覧を表示し、指定パスへ切り替える", async () => {
+    const { shell, printed } = setup();
+    await shell.handleLine("/project");
+    expect(printed.join("\n")).toContain("C:\\dev\\one");
+    expect(printed.join("\n")).toContain("C:\\dev\\two");
+    await shell.handleLine("/project C:\\dev\\two");
+    expect(shell.getPrimary()).toBe("codex");
+  });
   it("送信はターン完了を待たずに戻る", async () => {
     const { coordinator, shell } = setup();
     await expect(shell.handleLine("hello")).resolves.toBe("continue");

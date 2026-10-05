@@ -8,11 +8,13 @@ export interface CliArgs {
   models: Partial<Record<AgentId, string>>;
   resume: boolean;
   web: boolean;
+  serve: boolean;
 }
 
 export const parseCliArgs = (argv: string[]): CliArgs => {
+  const serve = argv[0] === "serve";
   const { values } = parseArgs({
-    args: argv,
+    args: serve ? argv.slice(1) : argv,
     options: {
       project: { type: "string" },
       primary: { type: "string" },
@@ -34,6 +36,6 @@ export const parseCliArgs = (argv: string[]): CliArgs => {
   return {
     ...(values.project ? { project: values.project } : {}), ...(primary ? { primary } : {}), models,
     resume: values.resume ?? false,
-    web: values.web ?? false,
+    web: serve || (values.web ?? false), serve,
   };
 };

@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { buildWebPage } from "./web-page.js";
 
 describe("buildWebPage", () => {
+  it("project の選択と新規オープンを画面上部に表示する", () => {
+    const { html } = buildWebPage("ja");
+    expect(html).toContain('<select id="projects" aria-label="プロジェクト">');
+    expect(html).toContain('id="open-project">開く</button>');
+  });
   it("埋め込んだ script が構文として正しい（実行はしない）", () => {
     for (const language of ["ja", "en"] as const) {
       const script = buildWebPage(language).html.match(/<script>([\s\S]*)<\/script>/)?.[1];

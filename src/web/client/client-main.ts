@@ -396,7 +396,22 @@ export function clientMain({
 
   const renderState = () => {
     if (!state) return;
-    $("#path").textContent = state.project;
+    $("#path").textContent = state.project || t("web.top.noProject");
+    const projects = $("#projects") as HTMLSelectElement;
+    const selectedProject = state.projects?.find((project) => project.current)?.projectRoot ?? "";
+    const listedProjects = state.projects ?? [];
+    const projectPaths = listedProjects.map((project) => project.projectRoot);
+    if (projects.dataset.paths !== JSON.stringify(projectPaths)) {
+      projects.replaceChildren(...listedProjects.map((project) => {
+        const option = el("option") as HTMLOptionElement;
+        option.value = project.projectRoot;
+        option.textContent = project.projectRoot;
+        return option;
+      }));
+      projects.dataset.paths = JSON.stringify(projectPaths);
+    }
+    projects.hidden = listedProjects.length === 0;
+    projects.value = selectedProject;
     // スマホ: 状態の行
     const rows = $("#status");
     rows.replaceChildren(...state.agents.map((agent) => {
@@ -743,6 +758,14 @@ export function clientMain({
   $("#open-settings").addEventListener("click", openSettings);
   $("#new-conversation").addEventListener("click", () => void send("/new"));
   $("#open-artifacts").addEventListener("click", openArtifacts);
+  $("#projects").addEventListener("change", (event) => {
+    const value = (event.currentTarget as HTMLSelectElement).value;
+    if (value) void send(`/project ${value}`).then((ok) => { if (!ok) renderState(); });
+  });
+  $("#open-project").addEventListener("click", () => {
+    const path = window.prompt(t("web.top.projectPrompt"))?.trim();
+    if (path) void send(`/project ${path}`);
+  });
 
   // ---- 詳細表示 ----
   const detailButton = $("#detail");
@@ -952,6 +975,11 @@ export function clientMain({
         return;
       }
       if (item.type === "state") {
+        if (state?.project !== item.state.project) {
+          target = undefined;
+          pendingPrimary = undefined;
+          closeSheet();
+        }
         state = item.state;
         if (pendingPrimary && state.primary === pendingPrimary) {
           if (target === pendingPrimary) target = undefined;

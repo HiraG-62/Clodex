@@ -11,6 +11,7 @@ import type { ConversationActivity } from "../hub/workspace.js";
 
 export interface WebState {
   project: string;
+  projects?: Array<{ projectRoot: string; open: boolean; current: boolean }>;
   primary: AgentId;
   roles: Partial<Record<AgentId, string>>;
   agents: AgentState[];
