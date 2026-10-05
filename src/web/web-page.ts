@@ -1,150 +1,262 @@
-// Web UI の画面。依存を増やさないよう HTML 1 枚に CSS / JS を inline で持つ（DESIGN.md §17 Web UI）
+// Web UI の画面（DESIGN.md §17 Web UI）。HTML 1 枚に CSS と JS を inline で持つ。
+// 画面の振る舞いは src/web/client/ に型付きで書き、関数のソースをそのまま埋め込む
+import { clientMain } from "./client/client-main.js";
+import { renderMarkdown } from "./client/markdown.js";
+import { applyFeedItem } from "./client/timeline.js";
+
+const STYLE = `
+  :root {
+    --bg: #fafafa; --panel: #ffffff; --sunken: #f2f2f3; --line: #e6e6e8; --line-strong: #d4d4d8;
+    --fg: #111113; --fg-2: #3f3f46; --muted: #80808a;
+    --claude: #b4793f; --codex: #4b6fa5;
+    --invert-bg: #111113; --invert-fg: #fafafa;
+    --warn: #b7791f; --crit: #d14343; --scrim: rgba(17, 17, 19, .32);
+    --font-ui: "Geist", "Zen Kaku Gothic New", system-ui, sans-serif;
+    --font-mono: "Geist Mono", "Zen Kaku Gothic New", ui-monospace, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #0b0b0c; --panel: #111113; --sunken: #18181b; --line: #232326; --line-strong: #2f2f34;
+    --fg: #f4f4f5; --fg-2: #c8c8cd; --muted: #7c7c86;
+    --claude: #d7a26d; --codex: #8aa9d8;
+    --invert-bg: #f4f4f5; --invert-fg: #0b0b0c;
+    --warn: #e0a84a; --crit: #ef6b6b; --scrim: rgba(0, 0, 0, .55); color-scheme: dark;
+  } }
+  :root[data-theme="dark"] {
+    --bg: #0b0b0c; --panel: #111113; --sunken: #18181b; --line: #232326; --line-strong: #2f2f34;
+    --fg: #f4f4f5; --fg-2: #c8c8cd; --muted: #7c7c86;
+    --claude: #d7a26d; --codex: #8aa9d8;
+    --invert-bg: #f4f4f5; --invert-fg: #0b0b0c;
+    --warn: #e0a84a; --crit: #ef6b6b; --scrim: rgba(0, 0, 0, .55); color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 14.5px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:disabled { cursor: default; opacity: .4; }
+  :focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); } .small { font-size: 12.5px; }
+  .c-claude { color: var(--claude); } .c-codex { color: var(--codex); }
+
+  .mark { width: 22px; height: 22px; border-radius: 5px; display: inline-grid; place-items: center; flex: none;
+    font: 600 11px/1 var(--font-mono); color: var(--invert-fg); }
+  .mark.claude { background: var(--claude); } .mark.codex { background: var(--codex); } .mark.you { background: var(--fg); }
+
+  .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; padding-top: max(10px, env(safe-area-inset-top));
+    border-bottom: 1px solid var(--line); background: var(--panel); min-width: 0; }
+  .brand { font-weight: 600; letter-spacing: -.01em; font-size: 15px; }
+  .path { color: var(--muted); font-size: 12px; min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ghost { border: 1px solid var(--line); background: transparent; border-radius: 6px; padding: 5px 10px; font-size: 13px; color: var(--fg-2); flex: none; }
+  .ghost[aria-pressed="true"] { background: var(--invert-bg); color: var(--invert-fg); border-color: var(--invert-bg); }
+
+  .status { display: grid; background: var(--panel); border-bottom: 1px solid var(--line); }
+  .status-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 16px;
+    border: 0; background: transparent; text-align: left; width: 100%; }
+  .status-row + .status-row { border-top: 1px solid var(--line); }
+  .status-row:active { background: var(--sunken); }
+  .figs { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; color: var(--muted); min-width: 0; }
+  .figs b { color: var(--fg-2); font-weight: 500; }
+  .figs .name { font-weight: 600; font-size: 13px; }
+  .state { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .state.working { color: var(--fg); position: relative; padding-bottom: 3px; }
+  .state.working::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--fg), transparent); background-size: 200% 100%; animation: sweep 1.6s linear infinite; }
+  .state.interrupted { color: var(--warn); } .state.failed { color: var(--crit); }
+  @keyframes sweep { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+  @media (prefers-reduced-motion: reduce) { .state.working::after { animation: none; } }
+
+  .side { display: none; flex-direction: column; gap: 28px; padding: 20px; background: var(--panel); }
+  .agent h2 { margin: 0 0 12px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .agent h2 .state { margin-left: auto; }
+  .role { color: var(--muted); font-size: 12px; margin: -6px 0 12px; overflow-wrap: anywhere; }
+  .agent .role { margin-left: 30px; }
+  .gauge { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; margin-bottom: 10px; font-size: 12px; }
+  .gauge .k { color: var(--muted); }
+  .gauge .v { color: var(--fg-2); } .gauge .v.over { color: var(--warn); }
+  .track { grid-column: 1 / -1; height: 2px; background: var(--line); position: relative; }
+  .track > i { position: absolute; inset: 0 auto 0 0; background: var(--fg); }
+  .track.claude > i { background: var(--claude); } .track.codex > i { background: var(--codex); }
+  .track .tick { position: absolute; top: -3px; width: 1px; height: 8px; background: var(--muted); }
+  .eyebrow { font-size: 11px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin: 14px 0 6px; }
+  .seg { display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; background: transparent; padding: 7px 4px; font-size: 12.5px; color: var(--muted); min-height: 36px; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--invert-bg); color: var(--invert-fg); }
+  .links { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; font-size: 13px; }
+  .links button { border: 0; background: none; padding: 6px 0; color: var(--fg-2); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-strong); }
+  .links button.danger { color: var(--crit); text-decoration-color: currentColor; }
+  .conv { display: grid; gap: 1px; padding: 8px 10px; border-radius: 6px; font-size: 13px; border: 0; background: transparent; text-align: left; width: 100%; min-width: 0; }
+  .conv:hover:not(:disabled) { background: var(--sunken); }
+  .conv.current { background: var(--sunken); }
+  .conv:disabled { opacity: 1; }
+  .conv .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv .m { color: var(--muted); font-size: 11.5px; }
+
+  .log-wrap { position: relative; min-height: 0; display: grid; }
+  .log { overflow-y: auto; overscroll-behavior: contain; padding: 4px 16px 24px; display: grid; align-content: start; min-width: 0; }
+  .empty { margin: 32px auto; max-width: 320px; text-align: center; color: var(--muted); font-size: 13px; }
+  .empty b { display: block; color: var(--fg); font-size: 15px; margin-bottom: 4px; }
+  .entry { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 4px 12px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .entry .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 13px; min-width: 0; }
+  .entry .head b { font-weight: 600; }
+  .entry .head time { color: var(--muted); font-size: 12px; }
+  .entry .body { grid-column: 2; min-width: 0; overflow-wrap: anywhere; color: var(--fg-2); }
+  .entry.you .body { color: var(--fg); font-weight: 500; }
+  .body.plain { white-space: pre-wrap; }
+  .md > * { margin: 0 0 8px; } .md > *:last-child { margin-bottom: 0; }
+  .md .md-h { font-weight: 600; color: var(--fg); }
+  .md ul, .md ol { padding-left: 1.3em; }
+  .md pre { padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; font: 12.5px/1.6 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--sunken); }
+  .md pre code { padding: 0; background: none; }
+  code { font-family: var(--font-mono); font-size: .92em; padding: 1px 5px; border-radius: 4px; background: var(--sunken); color: var(--fg); overflow-wrap: anywhere; }
+
+  .steps { grid-column: 2; margin: 2px 0 6px; min-width: 0; }
+  .steps summary, .envelope summary { list-style: none; cursor: pointer; font-size: 12px; color: var(--muted); display: inline-flex; gap: 6px; padding: 2px 0; }
+  .steps summary::-webkit-details-marker, .envelope summary::-webkit-details-marker { display: none; }
+  .steps summary::after, .envelope summary::after { content: "+"; font-family: var(--font-mono); }
+  .steps[open] summary::after, .envelope[open] summary::after { content: "−"; }
+  .steps ol { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+  .steps li { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 8px; font-size: 12.5px; }
+  .steps .k { color: var(--muted); font-family: var(--font-mono); font-size: 11px; padding-top: 2px; overflow: hidden; }
+  .steps .run { font-family: var(--font-mono); font-size: 12px; color: var(--fg-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .steps .say { color: var(--fg-2); overflow-wrap: anywhere; white-space: pre-wrap; }
+
+  .handoff { padding: 14px 0; border-bottom: 1px solid var(--line); display: grid; gap: 8px; min-width: 0; }
+  .handoff > * { min-width: 0; }
+  .handoff .route { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; }
+  .handoff .arrow { color: var(--muted); }
+  .kind { font: 500 11px/1 var(--font-mono); letter-spacing: .04em; padding: 4px 6px; border: 1px solid var(--line-strong); border-radius: 4px; color: var(--fg-2); }
+  .handoff .task { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .handoff .text { color: var(--fg); overflow-wrap: anywhere; }
+  .refs { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .ref { font: 12px/1.4 var(--font-mono); color: var(--fg-2); overflow-wrap: anywhere; }
+  .ref::before { content: "↳ "; color: var(--muted); }
+  .finding { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; padding: 10px 12px; border-left: 2px solid var(--warn); background: var(--sunken); border-radius: 0 6px 6px 0; font-size: 13px; }
+  .finding.high, .finding.critical { border-left-color: var(--crit); }
+  .finding .sev { font: 500 11px/1.6 var(--font-mono); color: var(--warn); text-transform: uppercase; }
+  .finding.high .sev, .finding.critical .sev { color: var(--crit); }
+  .finding.low .sev { color: var(--muted); }
+  .finding .loc { font: 12px/1.6 var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
+  .finding .desc { grid-column: 2; color: var(--fg); overflow-wrap: anywhere; }
+  .envelope pre { margin: 8px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; font: 12px/1.6 var(--font-mono); color: var(--fg-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+  .notice, .error-row { padding: 10px 0; font-size: 12.5px; display: flex; gap: 8px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; min-width: 0; }
+  .notice { color: var(--warn); } .error-row { color: var(--crit); }
+  .notice::before, .error-row::before { content: "!"; font: 600 11px/18px var(--font-mono); width: 18px; height: 18px; text-align: center; border: 1px solid currentColor; border-radius: 50%; flex: none; }
+  .output { margin: 0; padding: 12px 0; border-bottom: 1px solid var(--line); font: 12px/1.6 var(--font-mono); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+  .newer { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); border: 0; border-radius: 999px; padding: 6px 14px;
+    font-size: 12.5px; font-weight: 600; background: var(--invert-bg); color: var(--invert-fg); box-shadow: 0 4px 16px rgba(0,0,0,.18); }
+
+  .composer { padding: 10px 16px; padding-bottom: max(12px, env(safe-area-inset-bottom)); background: var(--bg); margin: 0; }
+  .box { border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); display: grid; }
+  .box:focus-within { border-color: var(--fg-2); }
+  .box textarea { border: 0; background: transparent; resize: none; padding: 12px 14px 4px; font: inherit; font-size: 16px; color: var(--fg);
+    min-height: 44px; max-height: 40vh; outline: none; overflow-y: hidden; }
+  .box textarea::placeholder { color: var(--muted); }
+  .box .bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 8px 10px; }
+  .to { display: inline-flex; gap: 2px; padding: 2px; background: var(--sunken); border-radius: 6px; }
+  .to button { border: 0; background: transparent; border-radius: 4px; padding: 5px 10px; font-size: 12.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+  .to button::before { content: ""; width: 6px; height: 6px; border-radius: 1px; background: currentColor; opacity: .5; }
+  .to button[aria-pressed="true"] { background: var(--panel); color: var(--fg); box-shadow: 0 0 0 1px var(--line); }
+  .to button[data-agent="claude"][aria-pressed="true"]::before { background: var(--claude); opacity: 1; }
+  .to button[data-agent="codex"][aria-pressed="true"]::before { background: var(--codex); opacity: 1; }
+  .send { margin-left: auto; border: 0; border-radius: 6px; padding: 8px 16px; font-weight: 600; font-size: 13px; background: var(--invert-bg); color: var(--invert-fg); }
+
+  .conn { padding: 6px 16px; font-size: 12.5px; background: var(--warn); color: var(--invert-fg); text-align: center; }
+  .toast { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%); max-width: calc(100% - 32px);
+    padding: 8px 14px; border-radius: 8px; background: var(--invert-bg); color: var(--invert-fg); font-size: 13px; z-index: 30; }
+
+  .sheet { position: fixed; inset: 0; z-index: 20; display: grid; align-items: end; }
+  .sheet-backdrop { position: absolute; inset: 0; background: var(--scrim); border: 0; }
+  .sheet-panel { position: relative; background: var(--panel); border-radius: 14px 14px 0 0; max-height: 80vh; overflow-y: auto;
+    padding: 8px 16px; padding-bottom: max(20px, env(safe-area-inset-bottom)); width: 100%; max-width: 560px; margin: 0 auto; }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 0 4px; }
+  .sheet-head h2 { margin: 0; font-size: 15px; }
+  .sheet-close { border: 0; background: none; color: var(--muted); font-size: 13px; padding: 8px 0 8px 12px; }
+  .primary-action { width: 100%; margin: 8px 0 12px; border: 0; border-radius: 8px; padding: 10px; font-weight: 600; background: var(--invert-bg); color: var(--invert-fg); }
+  .setting { margin-bottom: 4px; }
+
+  .app { display: grid; height: 100%; max-width: 1240px; margin: 0 auto; min-width: 0;
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "top" "conn" "status" "log" "compose"; }
+  .topbar { grid-area: top; } .conn { grid-area: conn; } .status { grid-area: status; } .log-wrap { grid-area: log; } .composer { grid-area: compose; }
+  @media (min-width: 900px) and (hover: hover) and (pointer: fine) {
+    .app { grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto;
+      grid-template-areas: "top top" "conn conn" "side log" "side compose"; border-inline: 1px solid var(--line); }
+    .side { grid-area: side; display: flex; border-right: 1px solid var(--line); overflow-y: auto; }
+    .status { display: none; }
+    .log { padding-inline: 32px; } .composer { padding-inline: 32px; }
+    #open-conversations { display: none; }
+  }
+`;
+
+const BODY = `
+<div class="app">
+  <header class="topbar">
+    <span class="brand">Clodex</span>
+    <span class="path mono" id="path"></span>
+    <button class="ghost" type="button" id="detail" aria-pressed="false" title="作業と全文を開いて表示">詳細</button>
+    <button class="ghost" type="button" id="open-conversations">会話</button>
+    <button class="ghost" type="button" id="open-settings">設定</button>
+  </header>
+  <div class="conn" id="conn" hidden role="status">接続が切れています。再接続しています…</div>
+  <div class="status" id="status"></div>
+  <aside class="side">
+    <div id="agents" style="display:grid;gap:28px"></div>
+    <section><div class="eyebrow">会話</div><div id="conversations"></div></section>
+  </aside>
+  <div class="log-wrap">
+    <main class="log" id="log" aria-label="ログ" aria-live="polite">
+      <div class="empty" id="empty"><b>まだ何もありません</b>下の入力欄から依頼すると、ここに Agent の作業と応答が並びます。</div>
+    </main>
+    <button class="newer" type="button" id="newer" hidden>新着 ↓</button>
+  </div>
+  <form class="composer" id="composer">
+    <div class="box">
+      <textarea id="input" rows="1" aria-label="メッセージ" enterkeyhint="enter"></textarea>
+      <div class="bar">
+        <div class="to" role="group" aria-label="送り先">
+          <button type="button" data-agent="claude" aria-pressed="true">Claude</button>
+          <button type="button" data-agent="codex" aria-pressed="false">Codex</button>
+        </div>
+        <button class="send" type="submit">送信</button>
+      </div>
+    </div>
+  </form>
+</div>
+<div class="sheet" id="sheet" hidden>
+  <button class="sheet-backdrop" id="sheet-backdrop" type="button" aria-label="閉じる"></button>
+  <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-head"><h2 id="sheet-title"></h2><button class="sheet-close" id="sheet-close" type="button">閉じる</button></div>
+    <div id="sheet-body"></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden role="status"></div>
+`;
+
+// 関数のソースに </script> が含まれていても script 要素が途中で閉じないようにする
+const inlineScript = (source: string) => source.replace(/<\/script/gi, "<\\/script");
+
 export const WEB_PAGE = `<!doctype html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0f1115">
+<meta name="color-scheme" content="light dark">
 <title>Clodex</title>
 <link rel="icon" href="data:,">
-<style>
-  :root {
-    --bg: #0f1115; --panel: #171a21; --border: #2a2f3a; --text: #d7dae0; --muted: #8b93a1;
-    --claude: #e8a87c; --codex: #7cc4e8; --message: #c39bf0; --notice: #e8d27c; --error: #f07c7c; --you: #9be89b;
-    --accent: #4f8cff;
-  }
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg: #f6f7f9; --panel: #ffffff; --border: #d8dce3; --text: #1d2129; --muted: #677084;
-      --claude: #b5652c; --codex: #1f7aa8; --message: #7b4bb8; --notice: #8a6d00; --error: #c0392b; --you: #2e7d32;
-      --accent: #2f6fe0;
-    }
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-    font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif; }
-  body { display: flex; flex-direction: column; height: 100dvh; }
-  header { display: flex; align-items: center; gap: 8px; padding: 10px 16px; padding-top: max(10px, env(safe-area-inset-top));
-    background: var(--panel); border-bottom: 1px solid var(--border); }
-  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
-  #conn { margin-left: auto; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-  #conn::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--error); }
-  #conn.online::before { background: var(--you); }
-  #log { flex: 1; overflow-y: auto; padding: 8px 16px; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-    font-size: 13px; line-height: 1.5; }
-  .line { white-space: pre-wrap; overflow-wrap: anywhere; padding: 2px 0; }
-  .time { color: var(--muted); }
-  .tag-claude { color: var(--claude); } .tag-codex { color: var(--codex); } .tag-message { color: var(--message); }
-  .tag-notice { color: var(--notice); } .tag-you { color: var(--you); } .error { color: var(--error); }
-  .plain { color: var(--muted); }
-  footer { background: var(--panel); border-top: 1px solid var(--border); padding: 8px 16px;
-    padding-bottom: max(8px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 8px; }
-  .actions { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
-  .actions::-webkit-scrollbar { display: none; }
-  button, select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border);
-    border-radius: 8px; }
-  .actions button { padding: 6px 12px; font-size: 13px; white-space: nowrap; min-height: 36px; }
-  .actions button.danger { color: var(--error); }
-  form { display: flex; gap: 8px; align-items: flex-end; }
-  select { padding: 8px 6px; min-height: 44px; }
-  textarea { flex: 1; resize: none; padding: 10px; min-height: 44px; max-height: 40vh; font-size: 16px; overflow-y: hidden; }
-  form button { padding: 0 16px; min-height: 44px; background: var(--accent); color: #fff; border: none; font-weight: 600; }
-  button:active { opacity: .7; }
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>${STYLE}</style>
 </head>
 <body>
-<header><h1>Clodex</h1><span id="conn">offline</span></header>
-<div id="log" aria-live="polite"></div>
-<footer>
-  <div class="actions">
-    <button type="button" class="danger" data-command="/interrupt">Interrupt</button>
-    <button type="button" data-command="/status">Status</button>
-    <button type="button" data-command="/compact">Compact</button>
-    <button type="button" data-command="/verbose">Verbose</button>
-    <button type="button" data-command="/help">Help</button>
-  </div>
-  <form id="form">
-    <select id="target" aria-label="送り先">
-      <option value="">primary</option>
-      <option value="@claude ">claude</option>
-      <option value="@codex ">codex</option>
-    </select>
-    <textarea id="input" rows="1" placeholder="メッセージ / コマンド" enterkeyhint="send"></textarea>
-    <button type="submit">送信</button>
-  </form>
-</footer>
+${BODY}
 <script>
-  const log = document.getElementById("log");
-  const conn = document.getElementById("conn");
-  const input = document.getElementById("input");
-  const target = document.getElementById("target");
-  const TAGS = [["[CLAUDE]", "tag-claude"], ["[CODEX]", "tag-codex"], ["[MESSAGE]", "tag-message"],
-    ["[CLODEX]", "tag-notice"], ["[YOU", "tag-you"]];
-
-  const nearBottom = () => log.scrollHeight - log.scrollTop - log.clientHeight < 80;
-
-  const render = (text) => {
-    const stick = nearBottom();
-    const div = document.createElement("div");
-    div.className = "line";
-    const match = text.match(/^(\\d\\d:\\d\\d:\\d\\d) (\\[[^\\]]+\\])([\\s\\S]*)$/);
-    if (match) {
-      const time = document.createElement("span");
-      time.className = "time";
-      time.textContent = match[1] + " ";
-      const tag = document.createElement("span");
-      tag.className = (TAGS.find(([prefix]) => match[2].startsWith(prefix)) || [, ""])[1];
-      tag.textContent = match[2];
-      const body = document.createElement("span");
-      body.textContent = match[3];
-      if (/^ ERROR /.test(match[3])) body.className = "error";
-      div.append(time, tag, body);
-    } else {
-      div.className += " plain";
-      div.textContent = text;
-    }
-    log.append(div);
-    if (stick) log.scrollTop = log.scrollHeight;
-  };
-
-  const connect = () => {
-    const events = new EventSource("/events");
-    // 接続（再接続を含む）のたびに直近の行が送り直されるので、画面を作り直す
-    events.onopen = () => { log.replaceChildren(); conn.textContent = "online"; conn.className = "online"; };
-    events.onmessage = (e) => render(JSON.parse(e.data));
-    events.onerror = () => { conn.textContent = "reconnecting"; conn.className = ""; };
-  };
-
-  const send = async (line) => {
-    const response = await fetch("/api/input", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ line }),
-    });
-    if (!response.ok) render("送信に失敗しました（" + response.status + "）");
-  };
-
-  document.getElementById("form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const text = input.value.trim();
-    if (!text) return;
-    send(text.startsWith("/") || text.startsWith("@") ? text : target.value + text);
-    input.value = "";
-    input.style.height = "";
-  });
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-      e.preventDefault();
-      document.getElementById("form").requestSubmit();
-    }
-  });
-  input.addEventListener("input", () => {
-    input.style.height = "";
-    input.style.height = input.scrollHeight + "px";
-    // 高さの上限を超えたときだけスクロールさせる
-    input.style.overflowY = input.scrollHeight > input.clientHeight ? "auto" : "hidden";
-  });
-  document.querySelectorAll("[data-command]").forEach((b) => b.addEventListener("click", () => send(b.dataset.command)));
-
-  connect();
+(${inlineScript(clientMain.toString())})(${inlineScript(renderMarkdown.toString())}, ${inlineScript(applyFeedItem.toString())});
 </script>
 </body>
 </html>

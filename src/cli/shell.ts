@@ -179,5 +179,5 @@ export const createShell = ({ coordinator, primary: initialPrimary, print, toggl
     await Promise.all(busy.map(({ id }) => coordinator.interrupt(id)));
   };
 
-  return { handleLine, handleSigint };
+  return { handleLine, handleSigint, getPrimary: () => primary };
 };

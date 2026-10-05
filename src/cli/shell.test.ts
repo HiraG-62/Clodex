@@ -139,7 +139,9 @@ describe("createShell", () => {
 
   it("/primary は通常のテキストの送り先を切り替える", async () => {
     const { coordinator, printed, shell } = setup();
+    expect(shell.getPrimary()).toBe("claude");
     await shell.handleLine("/primary codex");
+    expect(shell.getPrimary()).toBe("codex");
     await shell.handleLine("hello");
     expect(printed).toEqual(["primary: codex"]);
     expect(coordinator.sent).toEqual([{ agent: "codex", text: "hello" }]);

@@ -1003,22 +1003,64 @@ log file は project の外（ホームディレクトリ）に置き、project 
 
 ## Web UI（v0.2）
 
-PC で動いている `clodex` を、スマホ等のブラウザから操作・観測できるようにする。スマホの接続が切れても `clodex` は PC で動き続ける。
+PC で動いている `clodex` を、スマホ等のブラウザから GUI で操作・観測できるようにする。スマホの接続が切れても `clodex` は PC で動き続ける。
 
 ```text
 スマホのブラウザ ──HTTPS──> tailscale serve ──> 127.0.0.1:<port>（clodex の Web サーバー）
-                                                    ├── GET  /         画面（HTML 1 枚、JS / CSS は inline）
-                                                    ├── GET  /events   表示行の配信（Server-Sent Events）
+                                                    ├── GET  /          画面（HTML 1 枚、JS / CSS は inline）
+                                                    ├── GET  /events    feed の配信（Server-Sent Events）
+                                                    ├── GET  /api/state 状態のスナップショット
                                                     └── POST /api/input 1 行の入力
 ```
+
+### 接続と認証
 
 - **起動**: `clodex --web` または設定ファイルの `"web": { "port": 4319 }`。既定ポートは 4319
 - **待ち受け**: `127.0.0.1` だけ。外部からの接続は Tailscale の `tailscale serve`（tailnet 内の端末だけが HTTPS で入れる）に任せ、Clodex は `0.0.0.0` で待ち受けない
 - **認証**: 起動をまたいで同じ token を使う（`~/.clodex/web-token`、初回に生成）。`/?token=<token>` で開くと HttpOnly cookie を設定し、以後は cookie で認証する。token が無い・違うリクエストは 401
-- **表示**: terminal に出す行（§17 の表示モードに従う行と、コマンドの出力）をそのまま配信する。接続時に直近 500 行を送り、以後は新しい行を流す
-- **入力**: terminal と同じ `parseInput` / Shell を通す（§8）。テキスト、`@claude` / `@codex`、全スラッシュコマンドが使える
-- **画面**: スマホ向け。ログ（Agent ごとに色分け）、入力欄、よく使う操作のボタン（Interrupt / Status）
-- 依存パッケージを増やさない（`node:http` と SSE のみ）
+- 依存パッケージを増やさない（`node:http` と SSE のみ。画面も外部の JS ライブラリを使わない）
+
+### feed（`/events`）
+
+terminal の文字列ではなく、構造化したデータを JSON で送る。
+
+| type | 内容 |
+|---|---|
+| `event` | Event Bus の event（§17）。formal message には相手に渡した Task envelope の全文（`envelope`）を付ける |
+| `output` | コマンドの出力（`/help` 等、Shell が表示する行） |
+| `state` | 状態のスナップショット（下記）。変化があるたびに送る（短い間隔の変化はまとめる） |
+
+- 接続時に直近 1,000 件の `event` / `output` と最新の `state` を送り、以後は新しいものを流す
+- 状態のスナップショット: primary、各 Agent の状態・権限・session・利用枠・コンテキスト（`/status` と同じ内容）、会話の一覧と今の会話
+
+### 入力
+
+- terminal と同じ `parseInput` / Shell を通す（§8）。テキスト、`@claude` / `@codex`、全スラッシュコマンドが使える
+- 画面のボタン（権限、Interrupt、Compact、New、会話の切り替え、primary）は、対応するスラッシュコマンドを送るだけにする。Web 専用の操作経路を作らない
+
+### 画面
+
+レイアウト:
+
+- スマホ（1 列）: 上部に Agent ごとの状態の行 → ログ → 入力欄。状態の行をタップすると、その Agent の操作パネル（利用枠、権限、Interrupt / Compact / New）が下から開く
+- PC（幅 900px 以上かつマウス操作の端末）: 左に Agent パネルと会話の一覧、右にログと入力欄
+
+ログ:
+
+- 人間の入力、各 Agent のターン、Agent 間の message、通知、エラー、コマンドの出力を時系列に並べる
+- Agent のターンは、最終応答を本文として表示し、途中の発言と tool 呼び出しを「作業」として起きた順に並べる（既定は畳む。上部の「詳細」で一括して開閉）
+- Agent の応答は簡易な Markdown（段落、見出し、箇条書き、コードブロック、インラインコード、太字）として表示する
+- Agent 間の message は、送信元 → 宛先、種類、本文、関連ファイル、指摘（severity 付き）、相手に渡した全文（畳む）を表示する
+
+使い勝手の決まり:
+
+- **横スクロールを発生させない**。長いコマンド・JSON・全文は折り返す
+- 読み返している間に新しい項目が来ても勝手にスクロールしない。一番下にいないときは「新着」ボタンを出す
+- 入力: PC は Enter で送信（Shift+Enter で改行）。スマホは Enter で改行し、送信はボタン（日本語入力の確定と誤送信を防ぐ）
+- 送り先は入力欄の切り替えで選ぶ（既定は primary）。`/` や `@` で始まる入力はそのまま送る
+- 接続が切れている間はその旨を表示し、自動で再接続する
+- テーマ: システム / ライト / ダークを切り替えられる。選択はその端末のブラウザに保存する
+- 内部の思考（chain-of-thought）は表示しない（§3.8）
 
 ---
 

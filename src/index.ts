@@ -15,8 +15,9 @@ import { EventBus } from "./coordinator/event-bus.js";
 import { attachEventLog, defaultLogPath, type DisplayMode } from "./logging/event-log.js";
 import { startMcpServer } from "./mcp/server.js";
 import { resolveProjectRoot } from "./project/project-root.js";
-import { DisplayHub } from "./web/display-hub.js";
+import { WebFeed } from "./web/web-feed.js";
 import { startWebServer } from "./web/web-server.js";
+import { connectWebFeed } from "./web/web-ui.js";
 import { loadOrCreateWebToken } from "./web/web-token.js";
 import { ConversationHistory, conversationStatePath } from "./project/conversation-history.js";
 
@@ -57,10 +58,9 @@ const main = async (): Promise<void> => {
 
   const interactive = Boolean(process.stdin.isTTY);
   const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: PROMPT, terminal: interactive });
-  const hub = new DisplayHub();
+  const feed = new WebFeed();
   // 入力途中の行を壊さないよう、プロンプトの上に出力してから入力行を描き直す
-  const print = (line: string) => {
-    hub.publish(line);
+  const printTerminal = (line: string) => {
     if (!interactive) {
       process.stdout.write(`${line}\n`);
       return;
@@ -71,37 +71,56 @@ const main = async (): Promise<void> => {
     rl.prompt(true);
   };
 
+  // コマンドの出力は terminal と Web UI の両方に出す（event は Web UI へ構造化して別に送る）
+  const print = (line: string) => {
+    feed.publishOutput(line);
+    printTerminal(line);
+  };
+
   const logPath = defaultLogPath(projectRoot, new Date());
   let displayMode: DisplayMode = "normal";
-  attachEventLog(bus, { path: logPath, print, mode: () => displayMode });
-  print(`Clodex v0.1  project: ${projectRoot}  primary: ${primary}`);
-  print(`log: ${logPath}`);
+  attachEventLog(bus, { path: logPath, print: printTerminal, mode: () => displayMode });
+  // 起動時の案内は terminal 向けなので Web UI には出さない
+  printTerminal(`Clodex v0.1  project: ${projectRoot}  primary: ${primary}`);
+  printTerminal(`log: ${logPath}`);
   if (args.resume) {
     const resumed = AGENT_IDS.filter((id) => resumeSessionIds[id]);
-    print(`resume: ${resumed.length ? resumed.join(", ") : "no saved conversation (starting a new one)"}`);
+    printTerminal(`resume: ${resumed.length ? resumed.join(", ") : "no saved conversation (starting a new one)"}`);
   }
-  print("Type /help for usage.");
+  printTerminal("Type /help for usage.");
 
   const toggleVerbose = () => {
     displayMode = displayMode === "verbose" ? "normal" : "verbose";
     return displayMode === "verbose";
   };
   const shell = createShell({ coordinator, primary, print, toggleVerbose, history });
+  const { refreshState } = connectWebFeed(bus, feed, () => ({
+    project: projectRoot,
+    primary: shell.getPrimary(),
+    roles: config.roles ?? {},
+    agents: coordinator.status(),
+    conversations: history.list().map((c) => ({ ...c, current: c.id === history.currentId })),
+  }));
+  const handleLine = async (line: string) => {
+    const outcome = await shell.handleLine(line);
+    refreshState();
+    return outcome;
+  };
 
   const webEnabled = args.web || config.web !== undefined;
   const web = webEnabled
     ? await startWebServer({
       port: config.web?.port ?? DEFAULT_WEB_PORT,
       token: loadOrCreateWebToken(homedir()),
-      hub,
+      feed,
       // terminal と同じ解釈を通す。/exit も受け付ける
       onInput: async (line) => {
-        if ((await shell.handleLine(line)) === "exit") void shutdown();
+        if ((await handleLine(line)) === "exit") void shutdown();
       },
       onError: (error) => print(`error: ${errorMessage(error)}`),
     })
     : undefined;
-  if (web) print(`web: ${web.url}/?token=<~/.clodex/web-token>  (remote: tailscale serve)`);
+  if (web) printTerminal(`web: ${web.url}/?token=<~/.clodex/web-token>  (remote: tailscale serve)`);
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) return;
@@ -119,7 +138,7 @@ const main = async (): Promise<void> => {
 
   rl.on("SIGINT", () => void shell.handleSigint().catch(report));
   rl.on("line", (line) => {
-    void shell.handleLine(line)
+    void handleLine(line)
       .then((outcome) => {
         if (outcome === "exit") return shutdown();
         if (interactive) rl.prompt();

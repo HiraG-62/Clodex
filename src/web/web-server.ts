@@ -3,7 +3,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { DisplayHub } from "./display-hub.js";
+import type { FeedItem, WebFeed } from "./web-feed.js";
 import { WEB_PAGE } from "./web-page.js";
 
 const HOST = "127.0.0.1";
@@ -18,7 +18,7 @@ const HTTP = {
 export interface WebServerOptions {
   port: number;
   token: string;
-  hub: DisplayHub;
+  feed: WebFeed;
   onInput: (line: string) => Promise<void>;
   onError?: (error: unknown) => void;
 }
@@ -62,15 +62,18 @@ const parseLine = (body: string): string | undefined => {
   }
 };
 
-const sendEvent = (res: ServerResponse, line: string) => res.write(`data: ${JSON.stringify(line)}\n\n`);
+const sendItem = (res: ServerResponse, item: FeedItem) => res.write(`data: ${JSON.stringify(item)}\n\n`);
 
-export const startWebServer = async ({ port, token, hub, onInput, onError }: WebServerOptions): Promise<WebServerHandle> => {
+export const startWebServer = async ({ port, token, feed, onInput, onError }: WebServerOptions): Promise<WebServerHandle> => {
   const streams = new Set<ServerResponse>();
 
   const handleEvents = (req: IncomingMessage, res: ServerResponse) => {
     res.writeHead(HTTP.ok, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-    for (const line of hub.recent()) sendEvent(res, line);
-    const unsubscribe = hub.subscribe((line) => sendEvent(res, line));
+    // 接続（再接続を含む）のたびに直近の履歴と最新の状態を送る
+    for (const item of feed.recent()) sendItem(res, item);
+    const state = feed.latestState();
+    if (state) sendItem(res, { type: "state", state });
+    const unsubscribe = feed.subscribe((item) => sendItem(res, item));
     // プロキシ等に切られないよう、定期的に comment を送る
     const keepalive = setInterval(() => res.write(": keepalive\n\n"), KEEPALIVE_MS);
     keepalive.unref();
@@ -111,6 +114,10 @@ export const startWebServer = async ({ port, token, hub, onInput, onError }: Web
       return void res.end(WEB_PAGE);
     }
     if (req.method === "GET" && url.pathname === "/events") return handleEvents(req, res);
+    if (req.method === "GET" && url.pathname === "/api/state") {
+      res.writeHead(HTTP.ok, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+      return void res.end(JSON.stringify(feed.latestState() ?? null));
+    }
     if (req.method === "POST" && url.pathname === "/api/input") return handleInput(req, res);
     res.writeHead(HTTP.notFound).end();
   };

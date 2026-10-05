@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { DisplayHub } from "./display-hub.js";
+import { WebFeed, type FeedItem, type WebState } from "./web-feed.js";
 import { startWebServer, type WebServerHandle } from "./web-server.js";
 
 const TOKEN = "a".repeat(64);
 const COOKIE = `clodex_token=${TOKEN}`;
+const STATE: WebState = { project: "C:\app", primary: "claude", roles: { codex: "実装" }, agents: [], conversations: [] };
 
 let server: WebServerHandle | undefined;
 afterEach(async () => {
@@ -12,24 +13,24 @@ afterEach(async () => {
 });
 
 const setup = async (onInput?: (line: string) => Promise<void>) => {
-  const hub = new DisplayHub();
+  const feed = new WebFeed();
   const inputs: string[] = [];
   const errors: unknown[] = [];
   server = await startWebServer({
-    port: 0, token: TOKEN, hub, onInput: onInput ?? (async (line) => void inputs.push(line)), onError: (e) => errors.push(e),
+    port: 0, token: TOKEN, feed, onInput: onInput ?? (async (line) => void inputs.push(line)), onError: (e) => errors.push(e),
   });
-  return { hub, inputs, errors, base: server.url };
+  return { feed, inputs, errors, base: server.url };
 };
 
 const postInput = (base: string, body: string | Blob) =>
   fetch(`${base}/api/input`, { method: "POST", headers: { cookie: COOKIE }, body });
 
-// SSE の本文を指定の行数ぶん読む
-const readEvents = async (response: Response, count: number): Promise<string[]> => {
+// SSE の本文を指定の件数ぶん読む
+const readEvents = async (response: Response, count: number): Promise<FeedItem[]> => {
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  const lines: string[] = [];
+  const lines: FeedItem[] = [];
   while (lines.length < count) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -72,13 +73,25 @@ describe("startWebServer", () => {
     expect(await response.text()).toContain("/events");
   });
 
-  it("/events は直近の行を送ってから新しい行を流す", async () => {
-    const { base, hub } = await setup();
-    hub.publish("old line");
+  it("/events は直近の履歴と最新の状態を送ってから、新しいものを流す", async () => {
+    const { base, feed } = await setup();
+    feed.publishOutput("old line");
+    feed.publishState(STATE);
     const response = await fetch(`${base}/events`, { headers: { cookie: COOKIE } });
     expect(response.headers.get("content-type")).toMatch(/text\/event-stream/);
-    setTimeout(() => hub.publish("new line"), 50);
-    expect(await readEvents(response, 2)).toEqual(["old line", "new line"]);
+    setTimeout(() => feed.publishOutput("new line"), 50);
+    expect(await readEvents(response, 3)).toEqual([
+      { type: "output", seq: 1, text: "old line" },
+      { type: "state", state: STATE },
+      { type: "output", seq: 2, text: "new line" },
+    ]);
+  });
+
+  it("/api/state は最新の状態を返す", async () => {
+    const { base, feed } = await setup();
+    expect(await (await fetch(`${base}/api/state`, { headers: { cookie: COOKIE } })).json()).toBeNull();
+    feed.publishState(STATE);
+    expect(await (await fetch(`${base}/api/state`, { headers: { cookie: COOKIE } })).json()).toEqual(STATE);
   });
 
   it("POST /api/input の行を onInput に渡す", async () => {
