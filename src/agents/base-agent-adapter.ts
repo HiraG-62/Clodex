@@ -5,6 +5,8 @@ import {
 } from "./agent-adapter.js";
 import type { AgentProcess } from "./agent-process.js";
 
+const INVALID_LINE_PREVIEW_LENGTH = 200;
+
 // 両 Adapter 共通の status / event / turn / 終了処理。CLI 固有のプロトコルはサブクラスが扱う
 export abstract class BaseAgentAdapter implements AgentAdapter {
   abstract readonly id: AgentId;
@@ -139,7 +141,7 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
     try {
       message = JSON.parse(line);
     } catch {
-      this.emit({ type: "error", message: `${this.id}: invalid JSON line: ${line.slice(0, 200)}` });
+      this.emit({ type: "error", message: `${this.id}: invalid JSON line: ${line.slice(0, INVALID_LINE_PREVIEW_LENGTH)}` });
       return;
     }
     this.handleMessage(message);

@@ -1,5 +1,6 @@
 // formal message から宛先 Agent への Task envelope を組み立てる（DESIGN.md §13）
 import type { AgentMessage, Issue, MessageType } from "../protocol/messages.js";
+import { COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL } from "../agents/agent-adapter.js";
 
 // 返信を求める依頼系。RESULT / ISSUE には返信を求めず、返信の連鎖を作らない
 const REQUEST_TYPES = new Set<MessageType>(["QUESTION", "REVIEW_REQUEST", "DELEGATE"]);
@@ -11,7 +12,7 @@ const replyInstruction = (m: AgentMessage): string[] =>
   REQUEST_TYPES.has(m.type)
     ? [
       // 他の連携手段（skill や CLI）と取り違えないよう、MCP tool であることを明示する
-      `Reply with the send_message tool of the "clodex" MCP server (not a shell command): to="${m.from}", type="RESULT", taskId="${m.taskId}", replyTo="${m.id}".`,
+      `Reply with the ${SEND_MESSAGE_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server (not a shell command): to="${m.from}", type="RESULT", taskId="${m.taskId}", replyTo="${m.id}".`,
       "Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.",
     ]
     : ["No reply is required."];

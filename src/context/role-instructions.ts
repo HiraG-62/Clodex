@@ -1,5 +1,5 @@
 // Agent の起動時に system prompt へ追加する定型文と役割（DESIGN.md §13 Roles）
-import { AGENT_IDS, type AgentId } from "../agents/agent-adapter.js";
+import { AGENT_IDS, COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, type AgentId } from "../agents/agent-adapter.js";
 import type { RolesConfig } from "../config/config.js";
 
 const NOT_SPECIFIED = "not specified";
@@ -9,7 +9,7 @@ const peerOf = (agent: AgentId): AgentId => AGENT_IDS.find((id) => id !== agent)
 const header = (agent: AgentId, peer: AgentId) =>
   `[Clodex] You are the "${agent}" agent in Clodex, working with a peer agent "${peer}" on the same repository.`;
 
-const SEND_TOOL = 'the send_message tool of the "clodex" MCP server';
+const SEND_TOOL = `the ${SEND_MESSAGE_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server`;
 
 // -p / app-server では人がその場で承認できないので、/permission を案内させる（DESIGN.md §9 Permission）
 const PERMISSION_NOTE =

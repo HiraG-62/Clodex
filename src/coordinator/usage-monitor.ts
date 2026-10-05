@@ -69,13 +69,13 @@ export class UsageMonitor {
     });
   }
 
-  // reset 時刻を過ぎた枠は今の利用状況ではないので出さない
   clearContext(agent: AgentId): void {
     this.contexts.delete(agent);
   }
 
   snapshot(agent: AgentId): UsageSnapshot {
     const nowSeconds = this.nowSeconds();
+    // reset 時刻を過ぎた枠は今の利用状況ではないので出さない
     const current = (w: RateLimitWindow | undefined) => (w && w.resetsAt > nowSeconds ? w : undefined);
     const stored = this.windows.get(agent) ?? {};
     const fiveHour = current(stored.fiveHour);
