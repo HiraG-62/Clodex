@@ -34,7 +34,7 @@ const readConfigFile = (path: string): ClodexConfig => {
   if (!existsSync(path)) return {};
   let json: unknown;
   try {
-    json = JSON.parse(readFileSync(path, "utf8"));
+    json = JSON.parse(readFileSync(path, "utf8").replace(/^\uFEFF/, ""));
   } catch (error) {
     throw new Error(`${path}: invalid JSON (${error instanceof Error ? error.message : String(error)})`);
   }

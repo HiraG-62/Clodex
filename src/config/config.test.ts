@@ -27,6 +27,14 @@ describe("loadConfig", () => {
     expect(loadConfig(setup({ user: config }))).toEqual(config);
   });
 
+  it("UTF-8 BOM のある設定を読む", () => {
+    expect(loadConfig(setup({ user: '\uFEFF{"primary":"codex"}' }))).toEqual({ primary: "codex" });
+  });
+
+  it("壊れた JSON は invalid JSON とファイル名を出す", () => {
+    expect(() => loadConfig(setup({ project: "{ broken" }))).toThrow(/\.clodex\.json: invalid JSON/);
+  });
+
   it("project の設定はトップレベルのキー単位でユーザーの設定を上書きする", () => {
     const paths = setup({
       user: { primary: "codex", roles: { claude: "設計", codex: "実装" }, limits: { maxMessagesPerChain: 10 } },
