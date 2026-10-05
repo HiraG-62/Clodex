@@ -867,7 +867,8 @@ export function clientMain({
   const resize = () => {
     const stick = nearBottom();
     input.style.height = "";
-    input.style.height = `${input.scrollHeight}px`;
+    // 空欄の scrollHeight は折り返したプレースホルダの高さになるため、1 行のままにする
+    if (input.value) input.style.height = `${input.scrollHeight}px`;
     input.style.overflowY = input.scrollHeight > input.clientHeight ? "auto" : "hidden";
     if (stick) requestAnimationFrame(scrollToBottom);
   };

@@ -225,7 +225,7 @@ const STYLE = `
   .suggest li[aria-selected="true"] { background: var(--sunken); }
   .suggest .l { font: 13px/1.4 var(--font-mono); color: var(--fg); overflow-wrap: anywhere; }
   .suggest .d { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  .box textarea::placeholder { color: var(--muted); }
+  .box textarea::placeholder { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .box .bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 8px 10px; }
   .to { display: inline-flex; gap: 2px; padding: 2px; background: var(--sunken); border-radius: 6px; }
   .to button { border: 0; background: transparent; border-radius: 4px; padding: 5px 10px; font-size: 12.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
