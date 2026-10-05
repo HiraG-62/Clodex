@@ -52,6 +52,22 @@ describe("formatTimelineItem", () => {
 });
 
 describe("editInput", () => {
+  it("↑↓ で論理行を移動し、列を保ちつつ短い行では行末に止まる", () => {
+    const source = "abcd\nxy\n12345";
+    expect(editInput({ text: source, cursor: 3 }, { kind: "down" })).toEqual({ text: source, cursor: 7 });
+    expect(editInput({ text: source, cursor: 7 }, { kind: "down" })).toEqual({ text: source, cursor: 10 });
+    expect(editInput({ text: source, cursor: 12 }, { kind: "up" })).toEqual({ text: source, cursor: 7 });
+    expect(editInput({ text: source, cursor: 6 }, { kind: "up" })).toEqual({ text: source, cursor: 1 });
+  });
+
+  it("先頭行の ↑ と末尾行の ↓ はカーソルを動かさず、空行にも移動する", () => {
+    const source = "ab\n\ncd";
+    expect(editInput({ text: source, cursor: 1 }, { kind: "up" })).toEqual({ text: source, cursor: 1 });
+    expect(editInput({ text: source, cursor: 1 }, { kind: "down" })).toEqual({ text: source, cursor: 3 });
+    expect(editInput({ text: source, cursor: 3 }, { kind: "down" })).toEqual({ text: source, cursor: 4 });
+    expect(editInput({ text: source, cursor: 5 }, { kind: "down" })).toEqual({ text: source, cursor: 5 });
+  });
+
   it("移動・挿入・削除・行頭と行末を扱う", () => {
     const left = editInput({ text: "ab\ncd", cursor: 4 }, { kind: "left" });
     expect(left).toEqual({ text: "ab\ncd", cursor: 3 });

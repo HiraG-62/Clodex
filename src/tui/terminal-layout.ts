@@ -111,7 +111,7 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
 };
 
 export interface InputBuffer { text: string; cursor: number; }
-export type InputAction = { kind: "left" | "right" | "home" | "end" | "backspace" | "delete" } | { kind: "insert"; text: string } | { kind: "replace"; from: number; to: number; text: string };
+export type InputAction = { kind: "left" | "right" | "up" | "down" | "home" | "end" | "backspace" | "delete" } | { kind: "insert"; text: string } | { kind: "replace"; from: number; to: number; text: string };
 
 export const editInput = (buffer: InputBuffer, action: InputAction): InputBuffer => {
   const { text } = buffer;
@@ -119,6 +119,21 @@ export const editInput = (buffer: InputBuffer, action: InputAction): InputBuffer
   switch (action.kind) {
     case "left": return { text, cursor: Math.max(0, cursor - 1) };
     case "right": return { text, cursor: Math.min(text.length, cursor + 1) };
+    case "up": {
+      const lineStart = text.lastIndexOf("\n", cursor - 1) + 1;
+      if (lineStart === 0) return { text, cursor };
+      const previousEnd = lineStart - 1;
+      const previousStart = text.lastIndexOf("\n", previousEnd - 1) + 1;
+      return { text, cursor: Math.min(previousStart + cursor - lineStart, previousEnd) };
+    }
+    case "down": {
+      const lineStart = text.lastIndexOf("\n", cursor - 1) + 1;
+      const lineEnd = text.indexOf("\n", cursor);
+      if (lineEnd < 0) return { text, cursor };
+      const nextStart = lineEnd + 1;
+      const nextEnd = text.indexOf("\n", nextStart);
+      return { text, cursor: Math.min(nextStart + cursor - lineStart, nextEnd < 0 ? text.length : nextEnd) };
+    }
     case "home": return { text, cursor: text.lastIndexOf("\n", cursor - 1) + 1 };
     case "end": { const end = text.indexOf("\n", cursor); return { text, cursor: end < 0 ? text.length : end }; }
     case "backspace": return cursor === 0 ? { text, cursor } : { text: text.slice(0, cursor - 1) + text.slice(cursor), cursor: cursor - 1 };

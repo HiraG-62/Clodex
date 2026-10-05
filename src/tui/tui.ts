@@ -16,6 +16,9 @@ const SPINNER_FRAMES = ["◐", "◓", "◑", "◒"] as const;
 const LINE_COLOR = "#d4d4d8";
 const MUTED_COLOR = "#80808a";
 const WARN_COLOR = "#b7791f";
+const CLAUDE_COLOR = "#b4793f";
+const CODEX_COLOR = "#4b6fa5";
+const CODE_COLOR = "#6f9a5a";
 const EMPTY_STATE: WebState = { project: "", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [] };
 const EMPTY_FEED: TerminalFeed = { timeline: [], completed: [] };
 
@@ -33,19 +36,18 @@ const labels = (): TerminalLabels => ({
 });
 
 const Inline = ({ parts }: { parts: MarkdownBlock["parts"] }) => h(Text, { wrap: "wrap" },
-  ...parts.map((part, i) => h(Text, { key: i, bold: part.style === "bold", color: part.style === "code" ? "cyan" : part.style === "link" ? "blue" : undefined,
-    backgroundColor: part.style === "code" ? "#f2f2f3" : undefined }, part.text)));
+  ...parts.map((part, i) => h(Text, { key: i, bold: part.style === "bold", color: part.style === "code" ? CODE_COLOR : undefined,
+    underline: part.style === "link" }, part.text)));
 
 const Markdown = ({ value }: { value: string }) => h(Box, { flexDirection: "column" },
   ...formatMarkdown(value).map((block, i) => {
     if (block.kind === "code") return h(Box, { key: i, flexDirection: "column", borderStyle: "round", borderColor: LINE_COLOR, paddingX: 1, marginY: 1 },
       block.language ? h(Text, { color: MUTED_COLOR }, block.language) : null,
-      h(Text, { color: "cyan", wrap: "wrap" }, block.parts[0]?.text ?? ""));
+      h(Text, { color: CODE_COLOR, wrap: "wrap" }, block.parts[0]?.text ?? ""));
     const marker = block.kind === "bullet" ? "• " : block.kind === "ordered" ? `${block.number}. ` : "";
     return h(Box, { key: i, flexDirection: "row", gap: 0 },
       marker ? h(Text, { color: MUTED_COLOR }, marker) : null,
-      h(Box, { flexGrow: 1 }, h(Text, { color: block.kind === "heading" ? "#4b6fa5" : undefined,
-        bold: block.kind === "heading", wrap: "wrap" }, h(Inline, { parts: block.parts }))));
+      h(Box, { flexGrow: 1 }, h(Text, { bold: block.kind === "heading", wrap: "wrap" }, h(Inline, { parts: block.parts }))));
   }));
 
 const Card = ({ card, elapsedSeconds }: { card: TerminalCard; elapsedSeconds?: number }) => {
@@ -63,9 +65,7 @@ const Card = ({ card, elapsedSeconds }: { card: TerminalCard; elapsedSeconds?: n
 };
 
 const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed; now: number }) => {
-  const branch = state.conversations.find((conversation) => conversation.current)?.branch;
-  return h(Box, { borderStyle: "round", borderColor: LINE_COLOR, paddingX: 1, flexDirection: "column" },
-    h(Text, { bold: true, wrap: "truncate-end" }, `${state.project || "Clodex"}${branch ? ` · ${t("tui.branch", { branch })}` : ""}`),
+  return h(Box, { flexDirection: "column" },
     ...state.agents.map((agent) => {
       const active = feed.timeline.findLast((item) => item.kind === "turn" && item.agent === agent.id && item.status === "working");
       const last = active?.kind === "turn" ? active.steps.at(-1) : undefined;
@@ -74,16 +74,15 @@ const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed
       const usage = [agent.usage.fiveHourPercent === undefined ? "" : `${t("web.gauge.fiveHour")} ${agent.usage.fiveHourPercent}%`,
         agent.usage.weeklyPercent === undefined ? "" : `${t("web.gauge.weekly")} ${agent.usage.weeklyPercent}%`,
         agent.usage.weeklyPace === undefined ? "" : t("web.gauge.pace", { pace: agent.usage.weeklyPace })].filter(Boolean).join(" · ");
-      const color = agent.id === "claude" ? "#b4793f" : "#4b6fa5";
+      const color = agent.id === "claude" ? CLAUDE_COLOR : CODEX_COLOR;
       const status = t(`web.status.${agent.status}`);
-      return h(Box, { key: agent.id, flexDirection: "column", marginTop: 1 },
-        h(Box, { gap: 1, flexWrap: "wrap" },
-          h(Text, { color, bold: true }, agent.id === "claude" ? "Claude" : "Codex"),
-          h(Text, { color: agent.status === "busy" ? color : MUTED_COLOR }, `${agent.status === "busy" ? `${SPINNER_FRAMES[Math.floor(now / SPINNER_INTERVAL_MS) % SPINNER_FRAMES.length]} ` : ""}${status}${elapsed === undefined ? "" : ` · ${t("tui.elapsed", { seconds: elapsed })}`}`),
-          h(Text, { color: MUTED_COLOR }, `${agent.model ?? "default"} · ${agent.effort ?? "default"} · `),
+      return h(Box, { key: agent.id, flexDirection: "column" },
+        h(Box, { flexDirection: "row", gap: 1 },
+          h(Box, { flexShrink: 0 }, h(Text, { color, bold: true }, agent.id === "claude" ? "Claude" : "Codex")),
+          h(Box, { flexShrink: 0 }, h(Text, { color: MUTED_COLOR }, `${agent.status === "busy" ? `${SPINNER_FRAMES[Math.floor(now / SPINNER_INTERVAL_MS) % SPINNER_FRAMES.length]} ` : ""}${status}${elapsed === undefined ? "" : ` · ${t("tui.elapsed", { seconds: elapsed })}`} · ${agent.model ?? "default"} · ${agent.effort ?? "default"} ·`)),
           h(Text, { color: agent.permission === "full" ? WARN_COLOR : MUTED_COLOR, bold: agent.permission === "full" }, agent.permission),
+          usage ? h(Box, { flexShrink: 1 }, h(Text, { color: MUTED_COLOR, wrap: "truncate-end" }, `· ${usage}`)) : null,
         ),
-        usage ? h(Text, { color: MUTED_COLOR, wrap: "truncate-end" }, usage) : null,
         work ? h(Text, { color: MUTED_COLOR, wrap: "truncate-end" }, `↳ ${work.replace(/\s+/g, " ")}`) : null,
       );
     }),
@@ -139,6 +138,8 @@ export const TuiApp = ({ client }: { client: FeedClient }) => {
     }
     if (key.upArrow && choices.length) { setSelected((old) => (old + choices.length - 1) % choices.length); return; }
     if (key.downArrow && choices.length) { setSelected((old) => (old + 1) % choices.length); return; }
+    if (key.upArrow) { edit({ kind: "up" }); return; }
+    if (key.downArrow) { edit({ kind: "down" }); return; }
     if (key.tab && suggestion && choices.length) {
       const choice = choices[selected % choices.length];
       if (choice) edit({ kind: "replace", from: suggestion.from, to: suggestion.to, text: choice.insert });
@@ -160,20 +161,22 @@ export const TuiApp = ({ client }: { client: FeedClient }) => {
   });
 
   const cursor = cursorSlices(buffer);
+  const branch = state.conversations.find((conversation) => conversation.current)?.branch;
+  const project = `${state.project || "Clodex"}${branch ? ` · ${t("tui.branch", { branch })}` : ""}`;
   return h(Box, { flexDirection: "column" },
     h(Static<StaticItem>, { items: feed.completed, children: (record: StaticItem) => h(Card, {
       key: record.item.id, card: formatTimelineItem(record.item, cardLabels, record.expanded), elapsedSeconds: record.elapsedSeconds,
     }) }),
-    h(StatusPanel, { state, feed, now }),
     ...feed.timeline.filter((item) => item.kind === "turn").map((item) => h(Card, { key: item.id, card: formatTimelineItem(item, cardLabels, expandFuture),
       elapsedSeconds: Math.max(0, Math.floor((now - Date.parse(item.at)) / 1000)) })),
-    choices.length ? h(Box, { borderStyle: "round", borderColor: LINE_COLOR, flexDirection: "column", paddingX: 1, marginTop: 1 },
-      ...choices.map((choice, i) => h(Text, { key: `${choice.insert}${i}`, color: i === selected ? "#4b6fa5" : MUTED_COLOR }, `${i === selected ? "▸" : " "} ${choice.label} · ${choice.detail}`))) : null,
-    h(Box, { borderStyle: "round", borderColor: LINE_COLOR, flexDirection: "column", paddingX: 1, marginTop: 1 },
+    choices.length ? h(Box, { borderStyle: "round", borderColor: LINE_COLOR, flexDirection: "column", paddingX: 1 },
+      ...choices.map((choice, i) => h(Text, { key: `${choice.insert}${i}`, color: i === selected ? CODEX_COLOR : MUTED_COLOR }, `${i === selected ? "▸" : " "} ${choice.label} · ${choice.detail}`))) : null,
+    h(Box, { borderStyle: "round", borderColor: LINE_COLOR, flexDirection: "column", paddingX: 1 },
       h(Text, { color: MUTED_COLOR }, t("tui.inputLabel")),
       h(Text, { wrap: "wrap" }, cursor.before, h(Text, { inverse: true }, cursor.at), cursor.after)),
+    h(StatusPanel, { state, feed, now }),
     notice ? h(Text, { color: WARN_COLOR }, notice) : null,
-    h(Text, { color: MUTED_COLOR, wrap: "truncate-end" }, t("tui.footer", { queued: state.pendingInputs.length })),
+    h(Text, { color: MUTED_COLOR, wrap: "truncate-end" }, `${project} · ${t("tui.footer", { queued: state.pendingInputs.length })}`),
   );
 };
 
