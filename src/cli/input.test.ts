@@ -43,6 +43,10 @@ describe("parseInput", () => {
     expect(parseInput("hello", "codex")).toEqual({ kind: "send", agent: "codex", text: "hello" });
   });
 
+  it("行頭の @ が Agent でなければファイルの参照として primary に送る", () => {
+    expect(parseInput("@src/a.ts を見て", "codex")).toEqual({ kind: "send", agent: "codex", text: "@src/a.ts を見て" });
+  });
+
   it("スラッシュコマンドの 2 行目以降は invalid", () => {
     for (const input of ["/status\nhello", "/model claude haiku\r\nnext", "/help\n", "/unknown\nnext"]) {
       expect(parseInput(input, "claude").kind).toBe("invalid");
@@ -61,7 +65,6 @@ describe("parseInput", () => {
 
   it.each([
     ["@claude", /empty/],
-    ["@gemini hi", /unknown agent/],
     ["/interrupt gemini", /unknown agent/],
     ["/foo", /unknown command/],
     ["/permission", /usage/],

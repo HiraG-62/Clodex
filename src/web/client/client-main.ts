@@ -1,14 +1,24 @@
 // Web UI の画面の振る舞い（DESIGN.md §17 Web UI）。
 // ブラウザ側にそのまま埋め込むため、外部のものを参照しない 1 つの関数として書く（型の import のみ）。
-// renderMarkdown・applyFeedItem・composeInputLine は引数で受け取る
+// 純関数（renderMarkdown 等）とコマンドの一覧は引数で受け取る
 import type { AgentId, AgentStatus, TurnResult } from "../../agents/agent-adapter.js";
 import type { AgentState } from "../../cli/shell.js";
 import type { FeedItem, WebState } from "../web-feed.js";
 import type { renderMarkdown as RenderMarkdown } from "./markdown.js";
 import type { TimelineItem, applyFeedItem as ApplyFeedItem } from "./timeline.js";
 import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
+import type { SlashCommand } from "../../cli/commands.js";
+import type { Suggestion, createInputAssist as CreateInputAssist } from "./input-assist.js";
 
-export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem: typeof ApplyFeedItem, composeInputLine: typeof ComposeInputLine): void {
+export interface ClientDeps {
+  renderMarkdown: typeof RenderMarkdown;
+  applyFeedItem: typeof ApplyFeedItem;
+  composeInputLine: typeof ComposeInputLine;
+  createInputAssist: typeof CreateInputAssist;
+  commands: readonly SlashCommand[];
+}
+
+export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, createInputAssist, commands }: ClientDeps): void {
   const AGENTS: Record<AgentId, { name: string; mark: string }> = {
     claude: { name: "Claude", mark: "C" },
     codex: { name: "Codex", mark: "X" },
@@ -27,6 +37,8 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
   const NEAR_BOTTOM_PX = 120;
   const TOAST_DURATION_MS = 3000;
   const TOKENS_PER_K = 1000;
+  // @path の候補を取り直す間隔（入力欄に入るたびに取ると重い）
+  const FILES_REFRESH_MS = 30_000;
   const THEME_KEY = "clodex-theme";
   const DETAIL_KEY = "clodex-detail";
 
@@ -527,17 +539,115 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
     sendButton.disabled = false;
     if (!sent) return;
     if (input.value.trim() === text) input.value = "";
-    resize();
+    onInputChanged();
     scrollToBottom();
   };
   $("#composer").addEventListener("submit", (e) => {
     e.preventDefault();
     void submit();
   });
-  input.addEventListener("input", resize);
+  // ---- 入力の補助（候補と強調表示。DESIGN.md §28 v0.3 A） ----
+  const assist = createInputAssist(commands, AGENT_IDS);
+  const highlightLayer = $("#input-highlight");
+  const suggestList = $("#suggest");
+  let files: string[] = [];
+  let fileSet = new Set<string>();
+  let filesLoadedAt = 0;
+  let suggestion: Suggestion | undefined;
+  let selected = 0;
+
+  const renderHighlight = () => {
+    const nodes: Node[] = assist.highlight(input.value, fileSet).map((segment) => {
+      if (!segment.kind) return document.createTextNode(segment.text);
+      return el("mark", segment.kind === "agent" ? `hl-${segment.text.slice(1)}` : `hl-${segment.kind}`, segment.text);
+    });
+    // 末尾の改行も高さに反映されるよう、幅の無い文字を足す
+    highlightLayer.replaceChildren(...nodes, document.createTextNode("\u200b"));
+    highlightLayer.scrollTop = input.scrollTop;
+  };
+  const closeSuggest = () => {
+    suggestion = undefined;
+    suggestList.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+  };
+  const accept = (index: number) => {
+    const item = suggestion?.items[index];
+    if (!suggestion || !item) return;
+    const { from, to } = suggestion;
+    input.value = input.value.slice(0, from) + item.insert + input.value.slice(to).replace(/^ /, "");
+    const caret = from + item.insert.length;
+    input.focus();
+    input.setSelectionRange(caret, caret);
+    onInputChanged();
+  };
+  const renderSuggest = () => {
+    if (!suggestion) return closeSuggest();
+    suggestList.replaceChildren(...suggestion.items.map((item, index) => {
+      const option = el("li");
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", String(index === selected));
+      option.append(el("span", "l", item.label), el("span", "d", item.detail));
+      // 入力欄のフォーカスを外さずに選ぶ
+      option.addEventListener("pointerdown", (e) => e.preventDefault());
+      option.addEventListener("click", () => accept(index));
+      return option;
+    }));
+    suggestList.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+    suggestList.children[selected]?.scrollIntoView({ block: "nearest" });
+  };
+  const updateSuggest = () => {
+    const caret = input.selectionStart;
+    suggestion = caret === input.selectionEnd ? assist.suggest(input.value, caret, files) : undefined;
+    selected = 0;
+    renderSuggest();
+  };
+  const loadFiles = async () => {
+    if (Date.now() - filesLoadedAt < FILES_REFRESH_MS) return;
+    filesLoadedAt = Date.now();
+    try {
+      const response = await fetch("/api/files");
+      if (!response.ok) return;
+      files = (await response.json()) as string[];
+      fileSet = new Set(files);
+      renderHighlight();
+    } catch { /* 候補が出ないだけで入力はできる */ }
+  };
+  function onInputChanged() {
+    resize();
+    renderHighlight();
+    updateSuggest();
+  }
+
+  input.addEventListener("input", onInputChanged);
+  input.addEventListener("focus", () => void loadFiles());
+  input.addEventListener("blur", closeSuggest);
+  input.addEventListener("scroll", () => { highlightLayer.scrollTop = input.scrollTop; });
+  input.addEventListener("click", updateSuggest);
+  input.addEventListener("keyup", (e) => {
+    if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) updateSuggest();
+  });
   // PC は Enter で送信。スマホは Enter で改行し、送信はボタン（日本語入力の誤送信を防ぐ）
   input.addEventListener("keydown", (e) => {
-    if (coarse || e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+    if (e.isComposing) return;
+    if (suggestion) {
+      const count = suggestion.items.length;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        selected = (selected + (e.key === "ArrowDown" ? 1 : count - 1)) % count;
+        return renderSuggest();
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !coarse)) {
+        e.preventDefault();
+        return accept(selected);
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        return closeSuggest();
+      }
+    }
+    if (coarse || e.key !== "Enter" || e.shiftKey) return;
     e.preventDefault();
     void submit();
   });

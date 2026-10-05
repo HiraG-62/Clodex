@@ -112,6 +112,7 @@ const setup = () => {
   const shell = createShell({
     coordinator, primary: "claude", print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history, runner,
     saveSettings: (agents, change) => saved.push({ agents, change }),
+    isProjectFile: (path) => path === "src/a.ts",
   });
   return { coordinator, printed, shell, history, runner, saved };
 };
@@ -122,6 +123,16 @@ describe("createShell", () => {
     await expect(shell.handleLine("hello")).resolves.toBe("continue");
     await expect(shell.handleLine("@codex review")).resolves.toBe("continue");
     expect(coordinator.sent).toEqual([{ agent: "claude", text: "hello" }, { agent: "codex", text: "review" }]);
+  });
+
+  it("@path で指定した project のファイルを本文の末尾に参照として添える", async () => {
+    const { coordinator, shell } = setup();
+    await shell.handleLine("@codex @src/a.ts を直して");
+    await shell.handleLine("@missing.ts は無視");
+    expect(coordinator.sent).toEqual([
+      { agent: "codex", text: "@src/a.ts を直して\n\nReferenced files:\n- src/a.ts" },
+      { agent: "claude", text: "@missing.ts は無視" },
+    ]);
   });
 
   it("/interrupt を Coordinator に渡し、Agent 指定なしなら実行中の command も止める", async () => {

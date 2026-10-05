@@ -18,6 +18,7 @@ const setup = async (onInput?: (line: string) => Promise<void>) => {
   const errors: unknown[] = [];
   server = await startWebServer({
     port: 0, token: TOKEN, feed, onInput: onInput ?? (async (line) => void inputs.push(line)), onError: (e) => errors.push(e),
+    listFiles: async () => ["README.md", "src/a.ts"],
   });
   return { feed, inputs, errors, base: server.url };
 };
@@ -135,6 +136,14 @@ describe("startWebServer", () => {
     const line = "日本語の依頼🎌".repeat(2000);
     expect((await postInput(base, new Blob([JSON.stringify({ line })]))).status).toBe(204);
     expect(inputs).toEqual([line]);
+  });
+
+  it("GET /api/files は project のファイルの一覧を返し、token が無ければ 401", async () => {
+    const { base } = await setup();
+    const response = await fetch(`${base}/api/files`, { headers: { cookie: COOKIE } });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(["README.md", "src/a.ts"]);
+    expect((await fetch(`${base}/api/files`)).status).toBe(401);
   });
 
   it("未知の path は 404", async () => {

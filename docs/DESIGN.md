@@ -424,6 +424,7 @@ Project root の解決順:
 | `@claude ...` | Claude へ直接送信 | ✓ |
 | `@codex ...` | Codex へ直接送信 | ✓ |
 | `@all ...` | 両方へ送信（高コスト操作なので警告対象） | 未対応 |
+| `@<path>` | project のファイルへの参照（行頭でも、Agent 名でなければ参照）。存在するファイルを本文の末尾に `Referenced files:` として添える（§28 v0.3 A） | ✓ |
 | `!command` | project root で shell command を実行し、出力を表示する（下記） | ✓ |
 | `!& command` | background process | 未対応（§15） |
 | `/command` | Shell internal command | ✓（下記） |
@@ -433,6 +434,7 @@ Project root の解決順:
 - 送信はキューに積むだけで、入力はすぐ次を受け付ける（§12 の mailbox）
 - 未対応の入力は、未対応である旨を表示して何もしない
 - スラッシュコマンドは 1 行で書く。2 行目以降がある入力は invalid として使い方を表示し、Agent には送らない
+- コマンドの一覧は `cli/commands.ts` の 1 か所にまとめ、`/help`・Web UI の候補・CLI の Tab 補完で共有する
 
 `!command`（docs/spikes/shell-command.md）:
 

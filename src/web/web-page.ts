@@ -1,6 +1,8 @@
 // Web UI の画面（DESIGN.md §17 Web UI）。HTML 1 枚に CSS と JS を inline で持つ。
 // 画面の振る舞いは src/web/client/ に型付きで書き、関数のソースをそのまま埋め込む
+import { SLASH_COMMANDS } from "../cli/commands.js";
 import { clientMain } from "./client/client-main.js";
+import { createInputAssist } from "./client/input-assist.js";
 import { renderMarkdown } from "./client/markdown.js";
 import { applyFeedItem } from "./client/timeline.js";
 import { composeInputLine } from "./client/compose-input.js";
@@ -154,8 +156,23 @@ const STYLE = `
   .composer { padding: 10px 16px; padding-bottom: max(12px, env(safe-area-inset-bottom)); background: var(--bg); margin: 0; }
   .box { border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); display: grid; }
   .box:focus-within { border-color: var(--fg-2); }
-  .box textarea { border: 0; background: transparent; resize: none; padding: 12px 14px 4px; font: inherit; font-size: 16px; color: var(--fg);
+  .input-wrap { display: grid; }
+  .input-wrap > * { grid-area: 1 / 1; }
+  /* textarea の背後に同じ折り返しで描き、指定した語の背景だけを見せる */
+  .input-highlight, .box textarea { padding: 12px 14px 4px; font: inherit; font-size: 16px; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-gutter: stable; }
+  .input-highlight { color: transparent; pointer-events: none; overflow: hidden; }
+  .input-highlight mark { color: transparent; border-radius: 3px; }
+  .input-highlight .hl-command { background: color-mix(in srgb, var(--fg) 14%, transparent); }
+  .input-highlight .hl-claude { background: color-mix(in srgb, var(--claude) 26%, transparent); }
+  .input-highlight .hl-codex { background: color-mix(in srgb, var(--codex) 26%, transparent); }
+  .input-highlight .hl-file { background: color-mix(in srgb, var(--warn) 24%, transparent); }
+  .box textarea { position: relative; border: 0; background: transparent; resize: none; color: var(--fg);
     min-height: 44px; max-height: 40vh; outline: none; overflow-y: hidden; }
+  .suggest { list-style: none; margin: 0; padding: 4px; border-bottom: 1px solid var(--line); max-height: 40vh; overflow-y: auto; }
+  .suggest li { display: flex; align-items: baseline; gap: 10px; padding: 7px 10px; border-radius: 6px; cursor: pointer; min-width: 0; }
+  .suggest li[aria-selected="true"] { background: var(--sunken); }
+  .suggest .l { font: 13px/1.4 var(--font-mono); color: var(--fg); overflow-wrap: anywhere; }
+  .suggest .d { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .box textarea::placeholder { color: var(--muted); }
   .box .bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 8px 10px; }
   .to { display: inline-flex; gap: 2px; padding: 2px; background: var(--sunken); border-radius: 6px; }
@@ -217,7 +234,11 @@ const BODY = `
   </div>
   <form class="composer" id="composer">
     <div class="box">
-      <textarea id="input" rows="1" aria-label="メッセージ" enterkeyhint="enter"></textarea>
+      <ul class="suggest" id="suggest" role="listbox" aria-label="候補" hidden></ul>
+      <div class="input-wrap">
+        <div class="input-highlight" id="input-highlight" aria-hidden="true"></div>
+        <textarea id="input" rows="1" aria-label="メッセージ" enterkeyhint="enter" role="combobox" aria-controls="suggest" aria-expanded="false" aria-autocomplete="list"></textarea>
+      </div>
       <div class="bar">
         <div class="to" role="group" aria-label="送り先">
           <button type="button" data-agent="claude" aria-pressed="true">Claude</button>
@@ -256,7 +277,13 @@ export const WEB_PAGE = `<!doctype html>
 <body>
 ${BODY}
 <script>
-(${inlineScript(clientMain.toString())})(${inlineScript(renderMarkdown.toString())}, ${inlineScript(applyFeedItem.toString())}, ${inlineScript(composeInputLine.toString())});
+(${inlineScript(clientMain.toString())})({
+  renderMarkdown: ${inlineScript(renderMarkdown.toString())},
+  applyFeedItem: ${inlineScript(applyFeedItem.toString())},
+  composeInputLine: ${inlineScript(composeInputLine.toString())},
+  createInputAssist: ${inlineScript(createInputAssist.toString())},
+  commands: ${JSON.stringify(SLASH_COMMANDS).replace(/</g, "\\u003c")},
+});
 </script>
 </body>
 </html>

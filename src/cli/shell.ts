@@ -2,6 +2,8 @@
 import { AGENT_IDS, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult } from "../agents/agent-adapter.js";
 import type { UsageSnapshot } from "../coordinator/usage-monitor.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
+import { SLASH_COMMANDS, commandUsage } from "./commands.js";
+import { appendFileReferences } from "./file-references.js";
 import { parseInput } from "./input.js";
 
 export interface AgentState {
@@ -50,6 +52,8 @@ export interface ShellOptions {
   runner: CommandRunner;
   // 人が切り替えた設定を保存する（DESIGN.md §9 Agent の設定の保存）
   saveSettings?: (agents: readonly AgentId[], change: SettingsChange) => void;
+  // @path の参照先が project のファイルか（DESIGN.md §28 v0.3 A）
+  isProjectFile?: (path: string) => boolean;
 }
 
 export interface SettingsChange {
@@ -60,23 +64,17 @@ export interface SettingsChange {
 
 export type ShellOutcome = "continue" | "exit";
 
+// 説明の開始位置をそろえる幅
+const HELP_COLUMN = 20;
+const helpLine = (usage: string, description: string) => `${usage.padEnd(HELP_COLUMN - 1)} ${description}`;
+
 const HELP_LINES = (primary: AgentId) => [
-  `<text>              send to the primary agent (${primary})`,
-  "@claude <text>      send to Claude",
-  "@codex <text>       send to Codex",
-  "!<command>          run a shell command in the project root (output is not sent to agents)",
-  "/interrupt [agent]  interrupt the running turn (all agents and !commands if omitted)",
-  "/status             show agent status and usage",
-  "/primary <agent>    change where plain text goes",
-  "/resume [number]    list past conversations, or switch to one",
-  "/new [agent]        start fresh sessions (a new conversation if agent is omitted)",
-  "/compact [agent]    summarize the conversation to reduce context (running agents if omitted)",
-  "/verbose            toggle detailed output (tools, usage, intermediate text)",
-  "/permission [agent] <read-only|edit|full>  change what agents may do without asking",
-  "/model <agent> <model>  change an agent's model",
-  "/effort [agent] <level>  change reasoning effort",
-  "/exit               stop all agents and quit",
-  "Ctrl+C              interrupt running turns and !commands",
+  helpLine("<text>", `send to the primary agent (${primary})`),
+  helpLine("@claude <text>", "send to Claude"),
+  helpLine("@codex <text>", "send to Codex"),
+  helpLine("!<command>", "run a shell command in the project root (output is not sent to agents)"),
+  ...SLASH_COMMANDS.map((command) => helpLine(commandUsage(command), command.description)),
+  helpLine("Ctrl+C", "interrupt running turns and !commands"),
 ];
 
 const formatUsage = ({ fiveHourPercent, weeklyPercent, weeklyPace }: UsageSnapshot): string => {
@@ -107,7 +105,7 @@ const agentsOf = (c: Conversation) => (Object.keys(c.sessions) as AgentId[]).sor
 const titleOf = (c: Conversation) => `"${c.title ?? "(no input)"}"`;
 
 export const createShell = ({
-  coordinator, primary: initialPrimary, print, toggleVerbose, history, runner, saveSettings = () => {},
+  coordinator, primary: initialPrimary, print, toggleVerbose, history, runner, saveSettings = () => {}, isProjectFile = () => false,
 }: ShellOptions) => {
   let primary = initialPrimary;
   const targets = (agent: AgentId | undefined): readonly AgentId[] => (agent ? [agent] : AGENT_IDS);
@@ -148,7 +146,7 @@ export const createShell = ({
         return "continue";
       case "send":
         // 送信はキューに積むだけ。ターン完了は Event Bus 経由で表示される
-        void coordinator.sendToAgent(command.agent, command.text);
+        void coordinator.sendToAgent(command.agent, appendFileReferences(command.text, isProjectFile));
         return "continue";
       case "interrupt":
         if (!command.agent) runner.stopAll();

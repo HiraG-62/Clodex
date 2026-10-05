@@ -7,6 +7,7 @@ import { ClaudeAdapter } from "./agents/claude-adapter.js";
 import { CodexAdapter } from "./agents/codex-adapter.js";
 import { parseCliArgs } from "./cli/args.js";
 import { createCommandRunner } from "./cli/command-runner.js";
+import { completeCommand } from "./cli/commands.js";
 import { createShell } from "./cli/shell.js";
 import { loadConfig } from "./config/config.js";
 import { buildRoleInstructions } from "./context/role-instructions.js";
@@ -23,6 +24,7 @@ import { startWebServer } from "./web/web-server.js";
 import { connectWebFeed } from "./web/web-ui.js";
 import { loadOrCreateWebToken } from "./web/web-token.js";
 import { ConversationHistory, conversationStatePath } from "./project/conversation-history.js";
+import { isProjectFile, listProjectFiles } from "./project/project-files.js";
 import { AgentSettingsStore, agentSettingsPath, resolveStartSettings, type SavedAgentSettings } from "./project/agent-settings.js";
 
 const PROMPT = "clodex> ";
@@ -70,7 +72,9 @@ const main = async (): Promise<void> => {
   });
 
   const interactive = Boolean(process.stdin.isTTY);
-  const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: PROMPT, terminal: interactive });
+  const rl = createInterface({
+    input: process.stdin, output: process.stdout, prompt: PROMPT, terminal: interactive, completer: completeCommand,
+  });
   // Web UI の feed は会話ごとに保存し、起動時と会話の切り替え時に読み込む（DESIGN.md §18）
   const feedStore = new FeedStore(feedDirPath(statePath));
   let feedSaveFailed = false;
@@ -124,6 +128,7 @@ const main = async (): Promise<void> => {
   const runner = createCommandRunner({ cwd: projectRoot, print });
   const shell = createShell({
     coordinator, primary, print, toggleVerbose, history, runner,
+    isProjectFile: (path) => isProjectFile(projectRoot, path),
     saveSettings: (agents, change) => {
       try {
         settingsStore.update(agents, change);
@@ -155,6 +160,7 @@ const main = async (): Promise<void> => {
       onInput: async (line) => {
         if ((await handleLine(line)) === "exit") void shutdown();
       },
+      listFiles: () => listProjectFiles(projectRoot),
       onError: (error) => print(`error: ${errorMessage(error)}`),
     })
     : undefined;

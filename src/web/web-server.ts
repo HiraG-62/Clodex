@@ -20,6 +20,8 @@ export interface WebServerOptions {
   token: string;
   feed: WebFeed;
   onInput: (line: string) => Promise<void>;
+  // @path の候補（DESIGN.md §28 v0.3 A）
+  listFiles: () => Promise<string[]>;
   onError?: (error: unknown) => void;
 }
 
@@ -64,7 +66,12 @@ const parseLine = (body: string): string | undefined => {
 
 const sendItem = (res: ServerResponse, item: FeedItem) => res.write(`data: ${JSON.stringify(item)}\n\n`);
 
-export const startWebServer = async ({ port, token, feed, onInput, onError }: WebServerOptions): Promise<WebServerHandle> => {
+const sendJson = (res: ServerResponse, value: unknown) => {
+  res.writeHead(HTTP.ok, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+  res.end(JSON.stringify(value));
+};
+
+export const startWebServer = async ({ port, token, feed, onInput, listFiles, onError }: WebServerOptions): Promise<WebServerHandle> => {
   const streams = new Set<ServerResponse>();
 
   const handleEvents = (req: IncomingMessage, res: ServerResponse) => {
@@ -114,10 +121,8 @@ export const startWebServer = async ({ port, token, feed, onInput, onError }: We
       return void res.end(WEB_PAGE);
     }
     if (req.method === "GET" && url.pathname === "/events") return handleEvents(req, res);
-    if (req.method === "GET" && url.pathname === "/api/state") {
-      res.writeHead(HTTP.ok, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-      return void res.end(JSON.stringify(feed.latestState() ?? null));
-    }
+    if (req.method === "GET" && url.pathname === "/api/state") return sendJson(res, feed.latestState() ?? null);
+    if (req.method === "GET" && url.pathname === "/api/files") return sendJson(res, await listFiles());
     if (req.method === "POST" && url.pathname === "/api/input") return handleInput(req, res);
     res.writeHead(HTTP.notFound).end();
   };

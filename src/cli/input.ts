@@ -62,9 +62,10 @@ const parseEffort = (arg: string): ShellCommand => {
 const unsupported = (feature: string): ShellCommand =>
   ({ kind: "unsupported", message: `${feature} is not supported in v0.1` });
 
-const parseMention = (name: string, text: string): ShellCommand => {
+// 行頭の @agent は送り先。Agent でなければ undefined（ファイルの参照として本文に残す）
+const parseMention = (name: string, text: string): ShellCommand | undefined => {
   if (name === "all") return unsupported("@all");
-  if (!isAgentId(name)) return { kind: "invalid", message: `unknown agent: @${name}` };
+  if (!isAgentId(name)) return undefined;
   if (!text) return { kind: "invalid", message: `empty message for @${name}` };
   return { kind: "send", agent: name, text };
 };
@@ -111,7 +112,8 @@ export const parseInput = (line: string, primary: AgentId): ShellCommand => {
   }
 
   const mention = input.match(MENTION_PATTERN);
-  if (mention?.[1] !== undefined && mention[2] !== undefined) return parseMention(mention[1], mention[2].trim());
+  const mentioned = mention?.[1] !== undefined && mention[2] !== undefined ? parseMention(mention[1], mention[2].trim()) : undefined;
+  if (mentioned) return mentioned;
 
   const command = input.match(COMMAND_PATTERN);
   if (command?.[1] !== undefined && command[2] !== undefined) return parseCommand(command[1], command[2].trim());
