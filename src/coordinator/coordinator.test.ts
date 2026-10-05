@@ -240,6 +240,48 @@ describe("Coordinator", () => {
     expect(idle).toBe(true);
   });
 
+  it("switchSessions は全 Agent を止め、次回は指定の session（無ければ新規）で起動する", async () => {
+    const { claude, codex, coordinator } = setup();
+    claude.status = "idle";
+    claude.sessionId = "c-current";
+    codex.status = "idle";
+    codex.sessionId = "x-current";
+    await expect(coordinator.switchSessions({ claude: "c-old" })).resolves.toBeUndefined();
+    expect([claude.status, codex.status]).toEqual(["stopped", "stopped"]);
+
+    void coordinator.sendToAgent("claude", "hi");
+    coordinator.receiveMessage("claude", reviewRequest);
+    await flush();
+    expect(claude.starts[0]).toMatchObject({ resumeSessionId: "c-old" });
+    expect(codex.starts[0]).not.toHaveProperty("resumeSessionId");
+  });
+
+  it("起動中や配送待ちの作業があれば switchSessions を拒否し、Agent を止めない", async () => {
+    const { claude, coordinator } = setup();
+    const started: Array<() => void> = [];
+    claude.start = (options) => new Promise((resolve) => {
+      claude.starts.push(options);
+      claude.status = "starting";
+      started.push(() => {
+        claude.status = "idle";
+        resolve();
+      });
+    });
+    void coordinator.sendToAgent("claude", "hi");
+    await flush();
+    expect(claude.status).toBe("starting");
+    await expect(coordinator.switchSessions({})).resolves.toMatch(/claude is busy/);
+    expect(claude.status).toBe("starting");
+    started[0]!();
+  });
+
+  it("実行中のターンがあれば switchSessions を拒否する", async () => {
+    const { claude, coordinator } = setup();
+    claude.status = "busy";
+    await expect(coordinator.switchSessions({})).resolves.toMatch(/claude is busy/);
+    expect(claude.status).toBe("busy");
+  });
+
   it("stop は全 Agent を止める", async () => {
     const { claude, codex, coordinator } = setup();
     claude.status = "idle";

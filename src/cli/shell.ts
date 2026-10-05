@@ -1,6 +1,7 @@
 // 人間の入力を Coordinator の操作に変換する（DESIGN.md §8）。readline 等の I/O は index.ts が持つ
 import type { AgentId, AgentStatus, PermissionLevel, TurnResult } from "../agents/agent-adapter.js";
 import type { UsageSnapshot } from "../coordinator/usage-monitor.js";
+import type { Conversation, SavedSessions } from "../project/conversation-history.js";
 import { parseInput } from "./input.js";
 
 export interface AgentState {
@@ -15,7 +16,14 @@ export interface ShellCoordinator {
   sendToAgent(agent: AgentId, text: string): Promise<TurnResult>;
   interrupt(agent?: AgentId): Promise<void>;
   setPermission(level: PermissionLevel, agent?: AgentId): Promise<void>;
+  switchSessions(sessions: SavedSessions): Promise<string | undefined>;
   status(): AgentState[];
+}
+
+export interface ConversationList {
+  readonly currentId: string;
+  list(): Conversation[];
+  switchTo(id: string): Conversation | undefined;
 }
 
 export interface ShellOptions {
@@ -24,6 +32,7 @@ export interface ShellOptions {
   print: (line: string) => void;
   // terminal の詳細表示を切り替え、切り替え後の状態を返す
   toggleVerbose: () => boolean;
+  history: ConversationList;
 }
 
 export type ShellOutcome = "continue" | "exit";
@@ -35,6 +44,7 @@ const HELP_LINES = (primary: AgentId) => [
   "/interrupt [agent]  interrupt the running turn (all agents if omitted)",
   "/status             show agent status and usage",
   "/primary <agent>    change where plain text goes",
+  "/resume [number]    list past conversations, or switch to one",
   "/verbose            toggle detailed output (tools, usage, intermediate text)",
   "/permission [agent] <read-only|edit|full>  change what agents may do without asking",
   "/exit               stop all agents and quit",
@@ -49,8 +59,34 @@ const formatUsage = ({ fiveHourPercent, weeklyPercent, weeklyPace }: UsageSnapsh
   return `  usage: ${parts.length ? parts.join(", ") : "unknown"}`;
 };
 
-export const createShell = ({ coordinator, primary: initialPrimary, print, toggleVerbose }: ShellOptions) => {
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const shortTime = (iso: string) => {
+  const d = new Date(iso);
+  return `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+const agentsOf = (c: Conversation) => (Object.keys(c.sessions) as AgentId[]).sort().join(", ");
+const titleOf = (c: Conversation) => `"${c.title ?? "(no input)"}"`;
+
+export const createShell = ({ coordinator, primary: initialPrimary, print, toggleVerbose, history }: ShellOptions) => {
   let primary = initialPrimary;
+
+  const listConversations = () => {
+    history.list().forEach((c, i) => {
+      const current = c.id === history.currentId ? "  (current)" : "";
+      print(`${i + 1}) ${shortTime(c.updatedAt)}  ${agentsOf(c)}  ${titleOf(c)}${current}`);
+    });
+    print("Type /resume <number> to switch.");
+  };
+
+  const resumeConversation = async (index: number) => {
+    const picked = history.list()[index - 1];
+    if (!picked) return print(`no conversation #${index} (see /resume)`);
+    if (picked.id === history.currentId) return print("already in this conversation");
+    const error = await coordinator.switchSessions(picked.sessions);
+    if (error) return print(error);
+    history.switchTo(picked.id);
+    print(`resumed: ${titleOf(picked)} (${agentsOf(picked)} resume on next use)`);
+  };
 
   const handleLine = async (line: string): Promise<ShellOutcome> => {
     const command = parseInput(line, primary);
@@ -70,6 +106,10 @@ export const createShell = ({ coordinator, primary: initialPrimary, print, toggl
           print(`${id}: ${status}, permission ${permission}${sessionId ? ` (session ${sessionId})` : ""}`);
           print(formatUsage(usage));
         }
+        return "continue";
+      case "resume":
+        if (command.index === undefined) listConversations();
+        else await resumeConversation(command.index);
         return "continue";
       case "primary":
         primary = command.agent;

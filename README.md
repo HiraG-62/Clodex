@@ -39,6 +39,7 @@ PS C:\dev\my-project> clodex
 | `@claude ...` / `@codex ...` | 指定 Agent へ送信 |
 | `/interrupt [claude\|codex]` / Ctrl+C | 実行中のターンを interrupt |
 | `/primary <claude\|codex>` | テキストの送り先を切り替える |
+| `/resume [番号]` | 過去の会話の一覧 / 番号の会話に切り替える |
 | `/permission [claude\|codex] <read-only\|edit\|full>` | Agent の権限レベル（既定 `edit`。`full` は Codex の yolo 相当） |
 | `/status` | 各 Agent の状態、権限、利用枠（5 時間 / 週と週のペース） |
 | `/verbose` | tool 呼び出しや途中の発言も表示する |
@@ -46,7 +47,7 @@ PS C:\dev\my-project> clodex
 
 Agent 同士は MCP tool `send_message` で formal message をやり取りする。Agent は必要になるまで起動しない。
 
-起動オプション: `--project <path>` / `--primary <claude|codex>` / `--claude-model <model>` / `--codex-model <model>` / `--resume`（前回の会話を続ける）
+起動オプション: `--project <path>` / `--primary <claude|codex>` / `--claude-model <model>` / `--codex-model <model>` / `--resume`（最新の会話を続ける）
 
 ログ: `~/.clodex/logs/<project 名>-<起動時刻>.jsonl`
 

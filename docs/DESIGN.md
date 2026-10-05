@@ -411,7 +411,7 @@ Project root の解決順:
 | `--primary <claude\|codex>` | 設定ファイル（§13 Roles）、無ければ `claude` | 通常のテキストの送り先 |
 | `--claude-model <model>` | CLI の既定 | Claude の model |
 | `--codex-model <model>` | CLI の既定 | Codex の model |
-| `--resume` | なし | 前回この project で使った各 Agent の session を継続する（§18） |
+| `--resume` | なし | この project の最新の会話を続ける（§18） |
 
 ---
 
@@ -440,6 +440,7 @@ Internal command（v0.1）:
 | `/status` | 各 Agent の状態と session ID |
 | `/verbose` | terminal の詳細表示を切り替える（§17） |
 | `/primary <claude\|codex>` | 通常のテキストの送り先を切り替える（§3.10） |
+| `/resume [番号]` | 番号なしで過去の会話の一覧、番号付きでその会話に切り替える（§18） |
 | `/permission [claude\|codex] <read-only\|edit\|full>` | Agent（省略時は両方）の権限レベルを切り替える（§9 Permission） |
 | `/help` | 入力方法の一覧 |
 | `/exit` | 全 Agent を止めて終了 |
@@ -1007,16 +1008,22 @@ simple event log
 
 から開始してよい。
 
-## Session の継続（`--resume`）
+## 会話の継続（`--resume` / `/resume`）
 
-`clodex` を起動し直しても Agent の会話を続けられるよう、各 Agent の session ID だけをファイルに保存する。
+`clodex` を起動し直しても Agent の会話を続けられるよう、**会話**（1 回の `clodex` の起動で使った Claude と Codex の session の組）の履歴をファイルに保存する。
 
 - 保存先: `~/.clodex/state/<project root の英数字以外を - にした名前>-<パスのハッシュ 8 桁>.json`（例: `E--dev-Clodex-1a2b3c4d.json`）。ハッシュは大文字小文字を区別しないパスから作り、`C:\a-b` と `C:\a\b` のような衝突を防ぐ
-- 内容: `{ "claude": "<session ID>", "codex": "<thread ID>" }`。Agent の `session` event のたびに、その Agent の分だけ上書きする
-- `--resume` なしで起動したときは保存内容を空にしてから始める（前回と今回の session を混ぜない）
-- `clodex --resume` は保存された ID を各 Agent の最初の起動で resume する（Agent は必要になるまで起動しない点は同じ。§3.2）
-- 保存された ID が無い Agent は新しい session で起動する
-- message の未配送分、Budget の chain、利用状況は保存しない（v0.2 でも in-memory）
+- 内容: 会話の配列。各会話は `{ id, startedAt, updatedAt, title, sessions: { claude?, codex? } }`
+  - `sessions`: Agent の `session` event のたびに、その Agent の分を上書きする
+  - `title`: その会話で最初の人間の入力（先頭 60 文字）
+  - session も title も無い会話は保存しない。新しい順に最大 20 件残す
+- 起動時は新しい会話として始める。`clodex --resume` は最新の会話を続ける（各 Agent の最初の起動で、その会話の session を resume する）
+- `/resume` は過去の会話を新しい順に番号付きで表示する。`/resume <番号>` でその会話に切り替える
+  - 実行中のターンがある Agent がいれば拒否する（先に `/interrupt`）
+  - 両 Agent をいったん止め、次に使うときに選んだ会話の session で起動する。選んだ会話に session が無い Agent は新しい session で始める
+  - 切り替え前の会話も履歴に残る
+- 壊れたファイルは空の履歴として扱う（起動を妨げない）
+- message の未配送分、Budget の chain、利用状況は保存しない（in-memory）
 
 将来的には SQLite。
 

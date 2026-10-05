@@ -89,6 +89,16 @@ export class Coordinator {
     }
   }
 
+  // /resume: 全 Agent を止め、次回はそれぞれ指定の session（無ければ新規）で起動する。拒否したら理由を返す
+  async switchSessions(sessions: Partial<Record<AgentId, string>>): Promise<string | undefined> {
+    // 起動中や配送待ちも含めて、受け付けた作業がある Agent は止めない
+    const busy = AGENT_IDS.filter((id) => this.options.agents[id].status === "busy" || !this.mailboxes[id].isIdle);
+    if (busy.length) return `${busy.join(", ")} is busy. Use /interrupt first.`;
+    await Promise.all(AGENT_IDS.map((id) => this.options.agents[id].stop()));
+    for (const id of AGENT_IDS) this.mailboxes[id].switchSession(sessions[id]);
+    return undefined;
+  }
+
   async interrupt(id?: AgentId): Promise<void> {
     const targets = id ? [id] : AGENT_IDS;
     await Promise.all(targets.map((target) => this.options.agents[target].interrupt()));

@@ -15,7 +15,7 @@ import { EventBus } from "./coordinator/event-bus.js";
 import { attachEventLog, defaultLogPath, type DisplayMode } from "./logging/event-log.js";
 import { startMcpServer } from "./mcp/server.js";
 import { resolveProjectRoot } from "./project/project-root.js";
-import { attachSessionStore, loadSessions, sessionStatePath } from "./project/session-store.js";
+import { ConversationHistory, conversationStatePath } from "./project/conversation-history.js";
 
 const PROMPT = "clodex> ";
 const DEFAULT_PRIMARY: AgentId = "claude";
@@ -33,9 +33,9 @@ const main = async (): Promise<void> => {
   const primary = args.primary ?? config.primary ?? DEFAULT_PRIMARY;
 
   const bus = new EventBus();
-  const statePath = sessionStatePath(homedir(), projectRoot);
-  const resumeSessionIds = args.resume ? loadSessions(statePath) : {};
-  attachSessionStore(bus, statePath, resumeSessionIds);
+  const history = new ConversationHistory(conversationStatePath(homedir(), projectRoot), { resumeLatest: args.resume });
+  const resumeSessionIds = history.currentSessions;
+  history.attach(bus);
   let coordinator: Coordinator | undefined;
   const mcp = await startMcpServer((from, input) => coordinator!.receiveMessage(from, input));
   coordinator = new Coordinator({
@@ -71,8 +71,8 @@ const main = async (): Promise<void> => {
   print(`Clodex v0.1  project: ${projectRoot}  primary: ${primary}`);
   print(`log: ${logPath}`);
   if (args.resume) {
-    const resumed = AGENT_IDS.filter((id) => resumeSessionIds[id]).map((id) => `${id} ${resumeSessionIds[id]}`);
-    print(`resume: ${resumed.length ? resumed.join(", ") : "no saved session (starting new sessions)"}`);
+    const resumed = AGENT_IDS.filter((id) => resumeSessionIds[id]);
+    print(`resume: ${resumed.length ? resumed.join(", ") : "no saved conversation (starting a new one)"}`);
   }
   print("Type /help for usage.");
 
@@ -80,7 +80,7 @@ const main = async (): Promise<void> => {
     displayMode = displayMode === "verbose" ? "normal" : "verbose";
     return displayMode === "verbose";
   };
-  const shell = createShell({ coordinator, primary, print, toggleVerbose });
+  const shell = createShell({ coordinator, primary, print, toggleVerbose, history });
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) return;

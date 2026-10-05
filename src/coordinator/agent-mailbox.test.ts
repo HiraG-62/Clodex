@@ -48,6 +48,37 @@ describe("AgentMailbox", () => {
     expect(agent.starts[0]).toMatchObject({ resumeSessionId: "current" });
   });
 
+  it("switchSession で指定した session（undefined なら新規）で次回起動する", async () => {
+    const agent = new FakeAgentAdapter("codex");
+    agent.sessionId = "current";
+    const mailbox = new AgentMailbox(agent, START_OPTIONS, vi.fn());
+    mailbox.switchSession("picked");
+    void mailbox.enqueue("a");
+    await flush();
+    expect(agent.starts[0]).toMatchObject({ resumeSessionId: "picked" });
+
+    agent.completeTurn();
+    await flush();
+    await agent.stop();
+    mailbox.switchSession(undefined);
+    void mailbox.enqueue("b");
+    await flush();
+    expect(agent.starts[1]).not.toHaveProperty("resumeSessionId");
+  });
+
+  it("switchSession 後の起動が失敗しても、次の試行で選んだ session を使う", async () => {
+    const agent = new FakeAgentAdapter("codex");
+    agent.sessionId = "current";
+    const mailbox = new AgentMailbox(agent, START_OPTIONS, vi.fn());
+    mailbox.switchSession("picked");
+    agent.startError = new Error("boom");
+    await mailbox.enqueue("a");
+    agent.startError = undefined;
+    void mailbox.enqueue("b");
+    await flush();
+    expect(agent.starts.map((s) => s.resumeSessionId)).toEqual(["picked", "picked"]);
+  });
+
   it("起動中の Agent には start しない", async () => {
     const { agent, mailbox } = setup();
     agent.status = "idle";

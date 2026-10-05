@@ -17,6 +17,8 @@ describe("parseInput", () => {
     ["/verbose", { kind: "verbose" }],
     ["/permission full", { kind: "permission", level: "full" }],
     ["/primary codex", { kind: "primary", agent: "codex" }],
+    ["/resume", { kind: "resume" }],
+    ["/resume 3", { kind: "resume", index: 3 }],
     ["/permission codex read-only", { kind: "permission", agent: "codex", level: "read-only" }],
   ])("%j", (line, expected) => {
     expect(parseInput(line, "claude")).toEqual(expected);
@@ -43,6 +45,8 @@ describe("parseInput", () => {
     ["/foo", /unknown command/],
     ["/permission", /usage/],
     ["/primary", /usage/],
+    ["/resume 0", /usage/],
+    ["/resume x", /usage/],
     ["/primary gemini", /unknown agent/],
     ["/permission admin", /usage/],
     ["/permission gemini edit", /unknown agent/],
