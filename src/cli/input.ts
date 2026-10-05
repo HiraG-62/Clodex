@@ -1,5 +1,5 @@
 // 1 行の人間の入力を Shell command に変換する（DESIGN.md §8）
-import { AGENT_IDS, CLAUDE_EFFORT_LEVELS, COMMON_EFFORT_LEVELS, PERMISSION_LEVELS, type AgentId, type PermissionLevel } from "../agents/agent-adapter.js";
+import { AGENT_IDS, CLAUDE_EFFORT_LEVELS, COMMON_EFFORT_LEVELS, PERMISSION_LEVELS, isAgentId, type AgentId, type PermissionLevel } from "../agents/agent-adapter.js";
 
 export type ShellCommand =
   | { kind: "empty" }
@@ -23,7 +23,6 @@ export type ShellCommand =
 const MENTION_PATTERN = /^@(\S+)\s*([\s\S]*)$/;
 const COMMAND_PATTERN = /^\/(\S+)\s*(.*)$/;
 
-const isAgentId = (value: string): value is AgentId => (AGENT_IDS as readonly string[]).includes(value);
 const isPermissionLevel = (value: string): value is PermissionLevel =>
   (PERMISSION_LEVELS as readonly string[]).includes(value);
 
@@ -104,6 +103,7 @@ const parseCommand = (name: string, arg: string): ShellCommand => {
 export const parseInput = (line: string, primary: AgentId): ShellCommand => {
   const input = line.trim();
   if (!input) return { kind: "empty" };
+  if (input.startsWith("/") && /[\r\n]/.test(line)) return { kind: "invalid", message: "slash commands must be one line" };
   if (input.startsWith("!&")) return unsupported("!& command");
   if (input.startsWith("!")) {
     const command = input.slice(1).trim();

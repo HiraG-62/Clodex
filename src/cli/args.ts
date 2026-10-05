@@ -1,6 +1,6 @@
 // 起動オプション（DESIGN.md §7）
 import { parseArgs } from "node:util";
-import { AGENT_IDS, type AgentId } from "../agents/agent-adapter.js";
+import { AGENT_IDS, isAgentId, type AgentId } from "../agents/agent-adapter.js";
 
 export interface CliArgs {
   project?: string;
@@ -9,8 +9,6 @@ export interface CliArgs {
   resume: boolean;
   web: boolean;
 }
-
-const isAgentId = (value: string): value is AgentId => (AGENT_IDS as readonly string[]).includes(value);
 
 export const parseCliArgs = (argv: string[]): CliArgs => {
   const { values } = parseArgs({

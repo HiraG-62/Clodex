@@ -43,6 +43,13 @@ describe("parseInput", () => {
     expect(parseInput("hello", "codex")).toEqual({ kind: "send", agent: "codex", text: "hello" });
   });
 
+  it("スラッシュコマンドの 2 行目以降は invalid", () => {
+    for (const input of ["/status\nhello", "/model claude haiku\r\nnext", "/help\n", "/unknown\nnext"]) {
+      expect(parseInput(input, "claude").kind).toBe("invalid");
+    }
+    expect(parseInput("@claude first\nsecond", "claude")).toEqual({ kind: "send", agent: "claude", text: "first\nsecond" });
+  });
+
   it.each([
     ["@all hello", /@all/],
     ["!& pnpm dev", /!& command/],

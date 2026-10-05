@@ -2,6 +2,7 @@
 
 export const AGENT_IDS = ["claude", "codex"] as const;
 export type AgentId = (typeof AGENT_IDS)[number];
+export const isAgentId = (value: string): value is AgentId => (AGENT_IDS as readonly string[]).includes(value);
 export type AgentStatus = "stopped" | "starting" | "idle" | "busy";
 
 // 両 Agent 共通の権限レベル（DESIGN.md §9 Permission）
