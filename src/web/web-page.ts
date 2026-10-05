@@ -161,6 +161,11 @@ const STYLE = `
   .notice, .error-row { padding: 10px 0; font-size: 12.5px; display: flex; gap: 8px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; min-width: 0; }
   .notice { color: var(--warn); } .error-row { color: var(--crit); }
   .notice::before, .error-row::before { content: "!"; font: 600 11px/18px var(--font-mono); width: 18px; height: 18px; text-align: center; border: 1px solid currentColor; border-radius: 50%; flex: none; }
+  .plan { grid-column: 2; min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: 13.5px; }
+  .now { grid-column: 2; display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 12.5px; color: var(--muted); }
+  .now .k { flex: none; }
+  .now .what { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .elapsed { font-size: 11.5px; color: var(--muted); }
   .output { margin: 0; padding: 12px 0; border-bottom: 1px solid var(--line); font: 12px/1.6 var(--font-mono); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
 
   .newer { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); border: 0; border-radius: 999px; padding: 6px 14px;

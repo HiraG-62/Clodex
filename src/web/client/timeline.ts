@@ -11,6 +11,7 @@ export type TimelineItem =
   | {
     kind: "turn"; id: string; at: string; agent: AgentId;
     status: "working" | TurnResult["status"]; steps: TimelineStep[]; text: string;
+    plan?: string; // ターンの最初の発言（方針。DESIGN.md §17 ログ）
   }
   | { kind: "message"; id: string; at: string; message: AgentMessage; envelope?: string }
   | { kind: "notice"; id: string; at: string; text: string }
@@ -56,7 +57,9 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
     case "turn_started":
       return limit([...items, newTurn()]);
     case "text":
-      return updateTurn((turn) => ({ ...turn, steps: [...turn.steps, { kind: "say", text: agentEvent.text }] }));
+      return updateTurn((turn) => (turn.plan === undefined
+        ? { ...turn, plan: agentEvent.text }
+        : { ...turn, steps: [...turn.steps, { kind: "say", text: agentEvent.text }] }));
     case "tool":
       return updateTurn((turn) => ({ ...turn, steps: [...turn.steps, { kind: "tool", name: agentEvent.name, input: agentEvent.input }] }));
     case "turn":
@@ -65,6 +68,11 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
         const last = turn.steps[turn.steps.length - 1];
         // 最終応答は本文として出すので、同じ内容の最後の発言は作業から外す
         const steps = last?.kind === "say" && last.text.trim() === text.trim() ? turn.steps.slice(0, -1) : turn.steps;
+        // 発言が最終応答だけなら、方針として重ねて出さない
+        if (turn.plan !== undefined && turn.plan.trim() === text.trim()) {
+          const { plan: _same, ...rest } = turn;
+          return { ...rest, status, text, steps };
+        }
         return { ...turn, status, text, steps };
       });
     case "error":

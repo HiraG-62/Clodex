@@ -30,10 +30,34 @@ describe("applyFeedItem", () => {
       { kind: "human", id: expect.any(String), at: AT, agent: "claude", text: "直して" },
       {
         kind: "turn", id: expect.any(String), at: AT, agent: "claude", status: "completed", text: "直しました。",
-        // 最終応答と同じ最後の発言は作業から外す
-        steps: [{ kind: "say", text: "確認します。" }, { kind: "tool", name: "Read", input: "a.ts" }],
+        // 最初の発言は方針。最終応答と同じ最後の発言は作業から外す
+        plan: "確認します。",
+        steps: [{ kind: "tool", name: "Read", input: "a.ts" }],
       },
     ]);
+  });
+
+  it("発言が最終応答だけのターンは方針を出さない", () => {
+    const timeline = run([
+      agent("codex", { type: "turn_started" }),
+      agent("codex", { type: "text", text: "完了しました。" }),
+      agent("codex", { type: "turn", result: { status: "completed", text: "完了しました。" } }),
+    ]);
+    expect(timeline).toMatchObject([{ kind: "turn", status: "completed", text: "完了しました。", steps: [] }]);
+    expect(timeline[0]).not.toHaveProperty("plan");
+  });
+
+  it("tool の後の最初の発言も方針にし、2 つ目以降の発言は作業に入れる", () => {
+    const timeline = run([
+      agent("claude", { type: "turn_started" }),
+      agent("claude", { type: "tool", name: "Read", input: "a.ts" }),
+      agent("claude", { type: "text", text: "方針です。" }),
+      agent("claude", { type: "text", text: "途中です。" }),
+    ]);
+    expect(timeline).toMatchObject([{
+      kind: "turn", status: "working", plan: "方針です。",
+      steps: [{ kind: "tool", name: "Read", input: "a.ts" }, { kind: "say", text: "途中です。" }],
+    }]);
   });
 
   it("両 Agent のターンが並行しても、それぞれのターンに振り分ける", () => {

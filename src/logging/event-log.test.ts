@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CoordinatorEvent } from "../coordinator/event-bus.js";
 import { EventBus } from "../coordinator/event-bus.js";
-import { attachEventLog, createJsonlWriter, defaultLogPath, formatEvent } from "./event-log.js";
+import { attachEventLog, createJsonlWriter, createTerminalFormatter, defaultLogPath, formatEvent } from "./event-log.js";
 
 // ローカル時刻 14:32:10 の ISO 文字列（タイムゾーンに依存しないテストにする）
 const AT = new Date(2026, 9, 5, 14, 32, 10).toISOString();
@@ -133,5 +133,36 @@ describe("attachEventLog", () => {
     bus.publish(agentEvent("claude", { type: "error", message: "後続" }));
     expect(readFileSync(path, "utf8").trim().split("\n").map((line) => JSON.parse(line))).toEqual([hidden, shown]);
     expect(printed).toEqual([formatEvent(shown, "normal")]);
+  });
+});
+
+describe("createTerminalFormatter（既定表示の方針）", () => {
+  const lines = (events: CoordinatorEvent[]) => {
+    const format = createTerminalFormatter();
+    return events.map((event) => format(event, "normal")).filter((line) => line !== undefined);
+  };
+
+  it("ターンの最初の発言だけを方針として出す", () => {
+    expect(lines([
+      agentEvent("codex", { type: "turn_started" }),
+      agentEvent("codex", { type: "text", text: "テストを直します。" }),
+      agentEvent("codex", { type: "text", text: "途中です。" }),
+      agentEvent("codex", { type: "turn", result: { status: "completed", text: "直しました。" } }),
+    ])).toEqual([
+      "14:32:10 [CODEX] working...", "14:32:10 [CODEX] テストを直します。", "14:32:10 [CODEX] 直しました。",
+    ]);
+  });
+
+  it("最終応答が方針と同じなら重ねて出さない", () => {
+    expect(lines([
+      agentEvent("claude", { type: "turn_started" }),
+      agentEvent("claude", { type: "text", text: "完了です。" }),
+      agentEvent("claude", { type: "turn", result: { status: "completed", text: "完了です。" } }),
+    ])).toEqual(["14:32:10 [CLAUDE] working...", "14:32:10 [CLAUDE] 完了です。"]);
+  });
+
+  it("verbose では全 event をそのまま出す", () => {
+    const format = createTerminalFormatter();
+    expect(format(agentEvent("claude", { type: "text", text: "a" }), "verbose")).toBe("14:32:10 [CLAUDE] a");
   });
 });

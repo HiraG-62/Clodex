@@ -80,6 +80,29 @@ export const formatEvent = (event: CoordinatorEvent, mode: DisplayMode): string 
   }
 };
 
+// 既定表示では、ターンの最初の発言（方針）も出す。最終応答が方針と同じなら重ねて出さない（DESIGN.md §17）
+export const createTerminalFormatter = () => {
+  // Agent ごとの今のターンの方針。null はまだ発言していない
+  const plans = new Map<string, string | null>();
+  return (event: CoordinatorEvent, mode: DisplayMode): string | undefined => {
+    if (mode === "verbose" || event.kind !== "agent") return formatEvent(event, mode);
+    const { agent, event: agentEvent } = event;
+    if (agentEvent.type === "turn_started") plans.set(agent, null);
+    if (agentEvent.type === "text") {
+      if (plans.get(agent) !== null) return undefined;
+      plans.set(agent, agentEvent.text);
+      return `${timeOf(event.at)} [${agent.toUpperCase()}] ${indentContinuation(agentEvent.text)}`;
+    }
+    if (agentEvent.type === "turn") {
+      const plan = plans.get(agent);
+      plans.delete(agent);
+      const { status, text } = agentEvent.result;
+      if (status === "completed" && plan && plan.trim() === text.trim()) return undefined;
+    }
+    return formatEvent(event, mode);
+  };
+};
+
 export const createJsonlWriter = (path: string) => {
   mkdirSync(dirname(path), { recursive: true });
   return (event: CoordinatorEvent): void => appendFileSync(path, `${JSON.stringify(event)}\n`);
@@ -102,9 +125,10 @@ export interface EventLogOptions {
 // file には常に全 event、terminal には表示モードに応じて出す
 export const attachEventLog = (bus: EventBus, { path, print, mode }: EventLogOptions): (() => void) => {
   const write = createJsonlWriter(path);
+  const format = createTerminalFormatter();
   return bus.subscribe((event) => {
     write(event);
-    const line = formatEvent(event, mode());
+    const line = format(event, mode());
     if (line !== undefined) print(line);
   });
 };

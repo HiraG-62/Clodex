@@ -38,6 +38,7 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
   const TOAST_DURATION_MS = 3000;
   const TOKENS_PER_K = 1000;
   const MS_PER_SECOND = 1000;
+  const SECONDS_PER_MINUTE = 60;
   const PERCENT = 100;
   // model の入力候補（自由入力もできる）
   const MODEL_SUGGESTIONS: Record<AgentId, readonly string[]> = { claude: ["opus", "sonnet", "haiku"], codex: [] };
@@ -138,6 +139,22 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
     return short.length > 8 ? `${short.slice(0, 7)}…` : short;
   };
 
+  // 作業中のターンの経過時間（1 秒ごとに書き換える）
+  const elapsedText = (startIso: string) => {
+    const seconds = Math.max(0, Math.floor((Date.now() - new Date(startIso).getTime()) / MS_PER_SECOND));
+    const minutes = Math.floor(seconds / SECONDS_PER_MINUTE);
+    return minutes ? `${minutes}分${seconds % SECONDS_PER_MINUTE}秒` : `${seconds}秒`;
+  };
+  // 今の作業: 直近の発言か tool を 1 行で（DESIGN.md §17 ログ）
+  const nowLine = (item: Extract<TimelineItem, { kind: "turn" }>) => {
+    const node = el("div", "now");
+    const last = item.steps[item.steps.length - 1];
+    if (!last) node.append(el("span", "what muted", "作業しています"));
+    else if (last.kind === "say") node.append(el("span", "what", last.text.split("\n", 1)[0] ?? ""));
+    else node.append(el("span", "k", toolLabel(last.name)), el("span", "what mono", last.input));
+    return node;
+  };
+
   const renderTurn = (item: Extract<TimelineItem, { kind: "turn" }>) => {
     const node = el("article", "entry");
     node.append(mark(item.agent));
@@ -145,7 +162,17 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
     head.append(el("b", `c-${item.agent}`, AGENTS[item.agent].name), el("time", "mono", clock(item.at)));
     const label = TURN_LABEL[item.status];
     if (label) head.append(el("span", `state ${item.status}`, label));
+    if (item.status === "working") {
+      const elapsed = el("span", "elapsed mono", elapsedText(item.at));
+      elapsed.dataset.start = item.at;
+      head.append(elapsed);
+    }
     node.append(head);
+    if (item.plan) {
+      const plan = el("div", "plan md");
+      plan.innerHTML = renderMarkdown(item.plan);
+      node.append(plan);
+    }
     if (item.steps.length) {
       const list = el("ol");
       for (const step of item.steps) {
@@ -156,9 +183,9 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
       }
       node.append(details(item.id, `作業 ${item.steps.length} 件`, list, "steps"));
     }
+    if (item.status === "working") node.append(nowLine(item));
     const body = el("div", "body md");
     if (item.text) body.innerHTML = renderMarkdown(item.text);
-    else if (item.status === "working") body.append(el("span", "muted", "作業しています"));
     else if (item.status === "completed") body.append(el("span", "muted", "完了"));
     if (body.childNodes.length) node.append(body);
     return node;
@@ -786,6 +813,9 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
   }
 
   newer.addEventListener("click", scrollToBottom);
+  setInterval(() => {
+    for (const node of log.querySelectorAll<HTMLElement>(".elapsed[data-start]")) node.textContent = elapsedText(node.dataset.start ?? "");
+  }, MS_PER_SECOND);
   log.addEventListener("scroll", () => { if (nearBottom()) newer.hidden = true; });
 
   // ---- 接続 ----
