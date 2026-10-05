@@ -14,6 +14,7 @@ export type ShellCommand =
   | { kind: "resume"; index?: number }
   | { kind: "new"; agent?: AgentId }
   | { kind: "compact"; agent?: AgentId }
+  | { kind: "run"; command: string }
   | { kind: "unsupported"; message: string }
   | { kind: "invalid"; message: string };
 
@@ -78,7 +79,10 @@ export const parseInput = (line: string, primary: AgentId): ShellCommand => {
   const input = line.trim();
   if (!input) return { kind: "empty" };
   if (input.startsWith("!&")) return unsupported("!& command");
-  if (input.startsWith("!")) return unsupported("!command");
+  if (input.startsWith("!")) {
+    const command = input.slice(1).trim();
+    return command ? { kind: "run", command } : { kind: "invalid", message: "usage: !<command>" };
+  }
 
   const mention = input.match(MENTION_PATTERN);
   if (mention) return parseMention(mention[1]!, mention[2]!.trim());

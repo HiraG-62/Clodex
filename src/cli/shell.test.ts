@@ -75,15 +75,32 @@ class FakeCoordinator implements ShellCoordinator {
   }
 }
 
+class FakeRunner {
+  readonly commands: string[] = [];
+  running = 0;
+  stops = 0;
+  run(command: string): Promise<void> {
+    this.commands.push(command);
+    return new Promise(() => {}); // 終了を待たずに次の入力を受け付けることを確認する
+  }
+  stopAll(): number {
+    this.stops++;
+    const stopped = this.running;
+    this.running = 0;
+    return stopped;
+  }
+}
+
 const setup = () => {
   const coordinator = new FakeCoordinator();
+  const runner = new FakeRunner();
   const printed: string[] = [];
   let verbose = false;
   const history = new FakeHistory();
   const shell = createShell({
-    coordinator, primary: "claude", print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history,
+    coordinator, primary: "claude", print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history, runner,
   });
-  return { coordinator, printed, shell, history };
+  return { coordinator, printed, shell, history, runner };
 };
 
 describe("createShell", () => {
@@ -94,11 +111,20 @@ describe("createShell", () => {
     expect(coordinator.sent).toEqual([{ agent: "claude", text: "hello" }, { agent: "codex", text: "review" }]);
   });
 
-  it("/interrupt を Coordinator に渡す", async () => {
-    const { coordinator, shell } = setup();
+  it("/interrupt を Coordinator に渡し、Agent 指定なしなら実行中の command も止める", async () => {
+    const { coordinator, runner, shell } = setup();
     await shell.handleLine("/interrupt codex");
+    expect(runner.stops).toBe(0);
     await shell.handleLine("/interrupt");
     expect(coordinator.interrupted).toEqual(["codex", undefined]);
+    expect(runner.stops).toBe(1);
+  });
+
+  it("!command は終了を待たずに実行し、Agent には送らない", async () => {
+    const { coordinator, runner, shell } = setup();
+    await expect(shell.handleLine("!git status")).resolves.toBe("continue");
+    expect(runner.commands).toEqual(["git status"]);
+    expect(coordinator.sent).toEqual([]);
   });
 
   it("/status は各 Agent の状態を表示する", async () => {
@@ -237,6 +263,15 @@ describe("createShell", () => {
     ];
     await shell.handleSigint();
     expect(coordinator.interrupted).toEqual(["claude"]);
+  });
+
+  it("Ctrl+C は実行中の command も止める", async () => {
+    const { coordinator, printed, runner, shell } = setup();
+    runner.running = 1;
+    await shell.handleSigint();
+    expect(runner.stops).toBe(1);
+    expect(coordinator.interrupted).toEqual([]);
+    expect(printed.join("\n")).not.toMatch(/\/exit/);
   });
 
   it("実行中の Agent が無ければ Ctrl+C は終了方法を案内する", async () => {

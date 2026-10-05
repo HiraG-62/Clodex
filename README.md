@@ -37,7 +37,8 @@ PS C:\dev\my-project> clodex
 |---|---|
 | テキスト | primary Agent（既定 Claude）へ送信 |
 | `@claude ...` / `@codex ...` | 指定 Agent へ送信 |
-| `/interrupt [claude\|codex]` / Ctrl+C | 実行中のターンを interrupt |
+| `!<command>` | project root で PowerShell のコマンドを実行して出力を表示（Agent には送らない） |
+| `/interrupt [claude\|codex]` / Ctrl+C | 実行中のターンを interrupt（Agent 指定なしと Ctrl+C は実行中の `!command` も止める） |
 | `/primary <claude\|codex>` | テキストの送り先を切り替える |
 | `/resume [番号]` | 過去の会話の一覧 / 番号の会話に切り替える |
 | `/compact [claude\|codex]` | 会話を要約してコンテキストを減らす（省略時は起動中の Agent） |
@@ -62,7 +63,7 @@ tailscale serve --bg 4319        # 初回だけ。tailnet 内の端末から htt
 
 - 初回はスマホで `https://<PC名>.<tailnet>.ts.net/?token=<token>` を開く（token は `~/.clodex/web-token`）。以後は cookie で入れる
 - Agent ごとの状態（利用枠・コンテキスト・権限）、作業の流れ、Agent 間のやり取りを GUI で見られる。スマホでは状態の行をタップすると、その Agent の操作パネルが開く
-- 入力は terminal と同じ（テキスト、`@claude` / `@codex`、スラッシュコマンド）。スマホの接続が切れても `clodex` は PC で動き続ける
+- 入力は terminal と同じ（テキスト、`@claude` / `@codex`、`!command`、スラッシュコマンド）。スマホの接続が切れても `clodex` は PC で動き続ける
 - テーマ（システム / ライト / ダーク）は「設定」から切り替える
 - Clodex は `127.0.0.1` でしか待ち受けない。外からの接続は Tailscale に任せる
 

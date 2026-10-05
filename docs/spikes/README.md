@@ -11,6 +11,7 @@ CLI: Claude Code 2.1.289 / codex-cli 0.156.1
 | D MCP | Coordinator 内の Streamable HTTP MCP server へ両 CLI から `send_message` を送れた。Codex は tool 承認設定が必要 | [mcp.md](mcp.md) |
 | F 権限変更 | Claude は `set_permission_mode`、Codex は `turn/start` の `sandboxPolicy` で、再起動せずに権限を変えられる | [permission.md](permission.md) |
 | G 手動 compact | Claude は `/compact` の送信、Codex は `thread/compact/start` で compact できる。どちらも 1 ターンとして動く | [compact.md](compact.md) |
+| H `!command` | PowerShell は既定だと日本語が CP932 で化ける。UTF-8 指定を先頭に足せば pwsh / 5.1 とも正常。停止は `taskkill /T /F` | [shell-command.md](shell-command.md) |
 | E Authentication | Claude は `ANTHROPIC_API_KEY` があると黙って API key 課金に切り替わる。Codex app-server は ChatGPT 認証のまま | [authentication.md](authentication.md) |
 
 ## 設計への影響

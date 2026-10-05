@@ -10,7 +10,7 @@ const output = (seq: number): HistoryItem => ({ type: "output", seq, text: `line
 
 describe("feedDirPath", () => {
   it("会話の履歴と同じ名前の .feed ディレクトリにする", () => {
-    expect(feedDirPath(join("C:\home", "E--dev-app-1a2b3c4d.json"))).toBe(join("C:\home", "E--dev-app-1a2b3c4d.feed"));
+    expect(feedDirPath(join("C:\\home", "E--dev-app-1a2b3c4d.json"))).toBe(join("C:\\home", "E--dev-app-1a2b3c4d.feed"));
   });
 });
 

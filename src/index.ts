@@ -6,6 +6,7 @@ import { AGENT_IDS, type AgentId } from "./agents/agent-adapter.js";
 import { ClaudeAdapter } from "./agents/claude-adapter.js";
 import { CodexAdapter } from "./agents/codex-adapter.js";
 import { parseCliArgs } from "./cli/args.js";
+import { createCommandRunner } from "./cli/command-runner.js";
 import { createShell } from "./cli/shell.js";
 import { loadConfig } from "./config/config.js";
 import { buildRoleInstructions } from "./context/role-instructions.js";
@@ -113,7 +114,8 @@ const main = async (): Promise<void> => {
     displayMode = displayMode === "verbose" ? "normal" : "verbose";
     return displayMode === "verbose";
   };
-  const shell = createShell({ coordinator, primary, print, toggleVerbose, history });
+  const runner = createCommandRunner({ cwd: projectRoot, print });
+  const shell = createShell({ coordinator, primary, print, toggleVerbose, history, runner });
   const { refreshState } = connectWebFeed(bus, feed, () => ({
     project: projectRoot,
     primary: shell.getPrimary(),
@@ -146,6 +148,7 @@ const main = async (): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
     rl.close();
+    runner.stopAll();
     await coordinator.stop();
     await mcp.close();
     await web?.close();

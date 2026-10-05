@@ -28,13 +28,18 @@ describe("parseInput", () => {
     expect(parseInput(line, "claude")).toEqual(expected);
   });
 
+  it("!command は shell command として実行する", () => {
+    expect(parseInput("!git status", "claude")).toEqual({ kind: "run", command: "git status" });
+    expect(parseInput("!  pnpm test ", "claude")).toEqual({ kind: "run", command: "pnpm test" });
+    expect(parseInput("!", "claude")).toMatchObject({ kind: "invalid", message: expect.stringMatching(/usage/) });
+  });
+
   it("通常のテキストは primary Agent へ送る", () => {
     expect(parseInput("hello", "codex")).toEqual({ kind: "send", agent: "codex", text: "hello" });
   });
 
   it.each([
     ["@all hello", /@all/],
-    ["!git status", /!command/],
     ["!& pnpm dev", /!& command/],
   ])("v0.1 未対応の入力 %j は unsupported", (line, pattern) => {
     const result = parseInput(line, "claude");

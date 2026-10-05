@@ -424,20 +424,29 @@ Project root の解決順:
 | `@claude ...` | Claude へ直接送信 | ✓ |
 | `@codex ...` | Codex へ直接送信 | ✓ |
 | `@all ...` | 両方へ送信（高コスト操作なので警告対象） | 未対応 |
-| `!command` | foreground shell command | 未対応（§15） |
+| `!command` | project root で shell command を実行し、出力を表示する（下記） | ✓ |
 | `!& command` | background process | 未対応（§15） |
 | `/command` | Shell internal command | ✓（下記） |
-| Ctrl+C | 実行中の全 Agent のターンを interrupt。実行中が無ければ終了方法を案内 | ✓ |
+| Ctrl+C | 実行中の全 Agent のターンを interrupt し、実行中の `!command` を止める。どちらも無ければ終了方法を案内 | ✓ |
 | Ctrl+D / 入力の終端 | 受け付けた配送（Agent 間の連鎖を含む）が終わるのを待ってから終了 | ✓ |
 
 - 送信はキューに積むだけで、入力はすぐ次を受け付ける（§12 の mailbox）
 - 未対応の入力は、未対応である旨を表示して何もしない
 
+`!command`（docs/spikes/shell-command.md）:
+
+- project root で PowerShell（pwsh があれば pwsh、無ければ powershell.exe）の `-NoProfile -NonInteractive -Command` として実行する。出力が文字化けしないよう、先頭で出力の文字コードを UTF-8 にする。native command の終了コードを 1 に丸めないよう、後ろに `$LASTEXITCODE` を返す 1 行を足す
+- `$ <command>`、出力（stdout / stderr を行ごと。ANSI escape は取り除く）、`exit <code> (<秒>s)` を terminal と Web UI に表示する
+- 人間が見るためのもので、出力は Agent に送らない。Agent に見せたいときは貼り付けて送る
+- 入力は待たない（stdin は無い）。実行中も次の入力を受け付け、複数を同時に実行できる
+- Ctrl+C と `/interrupt`（Agent 指定なし）は、Agent のターンに加えて実行中の command も止める（プロセスツリーごと）。`/exit` でも止める
+- Web UI からも使える。Web UI は token で保護しており、`full` 権限の Agent に頼めば同じことができるため、新しい権限は増えない
+
 Internal command（v0.1）:
 
 | command | 内容 |
 |---|---|
-| `/interrupt [claude\|codex]` | 指定 Agent（省略時は全 Agent）の実行中ターンを interrupt する。キュー済みの message はそのまま配送される |
+| `/interrupt [claude\|codex]` | 指定 Agent（省略時は全 Agent と実行中の `!command`）の実行中ターンを interrupt する。キュー済みの message はそのまま配送される |
 | `/status` | 各 Agent の状態と session ID。停止中は次の起動で使う session（/new 後の新規なら表示しない） |
 | `/verbose` | terminal の詳細表示を切り替える（§17） |
 | `/primary <claude\|codex>` | 通常のテキストの送り先を切り替える（§3.10） |

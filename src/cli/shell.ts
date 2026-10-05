@@ -29,6 +29,13 @@ export interface ConversationList {
   clearSession(agent: AgentId): void;
 }
 
+export interface CommandRunner {
+  readonly running: number;
+  run(command: string): Promise<void>;
+  // 実行中の command を止め、止めた数を返す
+  stopAll(): number;
+}
+
 export interface ShellOptions {
   coordinator: ShellCoordinator;
   primary: AgentId;
@@ -36,6 +43,7 @@ export interface ShellOptions {
   // terminal の詳細表示を切り替え、切り替え後の状態を返す
   toggleVerbose: () => boolean;
   history: ConversationList;
+  runner: CommandRunner;
 }
 
 export type ShellOutcome = "continue" | "exit";
@@ -44,7 +52,8 @@ const HELP_LINES = (primary: AgentId) => [
   `<text>              send to the primary agent (${primary})`,
   "@claude <text>      send to Claude",
   "@codex <text>       send to Codex",
-  "/interrupt [agent]  interrupt the running turn (all agents if omitted)",
+  "!<command>          run a shell command in the project root (output is not sent to agents)",
+  "/interrupt [agent]  interrupt the running turn (all agents and !commands if omitted)",
   "/status             show agent status and usage",
   "/primary <agent>    change where plain text goes",
   "/resume [number]    list past conversations, or switch to one",
@@ -53,7 +62,7 @@ const HELP_LINES = (primary: AgentId) => [
   "/verbose            toggle detailed output (tools, usage, intermediate text)",
   "/permission [agent] <read-only|edit|full>  change what agents may do without asking",
   "/exit               stop all agents and quit",
-  "Ctrl+C              interrupt running turns",
+  "Ctrl+C              interrupt running turns and !commands",
 ];
 
 const formatUsage = ({ fiveHourPercent, weeklyPercent, weeklyPace }: UsageSnapshot): string => {
@@ -83,7 +92,7 @@ const shortTime = (iso: string) => {
 const agentsOf = (c: Conversation) => (Object.keys(c.sessions) as AgentId[]).sort().join(", ");
 const titleOf = (c: Conversation) => `"${c.title ?? "(no input)"}"`;
 
-export const createShell = ({ coordinator, primary: initialPrimary, print, toggleVerbose, history }: ShellOptions) => {
+export const createShell = ({ coordinator, primary: initialPrimary, print, toggleVerbose, history, runner }: ShellOptions) => {
   let primary = initialPrimary;
 
   const listConversations = () => {
@@ -125,7 +134,12 @@ export const createShell = ({ coordinator, primary: initialPrimary, print, toggl
         void coordinator.sendToAgent(command.agent, command.text);
         return "continue";
       case "interrupt":
+        if (!command.agent) runner.stopAll();
         await coordinator.interrupt(command.agent);
+        return "continue";
+      case "run":
+        // 終了を待たずに次の入力を受け付ける。出力は runner が表示する
+        void runner.run(command.command);
         return "continue";
       case "status":
         print(`primary: ${primary}`);
@@ -172,7 +186,8 @@ export const createShell = ({ coordinator, primary: initialPrimary, print, toggl
 
   const handleSigint = async (): Promise<void> => {
     const busy = coordinator.status().filter((s) => s.status === "busy");
-    if (busy.length === 0) {
+    const stoppedCommands = runner.stopAll();
+    if (busy.length === 0 && stoppedCommands === 0) {
       print("No running turn. Type /exit to quit.");
       return;
     }
