@@ -413,3 +413,18 @@ describe("ClaudeAdapter", () => {
     expect(events.some((e) => e.type === "error")).toBe(true);
   });
 });
+
+describe("ClaudeAdapter の変更ファイル", () => {
+  it("編集系の tool は変更したファイルを files に入れ、読むだけの tool には入れない", async () => {
+    const { adapter, proc, events } = await setup();
+    void adapter.send("edit");
+    proc.emit(init());
+    proc.emit({ type: "assistant", message: { content: [
+      { type: "tool_use", name: "Edit", input: { file_path: "C:\\dev\\app\\a.ts", old_string: "x", new_string: "y" } },
+      { type: "tool_use", name: "NotebookEdit", input: { notebook_path: "n.ipynb" } },
+      { type: "tool_use", name: "Read", input: { file_path: "b.ts" } },
+    ] } });
+    const tools = events.filter((e) => e.type === "tool");
+    expect(tools.map((e) => e.type === "tool" && e.files)).toEqual([["C:\\dev\\app\\a.ts"], ["n.ipynb"], undefined]);
+  });
+});

@@ -229,7 +229,8 @@ export class CodexAdapter extends BaseAgentAdapter {
 
   private handleItem(item: CodexItem): void {
     if (item.type === "fileChange") {
-      this.emit({ type: "tool", name: "fileChange", input: summarizeToolInput(item.changes?.map((change) => change.path).join(", ") ?? "") });
+      const files = item.changes?.map((change) => change.path) ?? [];
+      this.emit({ type: "tool", name: "fileChange", input: summarizeToolInput(files.join(", ")), files });
     }
     if (item.type === "agentMessage" && item.text) {
       this.lastAgentText = item.text;

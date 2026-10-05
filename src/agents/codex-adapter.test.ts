@@ -217,7 +217,7 @@ describe("CodexAdapter", () => {
       { path: "src/a.ts", kind: { type: "update" }, diff: "..." },
       { path: "src/b.ts", kind: { type: "add" }, diff: "..." },
     ] } } });
-    expect(events).toContainEqual({ type: "tool", name: "fileChange", input: "src/a.ts, src/b.ts" });
+    expect(events).toContainEqual({ type: "tool", name: "fileChange", input: "src/a.ts, src/b.ts", files: ["src/a.ts", "src/b.ts"] });
   });
 
   it("turn/start の error 応答はターンを failed にする", async () => {

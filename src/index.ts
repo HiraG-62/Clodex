@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // clodex コマンドの入口。部品の組み立てと terminal I/O だけを行う
+import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { clearLine, createInterface, cursorTo } from "node:readline";
 import { AGENT_IDS, type AgentId } from "./agents/agent-adapter.js";
@@ -25,6 +26,7 @@ import { startWebServer } from "./web/web-server.js";
 import { connectWebFeed } from "./web/web-ui.js";
 import { loadOrCreateWebToken } from "./web/web-token.js";
 import { ConversationHistory, conversationStatePath } from "./project/conversation-history.js";
+import { artifactsDirPath, createFilePreview } from "./project/file-preview.js";
 import { isProjectFile, listProjectFiles } from "./project/project-files.js";
 import { AgentSettingsStore, agentSettingsPath, resolveStartSettings, type SavedAgentSettings } from "./project/agent-settings.js";
 
@@ -53,6 +55,9 @@ const main = async (): Promise<void> => {
 
   const bus = new EventBus();
   const statePath = conversationStatePath(homedir(), projectRoot);
+  // Agent が証跡の画像を置く場所（DESIGN.md §28 v0.3 B）
+  const artifactsDir = artifactsDirPath(homedir(), statePath);
+  mkdirSync(artifactsDir, { recursive: true });
   const history = new ConversationHistory(statePath, { resumeLatest: args.resume });
   const resumeSessionIds = history.currentSessions;
   history.attach(bus);
@@ -67,7 +72,7 @@ const main = async (): Promise<void> => {
     mcpUrlFor: (agent) => mcp.urlFor(agent),
     // 優先順位: 起動オプション > 保存した値 > 設定ファイル（DESIGN.md §9 Agent の設定の保存）
     settings: resolveStartSettings({ saved: savedSettings, models: args.models, ...(config.permission ? { configPermission: config.permission } : {}) }),
-    instructions: Object.fromEntries(AGENT_IDS.map((id) => [id, buildRoleInstructions(id, config.roles, language)])),
+    instructions: Object.fromEntries(AGENT_IDS.map((id) => [id, buildRoleInstructions(id, config.roles, { language, artifactsDir })])),
     limits: { ...DEFAULT_LIMITS, ...config.limits },
     ...(config.usageAlert ? { usageAlert: config.usageAlert } : {}),
     resumeSessionIds,
@@ -165,6 +170,7 @@ const main = async (): Promise<void> => {
         if ((await handleLine(line)) === "exit") void shutdown();
       },
       listFiles: () => listProjectFiles(projectRoot),
+      preview: createFilePreview({ projectRoot, artifactsDir }),
       onError: (error) => print(`error: ${errorMessage(error)}`),
     })
     : undefined;

@@ -37,7 +37,7 @@ export interface RateLimitWindow {
 export type AgentEvent =
   | { type: "session"; sessionId: string }
   | { type: "text"; text: string }
-  | { type: "tool"; name: string; input: string }
+  | { type: "tool"; name: string; input: string; files?: string[] } // files: 変更したファイル（成果物の一覧に使う）
   | { type: "turn_started" }
   | { type: "turn"; result: TurnResult }
   | { type: "rate_limit"; fiveHour?: RateLimitWindow; weekly?: RateLimitWindow }

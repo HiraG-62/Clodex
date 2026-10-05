@@ -20,6 +20,12 @@ const setup = async (onInput?: (line: string) => Promise<void>) => {
   server = await startWebServer({
     port: 0, token: TOKEN, feed, onInput: onInput ?? (async (line) => void inputs.push(line)), onError: (e) => errors.push(e),
     listFiles: async () => ["README.md", "src/a.ts"],
+    preview: {
+      file: async (path) => (path === "a.png"
+        ? { ok: true as const, contentType: "image/png", body: Buffer.from([1, 2]) }
+        : { ok: false as const, status: 404, message: `not found: ${path}` }),
+      diff: async () => ({ ok: true as const, contentType: "text/plain; charset=utf-8", body: Buffer.from("+x") }),
+    },
   });
   return { feed, inputs, errors, base: server.url };
 };
@@ -146,6 +152,17 @@ describe("startWebServer", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(["README.md", "src/a.ts"]);
     expect((await fetch(`${base}/api/files`)).status).toBe(401);
+  });
+
+  it("GET /api/file と /api/diff はプレビューの結果を返す", async () => {
+    const { base } = await setup();
+    const image = await fetch(`${base}/api/file?path=a.png`, { headers: { cookie: COOKIE } });
+    expect(image.status).toBe(200);
+    expect(image.headers.get("content-type")).toBe("image/png");
+    expect(image.headers.get("x-content-type-options")).toBe("nosniff");
+    expect((await fetch(`${base}/api/file?path=b.txt`, { headers: { cookie: COOKIE } })).status).toBe(404);
+    expect(await (await fetch(`${base}/api/diff?path=a.ts`, { headers: { cookie: COOKIE } })).text()).toBe("+x");
+    expect((await fetch(`${base}/api/file?path=a.png`)).status).toBe(401);
   });
 
   it("未知の path は 404", async () => {

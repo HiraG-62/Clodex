@@ -13,6 +13,17 @@ const SUBSCRIPTION_API_KEY_SOURCE = "none";
 const HTTP_UNAUTHORIZED = 401;
 const RATIO_TO_PERCENT = 100;
 const COMPACT_COMMAND = "/compact";
+// ファイルを変更する tool と、変更先のパスが入る入力のキー（DESIGN.md §28 v0.3 B）
+const EDIT_TOOL_PATH_KEYS: Record<string, string> = {
+  Edit: "file_path", Write: "file_path", MultiEdit: "file_path", NotebookEdit: "notebook_path",
+};
+
+const editedFiles = (name: string, input: unknown): string[] | undefined => {
+  const key = EDIT_TOOL_PATH_KEYS[name];
+  if (!key || typeof input !== "object" || input === null) return undefined;
+  const path = (input as Record<string, unknown>)[key];
+  return typeof path === "string" && path ? [path] : undefined;
+};
 const MODEL_COMMAND = "/model";
 const EFFORT_COMMAND = "/effort";
 const MODEL_SUCCESS = "Set model to ";
@@ -218,7 +229,8 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     for (const block of event.message?.content ?? []) {
       if (block.type === "text" && block.text) this.emit({ type: "text", text: block.text });
       if (block.type === "tool_use" && block.name) {
-        this.emit({ type: "tool", name: block.name, input: summarizeToolInput(block.input) });
+        const files = editedFiles(block.name, block.input);
+        this.emit({ type: "tool", name: block.name, input: summarizeToolInput(block.input), ...(files ? { files } : {}) });
       }
     }
   }

@@ -42,6 +42,11 @@ describe("buildRoleInstructions の方針と言語", () => {
   it("作業前に方針を書くよう伝え、言語の指定があれば添える", () => {
     expect(buildRoleInstructions("claude", undefined)).toMatch(/before you start working/);
     expect(buildRoleInstructions("claude", undefined)).not.toContain("Japanese");
-    expect(buildRoleInstructions("codex", undefined, "ja")).toContain("Japanese");
+    expect(buildRoleInstructions("codex", undefined, { language: "ja" })).toContain("Japanese");
+  });
+
+  it("artifacts ディレクトリがあれば証跡の画像の置き場所を伝える", () => {
+    expect(buildRoleInstructions("claude", undefined, { artifactsDir: "C:\\home\\.clodex\\artifacts\\p" }))
+      .toContain("save it under C:\\home\\.clodex\\artifacts\\p");
   });
 });

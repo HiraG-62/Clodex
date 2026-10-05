@@ -3,6 +3,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import type { PreviewResult } from "../project/file-preview.js";
 import type { FeedItem, WebFeed } from "./web-feed.js";
 import { PAGE_VERSION, WEB_PAGE } from "./web-page.js";
 
@@ -22,6 +23,11 @@ export interface WebServerOptions {
   onInput: (line: string) => Promise<void>;
   // @path の候補（DESIGN.md §28 v0.3 A）
   listFiles: () => Promise<string[]>;
+  // 成果物のプレビュー（DESIGN.md §28 v0.3 B）
+  preview: {
+    file(path: string): Promise<PreviewResult>;
+    diff(path: string): Promise<PreviewResult>;
+  };
   onError?: (error: unknown) => void;
 }
 
@@ -71,7 +77,13 @@ const sendJson = (res: ServerResponse, value: unknown) => {
   res.end(JSON.stringify(value));
 };
 
-export const startWebServer = async ({ port, token, feed, onInput, listFiles, onError }: WebServerOptions): Promise<WebServerHandle> => {
+const sendPreview = (res: ServerResponse, result: PreviewResult) => {
+  if (!result.ok) return void res.writeHead(result.status, { "content-type": "text/plain; charset=utf-8" }).end(result.message);
+  res.writeHead(HTTP.ok, { "content-type": result.contentType, "cache-control": "no-store", "x-content-type-options": "nosniff" });
+  res.end(result.body);
+};
+
+export const startWebServer = async ({ port, token, feed, onInput, listFiles, preview, onError }: WebServerOptions): Promise<WebServerHandle> => {
   const streams = new Set<ServerResponse>();
 
   const handleEvents = (req: IncomingMessage, res: ServerResponse) => {
@@ -124,6 +136,9 @@ export const startWebServer = async ({ port, token, feed, onInput, listFiles, on
     if (req.method === "GET" && url.pathname === "/events") return handleEvents(req, res);
     if (req.method === "GET" && url.pathname === "/api/state") return sendJson(res, feed.latestState() ?? null);
     if (req.method === "GET" && url.pathname === "/api/files") return sendJson(res, await listFiles());
+    const previewPath = url.searchParams.get("path");
+    if (req.method === "GET" && url.pathname === "/api/file" && previewPath) return sendPreview(res, await preview.file(previewPath));
+    if (req.method === "GET" && url.pathname === "/api/diff" && previewPath) return sendPreview(res, await preview.diff(previewPath));
     if (req.method === "POST" && url.pathname === "/api/input") return handleInput(req, res);
     res.writeHead(HTTP.notFound).end();
   };

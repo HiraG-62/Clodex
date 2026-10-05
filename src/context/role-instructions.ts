@@ -31,10 +31,22 @@ const roleLines = (agent: AgentId, peer: AgentId, roles: RolesConfig | undefined
   ];
 };
 
-export const buildRoleInstructions = (agent: AgentId, roles: RolesConfig | undefined, language?: Language): string => {
+// 証跡の画像は project の外に置かせ、Web UI の成果物に出す（DESIGN.md §28 v0.3 B）
+const artifactsNote = (dir: string) =>
+  `To show the human an image (for example a screenshot as evidence), save it under ${dir} and write its full path in your reply.`;
+
+export interface RoleInstructionOptions {
+  language?: Language;
+  artifactsDir?: string;
+}
+
+export const buildRoleInstructions = (
+  agent: AgentId, roles: RolesConfig | undefined, { language, artifactsDir }: RoleInstructionOptions = {},
+): string => {
   const peer = peerOf(agent);
   return [
     header(agent, peer), ...roleLines(agent, peer, roles), PERMISSION_NOTE, PLAN_NOTE,
+    ...(artifactsDir ? [artifactsNote(artifactsDir)] : []),
     ...(language ? [languageDirective(language)] : []),
   ].join("\n");
 };

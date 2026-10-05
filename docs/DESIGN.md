@@ -1689,10 +1689,13 @@ dogfooding で出た要望を 4 段階で入れる。小さく確実なものか
 
 ### B — 成果物のプレビュー
 
-- Agent の tool event（Claude の Edit / Write、Codex の `fileChange`）と formal message の `files` から、会話で触れたファイルを一覧にする
-- 選ぶと中身を表示する。テキストはそのまま（Markdown は §17 の簡易描画）、変更はその時点の `git diff`、画像（png / jpg / gif / webp）はそのまま表示する
-- Agent が証跡として見せたい画像（スクリーンショット等）は、ファイルに保存して `files` かメッセージ本文でパスを示せば一覧に出る。役割の定型文で伝える
-- ファイルは token 認証付きの API で返す。project root の中の通常ファイルだけを読み（`..` や symlink で外に出ない）、大きさの上限を設ける
+- 会話で触れたファイルを一覧にする（新しい順、同じパスは 1 つ）。一覧は画面が feed から組み立てる（サーバーに状態を持たない。保存した feed から復元した会話でも出る）
+  - 変更: tool event の `files`。Claude の Edit / Write / MultiEdit / NotebookEdit の `file_path`（`notebook_path`）、Codex の `fileChange` の `changes[].path`
+  - 参照: formal message の `files`
+  - 画像: 最終応答と message の本文に書かれた画像のパス（png / jpg / jpeg / gif / webp）
+- 選ぶと中身を表示する。テキストはそのまま（Markdown は §17 の簡易描画）、「差分」でその時点の `git diff HEAD`（未追跡なら中身）、画像はそのまま表示する。message の関連ファイルも選べる
+- Agent が証跡として見せたい画像（スクリーンショット等）は、`~/.clodex/artifacts/<project 名>/` に保存して本文にフルパスを書くよう、役割の定型文で伝える（project の working tree を汚さない）
+- API: `GET /api/file?path=` と `GET /api/diff?path=`（token 認証）。読めるのは project root と上の artifacts ディレクトリの中の通常ファイルだけ（`..` や symlink で外に出ない。実パスで確かめる）。大きさの上限はテキスト 2 MB、画像 10 MB
 
 ### C — 割り込みとマルチエージェント（要実測）
 

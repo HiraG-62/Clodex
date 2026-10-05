@@ -4,7 +4,7 @@ import type { AgentId, TurnResult } from "../../agents/agent-adapter.js";
 import type { AgentMessage } from "../../protocol/messages.js";
 import type { FeedItem } from "../web-feed.js";
 
-export type TimelineStep = { kind: "say"; text: string } | { kind: "tool"; name: string; input: string };
+export type TimelineStep = { kind: "say"; text: string } | { kind: "tool"; name: string; input: string; files?: string[] };
 
 export type TimelineItem =
   | { kind: "human"; id: string; at: string; agent: AgentId; text: string }
@@ -61,7 +61,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
         ? { ...turn, plan: agentEvent.text }
         : { ...turn, steps: [...turn.steps, { kind: "say", text: agentEvent.text }] }));
     case "tool":
-      return updateTurn((turn) => ({ ...turn, steps: [...turn.steps, { kind: "tool", name: agentEvent.name, input: agentEvent.input }] }));
+      return updateTurn((turn) => ({ ...turn, steps: [...turn.steps, { kind: "tool", name: agentEvent.name, input: agentEvent.input, ...(agentEvent.files ? { files: agentEvent.files } : {}) }] }));
     case "turn":
       return updateTurn((turn) => {
         const { status, text } = agentEvent.result;
