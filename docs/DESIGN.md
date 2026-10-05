@@ -545,6 +545,7 @@ Adapter の必須処理:
 - Claude は入力が無くても新しいターンを始めることがある（background で動かした subagent や task の完了通知を受けて続ける）。このターンも `turn_started` → `text` / `tool` → `turn` を出し、その間は busy にする。最終応答は通常のターンと同じく表示する
 - 自発ターン中に `send` / `compact` が来たら、そのターンの完了を待ってから送る（mailbox の配送を失敗させない）
 - subagent（Task / Agent tool）内部の発言と tool 呼び出し（`parent_tool_use_id` が付いたもの）は、本体の `text` / `tool` として出さない。自発ターンの開始の判定にも使わない
+- Codex の subagent（`multi_agent`。既定で有効）は別の thread で動き、その通知も同じ stdout に `threadId` 付きで流れる。自分の thread でない通知は無視する（無視しないと subagent の `turn/completed` で親のターンが終わる）。親の thread の `subAgentActivity` item は `tool`（name: `subagent`）として出す（docs/spikes/steer-image-subagent.md）
 
 ## Permission
 

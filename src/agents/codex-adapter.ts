@@ -41,6 +41,8 @@ interface CodexItem {
   tool?: string;
   arguments?: unknown;
   command?: string;
+  kind?: string;
+  agentPath?: string;
 }
 
 interface CodexRateLimitWindow {
@@ -49,6 +51,7 @@ interface CodexRateLimitWindow {
 }
 
 interface CodexNotificationParams {
+  threadId?: string;
   item?: CodexItem;
   tokenUsage?: { last?: { totalTokens?: number }; modelContextWindow?: number | null };
   turn?: { id?: string; status?: string; error?: { message?: string } | null };
@@ -203,6 +206,8 @@ export class CodexAdapter extends BaseAgentAdapter {
   }
 
   private handleNotification(method: string, params: CodexNotificationParams): void {
+    // subagent は別の thread で動き、同じ stdout に通知が流れる。自分の thread のものだけを扱う（docs/spikes/steer-image-subagent.md）
+    if (params.threadId && params.threadId !== this.sessionId) return;
     switch (method) {
       case "turn/started":
         return this.setTurnId(params.turn?.id);
@@ -238,6 +243,9 @@ export class CodexAdapter extends BaseAgentAdapter {
     }
     if (item.type === "mcpToolCall") {
       this.emit({ type: "tool", name: `${item.server}.${item.tool}`, input: summarizeToolInput(item.arguments) });
+    }
+    if (item.type === "subAgentActivity") {
+      this.emit({ type: "tool", name: "subagent", input: summarizeToolInput(`${item.kind ?? ""} ${item.agentPath ?? ""}`.trim()) });
     }
     if (item.type === "commandExecution") {
       this.emit({ type: "tool", name: "command", input: summarizeToolInput(item.command ?? "") });

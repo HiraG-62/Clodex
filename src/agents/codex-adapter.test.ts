@@ -374,3 +374,26 @@ describe("CodexAdapter", () => {
     expect(adapter.status).toBe("stopped");
   });
 });
+
+describe("CodexAdapter の subagent（docs/spikes/steer-image-subagent.md）", () => {
+  it("別 thread（subagent）の通知では親のターンを終えず、親の subAgentActivity を tool として出す", async () => {
+    const { adapter, started, proc, events } = await setup();
+    await started;
+    const turn = adapter.send("spawn");
+    await flush();
+    const SUB = "thr-sub";
+    proc.emit({ method: "item/completed", params: { threadId: THREAD_ID, item: { type: "subAgentActivity", kind: "started", agentThreadId: SUB, agentPath: "/root/reply" } } });
+    proc.emit({ method: "turn/started", params: { threadId: SUB, turn: { id: "turn-sub" } } });
+    proc.emit({ method: "item/completed", params: { threadId: SUB, item: { type: "agentMessage", text: "SUB-DONE" } } });
+    proc.emit({ method: "thread/tokenUsage/updated", params: { threadId: SUB, tokenUsage: { last: { totalTokens: 5 } } } });
+    proc.emit({ method: "turn/completed", params: { threadId: SUB, turn: { id: "turn-sub", status: "completed" } } });
+    expect(adapter.status).toBe("busy");
+
+    proc.emit({ method: "item/completed", params: { threadId: THREAD_ID, item: { type: "agentMessage", text: "PARENT-DONE" } } });
+    proc.emit(turnCompleted("completed"));
+    await expect(turn).resolves.toEqual({ status: "completed", text: "PARENT-DONE" });
+    expect(events).toContainEqual({ type: "tool", name: "subagent", input: "started /root/reply" });
+    expect(events).not.toContainEqual({ type: "text", text: "SUB-DONE" });
+    expect(events.some((e) => e.type === "context")).toBe(false);
+  });
+});
