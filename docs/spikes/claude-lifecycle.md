@@ -33,3 +33,16 @@
 ## 結論
 
 Adapter は **stream-json の長寿命プロセス** を基本とする。プロセスが落ちたときは `-r <session_id>` で再起動して継続する。PTY は不要。
+
+## 自発ターン（2026-10-06 の Clodex 実行ログから）
+
+`~/.clodex/logs/Clodex-20261006-014233.jsonl` で観測した。Claude に background の subagent を 3 つ起動させてターンを終えた後:
+
+- `result` の後も、入力を送っていないのに `assistant`（subagent の tool 呼び出し・発言）が流れ続けた
+- subagent が終わるたびに、Claude 本体が入力なしで新しいターンを始め、`assistant` → `result` を出した（`result` は Clodex の `context` event として記録されていた）
+- Clodex は送信したターンが無い間の `result` を捨てていたため、`turn` event が出ず、最終応答が本文として表示されなかった
+
+未確認（`spikes/claude-stream.ts` で実測する）:
+
+- subagent の `assistant` に `parent_tool_use_id` が付くか
+- 自発ターンの始まりに `system/init` 等の目印となる event が出るか

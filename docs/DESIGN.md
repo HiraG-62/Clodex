@@ -432,6 +432,7 @@ Project root の解決順:
 
 - 送信はキューに積むだけで、入力はすぐ次を受け付ける（§12 の mailbox）
 - 未対応の入力は、未対応である旨を表示して何もしない
+- スラッシュコマンドは 1 行で書く。2 行目以降がある入力は invalid として使い方を表示し、Agent には送らない
 
 `!command`（docs/spikes/shell-command.md）:
 
@@ -476,6 +477,7 @@ interface AgentStartOptions {
   resumeSessionId?: string; // 指定時は既存 session を継続する
   mcpUrl?: string;          // Coordinator の MCP endpoint（§12）
   model?: string;
+  instructions?: string;    // system prompt に追加する定型文と役割（§13 Roles）
 }
 
 interface TurnResult {
@@ -487,9 +489,10 @@ interface AgentAdapter {
   readonly id: AgentId;
   readonly status: AgentStatus;
   readonly sessionId: string | undefined;
+  readonly permission: PermissionLevel;
 
   start(options: AgentStartOptions): Promise<void>;
-  send(text: string): Promise<TurnResult>; // ターン完了で resolve。busy 中は拒否する
+  send(text: string): Promise<TurnResult>; // ターン完了で resolve。自発ターン中は終わるのを待って送る。それ以外の busy 中は拒否する
   compact(): Promise<TurnResult>;          // 手動 compact。1 ターンとして扱う
   setPermission(level: PermissionLevel): Promise<void>; // 停止中なら次の起動時に使う
   interrupt(): Promise<void>;
@@ -504,11 +507,11 @@ interface AgentAdapter {
 |---|---|
 | `session` | session ID の確定 |
 | `text` | Agent の発言テキスト |
-| `tool` | tool 呼び出し（名前と入力の要約） |
-| `turn_started` | ターン開始（Agent が busy になった） |
-| `turn` | ターン完了（`TurnResult`） |
+| `tool` | tool 呼び出し（名前と入力の要約）。Codex のファイル編集（`fileChange` item）は `name: "fileChange"`、入力は変更したファイルのパス |
+| `turn_started` | ターン開始（Agent が busy になった）。自発ターン（下記）も含む |
+| `turn` | ターン完了（`TurnResult`）。自発ターンも含む |
 | `rate_limit` | 5 時間 / 7 日の利用率（%）と reset 時刻 |
-| `compacted` | compact が行われた（Claude の `compact_boundary`）。コンテキストの大きさは次のターンまで unknown にする。Codex は compact 後の `thread/tokenUsage/updated` で大きさが届くので出さない |
+| `compacted` | compact が行われた（Claude の `compact_boundary`）。コンテキストの大きさは次のターンまで unknown にする（§14）。Codex は compact 後の `thread/tokenUsage/updated` で大きさが届くので出さない |
 | `context` | 今のコンテキストの大きさ（token）と上限。Claude は最後の API 呼び出しの usage と `modelUsage[].contextWindow`、Codex は `thread/tokenUsage/updated` の `last.totalTokens` と `modelContextWindow` |
 | `exit` | プロセス終了 |
 | `error` | 認証違反・プロトコルエラー等 |
@@ -522,6 +525,15 @@ Adapter の必須処理:
 - 認証方式がサブスクリプションでなければ、プロセスを止めて `error` を出す
 - 実行中ターンへの追加送信（steer）は v0.1 では使わない。busy 中の `send` は Coordinator 側でキューに積む（§12）
 - 予期しない承認要求（Codex の server request）はエラー応答し、`error` を出す。Codex は `approvalPolicy: "never"` で起動し、Coordinator の MCP tool だけ自動承認する
+- 認証違反などでプロセスを止める（abort）ときは、プロセスの終了を待ってから実行中のターンを `failed`（理由は abort の理由）で終える。終了するまで idle に戻さず、終了中のプロセスに次の入力を送らない
+- プロセスの終了は stdout を読み切ってから扱う（Node の `close`。`exit` の時点では最後の行が未処理のことがある）
+- プロセスを止めるときはプロセスツリーごと止める（Windows は `taskkill /T /F`。Agent が起動した shell や dev server を残さない。docs/spikes/shell-command.md）
+
+自発ターン（Claude。docs/spikes/claude-lifecycle.md）:
+
+- Claude は入力が無くても新しいターンを始めることがある（background で動かした subagent や task の完了通知を受けて続ける）。このターンも `turn_started` → `text` / `tool` → `turn` を出し、その間は busy にする。最終応答は通常のターンと同じく表示する
+- 自発ターン中に `send` / `compact` が来たら、そのターンの完了を待ってから送る（mailbox の配送を失敗させない）
+- subagent（Task / Agent tool）内部の発言と tool 呼び出し（`parent_tool_use_id` が付いたもの）は、本体の `text` / `tool` として出さない。自発ターンの開始の判定にも使わない
 
 ## Permission
 
@@ -571,7 +583,7 @@ Coordinator
 ## 起動時の必須処理
 
 - 子プロセスの環境変数から `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `OPENAI_API_KEY` / `CODEX_API_KEY` を取り除く。Claude は API key があると黙ってそちらを使う（Spike E）
-- 起動直後に認証方式を確認し、サブスクリプション認証でなければ Agent を停止してエラーにする
+- 認証方式を確認し、サブスクリプション認証でなければ Agent を停止してエラーにする。Codex は起動直後（`account/read`）、Claude は最初のターンまで何も出力しないため、最初のターンの `system/init` で確認する（そのターンは failed になる）
 
 ## リスク
 
@@ -719,7 +731,8 @@ MCP message を受け取った後、
 - 宛先 Agent が stopped なら、送る前に起動する。以前の session ID があれば resume する（Lazy Start: Agent は必要になるまで起動しない。§3.2）
 - `ACK` は記録のみで宛先に配送しない（ACK の往復で Agent を起こさない。§25）
 - 送信元への tool 応答は受理結果（message ID）だけを返す。返信は送信元の現在のターンが終わった後、新しいターンとして届く
-- 起動や送信に失敗したら Event Bus に `error` を出し、そのメッセージは破棄する（v0.1 は再送しない）
+- 起動や送信に失敗したら Event Bus に `error` を出し、そのメッセージは破棄する（v0.1 は再送しない）。`/compact` の失敗も同じ扱いで、mailbox は次の項目へ進む
+- `/new`・`/resume` で Agent を止める間は、その Agent の mailbox の配送を止める。止めている間に届いた項目は捨てず、切り替え後の session に配送する
 - Coordinator の停止時は、先に全 mailbox を閉じて未配送分を破棄してから Agent を止める（停止中に Agent を再起動しない）
 
 ---
@@ -791,6 +804,7 @@ AGENTS.md → Codex
 ```
 
 - `permission` は起動時の権限レベル（§9 Permission）。両 Agent に同じレベルを使う
+- UTF-8（BOM の有無は問わない。Windows PowerShell 5.1 は BOM 付きで書く）
 - 優先順位: 起動オプション > project の設定 > ユーザーの設定 > 既定値（primary: `claude`、roles: なし）
 - Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」「権限は人が `/permission` で変えるので、拒否されたらそう伝えること」を伝える
 - 役割が無い Agent には、相手の Agent がいることだけを伝える
@@ -810,15 +824,15 @@ Agent 同士が無限に会話しないよう hard limit を持つ。
 - Agent が message を処理しているターン中に送った message は、その message と同じ chain に属する
 - ACK は数えない（配送もしない。§12）
 
-## 上限（v0.1）
+## 上限
 
-v0.1 は設定ファイルを持たず、`coordinator/budget-manager.ts` の定数とする。
+既定値は `coordinator/budget-manager.ts` の定数で、設定ファイル（§13 Roles）の `limits` で変更できる。既定値は、分業の流れ（設計 → 実装の委譲 → レビュー → 修正の委譲）が上限に当たらないように決めている。
 
 | 上限 | 既定値 | 数え方 |
 |---|---|---|
-| `maxMessagesPerChain` | 4 | chain 内の message 数（ACK 以外） |
-| `maxReviewRoundsPerChain` | 2 | chain 内の `REVIEW_REQUEST` 数 |
-| `maxDelegationsPerChain` | 2 | chain 内の `DELEGATE` + `QUESTION` 数 |
+| `maxMessagesPerChain` | 8 | chain 内の message 数（ACK 以外） |
+| `maxReviewRoundsPerChain` | 3 | chain 内の `REVIEW_REQUEST` 数 |
+| `maxDelegationsPerChain` | 4 | chain 内の `DELEGATE` + `QUESTION` 数 |
 | `maxDelegationDepth` | 2 | 依頼の入れ子の深さ（下記） |
 
 依頼の深さ:
@@ -830,22 +844,13 @@ v0.1 は設定ファイルを持たず、`coordinator/budget-manager.ts` の定�
 
 上限を超える message は受理せず、送信元へ tool エラーで理由を返し、Event Bus に `error` を出す。エラー文では「上限に達したので人間に報告する」よう Agent に促す。
 
-v0.2 では、分業の流れ（設計 → 実装の委譲 → レビュー → 修正の委譲）が上限に当たらないよう既定値を見直し、設定ファイル（§13 Roles）の `limits` で変更できるようにする。
-
-| 上限 | v0.2 の既定値 |
-|---|---|
-| `maxMessagesPerChain` | 8 |
-| `maxReviewRoundsPerChain` | 3 |
-| `maxDelegationsPerChain` | 4 |
-| `maxDelegationDepth` | 2 |
-
 ## 利用枠の可視化と通知（v0.2）
 
 Agent Adapter の `rate_limit` event（Claude: `rate_limit_event`、Codex: `account/rateLimits/updated`）から、Agent ごとに最新の利用状況を保持する。
 
 - **週のペース超過** = 週の使用率 − 週の経過率（経過率は reset 時刻と週の長さ 7 日から計算）。正なら使いすぎ、負なら余裕あり
 - `/status` に、各 Agent の 5 時間枠の使用率と週のペース超過、コンテキストの大きさ、現在の primary を表示する。まだ受け取っていない値は `unknown`
-- コンテキストの大きさは、その Agent の session が変わったとき（`session` event、`/new`、`/resume`）に unknown に戻す
+- コンテキストの大きさは、その Agent の session が変わったとき（`session` event、`/new`、`/resume`）と compact したとき（`compacted` event）に unknown に戻す
 - Codex は起動時に `account/rateLimits/read` で利用状況を取得する（Claude は最初の API 呼び出しの後に届く）
 - 次の条件を初めて満たしたとき、1 回だけ通知する（同じ条件では繰り返さない。reset 後は再び通知できる）
 
@@ -859,7 +864,7 @@ Agent Adapter の `rate_limit` event（Claude: `rate_limit_event`、Codex: `acco
 
 ## 将来
 
-設定ファイル化、mode（economy 等）、CLI の利用率 telemetry（`rate_limit` event）による制御、`/budget` 表示は v0.2 以降。
+mode（economy 等）、CLI の利用率 telemetry（`rate_limit` event）による制御、`/budget` 表示。
 
 ```text
 Session Budget
@@ -1042,6 +1047,8 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
 
 - 接続時に今の会話の直近 1,000 件の `event` / `output` と最新の `state` を送り、以後は新しいものを流す
 - `event` / `output` は会話ごとにファイルにも保存する（§18）。`clodex` を起動し直しても、`/resume` で戻っても、その会話の流れを表示できる
+- `agent` event のうち、ログに表示するもの（`turn_started` / `text` / `tool` / `turn` / `error` / `compacted`）だけを feed に流して保存する。それ以外（`session` / `rate_limit` / `context` / `exit`）は `state` に反映するだけにする（頻繁な `context` で直近 1,000 件の枠を使い切らない）
+- 保存した feed を読み込んだとき、終わっていない（`turn` が無い）ターンは中断したものとして表示する（作業中のまま残さない）
 - 状態のスナップショット: primary、各 Agent の状態・権限・session・利用枠・コンテキスト（`/status` と同じ内容）、会話の一覧と今の会話
 
 ### 入力
@@ -1061,6 +1068,8 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
 - 人間の入力、各 Agent のターン、Agent 間の message、通知、エラー、コマンドの出力を時系列に並べる
 - Agent のターンは、最終応答を本文として表示し、途中の発言と tool 呼び出しを「作業」として起きた順に並べる（既定は畳む。上部の「詳細」で一括して開閉）
 - Agent の応答は簡易な Markdown（段落、見出し、箇条書き、コードブロック、インラインコード、太字）として表示する
+  - 番号付きリストは書かれた番号から始める（`<ol start>`）
+  - 字下げした項目は直前の項目の子として入れ子にする（1 段まで）。番号付きリストの項目の下に字下げした `-` があっても、リストを区切らず番号を続ける
 - Agent 間の message は、送信元 → 宛先、種類、本文、関連ファイル、指摘（severity 付き）、相手に渡した全文（畳む）を表示する
 
 使い勝手の決まり:
@@ -1068,7 +1077,8 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
 - **横スクロールを発生させない**。長いコマンド・JSON・全文は折り返す
 - 読み返している間に新しい項目が来ても勝手にスクロールしない。一番下にいないときは「新着」ボタンを出す
 - 入力: PC は Enter で送信（Shift+Enter で改行）。スマホは Enter で改行し、送信はボタン（日本語入力の確定と誤送信を防ぐ）
-- 送り先は入力欄の切り替えで選ぶ（既定は primary）。`/` や `@` で始まる入力はそのまま送る
+- 送り先は入力欄の切り替えで選ぶ（既定は primary）。`/`・`@`・`!` で始まる入力はそのまま送る（`!command` も terminal と同じく実行する）
+- 開いているシート（Agent の操作・設定）は、`state` が届いたら表示中の値だけを更新する。DOM を作り直さない（タップ中のボタンを差し替えない）
 - 接続が切れている間はその旨を表示し、自動で再接続する
 - テーマ: システム / ライト / ダークを切り替えられる。選択はその端末のブラウザに保存する
 - 内部の思考（chain-of-thought）は表示しない（§3.8）
@@ -1105,6 +1115,7 @@ simple event log
 - コンテキストの管理（自動 compact 等）は各 CLI に任せる（§3.7）。手動で減らしたいときは `/compact`
 - Claude は system prompt を session の最初に記録して resume 後も使う（`--system-prompt-snapshot` の既定）。役割（§13）を変えた後は `/new` で始め直すと確実に反映される
 - 壊れたファイルは空の履歴として扱う（起動を妨げない）
+- 書き込みのたびにファイルを読み直して今の会話を反映し（同じ project で複数の `clodex` を起動しても互いの会話を消さない）、一時ファイルに書いてから置き換える（書き込み途中で落ちても壊さない）
 - message の未配送分、Budget の chain、利用状況は保存しない（in-memory）
 
 Web UI の feed（§17）:
