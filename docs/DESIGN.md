@@ -1732,7 +1732,7 @@ dogfooding で出た要望を 4 段階で入れる。小さく確実なものか
 - Web UI は起動時の言語で画面を作り（`buildWebPage(language)`）、その言語の文言カタログを画面に埋め込む。言語が変われば画面の版も変わる
 - コードに文言を直接書かない。Agent 向けの指示（定型文・Task envelope・Budget のエラー）とプロトコルの値（コマンド名・状態名）は対象外
 
-### D — 本体と UI の分離、並列の会話（設計案。実装前に人が確認する）
+### D — 本体と UI の分離、並列の会話
 
 構成:
 
@@ -1748,7 +1748,7 @@ dogfooding で出た要望を 4 段階で入れる。小さく確実なものか
 ```
 
 - **Hub**: Coordinator 群と保存を持つ常駐プロセス（`clodex serve`）。127.0.0.1 で HTTP + SSE を待ち受け、token で認証する（§17 と同じ）。UI は Hub の API だけを使う（Web 専用の経路を作らない、の延長）
-- **会話の状態**: active（Coordinator と Agent プロセスが動いている）と、保存のみ（履歴と session ID だけ）。active にできる数に上限を設ける（設定 `maxActiveConversations`、既定 3。1 つの会話で Agent プロセスが 2 つ動き、利用枠も共有するため）
+- **会話の状態**: active（Coordinator と Agent プロセスが動いている）と、保存のみ（履歴と session ID だけ）。active にできる数は制限しない（1 つの会話で Agent プロセスが 2 つ動き利用枠も共有するが、どこまで並列に使うかは人が決める）
 - **同じ project で並列に動かす会話**は、それぞれ別の git worktree で作業する（§16）。2 つ目以降の会話を active にするとき、Hub は worktree を作るか尋ねる（`git worktree add <project の隣>/<project 名>-<会話の短い ID> -b clodex/<会話の短い ID>`）。作成・削除・マージは人の操作。会話には worktree のパスとブランチを記録する
 - **利用枠**: Claude / Codex の利用枠はアカウント単位なので、利用状況の監視（§14）と通知は Hub で 1 つにする。Budget の chain は会話ごと
 - **API**（現在の 1 会話の API を会話 ID 付きに広げる）: `GET /api/projects`、`POST /api/projects`（フォルダを開く）、`GET /api/conversations?project=`、`POST /api/conversations`（新しい会話・worktree の指定）、`GET /events?conversation=`、`POST /api/input`（`conversation` と `line`）。ファイル系（`/api/file` 等）も会話（＝作業する場所）を指定する
@@ -1766,7 +1766,18 @@ UI:
 3. **D3**: Tauri GUI（`gui/` に Tauri のプロジェクト。Hub の起動、フォルダの選択、Web UI の表示）
 4. **D4**: TUI
 
-確認したいこと（実装前）: Hub をユーザーごとの常駐プロセスにすること、active な会話の上限、worktree の置き場所と名前、TUI に使うライブラリ（依存を増やすか）
+TUI に使うライブラリは D4 で決める。
+
+D1 の詳細（1 つのプロセスの中の複数の会話）:
+
+- 会話ごとに **ConversationRuntime**（Event Bus・Coordinator・MCP server・Agent・Event Log の file）を持つ。会話を初めて使うとき（入力・`/resume`）に作り、Clodex の終了まで残す（作業が終わった会話の Agent も止めない。戻ったときにすぐ使える）
+- 人が見ている会話（**今の会話**）は 1 つ。terminal と Web UI は今の会話の event を表示し、入力・`/status`・`/interrupt`・`/cancel`・`/compact` 等は今の会話に対して行う
+- `/resume <番号>` は今の会話を切り替えるだけで、前の会話の Agent は止めない（作業中なら続ける）。`/new` は新しい会話を今の会話にする
+- 今の会話以外で Agent のターンが終わったら、今の会話に通知する（例: `[CLODEX] 「設計の相談」の codex が完了しました`）
+- feed は会話ごとに保存する（今と同じ）。今の会話でない間の event も保存する
+- **worktree**: `/new worktree` で、新しい会話用の worktree を作ってその会話の作業場所にする（`git worktree add <project の隣>/<project 名>-<会話の短い ID> -b clodex/<会話の短い ID>`）。会話の履歴に作業場所（`workDir`）とブランチを記録し、`/resume` で戻ったときもそこで Agent を起動する。worktree の削除・マージは人が git で行う
+- 同じ作業場所で別の会話の Agent が作業中のときに入力したら、`/new worktree` を勧める通知を出す（止めはしない）
+- Web UI の会話の一覧に、各会話の状態（作業中・待機中・停止中）と worktree の印を出す
 
 ---
 
