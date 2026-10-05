@@ -218,6 +218,22 @@ describe("ClaudeAdapter", () => {
     expect(events.some((e) => e.type === "error" && /ANTHROPIC_API_KEY/.test(e.message))).toBe(true);
   });
 
+  it("abort 後は exit まで busy を保ち、次の send を終了中プロセスへ書かない", async () => {
+    const spawner = createFakeSpawner(undefined, { exitOnKill: false });
+    const adapter = new ClaudeAdapter(spawner.spawn, () => SESSION_ID);
+    await adapter.start({ cwd: "C:\\dev\\app" });
+    const turn = adapter.send("first");
+    spawner.last.emit(init("ANTHROPIC_API_KEY"));
+    expect(adapter.status).toBe("busy");
+    spawner.last.emit(result("終了中の遅延応答"));
+    expect(adapter.status).toBe("busy");
+    await expect(adapter.send("second")).rejects.toThrow(/busy/);
+    expect(spawner.last.writtenWith("type", "user")).toHaveLength(1);
+    spawner.last.exit(null);
+    await expect(turn).resolves.toEqual({ status: "failed", text: "claude is not using subscription auth (apiKeySource: ANTHROPIC_API_KEY)" });
+    expect(adapter.status).toBe("stopped");
+  });
+
   it("401 の api_retry は retry を待たずに失敗させる", async () => {
     const { adapter, proc } = await setup();
     const turn = adapter.send("x");

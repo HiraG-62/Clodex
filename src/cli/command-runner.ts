@@ -2,6 +2,7 @@
 import { spawn } from "node:child_process";
 import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
+import { killProcessTree } from "../process/kill-tree.js";
 
 // pwsh が無ければ Windows PowerShell 5.1
 const SHELLS = ["pwsh", "powershell"] as const;
@@ -34,10 +35,6 @@ export interface CommandRunnerOptions {
 const defaultSpawnShell = (file: string, args: string[], cwd: string): CommandProcess =>
   spawn(file, args, { cwd, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
 
-const defaultKillTree = (pid: number) => {
-  spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true }).on("error", () => {});
-};
-
 // chunk の途中で切れた文字・行は次の chunk とつなげ、終了時に残りを出す
 const lineSplitter = (print: (line: string) => void) => {
   const decoder = new StringDecoder("utf8");
@@ -58,7 +55,7 @@ const lineSplitter = (print: (line: string) => void) => {
 };
 
 export const createCommandRunner = ({
-  cwd, print, spawnShell = defaultSpawnShell, killTree = defaultKillTree, now = Date.now,
+  cwd, print, spawnShell = defaultSpawnShell, killTree = killProcessTree, now = Date.now,
 }: CommandRunnerOptions) => {
   let shellIndex = 0;
   const running = new Map<CommandProcess, { stopped: boolean; failed: boolean }>();

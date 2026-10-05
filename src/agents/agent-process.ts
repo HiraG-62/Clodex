@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { AgentId } from "./agent-adapter.js";
+import { killProcessTree } from "../process/kill-tree.js";
 
 // 1 行 1 JSON の stdio でやり取りする常駐プロセス。テストで差し替えられるよう抽象化する
 export interface AgentProcess {
@@ -57,9 +58,12 @@ export const spawnAgentProcess: SpawnAgentProcess = (command, args, { cwd, env }
         exited = true;
         handler(code);
       };
-      child.on("exit", once);
+      child.on("close", once);
       child.on("error", () => once(null));
     },
-    kill: () => void child.kill(),
+    kill: () => {
+      if (process.platform === "win32" && child.pid !== undefined) killProcessTree(child.pid);
+      else child.kill();
+    },
   };
 };

@@ -17,6 +17,7 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   protected proc: AgentProcess | undefined;
   private readonly handlers = new Set<AgentEventHandler>();
   private resolveTurn: ((result: TurnResult) => void) | undefined;
+  private abortReason: string | undefined;
   private spontaneousTurn: Promise<TurnResult> | undefined;
   private stopping: Promise<void> | undefined;
   private resolveStop: (() => void) | undefined;
@@ -90,6 +91,7 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   }
 
   protected finishTurn(result: TurnResult): void {
+    if (this.abortReason) return;
     const resolve = this.resolveTurn;
     if (!resolve) return;
     this.resolveTurn = undefined;
@@ -101,15 +103,19 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
 
   // 認証違反など継続してはいけない状態。ターンを失敗させてプロセスを止める
   protected abort(message: string): void {
+    if (this.abortReason) return;
+    this.abortReason = message;
     this.emit({ type: "error", message });
-    this.finishTurn({ status: "failed", text: message });
+    if (this.status === "idle") this.status = "busy";
     this.proc?.kill();
   }
 
   protected handleExit(code: number | null): void {
+    const reason = this.abortReason;
+    this.abortReason = undefined;
     this.proc = undefined;
     this.status = "stopped";
-    this.finishTurn({ status: "failed", text: `${this.id} process exited (code ${code})` });
+    this.finishTurn({ status: "failed", text: reason ?? `${this.id} process exited (code ${code})` });
     this.emit({ type: "exit", code });
     this.resolveStop?.();
     this.resolveStop = undefined;
