@@ -36,6 +36,7 @@ interface RpcMessage {
 interface CodexItem {
   type?: string;
   text?: string;
+  changes?: Array<{ path: string }>;
   server?: string;
   tool?: string;
   arguments?: unknown;
@@ -223,6 +224,9 @@ export class CodexAdapter extends BaseAgentAdapter {
   }
 
   private handleItem(item: CodexItem): void {
+    if (item.type === "fileChange") {
+      this.emit({ type: "tool", name: "fileChange", input: summarizeToolInput(item.changes?.map((change) => change.path).join(", ") ?? "") });
+    }
     if (item.type === "agentMessage" && item.text) {
       this.lastAgentText = item.text;
       this.emit({ type: "text", text: item.text });

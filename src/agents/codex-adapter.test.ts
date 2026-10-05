@@ -163,6 +163,36 @@ describe("CodexAdapter", () => {
     expect(events).toContainEqual({ type: "text", text: "PONG" });
   });
 
+  it("fileChange item の変更ファイルを tool event にする", async () => {
+    const { started, proc, events } = await setup();
+    await started;
+    proc.emit({ method: "item/completed", params: { item: { type: "fileChange", changes: [
+      { path: "src/a.ts", kind: { type: "update" }, diff: "..." },
+      { path: "src/b.ts", kind: { type: "add" }, diff: "..." },
+    ] } } });
+    expect(events).toContainEqual({ type: "tool", name: "fileChange", input: "src/a.ts, src/b.ts" });
+  });
+
+  it("turn/start の error 応答はターンを failed にする", async () => {
+    const responder = defaultResponder();
+    const spawner = createFakeSpawner((m) => (m.method === "turn/start" ? undefined : responder(m)));
+    const adapter = new CodexAdapter(spawner.spawn);
+    await adapter.start({ cwd: "C:\\dev\\app" });
+    const turn = adapter.send("x");
+    const request = spawner.last.writtenWith("method", "turn/start")[0]!;
+    spawner.last.emit({ id: request.id, error: { message: "turn rejected" } });
+    await expect(turn).resolves.toEqual({ status: "failed", text: "turn rejected" });
+  });
+
+  it("thread/compact/start の error 応答はターンを failed にする", async () => {
+    const { adapter, started, proc } = await setup();
+    await started;
+    const turn = adapter.compact();
+    const request = proc.writtenWith("method", "thread/compact/start")[0]!;
+    proc.emit({ id: request.id, error: { message: "compact rejected" } });
+    await expect(turn).resolves.toEqual({ status: "failed", text: "compact rejected" });
+  });
+
   it("compact は thread/compact/start を送り、そのターンの完了で resolve する。前のターンの発言は持ち越さない", async () => {
     const { adapter, started, proc } = await setup();
     await started;
