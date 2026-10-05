@@ -440,50 +440,59 @@ Internal command 候補:
 
 # 9. Agent Adapter
 
-Claude Code / Codex 固有の process/session 制御を Adapter に閉じ込める。
+Claude Code / Codex 固有の process/session 制御を Adapter に閉じ込める。方式は §10 の Option C。
+
+1 Adapter インスタンス = 1 Agent session（= 1 常駐プロセス）とする。v0.1 では各 Agent 1 session なので、操作の引数に session ID を持たせない。
 
 ```ts
+type AgentId = "claude" | "codex";
+type AgentStatus = "stopped" | "starting" | "idle" | "busy";
+
+interface AgentStartOptions {
+  cwd: string;
+  resumeSessionId?: string; // 指定時は既存 session を継続する
+  mcpUrl?: string;          // Coordinator の MCP endpoint（§12）
+  model?: string;
+}
+
+interface TurnResult {
+  status: "completed" | "interrupted" | "failed";
+  text: string;             // Agent の最終応答
+}
+
 interface AgentAdapter {
-  readonly id: "claude" | "codex";
-  readonly capabilities: AgentCapabilities;
+  readonly id: AgentId;
+  readonly status: AgentStatus;
+  readonly sessionId: string | undefined;
 
-  start(task: AgentTask): Promise<AgentSession>;
-
-  resume(
-    sessionId: string,
-    message: AgentInput,
-  ): Promise<void>;
-
-  interrupt(
-    sessionId: string,
-  ): Promise<void>;
-
-  getStatus(
-    sessionId: string,
-  ): Promise<AgentStatus>;
-
-  subscribe(
-    sessionId: string,
-    handler: (event: AgentEvent) => void,
-  ): () => void;
+  start(options: AgentStartOptions): Promise<void>;
+  send(text: string): Promise<TurnResult>; // ターン完了で resolve。busy 中は拒否する
+  interrupt(): Promise<void>;
+  stop(): Promise<void>;
+  onEvent(handler: (event: AgentEvent) => void): () => void;
 }
 ```
 
-CLI ごとに capability が異なる場合は明示する。
+`AgentEvent` は CLI 固有のイベントを正規化した observable event（§3.8）。
 
-例:
+| type | 内容 |
+|---|---|
+| `session` | session ID の確定 |
+| `text` | Agent の発言テキスト |
+| `tool` | tool 呼び出し（名前と入力の要約） |
+| `turn` | ターン完了（`TurnResult`） |
+| `rate_limit` | 5 時間 / 7 日の利用率（%）と reset 時刻 |
+| `exit` | プロセス終了 |
+| `error` | 認証違反・プロトコルエラー等 |
 
-```ts
-interface AgentCapabilities {
-  interactive: boolean;
-  resumable: boolean;
-  interruptible: boolean;
-  mcp: boolean;
-  structuredOutput: boolean;
-}
-```
+Spike の結果、v0.1 で使う操作（送信・interrupt・resume・MCP）は両 CLI とも対応しているため、capabilities は持たない。機能差が必要になった時点で追加する。
 
-Unsupported operation は Coordinator が明示的に拒否する。
+Adapter の必須処理:
+
+- 子プロセスの環境変数から API key を取り除く（§10）
+- 認証方式がサブスクリプションでなければ、プロセスを止めて `error` を出す
+- 実行中ターンへの追加送信（steer）は v0.1 では使わない。busy 中の `send` は Coordinator 側でキューに積む（§12）
+- 予期しない承認要求（Codex の server request）はエラー応答し、`error` を出す。v0.1 の Codex は `approvalPolicy: "never"` + `sandbox: "workspace-write"` で起動し、Coordinator の MCP tool だけ自動承認する
 
 ---
 
