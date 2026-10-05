@@ -84,7 +84,15 @@ const STYLE = `
   .agent h2 { margin: 0 0 12px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
   .agent h2 .state { margin-left: auto; }
   .role { color: var(--muted); font-size: 12px; margin: -6px 0 12px; overflow-wrap: anywhere; }
+  .role-button { border: 0; background: transparent; color: var(--muted); font-size: 15px; padding: 2px 5px; border-radius: 5px; }
+  .role-button:hover { color: var(--fg); background: var(--sunken); }
+  .role-editor { width: 100%; min-height: 140px; resize: vertical; border: 1px solid var(--line-strong); border-radius: 8px;
+    background: var(--panel); color: var(--fg); padding: 10px; font: inherit; }
   .agent .role { margin-left: 30px; }
+  .setting-chips { display: flex; gap: 5px; flex-wrap: wrap; margin: -4px 0 14px; }
+  .setting-chip { border: 1px solid var(--line); background: var(--sunken); color: var(--fg-2); border-radius: 999px;
+    padding: 3px 8px; font-size: 11px; line-height: 1.35; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .setting-chip.warning { border-color: var(--warn); color: var(--warn); background: transparent; }
   .gauge { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; margin-bottom: 10px; font-size: 12px; }
   .gauge .k { color: var(--muted); }
   .gauge .v { color: var(--fg-2); } .gauge .v.over { color: var(--warn); }
@@ -110,7 +118,7 @@ const STYLE = `
   .conv-menu:hover { background: var(--sunken); color: var(--fg); }
   .badge { font: 600 11px/1 var(--font-mono); padding: 3px 6px; border-radius: 4px; background: var(--crit); color: var(--invert-fg); }
   .model-form { display: flex; gap: 6px; }
-  .model-form input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: 14px var(--font-mono); background: var(--panel); color: var(--fg); }
+  .model-form input, .model-form select { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: 14px var(--font-mono); background: var(--panel); color: var(--fg); }
   .model-form button { border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; background: var(--invert-bg); color: var(--invert-fg); font-weight: 600; font-size: 13px; }
   .secondary-action { width: 100%; margin: 14px 0 4px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px; background: var(--panel); color: var(--fg); font-weight: 500; }
   .secondary-action.danger { color: var(--crit); border-color: currentColor; }
@@ -196,17 +204,16 @@ const STYLE = `
   .composer { padding: 10px 16px; padding-bottom: max(12px, env(safe-area-inset-bottom)); background: var(--bg); margin: 0; }
   .box { border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); display: grid; }
   .box:focus-within { border-color: var(--fg-2); }
-  .input-wrap { display: grid; }
-  .input-wrap > * { grid-area: 1 / 1; }
+  .input-wrap { position: relative; min-width: 0; }
   /* textarea の背後に同じ折り返しで描き、指定した語の背景だけを見せる */
   .input-highlight, .box textarea { padding: 12px 14px 4px; font: inherit; font-size: 16px; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-gutter: stable; }
-  .input-highlight { color: transparent; pointer-events: none; overflow: hidden; }
+  .input-highlight { position: absolute; inset: 0; width: 100%; height: 100%; color: transparent; pointer-events: none; overflow: hidden; }
   .input-highlight mark { color: transparent; border-radius: 3px; }
   .input-highlight .hl-command { background: color-mix(in srgb, var(--fg) 14%, transparent); }
   .input-highlight .hl-claude { background: color-mix(in srgb, var(--claude) 26%, transparent); }
   .input-highlight .hl-codex { background: color-mix(in srgb, var(--codex) 26%, transparent); }
   .input-highlight .hl-file { background: color-mix(in srgb, var(--warn) 24%, transparent); }
-  .box textarea { position: relative; border: 0; background: transparent; resize: none; color: var(--fg);
+  .box textarea { position: relative; display: block; width: 100%; border: 0; background: transparent; resize: none; color: var(--fg);
     min-height: 44px; max-height: 40vh; outline: none; overflow-y: hidden; }
   .pending { list-style: none; margin: 0; padding: 6px 8px; border-bottom: 1px solid var(--line); display: grid; gap: 4px; }
   .pending li { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; }
@@ -244,6 +251,20 @@ const STYLE = `
   .sheet-close { border: 0; background: none; color: var(--muted); font-size: 13px; padding: 8px 0 8px 12px; }
   .primary-action { width: 100%; margin: 8px 0 12px; border: 0; border-radius: 8px; padding: 10px; font-weight: 600; background: var(--invert-bg); color: var(--invert-fg); }
   .setting { margin-bottom: 4px; }
+  .working-tab { position: fixed; right: 0; top: 42%; z-index: 12; writing-mode: vertical-rl; border: 1px solid var(--line-strong);
+    border-radius: 8px 0 0 8px; background: var(--panel); color: var(--fg-2); padding: 12px 7px; font-size: 12px; box-shadow: 0 3px 14px rgba(0,0,0,.08); }
+  .working-panel { position: fixed; right: 0; top: 12%; bottom: 10%; width: min(340px, 92vw); z-index: 13;
+    border: 1px solid var(--line); border-radius: 12px 0 0 12px; background: var(--panel); box-shadow: -6px 0 30px rgba(0,0,0,.14);
+    padding: 18px; overflow-y: auto; }
+  .working-panel-head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin-bottom: 12px; }
+  .working-panel-head button { border: 0; background: transparent; color: var(--muted); font-size: 18px; }
+  .working-list { display: grid; gap: 8px; }
+  .working-entry { display: grid; gap: 5px; width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); padding: 10px; font-size: 12px; }
+  .working-entry .name { font-weight: 600; color: var(--fg); }
+  .working-entry .work { color: var(--fg-2); overflow-wrap: anywhere; }
+  .working-entry .plan { color: var(--muted); overflow-wrap: anywhere; }
+  .working-entry .elapsed { color: var(--muted); font-family: var(--font-mono); }
 
   .app { display: grid; height: 100%; max-width: 1240px; margin: 0 auto; min-width: 0;
     grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto;
@@ -256,6 +277,13 @@ const STYLE = `
     .status { display: none; }
     .log { padding-inline: 32px; } .composer { padding-inline: 32px; }
     #open-conversations { display: none; }
+  }
+  @media (max-width: 899px), (pointer: coarse) {
+    .topbar { flex-wrap: wrap; gap: 6px; }
+    .topbar .path { display: none; }
+    .working-tab { top: auto; bottom: calc(96px + env(safe-area-inset-bottom)); right: 12px; writing-mode: horizontal-tb;
+      border-radius: 999px; padding: 5px 12px; }
+    .working-panel { top: auto; bottom: 0; left: 0; width: 100%; max-height: 65vh; border-radius: 14px 14px 0 0; }
   }
 `;
 
@@ -311,6 +339,11 @@ const body = (messages: Messages) => {
     </div>
   </form>
 </div>
+<button class="working-tab" id="working-toggle" type="button" aria-expanded="false">${m("web.working.title")} <span id="working-count">0</span></button>
+<aside class="working-panel" id="working-panel" hidden aria-label="${m("web.working.title")}">
+  <div class="working-panel-head"><span>${m("web.working.title")}</span><button id="working-close" type="button" aria-label="${m("web.working.close")}">×</button></div>
+  <div class="working-list" id="working-list"></div>
+</aside>
 <div class="sheet" id="sheet" hidden>
   <button class="sheet-backdrop" id="sheet-backdrop" type="button" aria-label="${m("web.sheet.close")}"></button>
   <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">

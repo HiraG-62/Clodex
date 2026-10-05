@@ -35,7 +35,8 @@ export class AgentMailbox {
 
   constructor(
     private readonly agent: AgentAdapter,
-    private readonly startOptions: AgentStartOptions,
+    // 起動のたびに呼ぶ（役割の変更などを次の起動に反映する。DESIGN.md §28 E）
+    private readonly startOptions: () => AgentStartOptions,
     private readonly onError: (message: string) => void,
   ) {}
 
@@ -190,13 +191,13 @@ export class AgentMailbox {
     if (this.agent.status !== "stopped") return this.agent.sessionId;
     return this.nextSession
       ? this.nextSession.sessionId
-      : (this.agent.sessionId ?? this.startOptions.resumeSessionId);
+      : (this.agent.sessionId ?? this.startOptions().resumeSessionId);
   }
 
   private async ensureRunning(): Promise<void> {
     if (this.agent.status !== "stopped") return;
     const resumeSessionId = this.sessionId;
-    const { resumeSessionId: _initial, ...options } = this.startOptions;
+    const { resumeSessionId: _initial, ...options } = this.startOptions();
     await this.agent.start({ ...options, ...(resumeSessionId ? { resumeSessionId } : {}) });
     // 起動に失敗したら次の試行でも選んだ session を使う
     this.nextSession = undefined;

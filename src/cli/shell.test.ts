@@ -56,14 +56,14 @@ class FakeCoordinator implements ShellCoordinator {
   settingResult: TurnResult | undefined;
   states: AgentState[] = [
     {
-      id: "claude", status: "idle", sessionId: "s-claude", permission: "edit", model: "haiku", effort: "high",
+      id: "claude", status: "idle", sessionId: "s-claude", permission: "edit", model: "haiku", effort: "high", models: ["default", "opus", "sonnet", "haiku"],
       usage: {
         fiveHourPercent: 12, fiveHourResetsAt: new Date(2026, 9, 5, 22, 30).getTime() / 1000,
         weeklyPercent: 50, weeklyPace: -20, weeklyResetsAt: new Date(2026, 9, 9, 10, 0).getTime() / 1000,
         contextTokens: 85400, contextWindow: 200000,
       },
     },
-    { id: "codex", status: "stopped", sessionId: undefined, permission: "full", usage: {} },
+    { id: "codex", status: "stopped", sessionId: undefined, permission: "full", models: [], usage: {} },
   ];
 
   async setPermission(level: PermissionLevel, agent?: AgentId): Promise<void> {
@@ -148,6 +148,7 @@ const setup = () => {
   const history = new FakeHistory();
   const busy = { value: false };
   const saved: Array<{ agents: readonly AgentId[]; change: object }> = [];
+  const roles: Partial<Record<AgentId, string>> = { claude: "設計" };
   const projects = {
     list: () => [{ projectRoot: "C:\\dev\\one", open: true, current: true }, { projectRoot: "C:\\dev\\two", open: false, current: false }],
     open: async (path: string) => ({ projectRoot: path, primary: "codex" as AgentId }),
@@ -157,11 +158,21 @@ const setup = () => {
     saveSettings: (agents, change) => saved.push({ agents, change }),
     resolveReference: async (path) => ({ "src/a.ts": "C:/p/src/a.ts", "shot.png": "C:/up/shot.png" } as Record<string, string>)[path],
     projects,
+    roles: () => roles,
+    saveRole: (agent, value) => { roles[agent] = value; return value; },
   });
-  return { coordinator, printed, shell, history, runner, saved, busy, projects };
+  return { coordinator, printed, shell, history, runner, saved, busy, projects, roles };
 };
 
 describe("createShell", () => {
+  it("/role で役割を表示し、編集後に次の session の案内を出す", async () => {
+    const { shell, printed, roles } = setup();
+    await shell.handleLine("/role");
+    expect(printed.join("\n")).toContain("設計");
+    await shell.handleLine("/role codex 実装を担当");
+    expect(roles.codex).toBe("実装を担当");
+    expect(printed.at(-1)).toContain("/new codex");
+  });
   it("/project で一覧を表示し、指定パスへ切り替える", async () => {
     const { shell, printed } = setup();
     await shell.handleLine("/project");
@@ -424,8 +435,8 @@ describe("createShell", () => {
   it("Ctrl+C は実行中の Agent だけ interrupt する", async () => {
     const { coordinator, shell } = setup();
     coordinator.states = [
-      { id: "claude", status: "busy", sessionId: "s1", permission: "edit", usage: {} },
-      { id: "codex", status: "idle", sessionId: "s2", permission: "edit", usage: {} },
+      { id: "claude", status: "busy", sessionId: "s1", permission: "edit", models: [], usage: {} },
+      { id: "codex", status: "idle", sessionId: "s2", permission: "edit", models: [], usage: {} },
     ];
     await shell.handleSigint();
     expect(coordinator.interrupted).toEqual(["claude"]);

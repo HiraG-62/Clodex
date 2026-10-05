@@ -84,7 +84,7 @@ export const openProject = async ({
       settings: resolveStartSettings({
         saved: settingsStore.load(), models: args.models, ...(config.permission ? { configPermission: config.permission } : {}),
       }),
-      instructions: Object.fromEntries(AGENT_IDS.map((id) => [id, buildRoleInstructions(id, config.roles, { language, artifactsDir })])),
+      instructions: (id) => buildRoleInstructions(id, config.roles, { language, artifactsDir }),
       limits: { ...DEFAULT_LIMITS, ...config.limits },
       ...(config.usageAlert ? { usageAlert: config.usageAlert } : {}),
       resumeSessionIds: conversation.sessions,

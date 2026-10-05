@@ -53,8 +53,6 @@ export function clientMain({
   const MS_PER_SECOND = 1000;
   const SECONDS_PER_MINUTE = 60;
   const PERCENT = 100;
-  // model の入力候補（自由入力もできる）
-  const MODEL_SUGGESTIONS: Record<AgentId, readonly string[]> = { claude: ["opus", "sonnet", "haiku"], codex: [] };
   // @path の候補を取り直す間隔（入力欄に入るたびに取ると重い）
   const FILES_REFRESH_MS = 30_000;
   // @path の参照として本文の末尾に足された部分（cli/file-references.ts）。編集で入力欄に戻すときは外す
@@ -261,6 +259,41 @@ export function clientMain({
     newer.hidden = true;
   };
 
+  const workingPanel = $("#working-panel");
+  const workingToggle = $("#working-toggle");
+  const renderWorking = () => {
+    const active = items.filter((item): item is Extract<TimelineItem, { kind: "turn" }> => item.kind === "turn" && item.status === "working");
+    $("#working-count").textContent = String(active.length);
+    const list = $("#working-list");
+    list.replaceChildren(...active.map((item) => {
+      const last = item.steps.at(-1);
+      const work = last?.kind === "say" ? last.text : last?.kind === "tool" ? `${last.name}: ${last.input}` : t("web.turn.working");
+      const button = el("button", "working-entry") as HTMLButtonElement;
+      button.type = "button";
+      button.append(el("span", `name c-${item.agent}`, AGENTS[item.agent].name));
+      if (item.plan) button.append(el("span", "plan", item.plan.split("\n", 1)[0] ?? ""));
+      button.append(el("span", "work", work.split("\n", 1)[0] ?? ""));
+      const elapsed = el("span", "elapsed", elapsedText(item.at));
+      elapsed.dataset.start = item.at;
+      button.append(elapsed);
+      button.addEventListener("click", () => {
+        workingPanel.hidden = true;
+        workingToggle.setAttribute("aria-expanded", "false");
+        rendered.get(item.id)?.node.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+      return button;
+    }));
+    if (!active.length) list.append(el("p", "muted small", t("web.working.empty")));
+  };
+  workingToggle.addEventListener("click", () => {
+    workingPanel.hidden = !workingPanel.hidden;
+    workingToggle.setAttribute("aria-expanded", String(!workingPanel.hidden));
+  });
+  $("#working-close").addEventListener("click", () => {
+    workingPanel.hidden = true;
+    workingToggle.setAttribute("aria-expanded", "false");
+  });
+
   // 変わった項目だけ描き直す（開閉やスクロール位置を保つ）
   const renderLog = (force = false) => {
     const stick = nearBottom();
@@ -288,6 +321,7 @@ export function clientMain({
     }
     $("#empty").hidden = items.length > 0;
     if (stick) scrollToBottom(); else newer.hidden = false;
+    renderWorking();
   };
 
   // ---- 状態の描画 ----
@@ -357,15 +391,29 @@ export function clientMain({
     ];
   };
 
-  const describeSettings = (agent: AgentState) =>
-    t("web.agent.summary", { model: agent.model ?? "default", effort: agent.effort ?? "default", permission: agent.permission });
-
   // Agent パネル: 設定の要約、利用枠、操作。権限・model・effort は「設定」から開くポップアップで変える
   const agentControls = (agent: AgentState) => {
     const wrap = el("div", "controls");
-    const summary = el("div", "setting mono small", describeSettings(agent));
+    const chips = el("div", "setting-chips");
+    const chip = (label: string) => {
+      const button = el("button", "setting-chip mono", label) as HTMLButtonElement;
+      button.type = "button";
+      button.addEventListener("click", () => openAgentSettings(agent.id));
+      chips.append(button);
+      return button;
+    };
+    const modelChip = chip(agent.model ?? "default");
+    const effortChip = chip(agent.effort ?? "default");
+    const permissionChip = chip(agent.permission);
+    const updateChips = (current: AgentState) => {
+      modelChip.textContent = current.model ?? "default";
+      effortChip.textContent = current.effort ?? "default";
+      permissionChip.textContent = current.permission;
+      permissionChip.classList.toggle("warning", current.permission === "full");
+    };
+    updateChips(agent);
     const gauges = gaugeValues(agent.usage).map((g) => gauge(g.label, g.value, g.percent, agent.id, g.over, g.tick));
-    wrap.append(summary, ...gauges);
+    wrap.append(chips, ...gauges);
     const links = el("div", "links");
     const action = (label: string, run: () => void, cls = "", disabled = false) => {
       const button = el("button", cls, label) as HTMLButtonElement;
@@ -380,7 +428,7 @@ export function clientMain({
     action(t("web.agent.settings"), () => openAgentSettings(agent.id));
     wrap.append(links);
     controlUpdaters.set(wrap, (current) => {
-      summary.textContent = describeSettings(current);
+      updateChips(current);
       gaugeValues(current.usage).forEach((g, index) => {
         const node = gauges[index];
         if (node) syncGauge(node, g.label, g.value, g.percent, g.over, g.tick);
@@ -394,6 +442,14 @@ export function clientMain({
   const stateLabel = (agent: AgentState) => {
     const node = el("span", `state ${agent.status === "busy" ? "working" : ""}`, t(STATUS_LABEL[agent.status]));
     return node;
+  };
+  const roleButton = (id: AgentId) => {
+    const button = el("button", "role-button", "✎") as HTMLButtonElement;
+    button.type = "button";
+    button.setAttribute("aria-label", t("web.role.open", { agent: AGENTS[id].name }));
+    button.title = t("web.role.open", { agent: AGENTS[id].name });
+    button.addEventListener("click", () => openRoleEditor(id));
+    return button;
   };
 
   const renderState = () => {
@@ -439,10 +495,8 @@ export function clientMain({
     $("#agents").replaceChildren(...state.agents.map((agent) => {
       const section = el("section", "agent");
       const h2 = el("h2");
-      h2.append(mark(agent.id), el("span", "", AGENTS[agent.id].name), stateLabel(agent));
+      h2.append(mark(agent.id), el("span", "", AGENTS[agent.id].name), roleButton(agent.id), stateLabel(agent));
       section.append(h2);
-      const role = state?.roles[agent.id];
-      if (role) section.append(el("div", "role", role));
       section.append(agentControls(agent));
       return section;
     }));
@@ -515,7 +569,7 @@ export function clientMain({
 
   // ---- シート（スマホの操作パネル・会話・設定） ----
   let sheetAgent: AgentId | undefined;
-  let sheetKind: "agent" | "agentSettings" | "settings" | "conversations" | "conversationMenu" | "artifacts" | "viewer" | undefined;
+  let sheetKind: "agent" | "agentSettings" | "role" | "settings" | "conversations" | "conversationMenu" | "artifacts" | "viewer" | undefined;
   let pendingPrimary: AgentId | undefined;
   const sheet = $("#sheet");
   const openSheet = (title: string, content: HTMLElement[]) => {
@@ -535,8 +589,7 @@ export function clientMain({
     if (!agent) return;
     sheetAgent = id;
     sheetKind = "agent";
-    const role = state?.roles[id];
-    openSheet(AGENTS[id].name, [...(role ? [el("div", "role", role)] : []), agentControls(agent)]);
+    openSheet(AGENTS[id].name, [roleButton(id), agentControls(agent)]);
   };
   const openConversations = () => {
     sheetKind = "conversations";
@@ -554,6 +607,22 @@ export function clientMain({
     button.type = "button";
     button.addEventListener("click", run);
     return button;
+  };
+  const openRoleEditor = (id: AgentId) => {
+    sheetKind = "role";
+    sheetAgent = id;
+    const field = el("textarea", "role-editor") as HTMLTextAreaElement;
+    field.value = state?.roles[id] ?? "";
+    field.setAttribute("aria-label", t("web.role.title", { agent: AGENTS[id].name }));
+    const saveButton = sheetButton(t("web.role.save"), "primary-action", () => {
+      const value = field.value.replace(/\s+/g, " ").trim();
+      if (!value) return;
+      void send(`/role ${id} ${value}`).then((ok) => { if (ok) closeSheet(); });
+    });
+    openSheet(t("web.role.title", { agent: AGENTS[id].name }), [
+      field, saveButton, el("p", "muted small", t("web.role.restart", { agent: id })),
+    ]);
+    field.focus();
   };
   // ---- 成果物（DESIGN.md §28 v0.3 B） ----
   const fileUrl = (api: "file" | "diff", path: string) => `/api/${api}?path=${encodeURIComponent(path)}`;
@@ -649,29 +718,36 @@ export function clientMain({
     const model = el("div", "setting");
     model.append(el("div", "eyebrow", t("web.agentSettings.model")));
     const form = el("form", "model-form") as HTMLFormElement;
+    const select = el("select") as HTMLSelectElement;
+    select.name = "model-choice";
+    select.setAttribute("aria-label", t("web.agentSettings.modelLabel", { agent: AGENTS[id].name }));
+    const names = [...new Set([...agent.models, ...(agent.model ? [agent.model] : [])])];
+    for (const name of names) {
+      const option = el("option", "", name) as HTMLOptionElement;
+      option.value = name;
+      select.append(option);
+    }
+    const other = el("option", "", t("web.model.other")) as HTMLOptionElement;
+    other.value = "__other__";
+    select.append(other);
+    select.value = agent.model && names.includes(agent.model) ? agent.model : names[0] ?? "__other__";
     const field = el("input") as HTMLInputElement;
     field.name = "model";
     field.autocomplete = "off";
     field.placeholder = agent.model ?? "default";
-    field.setAttribute("list", `models-${id}`);
     field.setAttribute("aria-label", t("web.agentSettings.modelLabel", { agent: AGENTS[id].name }));
-    const options = el("datalist");
-    options.id = `models-${id}`;
-    for (const name of MODEL_SUGGESTIONS[id]) {
-      const option = el("option") as HTMLOptionElement;
-      option.value = name;
-      options.append(option);
-    }
+    field.hidden = select.value !== "__other__";
+    select.addEventListener("change", () => { field.hidden = select.value !== "__other__"; if (!field.hidden) field.focus(); });
     const apply = el("button", "", t("web.agentSettings.apply")) as HTMLButtonElement;
     apply.type = "submit";
     form.addEventListener("submit", (e) => {
       e.preventDefault();
-      const value = field.value.trim();
+      const value = select.value === "__other__" ? field.value.trim() : select.value;
       if (!value) return;
       void send(`/model ${id} ${value}`);
       field.value = "";
     });
-    form.append(field, options, apply);
+    form.append(select, field, apply);
     model.append(form);
     const effort = choice("effort", t("web.agentSettings.effort"), EFFORTS[id], agent.effort ?? "", (v) => v, (v) => void send(`/effort ${id} ${v}`));
     const restart = sheetButton(t("web.agentSettings.restart"), "secondary-action", () => {
@@ -789,9 +865,11 @@ export function clientMain({
   // ---- 入力 ----
   const coarse = window.matchMedia("(pointer: coarse)").matches;
   const resize = () => {
+    const stick = nearBottom();
     input.style.height = "";
     input.style.height = `${input.scrollHeight}px`;
     input.style.overflowY = input.scrollHeight > input.clientHeight ? "auto" : "hidden";
+    if (stick) requestAnimationFrame(scrollToBottom);
   };
   // 送信に成功してから入力欄を空にする（失敗しても書いた内容を失わない）
   const sendButton = $("#composer .send") as HTMLButtonElement;
@@ -812,7 +890,11 @@ export function clientMain({
     void submit();
   });
   // ---- 入力の補助（候補と強調表示。DESIGN.md §28 v0.3 A） ----
-  const assist = createInputAssist(commands, AGENT_IDS, { agent: t("web.assist.agent"), file: t("web.assist.file") });
+  const assist = createInputAssist(commands, AGENT_IDS, {
+    agent: t("web.assist.agent"), file: t("web.assist.file"), permission: t("web.assist.permission"),
+    effort: t("web.assist.effort"), model: t("web.assist.model"), conversation: t("web.assist.conversation"),
+    project: t("web.assist.project"), worktree: t("web.assist.worktree"), queued: t("web.assist.queued"),
+  });
   const highlightLayer = $("#input-highlight");
   const suggestList = $("#suggest");
   let files: string[] = [];
@@ -863,7 +945,7 @@ export function clientMain({
   };
   const updateSuggest = () => {
     const caret = input.selectionStart;
-    suggestion = caret === input.selectionEnd ? assist.suggest(input.value, caret, files) : undefined;
+    suggestion = caret === input.selectionEnd ? assist.suggest(input.value, caret, files, state) : undefined;
     selected = 0;
     renderSuggest();
   };
@@ -960,6 +1042,7 @@ export function clientMain({
   newer.addEventListener("click", scrollToBottom);
   setInterval(() => {
     for (const node of log.querySelectorAll<HTMLElement>(".elapsed[data-start]")) node.textContent = elapsedText(node.dataset.start ?? "");
+    for (const node of workingPanel.querySelectorAll<HTMLElement>(".elapsed[data-start]")) node.textContent = elapsedText(node.dataset.start ?? "");
   }, MS_PER_SECOND);
   log.addEventListener("scroll", () => { if (nearBottom()) newer.hidden = true; });
 

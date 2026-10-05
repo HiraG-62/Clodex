@@ -8,7 +8,7 @@ const START_OPTIONS = { cwd: "C:\\dev\\app", mcpUrl: "http://127.0.0.1:1/mcp/t/c
 const setup = () => {
   const agent = new FakeAgentAdapter("codex");
   const onError = vi.fn();
-  const mailbox = new AgentMailbox(agent, START_OPTIONS, onError);
+  const mailbox = new AgentMailbox(agent, () => START_OPTIONS, onError);
   return { agent, onError, mailbox };
 };
 
@@ -33,7 +33,7 @@ describe("AgentMailbox", () => {
 
   it("startOptions の resumeSessionId は、Agent に session が無いときの最初の起動で使う", async () => {
     const agent = new FakeAgentAdapter("codex");
-    const mailbox = new AgentMailbox(agent, { ...START_OPTIONS, resumeSessionId: "saved" }, vi.fn());
+    const mailbox = new AgentMailbox(agent, () => ({ ...START_OPTIONS, resumeSessionId: "saved" }), vi.fn());
     void mailbox.enqueue("hello");
     await flush();
     expect(agent.starts[0]).toMatchObject({ resumeSessionId: "saved" });
@@ -42,7 +42,7 @@ describe("AgentMailbox", () => {
   it("Agent の session がある（一度起動した）なら、保存された ID より Agent の session を優先する", async () => {
     const agent = new FakeAgentAdapter("codex");
     agent.sessionId = "current";
-    const mailbox = new AgentMailbox(agent, { ...START_OPTIONS, resumeSessionId: "saved" }, vi.fn());
+    const mailbox = new AgentMailbox(agent, () => ({ ...START_OPTIONS, resumeSessionId: "saved" }), vi.fn());
     void mailbox.enqueue("hello");
     await flush();
     expect(agent.starts[0]).toMatchObject({ resumeSessionId: "current" });
@@ -51,7 +51,7 @@ describe("AgentMailbox", () => {
   it("switchSession で指定した session（undefined なら新規）で次回起動する", async () => {
     const agent = new FakeAgentAdapter("codex");
     agent.sessionId = "current";
-    const mailbox = new AgentMailbox(agent, START_OPTIONS, vi.fn());
+    const mailbox = new AgentMailbox(agent, () => START_OPTIONS, vi.fn());
     mailbox.switchSession("picked");
     void mailbox.enqueue("a");
     await flush();
@@ -69,7 +69,7 @@ describe("AgentMailbox", () => {
   it("switchSession 後の起動が失敗しても、次の試行で選んだ session を使う", async () => {
     const agent = new FakeAgentAdapter("codex");
     agent.sessionId = "current";
-    const mailbox = new AgentMailbox(agent, START_OPTIONS, vi.fn());
+    const mailbox = new AgentMailbox(agent, () => START_OPTIONS, vi.fn());
     mailbox.switchSession("picked");
     agent.startError = new Error("boom");
     await mailbox.enqueue("a");

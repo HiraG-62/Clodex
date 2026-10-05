@@ -43,6 +43,7 @@ export type AgentEvent =
   | { type: "rate_limit"; fiveHour?: RateLimitWindow; weekly?: RateLimitWindow }
   | { type: "context"; tokens: number; window?: number }
   | { type: "compacted" }
+  | { type: "models" }
   | { type: "exit"; code: number | null }
   | { type: "error"; message: string };
 
@@ -55,6 +56,7 @@ export interface AgentAdapter {
   readonly permission: PermissionLevel;
   readonly model: string | undefined;
   readonly effort: string | undefined;
+  listModels(): readonly string[];
 
   start(options: AgentStartOptions): Promise<void>;
   // images: 画像のファイル（実パス）。Agent に画像として渡す（DESIGN.md §28 v0.3 C）

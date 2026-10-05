@@ -14,6 +14,7 @@ export interface AgentState {
   permission: PermissionLevel;
   model?: string;
   effort?: string;
+  models: readonly string[];
   usage: UsageSnapshot;
 }
 
@@ -79,6 +80,8 @@ export interface ShellOptions {
     open(path: string): Promise<{ projectRoot: string; primary: AgentId }>;
     hasCurrent?(): boolean;
   };
+  roles?: () => Partial<Record<AgentId, string>>;
+  saveRole?: (agent: AgentId, text: string) => string;
 }
 
 export interface SettingsChange {
@@ -146,6 +149,7 @@ export const createShell = ({
   coordinator, primary: initialPrimary, print, toggleVerbose, history: historySource, runner, saveSettings = () => {}, resolveReference = async () => undefined,
   busyElsewhere = () => false,
   projects,
+  roles = () => ({}), saveRole = (_agent, text) => text,
 }: ShellOptions) => {
   let primary = initialPrimary;
   const history = typeof historySource === "function" ? historySource : () => historySource;
@@ -242,6 +246,17 @@ export const createShell = ({
         if (!projects?.list().length) print(t("shell.noProjects"));
         else for (const project of projects.list()) {
           print(`${project.projectRoot}${project.current ? t("shell.projectCurrent") : project.open ? "" : t("shell.projectSaved")}`);
+        }
+        return "continue";
+      case "role":
+        if (command.agent && command.text !== undefined) {
+          const saved = saveRole(command.agent, command.text);
+          print(t("shell.roleSaved", { agent: command.agent, text: saved }));
+          print(t("shell.roleRestart", { agent: command.agent }));
+          return "continue";
+        }
+        for (const agent of command.agent ? [command.agent] : AGENT_IDS) {
+          print(t("shell.role", { agent, text: roles()[agent] ?? t("shell.roleUnset") }));
         }
         return "continue";
       case "cancel": {

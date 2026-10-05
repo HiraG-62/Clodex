@@ -79,6 +79,9 @@ export class CodexAdapter extends BaseAgentAdapter {
   // 次の turn/start で sandbox を変える。以降のターンにも引き継がれるので 1 回だけ送る
   private pendingSandbox: PermissionLevel | undefined;
   private lastAgentText = "";
+  private availableModels: string[] = [];
+
+  listModels(): readonly string[] { return this.availableModels; }
 
   constructor(private readonly spawnProcess: SpawnAgentProcess = spawnAgentProcess) {
     super();
@@ -119,6 +122,7 @@ export class CodexAdapter extends BaseAgentAdapter {
     await this.applyPermissionChangedDuringStart();
     this.emit({ type: "session", sessionId: this.sessionId });
     this.readRateLimits();
+    this.readModels();
   }
 
   // turn/steer は実行中の turn ID を前提にする（docs/spikes/steer-image-subagent.md）
@@ -202,6 +206,18 @@ export class CodexAdapter extends BaseAgentAdapter {
   private readRateLimits(): void {
     this.request("account/rateLimits/read", undefined)
       .then((result) => this.emitRateLimits((result as CodexNotificationParams).rateLimits))
+      .catch(() => {});
+  }
+
+  private readModels(): void {
+    if (this.availableModels.length) return;
+    // generate-ts: ModelListResponse.data[].model が turn/start の model 値。
+    this.request("model/list", {})
+      .then((result) => {
+        const response = result as { data?: Array<{ model?: string }> };
+        this.availableModels = [...new Set((response.data ?? []).map((item) => item.model).filter((model): model is string => Boolean(model)))];
+        this.emit({ type: "models" });
+      })
       .catch(() => {});
   }
 

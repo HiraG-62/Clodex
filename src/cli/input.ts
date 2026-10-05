@@ -8,6 +8,7 @@ export type ShellCommand =
   | { kind: "interrupt"; agent?: AgentId }
   | { kind: "status" }
   | { kind: "project"; path?: string }
+  | { kind: "role"; agent?: AgentId; text?: string }
   | { kind: "help" }
   | { kind: "exit" }
   | { kind: "verbose" }
@@ -90,6 +91,13 @@ const parseMention = (mention: string, text: string): ShellCommand | undefined =
 
 const parseCommand = (name: string, arg: string): ShellCommand => {
   switch (name) {
+    case "role": {
+      if (!arg) return { kind: "role" };
+      const [agent, ...words] = arg.split(/\s+/);
+      if (!agent) return { kind: "role" };
+      if (!isAgentId(agent)) return unknownAgent(agent);
+      return words.length ? { kind: "role", agent, text: words.join(" ") } : { kind: "role", agent };
+    }
     case "project":
       return arg ? { kind: "project", path: arg } : { kind: "project" };
     case "interrupt":

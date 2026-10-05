@@ -34,7 +34,8 @@ export interface CoordinatorOptions {
   agents: Record<AgentId, AgentAdapter>;
   bus: EventBus;
   mcpUrlFor: (agent: AgentId) => string;
-  instructions?: Partial<Record<AgentId, string>>;
+  // 起動のたびに呼ぶ（/role で変えた役割を次の起動に反映する。DESIGN.md §28 E）
+  instructions?: (agent: AgentId) => string | undefined;
   createMessageId?: () => string;
   limits?: BudgetLimits;
   settings?: Partial<Record<AgentId, AgentStartSettings>>;
@@ -64,14 +65,17 @@ export class Coordinator {
       if (effort) void agents[id].setEffort(effort);
     }
     const createMailbox = (id: AgentId) => {
-      const instruction = instructions?.[id];
       const resumeSessionId = options.resumeSessionIds?.[id];
+      const mcpUrl = mcpUrlFor(id);
       return new AgentMailbox(
         agents[id],
-        {
-          cwd: projectRoot, mcpUrl: mcpUrlFor(id),
-          ...(instruction ? { instructions: instruction } : {}),
-          ...(resumeSessionId ? { resumeSessionId } : {}),
+        () => {
+          const instruction = instructions?.(id);
+          return {
+            cwd: projectRoot, mcpUrl,
+            ...(instruction ? { instructions: instruction } : {}),
+            ...(resumeSessionId ? { resumeSessionId } : {}),
+          };
         },
         (message) => bus.publish({ kind: "agent", agent: id, event: { type: "error", message } }),
       );
@@ -214,11 +218,11 @@ ${languageReminder(language)}` : "";
 
   status(): Array<{
     id: AgentId; status: AgentStatus; sessionId: string | undefined; permission: PermissionLevel;
-    model: string | undefined; effort: string | undefined; usage: UsageSnapshot;
+    model: string | undefined; effort: string | undefined; models: readonly string[]; usage: UsageSnapshot;
   }> {
     return AGENT_IDS.map((id) => {
       const { status, permission, model, effort } = this.options.agents[id];
-      return { id, status, sessionId: this.mailboxes[id].sessionId, permission, model, effort, usage: this.usage.snapshot(id) };
+      return { id, status, sessionId: this.mailboxes[id].sessionId, permission, model, effort, models: this.options.agents[id].listModels(), usage: this.usage.snapshot(id) };
     });
   }
 

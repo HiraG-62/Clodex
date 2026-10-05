@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { parseInput } from "./input.js";
 
 describe("parseInput", () => {
+  it("/role の表示と編集を区別する", () => {
+    expect(parseInput("/role", "claude")).toEqual({ kind: "role" });
+    expect(parseInput("/role codex", "claude")).toEqual({ kind: "role", agent: "codex" });
+    expect(parseInput("/role codex 実装を担当", "claude")).toEqual({ kind: "role", agent: "codex", text: "実装を担当" });
+  });
   it("/project を一覧とパス指定に解釈する", () => {
     expect(parseInput("/project", "claude")).toEqual({ kind: "project" });
     expect(parseInput("/project C:\\dev\\app", "claude")).toEqual({ kind: "project", path: "C:\\dev\\app" });

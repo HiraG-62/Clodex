@@ -9,6 +9,7 @@ export class FakeAgentAdapter implements AgentAdapter {
   permission: PermissionLevel = "edit";
   model: string | undefined;
   effort: string | undefined;
+  listModels(): readonly string[] { return []; }
   readonly starts: AgentStartOptions[] = [];
   readonly sent: string[] = [];
   compacts = 0;

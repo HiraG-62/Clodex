@@ -20,9 +20,21 @@ export interface Segment {
   kind?: "command" | "agent" | "file";
 }
 
+export interface AssistState {
+  agents: ReadonlyArray<{ id: string; models: readonly string[] }>;
+  conversations: ReadonlyArray<{ title?: string }>;
+  projects?: ReadonlyArray<{ projectRoot: string }>;
+  pendingInputs: ReadonlyArray<{ id: string }>;
+}
+
 // labels: 候補の種類の表示（画面の言語の文言）
-export function createInputAssist(commands: readonly SlashCommand[], agents: readonly string[], labels: { agent: string; file: string }) {
+export function createInputAssist(commands: readonly SlashCommand[], agents: readonly string[], labels: {
+  agent: string; file: string; permission: string; effort: string; model: string;
+  conversation: string; project: string; worktree: string; queued: string;
+}) {
   const MAX_ITEMS = 8;
+  const PERMISSIONS = ["read-only", "edit", "full"];
+  const COMMON_EFFORTS = ["low", "medium", "high", "xhigh"];
 
   // caret を含む空白区切りの語
   const tokenAt = (text: string, caret: number) => {
@@ -50,13 +62,54 @@ export function createInputAssist(commands: readonly SlashCommand[], agents: rea
       .slice(0, MAX_ITEMS)
       .map(({ path }) => ({ label: `@${path}`, detail: labels.file, insert: `@${path} ` }));
 
-  const suggest = (text: string, caret: number, files: readonly string[]): Suggestion | undefined => {
+  const suggest = (text: string, caret: number, files: readonly string[], state?: AssistState): Suggestion | undefined => {
     const { from, to, word } = tokenAt(text, caret);
     if (from === 0 && word.startsWith("/")) {
       const query = word.slice(1).toLowerCase();
       const items = commands
         .filter(({ name }) => name.startsWith(query))
         .map(({ name, args, description }) => ({ label: `/${name}${args ? ` ${args}` : ""}`, detail: description, insert: `/${name} ` }));
+      return items.length ? { from, to, items } : undefined;
+    }
+    if (state && text.startsWith("/") && from > 0) {
+      const previous = text.slice(0, from).trim().split(/\s+/);
+      const name = previous[0]?.slice(1);
+      const index = previous.length - 1;
+      let values: Array<{ value: string; detail: string }> = [];
+      const agentValues = agents.map((value) => ({ value, detail: labels.agent }));
+      const simple = (items: readonly string[], detail: string) => items.map((value) => ({ value, detail }));
+      switch (name) {
+        case "role": case "primary": case "interrupt": case "compact":
+          if (index === 0) values = agentValues;
+          break;
+        case "new":
+          if (index === 0) values = [...agentValues, { value: "worktree", detail: labels.worktree }];
+          break;
+        case "permission":
+          if (index === 0) values = [...agentValues, ...simple(PERMISSIONS, labels.permission)];
+          if (index === 1) values = simple(PERMISSIONS, labels.permission);
+          break;
+        case "effort":
+          if (index === 0) values = [...agentValues, ...simple(COMMON_EFFORTS, labels.effort)];
+          if (index === 1) values = simple([...COMMON_EFFORTS, ...(previous[1] === "claude" ? ["max"] : ["minimal"])], labels.effort);
+          break;
+        case "model":
+          if (index === 0) values = agentValues;
+          if (index === 1) values = simple(state.agents.find((agent) => agent.id === previous[1])?.models ?? [], labels.model);
+          break;
+        case "resume": case "delete": case "pin":
+          if (index === 0) values = state.conversations.map((conversation, i) => ({ value: String(i + 1), detail: conversation.title ?? labels.conversation }));
+          break;
+        case "project":
+          if (index === 0) values = (state.projects ?? []).map(({ projectRoot }) => ({ value: projectRoot, detail: labels.project }));
+          break;
+        case "cancel":
+          if (index === 0) values = state.pendingInputs.map(({ id }) => ({ value: id, detail: labels.queued }));
+          break;
+      }
+      const query = word.toLowerCase();
+      const items = values.filter(({ value }) => value.toLowerCase().startsWith(query)).slice(0, MAX_ITEMS)
+        .map(({ value, detail }) => ({ label: value, detail, insert: `${value} ` }));
       return items.length ? { from, to, items } : undefined;
     }
     if (!word.startsWith("@")) return undefined;

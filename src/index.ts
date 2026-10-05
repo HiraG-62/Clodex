@@ -18,6 +18,7 @@ import { setLanguage, t } from "./i18n/i18n.js";
 import { defaultLogPath, type DisplayMode } from "./logging/event-log.js";
 import { listProjectFiles } from "./project/project-files.js";
 import { resolveProjectRoot } from "./project/project-root.js";
+import { saveProjectRole } from "./project/role-settings.js";
 import { MAX_UPLOAD_BYTES, isUploadType, saveUpload } from "./project/uploads.js";
 import { DEFAULT_RECENT_ITEMS, WebFeed } from "./web/web-feed.js";
 import { buildWebPage } from "./web/web-page.js";
@@ -114,6 +115,13 @@ const main = async (): Promise<void> => {
     primary: hub.current?.primary ?? DEFAULT_PRIMARY,
     print, toggleVerbose, runner,
     projects: { list: () => hub.list(), open: openInHub, hasCurrent: () => hub.current !== undefined },
+    roles: () => current().config.roles ?? {},
+    saveRole: (agent, text) => {
+      const context = current();
+      const saved = saveProjectRole(context.projectRoot, agent, text);
+      context.config.roles = { ...context.config.roles, [agent]: saved };
+      return saved;
+    },
     busyElsewhere: () => current().workspace.busyElsewhereInSameDir(),
     resolveReference: (path) => current().currentPreview().locate(path),
     saveSettings: (agents, change) => {

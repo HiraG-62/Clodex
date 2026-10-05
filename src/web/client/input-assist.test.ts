@@ -2,10 +2,28 @@ import { describe, expect, it } from "vitest";
 import { slashCommands } from "../../cli/commands.js";
 import { createInputAssist } from "./input-assist.js";
 
-const { suggest, highlight } = createInputAssist(slashCommands(), ["claude", "codex"], { agent: "送り先", file: "ファイル" });
+const { suggest, highlight } = createInputAssist(slashCommands(), ["claude", "codex"], {
+  agent: "送り先", file: "ファイル", permission: "権限", effort: "effort", model: "model",
+  conversation: "会話", project: "プロジェクト", worktree: "worktree", queued: "送信待ち",
+});
 const FILES = ["src/cli/input.ts", "src/web/client/input-assist.ts", "docs/DESIGN.md", "README.md"];
 
 describe("suggest", () => {
+  const state = {
+    agents: [{ id: "claude", models: ["default", "opus", "sonnet", "haiku"] }, { id: "codex", models: ["gpt-6-sol"] }],
+    conversations: [{ title: "Planning" }, { title: "Review" }],
+    projects: [{ projectRoot: "C:\\dev\\app" }],
+    pendingInputs: [{ id: "in2" }],
+  };
+  it("コマンドの引数を state から候補にする", () => {
+    expect(suggest("/model claude so", 16, FILES, state)?.items.map((i) => i.insert)).toContain("sonnet ");
+    expect(suggest("/model codex ", 13, FILES, state)?.items.map((i) => i.insert)).toContain("gpt-6-sol ");
+    expect(suggest("/permission claude f", 20, FILES, state)?.items.map((i) => i.insert)).toContain("full ");
+    expect(suggest("/resume ", 8, FILES, state)?.items.map((i) => i.insert)).toContain("1 ");
+    expect(suggest("/project C", 10, FILES, state)?.items.map((i) => i.insert)).toContain("C:\\dev\\app ");
+    expect(suggest("/cancel i", 9, FILES, state)?.items.map((i) => i.insert)).toContain("in2 ");
+    expect(suggest("/new w", 6, FILES, state)?.items.map((i) => i.insert)).toContain("worktree ");
+  });
   it("先頭の / でコマンドの候補を出し、選ぶとコマンド名に置き換える", () => {
     const result = suggest("/mo", 3, FILES);
     expect(result).toMatchObject({ from: 0, to: 3, items: [{ label: "/model <agent> <model>", insert: "/model " }] });

@@ -46,7 +46,7 @@ describe("Coordinator", () => {
     const codex = new FakeAgentAdapter("codex");
     const coordinator = new Coordinator({
       projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor,
-      instructions: { codex: "You are codex." },
+      instructions: (agent) => (agent === "codex" ? "You are codex." : undefined),
     });
     coordinator.receiveMessage("claude", reviewRequest);
     void coordinator.sendToAgent("claude", "hi");
@@ -250,8 +250,8 @@ describe("Coordinator", () => {
     claude.status = "busy";
     claude.sessionId = "s-1";
     expect(coordinator.status()).toEqual([
-      { id: "claude", status: "busy", sessionId: "s-1", permission: "edit", model: undefined, effort: undefined, usage: {} },
-      { id: "codex", status: "stopped", sessionId: undefined, permission: "edit", model: undefined, effort: undefined, usage: {} },
+      { id: "claude", status: "busy", sessionId: "s-1", permission: "edit", model: undefined, effort: undefined, models: [], usage: {} },
+      { id: "codex", status: "stopped", sessionId: undefined, permission: "edit", model: undefined, effort: undefined, models: [], usage: {} },
     ]);
   });
 
@@ -528,5 +528,25 @@ describe("Coordinator の言語の 1 行（DESIGN.md §13 Language）", () => {
     void coordinator.sendToAgent("claude", "そのまま");
     await flush();
     expect(claude.sent).toEqual(["そのまま"]);
+  });
+});
+
+describe("Coordinator の役割の反映", () => {
+  it("instructions は起動のたびに引くので、変えた役割は次の起動から使う", async () => {
+    const claude = new FakeAgentAdapter("claude");
+    const codex = new FakeAgentAdapter("codex");
+    let role = "old";
+    const coordinator = new Coordinator({
+      projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor, instructions: () => role,
+    });
+    void coordinator.sendToAgent("codex", "a");
+    await flush();
+    expect(codex.starts[0]).toMatchObject({ instructions: "old" });
+    role = "new";
+    codex.completeTurn();
+    await codex.stop();
+    void coordinator.sendToAgent("codex", "b");
+    await flush();
+    expect(codex.starts[1]).toMatchObject({ instructions: "new" });
   });
 });
