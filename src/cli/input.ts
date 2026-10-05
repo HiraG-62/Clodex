@@ -16,6 +16,7 @@ export type ShellCommand =
   | { kind: "resume"; index?: number }
   | { kind: "new"; agent?: AgentId }
   | { kind: "compact"; agent?: AgentId }
+  | { kind: "cancel"; id?: string }
   | { kind: "run"; command: string }
   | { kind: "unsupported"; message: string }
   | { kind: "invalid"; message: string };
@@ -85,6 +86,9 @@ const parseCommand = (name: string, arg: string): ShellCommand => {
     case "compact":
       if (!arg) return { kind: name };
       return isAgentId(arg) ? { kind: name, agent: arg } : { kind: "invalid", message: `unknown agent: ${arg}` };
+    case "cancel":
+      if (!arg) return { kind: "cancel" };
+      return /^\S+$/.test(arg) ? { kind: "cancel", id: arg } : { kind: "invalid", message: "usage: /cancel [id]" };
     case "resume":
       if (!arg) return { kind: "resume" };
       return /^[1-9]\d*$/.test(arg) ? { kind: "resume", index: Number(arg) } : { kind: "invalid", message: "usage: /resume [number]" };

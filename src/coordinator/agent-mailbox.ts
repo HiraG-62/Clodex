@@ -3,11 +3,13 @@ import type { AgentAdapter, AgentStartOptions, TurnResult } from "../agents/agen
 import type { AgentMessage } from "../protocol/messages.js";
 
 const CLOSED_RESULT: TurnResult = { status: "failed", text: "mailbox is closed" };
+const CANCELED_RESULT: TurnResult = { status: "interrupted", text: "canceled before delivery" };
 
 interface QueueItem {
   kind: "send" | "compact" | "model" | "effort";
   text: string;
   message: AgentMessage | undefined; // 人間の入力・compact なら undefined
+  inputId?: string; // 人間の入力の ID（取り消しに使う）
   resolve: (result: TurnResult) => void;
 }
 
@@ -29,9 +31,37 @@ export class AgentMailbox {
   ) {}
 
   // 失敗しても reject せず failed の TurnResult を返す（呼び出し側は待たずに投げてよい）
-  enqueue(text: string, message?: AgentMessage): Promise<TurnResult> {
+  enqueue(text: string, message?: AgentMessage, inputId?: string): Promise<TurnResult> {
     if (this.closed) return Promise.resolve(CLOSED_RESULT);
-    return this.push({ kind: "send", text, message });
+    return this.push({ kind: "send", text, message, ...(inputId ? { inputId } : {}) });
+  }
+
+  // 配送待ちの人間の入力（配送中のものは含まない）
+  get pendingInputs(): Array<{ id: string; text: string }> {
+    return this.queue.flatMap((item) => (item.inputId ? [{ id: item.inputId, text: item.text }] : []));
+  }
+
+  // 配送待ちの人間の入力を取り消し、本文を返す。配送済み・無いなら undefined
+  cancel(inputId: string): string | undefined {
+    const index = this.queue.findIndex((item) => item.inputId === inputId);
+    const [item] = index < 0 ? [] : this.queue.splice(index, 1);
+    if (!item) return undefined;
+    item.resolve(CANCELED_RESULT);
+    this.resolveIdleIfDone();
+    return item.text;
+  }
+
+  // 配送待ちの formal message を破棄して返す（/interrupt。人間の入力は残す）
+  discardMessages(): AgentMessage[] {
+    const discarded = this.queue.filter((item) => item.message);
+    this.queue.splice(0, this.queue.length, ...this.queue.filter((item) => !item.message));
+    for (const item of discarded) item.resolve(CANCELED_RESULT);
+    this.resolveIdleIfDone();
+    return discarded.flatMap((item) => (item.message ? [item.message] : []));
+  }
+
+  private resolveIdleIfDone(): void {
+    if (this.isIdle) for (const resolve of this.idleWaiters.splice(0)) resolve();
   }
 
   // compact も 1 ターンなので、送信と同じキューで直列に扱う

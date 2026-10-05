@@ -39,6 +39,8 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
   const TOKENS_PER_K = 1000;
   // @path の候補を取り直す間隔（入力欄に入るたびに取ると重い）
   const FILES_REFRESH_MS = 30_000;
+  // @path の参照として本文の末尾に足された部分（cli/file-references.ts）。編集で入力欄に戻すときは外す
+  const REFERENCES_SEPARATOR = "\n\nReferenced files:\n";
   const THEME_KEY = "clodex-theme";
   const DETAIL_KEY = "clodex-detail";
 
@@ -392,7 +394,39 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
       const id = button.dataset.agent as AgentId;
       button.setAttribute("aria-pressed", String((target ?? state.primary) === id));
     }
+    renderPending();
     refreshOpenSheet();
+  };
+
+  // ---- 送信待ちの入力（取り消し・編集。DESIGN.md §28 v0.3 A） ----
+  const renderPending = () => {
+    const list = $("#pending");
+    const pending = state?.pendingInputs ?? [];
+    list.hidden = !pending.length;
+    list.replaceChildren(...pending.map((queued) => {
+      const original = queued.text.split(REFERENCES_SEPARATOR)[0] ?? queued.text;
+      const row = el("li");
+      const action = (label: string, run: () => void) => {
+        const button = el("button", "", label) as HTMLButtonElement;
+        button.type = "button";
+        button.addEventListener("click", run);
+        return button;
+      };
+      row.append(
+        el("span", "who", `→ ${AGENTS[queued.agent].name} · 送信待ち`),
+        el("span", "text", original),
+        action("編集", () => void send(`/cancel ${queued.id}`).then((sent) => {
+          if (!sent) return;
+          target = queued.agent;
+          input.value = original;
+          input.focus();
+          onInputChanged();
+          renderState();
+        })),
+        action("取り消し", () => void send(`/cancel ${queued.id}`)),
+      );
+      return row;
+    }));
   };
 
   const conversationList = () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentId, AgentStatus, PermissionLevel, TurnResult } from "../agents/agent-adapter.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
-import { createShell, type AgentState, type ConversationList, type ShellCoordinator } from "./shell.js";
+import { createShell, type AgentState, type ConversationList, type PendingInput, type ShellCoordinator } from "./shell.js";
 
 // ローカル時刻 10/05 20:26 の ISO 文字列（タイムゾーンに依存しないテストにする）
 const at = (minute: number) => new Date(2026, 9, 5, 20, minute).toISOString();
@@ -54,6 +54,14 @@ class FakeCoordinator implements ShellCoordinator {
   async setEffort(level: string, agent?: AgentId): Promise<TurnResult | void> {
     this.efforts.push({ level, agent });
     return this.settingResult;
+  }
+
+  pending: PendingInput[] = [{ id: "in2", agent: "codex", text: "queued" }];
+  readonly canceled: Array<string | undefined> = [];
+  pendingInputs() { return this.pending; }
+  cancelInput(id?: string) {
+    this.canceled.push(id);
+    return this.pending.find((p) => p.id === (id ?? "in2"));
   }
 
   readonly switched: SavedSessions[] = [];
@@ -135,6 +143,14 @@ describe("createShell", () => {
     ]);
   });
 
+  it("/cancel は配送待ちの入力を取り消し、取り消せなければその旨を表示する", async () => {
+    const { coordinator, printed, shell } = setup();
+    await shell.handleLine("/cancel");
+    await shell.handleLine("/cancel in9");
+    expect(coordinator.canceled).toEqual([undefined, "in9"]);
+    expect(printed).toEqual(["canceled: in2 -> codex", "nothing to cancel: in9 (already delivered?)"]);
+  });
+
   it("/interrupt を Coordinator に渡し、Agent 指定なしなら実行中の command も止める", async () => {
     const { coordinator, runner, shell } = setup();
     await shell.handleLine("/interrupt codex");
@@ -162,6 +178,7 @@ describe("createShell", () => {
       "codex: stopped, permission full, model default, effort default",
       "  usage: unknown",
       "  context: unknown",
+      "queued: in2 -> codex: queued",
     ]);
   });
 

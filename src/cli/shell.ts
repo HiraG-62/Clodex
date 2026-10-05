@@ -24,7 +24,15 @@ export interface ShellCoordinator {
   setModel(model: string, agent: AgentId): Promise<TurnResult | void>;
   setEffort(level: string, agent?: AgentId): Promise<TurnResult | void>;
   switchSessions(sessions: SavedSessions, targets?: readonly AgentId[]): Promise<string | undefined>;
+  pendingInputs(): PendingInput[];
+  cancelInput(id?: string): PendingInput | undefined;
   status(): AgentState[];
+}
+
+export interface PendingInput {
+  id: string;
+  agent: AgentId;
+  text: string;
 }
 
 export interface ConversationList {
@@ -163,7 +171,13 @@ export const createShell = ({
           print(formatUsage(usage));
           print(formatContext(usage));
         }
+        for (const input of coordinator.pendingInputs()) print(`queued: ${input.id} -> ${input.agent}: ${input.text}`);
         return "continue";
+      case "cancel": {
+        const canceled = coordinator.cancelInput(command.id);
+        print(canceled ? `canceled: ${canceled.id} -> ${canceled.agent}` : `nothing to cancel${command.id ? `: ${command.id}` : ""} (already delivered?)`);
+        return "continue";
+      }
       case "new":
         await startFresh(command.agent);
         return "continue";

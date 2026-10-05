@@ -91,7 +91,7 @@ describe("applyFeedItem", () => {
       agent("claude", { type: "rate_limit" }),
       agent("claude", { type: "context", tokens: 1 }),
       agent("claude", { type: "exit", code: 0 }),
-      { type: "state", state: { project: "C:\app", primary: "claude", roles: {}, agents: [], conversations: [] } },
+      { type: "state", state: { project: "C:\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [] } },
     ])).toEqual([]);
   });
 

@@ -4,7 +4,7 @@ import { startWebServer, type WebServerHandle } from "./web-server.js";
 
 const TOKEN = "a".repeat(64);
 const COOKIE = `clodex_token=${TOKEN}`;
-const STATE: WebState = { project: "C:\app", primary: "claude", roles: { codex: "実装" }, agents: [], conversations: [] };
+const STATE: WebState = { project: "C:\app", primary: "claude", roles: { codex: "実装" }, agents: [], conversations: [], pendingInputs: [] };
 
 let server: WebServerHandle | undefined;
 afterEach(async () => {

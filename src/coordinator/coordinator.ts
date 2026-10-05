@@ -16,6 +16,17 @@ export interface AgentStartSettings {
   effort?: string;
 }
 
+// 配送待ちの人間の入力（取り消し・編集の対象。DESIGN.md §28 v0.3 A）
+export interface PendingInput {
+  id: string;
+  agent: AgentId;
+  text: string;
+}
+
+const INPUT_ID_PREFIX = "in";
+const PREVIEW_LENGTH = 40;
+const preview = (text: string) => (text.length > PREVIEW_LENGTH ? `${text.slice(0, PREVIEW_LENGTH)}…` : text);
+
 export interface CoordinatorOptions {
   projectRoot: string;
   agents: Record<AgentId, AgentAdapter>;
@@ -34,6 +45,7 @@ export class Coordinator {
   private readonly mailboxes: Record<AgentId, AgentMailbox>;
   private readonly budget: BudgetManager;
   private readonly usage: UsageMonitor;
+  private inputSeq = 0;
 
   constructor(private readonly options: CoordinatorOptions) {
     const { agents, bus, projectRoot, mcpUrlFor, instructions, limits, settings } = options;
@@ -87,7 +99,22 @@ export class Coordinator {
 
   sendToAgent(id: AgentId, text: string): Promise<TurnResult> {
     this.options.bus.publish({ kind: "human", agent: id, text });
-    return this.mailboxes[id].enqueue(text);
+    return this.mailboxes[id].enqueue(text, undefined, `${INPUT_ID_PREFIX}${++this.inputSeq}`);
+  }
+
+  // 送った順（ID の連番順）に並べる
+  pendingInputs(): PendingInput[] {
+    const seq = (id: string) => Number(id.slice(INPUT_ID_PREFIX.length));
+    return AGENT_IDS.flatMap((agent) => this.mailboxes[agent].pendingInputs.map((input) => ({ ...input, agent })))
+      .sort((a, b) => seq(a.id) - seq(b.id));
+  }
+
+  // ID 省略時は最後に送った配送待ちの入力。取り消せなければ undefined
+  cancelInput(id?: string): PendingInput | undefined {
+    const target = id ? this.pendingInputs().find((input) => input.id === id) : this.pendingInputs().at(-1);
+    if (!target || this.mailboxes[target.agent].cancel(target.id) === undefined) return undefined;
+    this.options.bus.publish({ kind: "notice", text: `canceled input to ${target.agent}: ${preview(target.text)}` });
+    return target;
   }
 
   // 全 Agent の配送が終わるまで待つ。配送中のターンが相手へ message を送ることがあるので、全員が同時に空になるまで繰り返す
@@ -123,9 +150,20 @@ export class Coordinator {
     return Promise.all(targets.map((target) => this.mailboxes[target].enqueueCompact()));
   }
 
+  // Agent 指定なしは、Agent 間のやり取りも止める: 配送待ちの formal message を破棄し、chain を閉じる
   async interrupt(id?: AgentId): Promise<void> {
+    if (!id) this.stopExchanges();
     const targets = id ? [id] : AGENT_IDS;
     await Promise.all(targets.map((target) => this.options.agents[target].interrupt()));
+  }
+
+  private stopExchanges(): void {
+    const discarded = AGENT_IDS.flatMap((agent) => this.mailboxes[agent].discardMessages());
+    const processing = AGENT_IDS.flatMap((agent) => this.mailboxes[agent].current ?? []);
+    this.budget.closeChains([...discarded, ...processing]);
+    if (discarded.length) {
+      this.options.bus.publish({ kind: "notice", text: `discarded ${discarded.length} queued agent message(s)` });
+    }
   }
 
   async setPermission(level: PermissionLevel, id?: AgentId): Promise<void> {

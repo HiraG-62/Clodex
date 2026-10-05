@@ -32,6 +32,9 @@ interface MessageMeta {
 
 const EMPTY_USAGE: ChainUsage = { messages: 0, reviewRounds: 0, delegations: 0 };
 
+const STOPPED_ERROR = "This exchange was stopped by the human (/interrupt). Do not send more messages for it; " +
+  "report the current status to the human instead.";
+
 const limitError = (name: keyof BudgetLimits, limit: number) =>
   `Budget limit reached: ${name} (${limit}). Do not send more messages for this chain; ` +
   "report the current status to the human instead.";
@@ -39,6 +42,8 @@ const limitError = (name: keyof BudgetLimits, limit: number) =>
 export class BudgetManager {
   private readonly meta = new Map<string, MessageMeta>();
   private readonly chains = new Map<string, ChainUsage>();
+  // /interrupt で人が止めたやり取り（DESIGN.md §28 v0.3 A）
+  private readonly closed = new Set<string>();
 
   constructor(private readonly limits: BudgetLimits = DEFAULT_LIMITS) {}
 
@@ -49,6 +54,7 @@ export class BudgetManager {
 
     const parentMeta = parent ? this.meta.get(parent.id) : undefined;
     const chainId = parentMeta?.chainId ?? message.id;
+    if (this.closed.has(chainId)) return STOPPED_ERROR;
     const depth = this.depthOf(message, parent, parentMeta);
     const usage = this.chains.get(chainId) ?? EMPTY_USAGE;
     const next: ChainUsage = {
@@ -62,6 +68,14 @@ export class BudgetManager {
     this.meta.set(message.id, { chainId, depth });
     this.chains.set(chainId, next);
     return undefined;
+  }
+
+  // messages が属する chain を閉じ、以後その chain の送信を拒否する
+  closeChains(messages: readonly AgentMessage[]): void {
+    for (const message of messages) {
+      const chainId = this.meta.get(message.id)?.chainId;
+      if (chainId) this.closed.add(chainId);
+    }
   }
 
   // 依頼を処理中に送った依頼だけ深くなる。結果を処理中の依頼は同じ階層での継続（DESIGN.md §14）

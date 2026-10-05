@@ -413,3 +413,44 @@ describe("Coordinator", () => {
     expect(codex.status).toBe("stopped");
   });
 });
+
+describe("Coordinator の取り消しと割り込み", () => {
+  it("配送待ちの人間の入力を一覧にし、ID 省略時は最後のものを取り消す", async () => {
+    const { codex, events, coordinator } = setup();
+    void coordinator.sendToAgent("codex", "first");
+    await flush();
+    void coordinator.sendToAgent("codex", "second");
+    void coordinator.sendToAgent("codex", "third");
+    expect(coordinator.pendingInputs()).toEqual([
+      { id: "in2", agent: "codex", text: "second" }, { id: "in3", agent: "codex", text: "third" },
+    ]);
+    expect(coordinator.cancelInput()).toEqual({ id: "in3", agent: "codex", text: "third" });
+    expect(coordinator.cancelInput("in2")).toEqual({ id: "in2", agent: "codex", text: "second" });
+    expect(coordinator.cancelInput("in1")).toBeUndefined();
+    expect(events.filter((e) => e.kind === "notice")).toHaveLength(2);
+    codex.completeTurn();
+    await flush();
+    expect(codex.sent).toEqual(["first"]);
+  });
+
+  it("Agent 指定なしの /interrupt は配送待ちの formal message を破棄し、やり取りの chain を閉じる", async () => {
+    const { claude, codex, events, coordinator } = setup();
+    void coordinator.sendToAgent("claude", "human work");
+    await flush();
+    // claude の依頼を codex が処理中に、codex が claude へ質問する（claude は作業中なので配送待ち）
+    coordinator.receiveMessage("claude", reviewRequest);
+    await flush();
+    expect(coordinator.receiveMessage("codex", { to: "claude", type: "QUESTION", taskId: "T-1", body: "which?" }).ok).toBe(true);
+
+    await coordinator.interrupt();
+    expect(events).toContainEqual(expect.objectContaining({ kind: "notice", text: expect.stringMatching(/discarded 1/) }));
+    // 処理中だった依頼の chain には、もう送れない
+    const reply = coordinator.receiveMessage("codex", { to: "claude", type: "RESULT", taskId: "T-1", body: "done", replyTo: "msg_00000001" });
+    expect(reply).toMatchObject({ ok: false, error: expect.stringMatching(/stopped by the human/) });
+
+    claude.completeTurn();
+    codex.completeTurn({ status: "interrupted", text: "" });
+    await flush();
+    expect(claude.sent).toEqual(["human work"]);
+  });
+});

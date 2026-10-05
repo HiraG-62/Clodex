@@ -168,6 +168,11 @@ const STYLE = `
   .input-highlight .hl-file { background: color-mix(in srgb, var(--warn) 24%, transparent); }
   .box textarea { position: relative; border: 0; background: transparent; resize: none; color: var(--fg);
     min-height: 44px; max-height: 40vh; outline: none; overflow-y: hidden; }
+  .pending { list-style: none; margin: 0; padding: 6px 8px; border-bottom: 1px solid var(--line); display: grid; gap: 4px; }
+  .pending li { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; }
+  .pending .who { flex: none; color: var(--muted); }
+  .pending .text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pending button { flex: none; border: 1px solid var(--line); background: var(--panel); border-radius: 5px; padding: 3px 8px; font-size: 12px; color: var(--fg); }
   .suggest { list-style: none; margin: 0; padding: 4px; border-bottom: 1px solid var(--line); max-height: 40vh; overflow-y: auto; }
   .suggest li { display: flex; align-items: baseline; gap: 10px; padding: 7px 10px; border-radius: 6px; cursor: pointer; min-width: 0; }
   .suggest li[aria-selected="true"] { background: var(--sunken); }
@@ -234,6 +239,7 @@ const BODY = `
   </div>
   <form class="composer" id="composer">
     <div class="box">
+      <ul class="pending" id="pending" aria-label="送信待ち" hidden></ul>
       <ul class="suggest" id="suggest" role="listbox" aria-label="候補" hidden></ul>
       <div class="input-wrap">
         <div class="input-highlight" id="input-highlight" aria-hidden="true"></div>

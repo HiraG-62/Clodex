@@ -43,6 +43,12 @@ describe("parseInput", () => {
     expect(parseInput("hello", "codex")).toEqual({ kind: "send", agent: "codex", text: "hello" });
   });
 
+  it("/cancel は ID を省略できる", () => {
+    expect(parseInput("/cancel", "claude")).toEqual({ kind: "cancel" });
+    expect(parseInput("/cancel in3", "claude")).toEqual({ kind: "cancel", id: "in3" });
+    expect(parseInput("/cancel a b", "claude").kind).toBe("invalid");
+  });
+
   it("行頭の @ が Agent でなければファイルの参照として primary に送る", () => {
     expect(parseInput("@src/a.ts を見て", "codex")).toEqual({ kind: "send", agent: "codex", text: "@src/a.ts を見て" });
   });

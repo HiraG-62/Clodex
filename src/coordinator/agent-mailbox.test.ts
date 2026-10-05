@@ -226,3 +226,40 @@ describe("AgentMailbox", () => {
     await expect(second).resolves.toMatchObject({ status: "completed" });
   });
 });
+
+describe("AgentMailbox の取り消しと破棄", () => {
+  const message = (id: string) => ({
+    id, from: "claude" as const, to: "codex" as const, type: "DELEGATE" as const, taskId: "T", body: "b",
+    repository: "C:\dev\app", createdAt: "2026-10-06T00:00:00.000Z",
+  });
+
+  it("配送待ちの人間の入力を ID で取り消し、配送中のものは取り消せない", async () => {
+    const { agent, mailbox } = setup();
+    const first = mailbox.enqueue("first", undefined, "in1");
+    const second = mailbox.enqueue("second", undefined, "in2");
+    await flush();
+    expect(mailbox.pendingInputs).toEqual([{ id: "in2", text: "second" }]);
+    expect(mailbox.cancel("in1")).toBeUndefined();
+    expect(mailbox.cancel("in2")).toBe("second");
+    await expect(second).resolves.toMatchObject({ status: "interrupted" });
+    agent.completeTurn();
+    await first;
+    await flush();
+    expect(agent.sent).toEqual(["first"]);
+    expect(mailbox.isIdle).toBe(true);
+  });
+
+  it("配送待ちの formal message だけを破棄し、人間の入力は残す", async () => {
+    const { agent, mailbox } = setup();
+    void mailbox.enqueue("busy");
+    await flush();
+    const delegated = mailbox.enqueue("envelope", message("msg_1"));
+    void mailbox.enqueue("human", undefined, "in1");
+    expect(mailbox.discardMessages().map((m) => m.id)).toEqual(["msg_1"]);
+    await expect(delegated).resolves.toMatchObject({ status: "interrupted" });
+    expect(mailbox.pendingInputs).toEqual([{ id: "in1", text: "human" }]);
+    agent.completeTurn();
+    await flush();
+    expect(agent.sent).toEqual(["busy", "human"]);
+  });
+});

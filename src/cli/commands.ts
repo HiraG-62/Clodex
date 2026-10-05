@@ -6,7 +6,8 @@ export interface SlashCommand {
 }
 
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
-  { name: "interrupt", args: "[agent]", description: "interrupt the running turn (all agents and !commands if omitted)" },
+  { name: "interrupt", args: "[agent]", description: "interrupt the running turn (all agents, !commands and agent-to-agent exchanges if omitted)" },
+  { name: "cancel", args: "[id]", description: "cancel a queued input that has not been delivered (the latest if id is omitted)" },
   { name: "status", args: "", description: "show agent status and usage" },
   { name: "primary", args: "<agent>", description: "change where plain text goes" },
   { name: "resume", args: "[number]", description: "list past conversations, or switch to one" },

@@ -142,6 +142,7 @@ const main = async (): Promise<void> => {
     primary: shell.getPrimary(),
     roles: config.roles ?? {},
     agents: coordinator.status(),
+    pendingInputs: coordinator.pendingInputs(),
     conversations: history.list().map((c) => ({ ...c, current: c.id === history.currentId })),
   }));
   const handleLine = async (line: string) => {

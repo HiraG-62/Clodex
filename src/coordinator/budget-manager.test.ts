@@ -123,3 +123,14 @@ describe("BudgetManager", () => {
     expect(budget.admit(msg("claude", "QUESTION"), undefined)).toMatch(/report .* to the human/i);
   });
 });
+
+describe("BudgetManager.closeChains", () => {
+  it("閉じた chain の message を親とする送信は拒否し、新しい chain は受け付ける", () => {
+    const budget = new BudgetManager(LIMITS);
+    const request = msg("claude", "DELEGATE");
+    expect(budget.admit(request, undefined)).toBeUndefined();
+    budget.closeChains([request]);
+    expect(budget.admit(msg("codex", "RESULT"), request)).toMatch(/stopped by the human/);
+    expect(budget.admit(msg("claude", "DELEGATE"), undefined)).toBeUndefined();
+  });
+});
