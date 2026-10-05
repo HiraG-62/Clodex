@@ -10,6 +10,8 @@ Windows ネイティブの既存開発環境を維持したまま、**Claude Cod
 
 目的は巨大なマルチエージェント基盤を自作することではない。
 
+Claude と Codex にはそれぞれ特色や得意分野がある。**それぞれの得意分野を活かした分業**（例: 設計は Claude、実装は Codex）を、観測可能かつ双方向に行えるようにすることが目的である。どう分業させるかはユーザーによって異なるので、Clodex は分け方を固定せず、ユーザーが決められるようにする。
+
 Claude Code / Codex がそれぞれ持っている CLI、認証、Agent/Subagent、Skills、Hooks、MCP などのネイティブ機能は可能な限りそのまま利用し、その上に **cross-model coordination layer** だけを追加する。
 
 ```text
@@ -72,52 +74,35 @@ WSL への全面移行は要求しない。
 
 # 3. Core Philosophy
 
-## 3.1 Single Agent First
+## 3.1 Role-based Division
 
-通常のタスクは **1 Agent で完結させる**。
+各 Agent に **ユーザーが定義した役割** を持たせ、作業は役割に沿って Agent 間で受け渡す。
 
 ```text
-Task
+Human
  │
  ▼
-Primary Agent
+Entry Agent（ユーザーが選ぶ）
  │
- ├── 十分に解決可能 ──────────> DONE
+ ├── 自分の役割の作業 ──────────> 自分で行う
  │
- └── 別 Agent の価値が高い
+ └── 相手の役割の作業
              │
              ▼
-          Delegate
+          Delegate（formal message）
 ```
 
-「Claude と Codex がいるから毎回両方に聞く」はしない。
+- 役割は自然文でユーザーが設定する（例: `claude: 設計とレビュー`、`codex: 実装`）。Clodex は特定の分け方を前提にしない（§13 Roles）
+- どの作業がどの役割に当たるかは、役割を伝えられた **Agent が判断する**。Coordinator はタスクを分類しない（§3.9）
+- 役割を設定しなければ、各 Agent は単独で作業し、必要なときだけ相手に依頼する
 
 ---
 
-## 3.2 Lazy Delegation
+## 3.2 No Duplicate Work, Lazy Start
 
-他 Agent は必要になった時だけ呼び出す。
-
-委譲価値が高い例:
-
-- Architecture decision の不確実性が高い
-- Security-sensitive な変更
-- 難しいバグ
-- 一度調査しても原因不明
-- 大規模変更
-- 独立レビューに価値がある
-- Codex CLI 自身の統合
-- Windows PTY / Process 制御
-- MCP protocol 設計
-
-原則委譲しない例:
-
-- trivial edit
-- formatting
-- lint
-- 単純な type error
-- 明確な小規模実装
-- Primary Agent が高い確信度で処理できるもの
+- 同じ作業を両方の Agent にやらせない。「Claude と Codex がいるから毎回両方に聞く」はしない
+- Agent は必要になるまで起動しない（§12）
+- trivial edit、formatting、単純な type error のような小さな作業は、役割にかかわらず受け取った Agent が行ってよい（受け渡しのコストの方が大きい）
 
 ---
 
@@ -206,6 +191,8 @@ Conversation history
 
 Claude / Codex の Subscription 利用上限は **有限資源** として扱う。
 
+分業は結果として 2 つの利用枠に負担を分散する。Clodex は両 Agent の利用状況（5 時間枠と週の枠）を見えるようにし、偏りを知らせる（§14）。ただし **送り先を自動で切り替えない**。Agent ごとに session が別なので、作業の途中で担当が変わると文脈が途切れ、品質にむらが出るためである。切り替えは人が作業の区切りで行う。
+
 品質だけでなく、
 
 > この Agent を今呼ぶ価値があるか
@@ -280,6 +267,18 @@ Coordinator は決定論的なソフトウェアとして、
 - Logging
 
 を担当する。
+
+役割の解釈（どの作業を誰に回すか）は Agent が行う。Coordinator は役割を各 Agent に伝えるだけで、内容を解釈しない。
+
+---
+
+## 3.10 Equal Agents
+
+Claude と Codex を対等に扱う。
+
+- Agent 間の message は双方向で、どちらからでも依頼・質問・結果返却ができる
+- 人間の入力を最初に受け取る Agent（primary）はユーザーが選ぶ。設定ファイル（§13 Roles）、起動オプション `--primary`、`/primary`（§8）、メッセージ単位の `@claude` / `@codex`
+- Coordinator はどちらかを特別扱いしない
 
 ---
 
@@ -439,6 +438,7 @@ Internal command（v0.1）:
 | `/interrupt [claude\|codex]` | 指定 Agent（省略時は全 Agent）の実行中ターンを interrupt する。キュー済みの message はそのまま配送される |
 | `/status` | 各 Agent の状態と session ID |
 | `/verbose` | terminal の詳細表示を切り替える（§17） |
+| `/primary <claude\|codex>` | 通常のテキストの送り先を切り替える（v0.2。§3.10） |
 | `/help` | 入力方法の一覧 |
 | `/exit` | 全 Agent を止めて終了 |
 
@@ -681,7 +681,7 @@ MCP message を受け取った後、
 ## 配送ルール（v0.1）
 
 - Agent ごとに mailbox（FIFO キュー）を持ち、人間の入力と formal message を同じキューで直列に送る。実行中のターンには割り込まない
-- 宛先 Agent が stopped なら、送る前に起動する。以前の session ID があれば resume する（Lazy Delegation: Agent は必要になるまで起動しない）
+- 宛先 Agent が stopped なら、送る前に起動する。以前の session ID があれば resume する（Lazy Start: Agent は必要になるまで起動しない。§3.2）
 - `ACK` は記録のみで宛先に配送しない（ACK の往復で Agent を起こさない。§25）
 - 送信元への tool 応答は受理結果（message ID）だけを返す。返信は送信元の現在のターンが終わった後、新しいターンとして届く
 - 起動や送信に失敗したら Event Bus に `error` を出し、そのメッセージは破棄する（v0.1 は再送しない）
@@ -735,6 +735,30 @@ AGENTS.md → Codex
 
 ただし全 Agent が常時すべて読む設計にはしない。
 
+## Roles（v0.2）
+
+ユーザーは設定ファイルで、各 Agent の役割と既定の primary を指定できる。
+
+| ファイル | 用途 |
+|---|---|
+| `~/.clodex/config.json` | ユーザー全体の既定 |
+| `<project root>/.clodex.json` | project ごとの上書き（トップレベルのキー単位で上書き） |
+
+```json
+{
+  "primary": "claude",
+  "roles": {
+    "claude": "設計とレビューを担当する。実装は codex に DELEGATE する。",
+    "codex": "実装を担当する。設計に迷ったら claude に QUESTION する。"
+  }
+}
+```
+
+- 優先順位: 起動オプション > project の設定 > ユーザーの設定 > 既定値（primary: `claude`、roles: なし）
+- Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」を伝える
+- 役割が無い Agent には、相手の Agent がいることだけを伝える
+- 役割の本文は Agent の native configuration（CLAUDE.md / AGENTS.md）と結合しない。追加の指示として渡すだけ
+
 ---
 
 # 14. Budget Manager
@@ -768,6 +792,31 @@ v0.1 は設定ファイルを持たず、`coordinator/budget-manager.ts` の定�
 - 依頼以外の message の深さは、処理中の message と同じ（無ければ 1）
 
 上限を超える message は受理せず、送信元へ tool エラーで理由を返し、Event Bus に `error` を出す。エラー文では「上限に達したので人間に報告する」よう Agent に促す。
+
+v0.2 では、分業の流れ（設計 → 実装の委譲 → レビュー → 修正の委譲）が上限に当たらないよう既定値を見直し、設定ファイル（§13 Roles）の `limits` で変更できるようにする。
+
+| 上限 | v0.2 の既定値 |
+|---|---|
+| `maxMessagesPerChain` | 8 |
+| `maxReviewRoundsPerChain` | 3 |
+| `maxDelegationsPerChain` | 4 |
+| `maxDelegationDepth` | 2 |
+
+## 利用枠の可視化と通知（v0.2）
+
+Agent Adapter の `rate_limit` event（Claude: `rate_limit_event`、Codex: `account/rateLimits/updated`）から、Agent ごとに最新の利用状況を保持する。
+
+- **週のペース超過** = 週の使用率 − 週の経過率（経過率は reset 時刻と週の長さ 7 日から計算）。正なら使いすぎ、負なら余裕あり
+- `/status` に、各 Agent の 5 時間枠の使用率と週のペース超過を表示する
+- 次の条件を初めて満たしたとき、1 回だけ通知する（同じ条件では繰り返さない。reset 後は再び通知できる）
+
+| 条件 | 既定の閾値 | 通知例 |
+|---|---|---|
+| 週のペース超過が閾値以上 | +15 ポイント | `[CLODEX] claude is ahead of weekly pace (+18). Consider /primary codex for the next task.` |
+| 5 時間枠の使用率が閾値以上 | 90% | `[CLODEX] claude 5h usage is 92%.` |
+
+- 閾値は設定ファイルの `usageAlert` で変更できる
+- 送り先の切り替えは自動で行わない（§3.6）。人が `/primary` で切り替える
 
 ## 将来
 
@@ -1237,6 +1286,8 @@ v0.1 Acceptance Criteria を満たすまでは不要。
 
 # 24. Claude Code / Codex の役割
 
+この節は **Clodex 自身の初期開発**（Clodex 完成前、Claude Code + Codex plugin で開発していた期間）での役割分担である。Clodex を使った開発での役割は、ユーザーが設定する（§3.1、§13 Roles）。
+
 初期開発では **Claude Code を primary implementer** とする。
 
 Codex は independent reviewer。
@@ -1353,9 +1404,9 @@ Observable agent state
 ```text
 Windows Native
        +
-Single Agent First
+Role-based Division（ユーザー定義）
        +
-Lazy Delegation
+Equal Agents
        +
 Minimal Context
        +
