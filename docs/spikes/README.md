@@ -13,7 +13,7 @@ CLI: Claude Code 2.1.289 / codex-cli 0.156.1
 
 ## 設計への影響
 
-- DESIGN.md §10 の Option A（Interactive PTY）/ B（Non-interactive + Resume）のどちらでもない **Option C: 構造化 stdio プロトコルの長寿命プロセス** を両 Agent の Adapter 方式として採用するのが妥当
+- DESIGN.md §10 の Option A（Interactive PTY）/ B（Non-interactive + Resume）のどちらでもない **Option C: 構造化 stdio プロトコルの長寿命プロセス** を両 Agent の Adapter 方式として採用した（DESIGN.md §10）
   - Claude: stream-json（NDJSON）
   - Codex: app-server（JSON-RPC）
 - PTY（Spike C）は Agent には使わず、将来の Process Manager（`!command` / `!& command`）用に残す

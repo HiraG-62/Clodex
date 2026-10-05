@@ -489,56 +489,42 @@ Unsupported operation は Coordinator が明示的に拒否する。
 
 # 10. CLI Lifecycle
 
-最初から方式を決め打ちしない。
+Phase 0 で Option A〜C を比較し、**Option C を採用した**（実測結果は `docs/spikes/`）。
 
-Phase 0 で以下を実測する。
+| Option | 方式 | 判断 |
+|---|---|---|
+| A — Interactive PTY | ConPTY で TUI を起動し、キー入力と画面出力でやり取り | 不採用。ターン完了を画面から推測するしかなく、CLI の版更新で壊れやすい |
+| B — Non-interactive + Resume | メッセージごとに CLI を起動し、session ID で resume | 単独では不採用。起動コストが毎ターンかかり、interrupt が kill しかない。Option C の復帰手段として使う |
+| C — 構造化 stdio の長寿命プロセス | プロセスを常駐させ、stdin/stdout で JSON をやり取り | **採用** |
 
-### Option A — Interactive PTY
-
-```text
-Coordinator
-    │
-    ▼
-ConPTY / node-pty
-    │
-    ▼
-Claude / Codex interactive CLI
-```
-
-利点:
-
-- 実際の CLI UX に近い
-- 長寿命 Session を扱いやすい
-- Observable
-
-懸念:
-
-- ANSI parsing
-- resize
-- Ctrl+C
-- prompt detection
-- Windows ConPTY quirks
-
-### Option B — Non-interactive + Resume
+## Option C の構成
 
 ```text
 Coordinator
-    │
-    ├── CLI invocation
-    │
-    └── session resume
+    ├── Claude Adapter ── stdio NDJSON ── claude -p --input-format stream-json --output-format stream-json
+    └── Codex Adapter  ── stdio JSON-RPC ── codex app-server
 ```
 
-利点:
+| 操作 | Claude | Codex |
+|---|---|---|
+| ターン送信 | stdin に `{"type":"user",...}` | `turn/start` |
+| ターン完了 | `result` イベント | `turn/completed` 通知 |
+| interrupt | `control_request`（subtype: interrupt） | `turn/interrupt` |
+| 復帰（プロセス再起動後） | `-r <session_id>` で再起動 | `thread/resume` |
+| 認証確認 | `system/init` の `apiKeySource === "none"` | `account/read` の `account.type === "chatgpt"` |
+| 利用量 telemetry | `rate_limit_event` | `account/rateLimits/updated` |
 
-- Process lifecycle が単純
+## 起動時の必須処理
 
-懸念:
+- 子プロセスの環境変数から `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `OPENAI_API_KEY` / `CODEX_API_KEY` を取り除く。Claude は API key があると黙ってそちらを使う（Spike E）
+- 起動直後に認証方式を確認し、サブスクリプション認証でなければ Agent を停止してエラーにする
 
-- 各 CLI の resume capability に依存
-- Session continuation の挙動差
+## リスク
 
-実測結果をもとに Adapter を確定する。
+- Codex app-server は experimental、Claude の stream-json 入力の control protocol はドキュメントが薄い。CLI の版更新で変わりうるので、プロトコル依存は Adapter 内に閉じ込める
+- 通常の TUI は表示されない。人が直接操作したい場合は、同じ session を `claude -r <id>` / `codex resume <id>` で開く
+
+PTY は Agent 制御には使わない。将来の Process Manager（§15）で dev server 等を扱うときに使う。
 
 ---
 
@@ -1066,9 +1052,6 @@ src/
 │   ├── claude-adapter.ts
 │   └── codex-adapter.ts
 │
-├── process/
-│   └── pty-process.ts
-│
 ├── protocol/
 │   ├── messages.ts
 │   └── schemas.ts
@@ -1108,7 +1091,7 @@ Claude Code は以下の順番で進める。
 
 2. Project root detection
 
-3. Minimal Windows PTY wrapper（Spike C）
+3. Windows PTY spike（Spike C）
 
 4. Claude Code lifecycle spike（Spike A）
 
@@ -1118,7 +1101,7 @@ Claude Code は以下の順番で進める。
 
 7. MCP spike（Spike D）
 
-8. Observed capabilities を元に AgentAdapter を確定
+8. Observed capabilities を元に AgentAdapter を確定（Option C、§10）
 
 9. In-memory event bus
 
