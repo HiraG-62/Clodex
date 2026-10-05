@@ -111,6 +111,7 @@ export class CodexAdapter extends BaseAgentAdapter {
     this.status = "idle";
     await this.applyPermissionChangedDuringStart();
     this.emit({ type: "session", sessionId: this.sessionId });
+    this.readRateLimits();
   }
 
   async interrupt(): Promise<void> {
@@ -163,6 +164,19 @@ export class CodexAdapter extends BaseAgentAdapter {
     super.handleExit(code);
   }
 
+  // 利用状況を起動直後から見えるようにする（通知はターン完了後にしか届かないため。DESIGN.md §14）
+  private readRateLimits(): void {
+    this.request("account/rateLimits/read", undefined)
+      .then((result) => this.emitRateLimits((result as CodexNotificationParams).rateLimits))
+      .catch(() => {});
+  }
+
+  private emitRateLimits(rateLimits: CodexNotificationParams["rateLimits"]): void {
+    const fiveHour = toRateLimitWindow(rateLimits?.primary);
+    const weekly = toRateLimitWindow(rateLimits?.secondary);
+    this.emit({ type: "rate_limit", ...(fiveHour && { fiveHour }), ...(weekly && { weekly }) });
+  }
+
   private async verifySubscription(): Promise<void> {
     const { account } = (await this.request("account/read", {})) as { account?: { type?: string } | null };
     if (account?.type === SUBSCRIPTION_ACCOUNT_TYPE) return;
@@ -177,12 +191,8 @@ export class CodexAdapter extends BaseAgentAdapter {
         return this.setTurnId(params.turn?.id);
       case "item/completed":
         return this.handleItem(params.item ?? {});
-      case "account/rateLimits/updated": {
-        const fiveHour = toRateLimitWindow(params.rateLimits?.primary);
-        const weekly = toRateLimitWindow(params.rateLimits?.secondary);
-        this.emit({ type: "rate_limit", ...(fiveHour && { fiveHour }), ...(weekly && { weekly }) });
-        return;
-      }
+      case "account/rateLimits/updated":
+        return this.emitRateLimits(params.rateLimits);
       case "turn/completed": {
         const status = TURN_STATUS[params.turn?.status ?? ""] ?? "failed";
         const text = this.lastAgentText || (params.turn?.error?.message ?? "");

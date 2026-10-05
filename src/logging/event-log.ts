@@ -66,6 +66,8 @@ export const formatEvent = (event: CoordinatorEvent, mode: DisplayMode): string 
   switch (event.kind) {
     case "message":
       return `${time} ${formatMessage(event.message, mode)}`;
+    case "notice":
+      return `${time} [CLODEX] ${event.text}`;
     case "human":
       // 既定では入力行が画面に残っているので出さない
       return mode === "verbose" ? `${time} [YOU -> ${event.agent.toUpperCase()}] ${indentContinuation(event.text)}` : undefined;

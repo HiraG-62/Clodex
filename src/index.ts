@@ -43,6 +43,7 @@ const main = async (): Promise<void> => {
     instructions: Object.fromEntries(AGENT_IDS.map((id) => [id, buildRoleInstructions(id, config.roles)])),
     limits: { ...DEFAULT_LIMITS, ...config.limits },
     ...(config.permission ? { permission: config.permission } : {}),
+    ...(config.usageAlert ? { usageAlert: config.usageAlert } : {}),
   });
 
   const interactive = Boolean(process.stdin.isTTY);

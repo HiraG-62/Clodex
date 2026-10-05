@@ -6,6 +6,7 @@ import { buildEnvelope } from "../context/context-resolver.js";
 import { createMessage, type CreateMessageResult } from "../protocol/messages.js";
 import { AgentMailbox } from "./agent-mailbox.js";
 import { BudgetManager, type BudgetLimits } from "./budget-manager.js";
+import { DEFAULT_USAGE_ALERT, UsageMonitor, type UsageAlert, type UsageSnapshot } from "./usage-monitor.js";
 import type { EventBus } from "./event-bus.js";
 
 export interface CoordinatorOptions {
@@ -18,15 +19,18 @@ export interface CoordinatorOptions {
   createMessageId?: () => string;
   limits?: BudgetLimits;
   permission?: PermissionLevel;
+  usageAlert?: Partial<UsageAlert>;
 }
 
 export class Coordinator {
   private readonly mailboxes: Record<AgentId, AgentMailbox>;
   private readonly budget: BudgetManager;
+  private readonly usage: UsageMonitor;
 
   constructor(private readonly options: CoordinatorOptions) {
     const { agents, bus, projectRoot, mcpUrlFor, models, instructions, limits, permission } = options;
     this.budget = new BudgetManager(limits);
+    this.usage = new UsageMonitor(bus, { ...DEFAULT_USAGE_ALERT, ...options.usageAlert });
     for (const id of AGENT_IDS) {
       agents[id].onEvent((event) => bus.publish({ kind: "agent", agent: id, event }));
       // 起動前なので値を保持するだけ（次の起動時に使われる）
@@ -91,10 +95,12 @@ export class Coordinator {
     await Promise.all(targets.map((target) => this.options.agents[target].setPermission(level)));
   }
 
-  status(): Array<{ id: AgentId; status: AgentStatus; sessionId: string | undefined; permission: PermissionLevel }> {
+  status(): Array<{
+    id: AgentId; status: AgentStatus; sessionId: string | undefined; permission: PermissionLevel; usage: UsageSnapshot;
+  }> {
     return AGENT_IDS.map((id) => {
       const { status, sessionId, permission } = this.options.agents[id];
-      return { id, status, sessionId, permission };
+      return { id, status, sessionId, permission, usage: this.usage.snapshot(id) };
     });
   }
 

@@ -438,7 +438,7 @@ Internal command（v0.1）:
 | `/interrupt [claude\|codex]` | 指定 Agent（省略時は全 Agent）の実行中ターンを interrupt する。キュー済みの message はそのまま配送される |
 | `/status` | 各 Agent の状態と session ID |
 | `/verbose` | terminal の詳細表示を切り替える（§17） |
-| `/primary <claude\|codex>` | 通常のテキストの送り先を切り替える（v0.2。§3.10） |
+| `/primary <claude\|codex>` | 通常のテキストの送り先を切り替える（§3.10） |
 | `/permission [claude\|codex] <read-only\|edit\|full>` | Agent（省略時は両方）の権限レベルを切り替える（§9 Permission） |
 | `/help` | 入力方法の一覧 |
 | `/exit` | 全 Agent を止めて終了 |
@@ -827,7 +827,8 @@ v0.2 では、分業の流れ（設計 → 実装の委譲 → レビュー → 
 Agent Adapter の `rate_limit` event（Claude: `rate_limit_event`、Codex: `account/rateLimits/updated`）から、Agent ごとに最新の利用状況を保持する。
 
 - **週のペース超過** = 週の使用率 − 週の経過率（経過率は reset 時刻と週の長さ 7 日から計算）。正なら使いすぎ、負なら余裕あり
-- `/status` に、各 Agent の 5 時間枠の使用率と週のペース超過を表示する
+- `/status` に、各 Agent の 5 時間枠の使用率と週のペース超過、現在の primary を表示する。まだ利用状況を受け取っていない Agent は `unknown`
+- Codex は起動時に `account/rateLimits/read` で利用状況を取得する（Claude は最初の API 呼び出しの後に届く）
 - 次の条件を初めて満たしたとき、1 回だけ通知する（同じ条件では繰り返さない。reset 後は再び通知できる）
 
 | 条件 | 既定の閾値 | 通知例 |
@@ -964,6 +965,7 @@ Coordinator 内の observable event は in-memory の Event Bus（`coordinator/e
 | `agent` | Agent Adapter が出した `AgentEvent`（§9）と、どの Agent か |
 | `message` | Coordinator が受理した formal message（§11） |
 | `human` | 人間の入力と送り先 Agent |
+| `notice` | Coordinator から人への通知（利用枠の偏り等。§14） |
 
 全 event に Coordinator が `at`（ISO 8601）を付ける。購読者の例外は他の購読者と publish 元に波及させない。
 
@@ -984,6 +986,7 @@ terminal の表示（「誰が何をしていて、誰が誰に何を頼んだ�
 | ターン完了（`turn`） | 最終応答。interrupted / failed はその旨 | ✓ |
 | formal message | `[MESSAGE] claude -> codex REVIEW_REQUEST task=... ` と本文の先頭 | ✓ |
 | `error` | ✓ | ✓ |
+| 通知（`notice`） | `[CLODEX] ...` | ✓ |
 | 人間の入力（`human`） | ×（入力行が画面に残っているため） | ✓ |
 | 途中の発言（`text`）・`tool`・`rate_limit`・`session`・`exit` | × | ✓ |
 

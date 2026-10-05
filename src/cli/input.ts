@@ -10,6 +10,7 @@ export type ShellCommand =
   | { kind: "exit" }
   | { kind: "verbose" }
   | { kind: "permission"; level: PermissionLevel; agent?: AgentId }
+  | { kind: "primary"; agent: AgentId }
   | { kind: "unsupported"; message: string }
   | { kind: "invalid"; message: string };
 
@@ -50,6 +51,9 @@ const parseCommand = (name: string, arg: string): ShellCommand => {
       return isAgentId(arg) ? { kind: "interrupt", agent: arg } : { kind: "invalid", message: `unknown agent: ${arg}` };
     case "permission":
       return parsePermission(arg);
+    case "primary":
+      if (!arg) return { kind: "invalid", message: `usage: /primary <${AGENT_IDS.join("|")}>` };
+      return isAgentId(arg) ? { kind: "primary", agent: arg } : { kind: "invalid", message: `unknown agent: ${arg}` };
     case "status":
     case "help":
     case "exit":

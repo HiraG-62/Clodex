@@ -5,7 +5,8 @@ import type { AgentMessage } from "../protocol/messages.js";
 export type CoordinatorEventInput =
   | { kind: "agent"; agent: AgentId; event: AgentEvent }
   | { kind: "message"; message: AgentMessage }
-  | { kind: "human"; agent: AgentId; text: string };
+  | { kind: "human"; agent: AgentId; text: string }
+  | { kind: "notice"; text: string };
 
 export type CoordinatorEvent = CoordinatorEventInput & { at: string };
 

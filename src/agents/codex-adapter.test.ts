@@ -15,6 +15,7 @@ const defaultResponder = (accountType = "chatgpt") => (m: JsonObject): unknown =
     case "thread/resume": return { thread: { id: params?.threadId } };
     case "turn/start": return { turn: { id: TURN_ID, status: "inProgress" } };
     case "turn/interrupt": return {};
+    case "account/rateLimits/read": return { rateLimits: { primary: { usedPercent: 4, resetsAt: 100 }, secondary: null } };
     default: return undefined;
   }
 };
@@ -50,7 +51,9 @@ describe("CodexAdapter", () => {
     expect(call.options.env.CLODEX_AGENT).toBe("codex");
 
     const methods = spawner.last.written.map((m) => m.method);
-    expect(methods).toEqual(["initialize", "initialized", "account/read", "thread/start"]);
+    expect(methods).toEqual(["initialize", "initialized", "account/read", "thread/start", "account/rateLimits/read"]);
+    await flush();
+    expect(events).toContainEqual({ type: "rate_limit", fiveHour: { usedPercent: 4, resetsAt: 100 } });
     expect(spawner.last.writtenWith("method", "thread/start")[0]!.params).toMatchObject({
       cwd: "C:\\dev\\app", approvalPolicy: "never", sandbox: "workspace-write",
     });

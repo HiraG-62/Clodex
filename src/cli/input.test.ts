@@ -16,6 +16,7 @@ describe("parseInput", () => {
     ["/exit", { kind: "exit" }],
     ["/verbose", { kind: "verbose" }],
     ["/permission full", { kind: "permission", level: "full" }],
+    ["/primary codex", { kind: "primary", agent: "codex" }],
     ["/permission codex read-only", { kind: "permission", agent: "codex", level: "read-only" }],
   ])("%j", (line, expected) => {
     expect(parseInput(line, "claude")).toEqual(expected);
@@ -41,6 +42,8 @@ describe("parseInput", () => {
     ["/interrupt gemini", /unknown agent/],
     ["/foo", /unknown command/],
     ["/permission", /usage/],
+    ["/primary", /usage/],
+    ["/primary gemini", /unknown agent/],
     ["/permission admin", /usage/],
     ["/permission gemini edit", /unknown agent/],
   ])("不正な入力 %j は invalid", (line, pattern) => {
