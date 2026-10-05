@@ -19,6 +19,7 @@ export interface AgentState {
 
 export interface ShellCoordinator {
   sendToAgent(agent: AgentId, text: string): Promise<TurnResult>;
+  steerOrSend(agent: AgentId, text: string): Promise<"steered" | "queued">;
   interrupt(agent?: AgentId): Promise<void>;
   compact(agent?: AgentId): Promise<unknown>;
   setPermission(level: PermissionLevel, agent?: AgentId): Promise<void>;
@@ -86,6 +87,7 @@ const HELP_LINES = (primary: AgentId) => [
   helpLine("<text>", t("help.text", { primary })),
   helpLine("@claude <text>", t("help.claude")),
   helpLine("@codex <text>", t("help.codex")),
+  helpLine("@<agent>! <text>", t("help.steer")),
   helpLine("!<command>", t("help.run")),
   ...slashCommands().map((command) => helpLine(commandUsage(command), command.description)),
   helpLine("Ctrl+C", t("help.ctrlC")),
@@ -178,6 +180,10 @@ export const createShell = ({
         return "continue";
       case "send":
         // 送信はキューに積むだけ。ターン完了は Event Bus 経由で表示される
+        if (command.steer) {
+          await coordinator.steerOrSend(command.agent, appendFileReferences(command.text, isProjectFile));
+          return "continue";
+        }
         void coordinator.sendToAgent(command.agent, appendFileReferences(command.text, isProjectFile));
         return "continue";
       case "interrupt":

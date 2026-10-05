@@ -428,3 +428,14 @@ describe("ClaudeAdapter の変更ファイル", () => {
     expect(tools.map((e) => e.type === "tool" && e.files)).toEqual([["C:\\dev\\app\\a.ts"], ["n.ipynb"], undefined]);
   });
 });
+
+describe("ClaudeAdapter の steer", () => {
+  it("実行中のターンには user message を足し、実行中でなければ false", async () => {
+    const { adapter, proc } = await setup();
+    await expect(adapter.steer("今のうちに")).resolves.toBe(false);
+    void adapter.send("work");
+    await expect(adapter.steer("方針を変えて")).resolves.toBe(true);
+    expect(proc.written).toContainEqual({ type: "user", message: { role: "user", content: "方針を変えて" } });
+    expect(adapter.status).toBe("busy");
+  });
+});

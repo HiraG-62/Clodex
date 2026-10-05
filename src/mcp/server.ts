@@ -15,7 +15,8 @@ const TOKEN_PATH = /^\/mcp\/([0-9a-f]+)$/;
 
 const TOOL_DESCRIPTION =
   "Send a formal message to the other agent through the Clodex coordinator. " +
-  "The reply, if any, arrives as a new message after your current turn ends.";
+  "The reply, if any, arrives as a new message after your current turn ends. " +
+  "Set interrupt only to correct work the recipient is doing for you.";
 
 export type SendMessageHandler = (from: AgentId, input: unknown) => CreateMessageResult;
 

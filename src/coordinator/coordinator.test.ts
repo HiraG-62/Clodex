@@ -454,3 +454,33 @@ describe("Coordinator の取り消しと割り込み", () => {
     expect(claude.sent).toEqual(["human work"]);
   });
 });
+
+describe("Coordinator の割り込み（steer）", () => {
+  it("人間の @agent! は実行中なら steer し、実行中でなければ通常の送信にする", async () => {
+    const { codex, events, coordinator } = setup();
+    await expect(coordinator.steerOrSend("codex", "first")).resolves.toBe("queued");
+    await flush();
+    await expect(coordinator.steerOrSend("codex", "fix")).resolves.toBe("steered");
+    expect(codex.steered).toEqual(["fix"]);
+    expect(codex.sent).toEqual(["first"]);
+    expect(events).toContainEqual(expect.objectContaining({ kind: "human", agent: "codex", text: "fix", steer: true }));
+  });
+
+  it("interrupt: true は宛先が送信元からの message を処理中のときだけ steer する", async () => {
+    const { claude, codex, coordinator } = setup();
+    // codex が claude の依頼を処理中
+    coordinator.receiveMessage("claude", reviewRequest);
+    await flush();
+    const correction = { to: "codex", type: "ISSUE", taskId: "T-1", body: "a.ts ではなく b.ts", interrupt: true };
+    expect(coordinator.receiveMessage("claude", correction).ok).toBe(true);
+    await flush();
+    expect(codex.steered).toHaveLength(1);
+    expect(codex.steered[0]).toContain("Interrupt: yes");
+    // claude は codex からの message を処理していないので、codex からの interrupt はキューに積む
+    void coordinator.sendToAgent("claude", "human work");
+    await flush();
+    coordinator.receiveMessage("codex", { to: "claude", type: "QUESTION", taskId: "T-1", body: "?", interrupt: true });
+    await flush();
+    expect(claude.steered).toEqual([]);
+  });
+});

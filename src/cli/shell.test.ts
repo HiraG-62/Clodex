@@ -92,6 +92,12 @@ class FakeCoordinator implements ShellCoordinator {
     return undefined;
   }
 
+  readonly steeredInputs: Array<{ agent: AgentId; text: string }> = [];
+  async steerOrSend(agent: AgentId, text: string): Promise<"steered" | "queued"> {
+    this.steeredInputs.push({ agent, text });
+    return "steered";
+  }
+
   sendToAgent(agent: AgentId, text: string): Promise<TurnResult> {
     this.sent.push({ agent, text });
     return new Promise(() => {}); // ターン完了を待たずに次の入力を受け付けることを確認する
@@ -149,6 +155,13 @@ describe("createShell", () => {
     await expect(shell.handleLine("hello")).resolves.toBe("continue");
     await expect(shell.handleLine("@codex review")).resolves.toBe("continue");
     expect(coordinator.sent).toEqual([{ agent: "claude", text: "hello" }, { agent: "codex", text: "review" }]);
+  });
+
+  it("@agent! は Coordinator の steerOrSend に渡す", async () => {
+    const { coordinator, shell } = setup();
+    await shell.handleLine("@codex! b.ts も");
+    expect(coordinator.steeredInputs).toEqual([{ agent: "codex", text: "b.ts も" }]);
+    expect(coordinator.sent).toEqual([]);
   });
 
   it("@path で指定した project のファイルを本文の末尾に参照として添える", async () => {

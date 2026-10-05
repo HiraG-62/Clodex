@@ -81,7 +81,7 @@ export function createInputAssist(commands: readonly SlashCommand[], agents: rea
       const atStart = offset === 0;
       offset += part.length;
       if (atStart && /^\/\S+$/.test(part)) push(part, "command");
-      else if (atStart && agents.includes(part.slice(1)) && part.startsWith("@")) push(part, "agent");
+      else if (atStart && part.startsWith("@") && agents.includes(part.slice(1).replace(/!$/, ""))) push(part, "agent");
       else if (part.startsWith("@") && files.has(part.slice(1).replace(/[.,:;!?)\]、。」]+$/, ""))) push(part, "file");
       else push(part);
     }

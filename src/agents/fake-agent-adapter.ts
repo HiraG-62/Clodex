@@ -46,6 +46,13 @@ export class FakeAgentAdapter implements AgentAdapter {
     resolve?.(result);
   }
 
+  readonly steered: string[] = [];
+  async steer(text: string): Promise<boolean> {
+    if (this.status !== "busy") return false;
+    this.steered.push(text);
+    return true;
+  }
+
   async interrupt(): Promise<void> {}
 
   async setPermission(level: PermissionLevel): Promise<void> {

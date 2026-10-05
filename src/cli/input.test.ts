@@ -102,3 +102,10 @@ describe("parseInput", () => {
     if (result.kind === "invalid") expect(result.message).toMatch(pattern);
   });
 });
+
+describe("@agent! で割り込む", () => {
+  it("送り先の後ろの ! は steer の指定", () => {
+    expect(parseInput("@codex! テストは不要", "claude")).toEqual({ kind: "send", agent: "codex", text: "テストは不要", steer: true });
+    expect(parseInput("@claude 普通", "codex")).toEqual({ kind: "send", agent: "claude", text: "普通" });
+  });
+});

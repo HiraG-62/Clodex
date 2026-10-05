@@ -5,7 +5,7 @@ import {
 import { buildEnvelope } from "../context/context-resolver.js";
 import { t } from "../i18n/i18n.js";
 import type { Language } from "../context/language.js";
-import { createMessage, type CreateMessageResult } from "../protocol/messages.js";
+import { createMessage, type AgentMessage, type CreateMessageResult } from "../protocol/messages.js";
 import { AgentMailbox } from "./agent-mailbox.js";
 import { BudgetManager, type BudgetLimits } from "./budget-manager.js";
 import { DEFAULT_USAGE_ALERT, UsageMonitor, type UsageAlert, type UsageSnapshot } from "./usage-monitor.js";
@@ -97,8 +97,27 @@ export class Coordinator {
 
     bus.publish({ kind: "message", message });
     // ACK は記録のみ。配送して Agent を起こさない（DESIGN.md §12, §25）
-    if (message.type !== "ACK") void this.mailboxes[message.to].enqueue(buildEnvelope(message, this.options.language), message);
+    if (message.type !== "ACK") void this.deliver(message);
     return result;
+  }
+
+  // interrupt: 宛先が送信元からの message を処理中なら、そのターンに足す。足せなければキューに積む（DESIGN.md §28 v0.3 C）
+  private async deliver(message: AgentMessage): Promise<void> {
+    const envelope = buildEnvelope(message, this.options.language);
+    const mailbox = this.mailboxes[message.to];
+    const steerable = message.interrupt && mailbox.current?.from === message.from;
+    if (steerable && await this.options.agents[message.to].steer(envelope)) return;
+    await mailbox.enqueue(envelope, message);
+  }
+
+  // @agent!: 実行中なら steer し、そうでなければ通常の送信（DESIGN.md §28 v0.3 C）
+  async steerOrSend(id: AgentId, text: string): Promise<"steered" | "queued"> {
+    if (await this.options.agents[id].steer(text)) {
+      this.options.bus.publish({ kind: "human", agent: id, text, steer: true });
+      return "steered";
+    }
+    void this.sendToAgent(id, text);
+    return "queued";
   }
 
   sendToAgent(id: AgentId, text: string): Promise<TurnResult> {

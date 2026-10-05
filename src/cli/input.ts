@@ -4,7 +4,7 @@ import { AGENT_IDS, CLAUDE_EFFORT_LEVELS, COMMON_EFFORT_LEVELS, PERMISSION_LEVEL
 
 export type ShellCommand =
   | { kind: "empty" }
-  | { kind: "send"; agent: AgentId; text: string }
+  | { kind: "send"; agent: AgentId; text: string; steer?: true }
   | { kind: "interrupt"; agent?: AgentId }
   | { kind: "status" }
   | { kind: "help" }
@@ -73,11 +73,16 @@ const unsupported = (feature: string): ShellCommand =>
   ({ kind: "unsupported", message: t("input.unsupported", { feature }) });
 
 // 行頭の @agent は送り先。Agent でなければ undefined（ファイルの参照として本文に残す）
-const parseMention = (name: string, text: string): ShellCommand | undefined => {
+// @agent! は実行中のターンへの割り込み（DESIGN.md §28 v0.3 C）
+const STEER_SUFFIX = "!";
+
+const parseMention = (mention: string, text: string): ShellCommand | undefined => {
+  const steer = mention.endsWith(STEER_SUFFIX);
+  const name = steer ? mention.slice(0, -STEER_SUFFIX.length) : mention;
   if (name === "all") return unsupported("@all");
   if (!isAgentId(name)) return undefined;
   if (!text) return { kind: "invalid", message: t("input.empty", { agent: name }) };
-  return { kind: "send", agent: name, text };
+  return steer ? { kind: "send", agent: name, text, steer: true } : { kind: "send", agent: name, text };
 };
 
 const parseCommand = (name: string, arg: string): ShellCommand => {

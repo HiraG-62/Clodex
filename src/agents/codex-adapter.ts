@@ -121,6 +121,19 @@ export class CodexAdapter extends BaseAgentAdapter {
     this.readRateLimits();
   }
 
+  // turn/steer は実行中の turn ID を前提にする（docs/spikes/steer-image-subagent.md）
+  async steer(text: string): Promise<boolean> {
+    if (this.status !== "busy" || !this.turnId) return false;
+    try {
+      await this.request("turn/steer", {
+        threadId: this.sessionId, expectedTurnId: this.turnId, input: [{ type: "text", text, text_elements: [] }],
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async interrupt(): Promise<void> {
     if (this.status !== "busy") return;
     // turn ID が未確定（turn/start の応答前）なら、確定した時点で送る

@@ -60,6 +60,8 @@ export interface AgentAdapter {
   send(text: string): Promise<TurnResult>;
   // 手動 compact。1 ターンとして扱う（docs/spikes/compact.md）
   compact(): Promise<TurnResult>;
+  // 実行中のターンに指示を足す。足せなければ false（DESIGN.md §28 v0.3 C）
+  steer(text: string): Promise<boolean>;
   // 停止中なら次の起動時に使う
   setPermission(level: PermissionLevel): Promise<void>;
   setModel(model: string): Promise<TurnResult | void>;

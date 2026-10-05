@@ -423,6 +423,7 @@ Project root の解決順:
 | 普通のテキスト | Primary Agent へ送信 | ✓ |
 | `@claude ...` | Claude へ直接送信 | ✓ |
 | `@codex ...` | Codex へ直接送信 | ✓ |
+| `@claude! ...` / `@codex! ...` | その Agent の実行中のターンに指示を足す（steer）。実行中でなければ通常の送信（§28 v0.3 C） | ✓ |
 | `@all ...` | 両方へ送信（高コスト操作なので警告対象） | 未対応 |
 | `@<path>` | project のファイルへの参照（行頭でも、Agent 名でなければ参照）。存在するファイルを本文の末尾に `Referenced files:` として添える（§28 v0.3 A） | ✓ |
 | `!command` | project root で shell command を実行し、出力を表示する（下記） | ✓ |
@@ -720,6 +721,8 @@ Coordinator が付与するフィールド（Agent の自己申告は使わな�
   "createdAt": "2026-10-05T07:05:00.000Z"
 }
 ```
+
+- `interrupt`（省略可、boolean）: 宛先が送信元からの message を処理中なら、そのターンに足す（§28 v0.3 C）。それ以外は通常どおり配送する
 
 ---
 
@@ -1698,24 +1701,29 @@ dogfooding で出た要望を 4 段階で入れる。小さく確実なものか
 - Agent が証跡として見せたい画像（スクリーンショット等）は、`~/.clodex/artifacts/<project 名>/` に保存して本文にフルパスを書くよう、役割の定型文で伝える（project の working tree を汚さない）
 - API: `GET /api/file?path=` と `GET /api/diff?path=`（token 認証）。読めるのは project root と上の artifacts ディレクトリの中の通常ファイルだけ（`..` や symlink で外に出ない。実パスで確かめる）。大きさの上限はテキスト 2 MB、画像 10 MB
 
-### C — 割り込みとマルチエージェント（要実測）
+### C — 割り込みとマルチエージェント
+
+実測: docs/spikes/steer-image-subagent.md
 
 割り込み（steer）:
 
-- 両 CLI は実行中のターンへの追加入力に対応している（Claude: stream-json の追加送信、Codex: `turn/steer`。docs/spikes/mcp.md）。Claude で追加入力がそのターンの途中で反映されるかは実測する
-- 人間: `@claude! <text>` / `@codex! <text>` で、実行中のターンに指示を足す。実行中でなければ通常の送信になる
-- Agent: `send_message` の `interrupt: true`。宛先が送信元の依頼（同じ chain）を処理中のときだけ割り込み、それ以外は通常どおりキューに積む。tool の説明と定型文で「完了を待つと手戻りになる修正のときだけ使う」と伝える。Budget の message 数に数える
+- Adapter の `steer(text)`: 実行中のターンに指示を足す。Claude は実行中に stdin へ user message をもう 1 行、Codex は `turn/steer`（`expectedTurnId` = 実行中の turn）。どちらも新しいターンにはならず、実行中の tool / command の区切りで取り込まれる。足せなかった（実行中でない、Codex の turn ID が未確定、`activeTurnNotSteerable` 等）ら false を返す
+- 人間: `@claude! <text>` / `@codex! <text>`。その Agent が実行中なら steer し、そうでなければ（steer できなければ）通常の送信としてキューに積む。人間の入力の event に `steer: true` を付け、画面は「割り込み」と出す
+- Agent: `send_message` の `interrupt: true`。宛先が**送信元からの message を処理中**のときだけ steer し（送信元が頼んだ作業の修正）、それ以外は通常どおりキューに積む。Budget の数え方は通常の message と同じ。Task envelope に `Interrupt: yes` を入れ、画面は「割り込み」と出す
+- tool の説明と定型文で「完了を待つと手戻りになる修正のときだけ `interrupt: true` にする」と伝える
 
 マルチエージェント:
 
 - 各 CLI の公式 subagent を使う（§3.7）。Clodex は Agent を増やさない
 - 役割の定型文で、次の 2 つに subagent を使うよう伝える: 互いに独立して並列にできる作業、前提のコンテキストを持たない方がよい作業（レビュー、調査など）
-- Claude: Agent tool（background を含む）。subagent の出力は本体の発言と区別して表示する（§9）。Web UI のターンの「作業」に subagent ごとの進み具合を畳んで出す
-- Codex: 公式の subagent 機能の有無を実測する。無ければ、formal message の `freshContext: true` で、その依頼を同じ app-server の新しい thread で処理する（結果は送信元に RESULT として返し、thread は会話に残さない）
+- Claude: Agent tool（background を含む）。subagent の出力は本体の発言と区別する（§9）
+- Codex: 公式の `multi_agent`（既定で有効）。subagent は別の thread で動くので、Adapter は自分の thread の通知だけを扱い、親の `subAgentActivity` を tool として出す（§9）
 
 画像の貼り付け:
 
-- Web UI で画像を貼り付け・選択して送る。画像は project の外（`~/.clodex/uploads/`）に保存し、Agent にはファイルとして渡す。各 CLI の画像入力（Claude: user message の image block、Codex: `UserInput` の画像）を実測して決める
+- Web UI で画像を貼り付け・選択すると `POST /api/upload`（token 認証、10 MB まで、png / jpeg / gif / webp）で `~/.clodex/uploads/<project 名>/` に保存し、入力欄に `@<保存先のフルパス>` を足す
+- 人間の入力の `@<path>` のうち、画像のファイル（project・artifacts・uploads の中）は Agent に画像として渡す。Claude は user message の image block（base64）、Codex は `localImage`。本文の `Referenced files:` にも並べる
+- 成果物の一覧（B）にも画像として出る（本文の画像のパスから）
 
 ### i18n — 画面の文言
 

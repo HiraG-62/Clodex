@@ -17,6 +17,14 @@ const PERMISSION_NOTE =
   "The human cannot approve tool permissions interactively. If an action is denied, say so and suggest the Clodex /permission command.";
 
 // 指示してから完了するまで何も見えない状態を避ける（DESIGN.md §17 ログの「方針」）
+// 割り込みは手戻りを防ぐときだけ（DESIGN.md §28 v0.3 C）
+const INTERRUPT_NOTE =
+  "Set interrupt: true on send_message only for corrections to work the peer is doing for you that would otherwise be wasted.";
+// 公式の subagent でコンテキストを分ける・並列にする（DESIGN.md §28 v0.3 C）
+const SUBAGENT_NOTE =
+  "Use your built-in sub-agents for work that can run in parallel independently, and for work that is better done " +
+  "without your current context (reviews, investigations).";
+
 const PLAN_NOTE = "When you receive a request, state in one or two sentences what you will do before you start working.";
 
 const roleLines = (agent: AgentId, peer: AgentId, roles: RolesConfig | undefined): string[] => {
@@ -45,7 +53,7 @@ export const buildRoleInstructions = (
 ): string => {
   const peer = peerOf(agent);
   return [
-    header(agent, peer), ...roleLines(agent, peer, roles), PERMISSION_NOTE, PLAN_NOTE,
+    header(agent, peer), ...roleLines(agent, peer, roles), PERMISSION_NOTE, PLAN_NOTE, INTERRUPT_NOTE, SUBAGENT_NOTE,
     ...(artifactsDir ? [artifactsNote(artifactsDir)] : []),
     ...(language ? [languageDirective(language)] : []),
   ].join("\n");

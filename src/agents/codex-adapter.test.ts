@@ -397,3 +397,24 @@ describe("CodexAdapter の subagent（docs/spikes/steer-image-subagent.md）", (
     expect(events.some((e) => e.type === "context")).toBe(false);
   });
 });
+
+describe("CodexAdapter の steer", () => {
+  it("実行中のターンに turn/steer を送り、turn ID が無い・失敗したら false", async () => {
+    const { adapter, started, proc } = await setup();
+    await started;
+    await expect(adapter.steer("x")).resolves.toBe(false);
+    void adapter.send("work");
+    await flush();
+    const steered = adapter.steer("方針を変えて");
+    await flush();
+    const request = proc.writtenWith("method", "turn/steer")[0]!;
+    expect(request.params).toEqual({ threadId: THREAD_ID, expectedTurnId: TURN_ID, input: [{ type: "text", text: "方針を変えて", text_elements: [] }] });
+    proc.emit({ id: request.id, result: { turnId: TURN_ID } });
+    await expect(steered).resolves.toBe(true);
+    const rejected = adapter.steer("もう一度");
+    await flush();
+    const second = proc.writtenWith("method", "turn/steer")[1]!;
+    proc.emit({ id: second.id, error: { message: "activeTurnNotSteerable" } });
+    await expect(rejected).resolves.toBe(false);
+  });
+});

@@ -41,6 +41,7 @@ describe("highlight", () => {
       { text: " を見て @nope" },
     ]);
     expect(highlight("/status now", files)).toEqual([{ text: "/status", kind: "command" }, { text: " now" }]);
+    expect(highlight("@codex! now", files)[0]).toEqual({ text: "@codex!", kind: "agent" });
   });
 
   it("区切った文字列をつなげると元の入力に戻る", () => {

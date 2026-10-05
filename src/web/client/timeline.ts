@@ -7,7 +7,7 @@ import type { FeedItem } from "../web-feed.js";
 export type TimelineStep = { kind: "say"; text: string } | { kind: "tool"; name: string; input: string; files?: string[] };
 
 export type TimelineItem =
-  | { kind: "human"; id: string; at: string; agent: AgentId; text: string }
+  | { kind: "human"; id: string; at: string; agent: AgentId; text: string; steer?: boolean }
   | {
     kind: "turn"; id: string; at: string; agent: AgentId;
     status: "working" | TurnResult["status"]; steps: TimelineStep[]; text: string;
@@ -34,7 +34,9 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
 
   const id = `e${item.seq}`;
   const { event } = item;
-  if (event.kind === "human") return limit([...items, { kind: "human", id, at: event.at, agent: event.agent, text: event.text }]);
+  if (event.kind === "human") {
+    return limit([...items, { kind: "human", id, at: event.at, agent: event.agent, text: event.text, ...(event.steer ? { steer: true } : {}) }]);
+  }
   if (event.kind === "notice") return limit([...items, { kind: "notice", id, at: event.at, text: event.text }]);
   if (event.kind === "message") {
     return limit([...items, { kind: "message", id, at: event.at, message: event.message, ...(item.envelope ? { envelope: item.envelope } : {}) }]);

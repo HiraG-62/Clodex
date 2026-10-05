@@ -64,6 +64,13 @@ describe("buildEnvelope", () => {
   });
 });
 
+describe("buildEnvelope の割り込み", () => {
+  it("interrupt の message には Interrupt: yes を入れる", () => {
+    expect(buildEnvelope({ ...base, interrupt: true })).toContain("\nInterrupt: yes\n");
+    expect(buildEnvelope(base)).not.toContain("Interrupt:");
+  });
+});
+
 describe("buildEnvelope の言語", () => {
   it("言語の指定があれば末尾に 1 行添える", () => {
     const lines = buildEnvelope(base, "ja").split("\n");

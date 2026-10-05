@@ -144,6 +144,13 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     }
   }
 
+  // 実行中に user message をもう 1 行送ると、そのターンの tool の区切りで取り込まれる（docs/spikes/steer-image-subagent.md）
+  async steer(text: string): Promise<boolean> {
+    if (this.status !== "busy" || !this.proc) return false;
+    this.proc.write(JSON.stringify({ type: "user", message: { role: "user", content: text } }));
+    return true;
+  }
+
   async interrupt(): Promise<void> {
     if (this.status !== "busy") return;
     this.interruptRequested = true;

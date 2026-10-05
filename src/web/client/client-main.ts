@@ -209,6 +209,7 @@ export function clientMain({
     const route = el("div", "route");
     route.append(mark(message.from), el("span", "arrow", "→"), mark(message.to), el("span", "kind", message.type));
     if (message.status) route.append(el("span", "kind", message.status.replace(/_/g, " ").toUpperCase()));
+    if (message.interrupt) route.append(el("span", "kind steer", t("web.steer")));
     route.append(el("span", "task mono", `${message.taskId} · ${clock(item.at)}`));
     const text = el("div", "text md");
     text.innerHTML = renderMarkdown(message.body);
@@ -238,6 +239,7 @@ export function clientMain({
         const node = el("article", "entry you");
         const head = el("div", "head");
         head.append(el("b", "", t("web.you")), el("span", `c-${item.agent}`, `→ ${AGENTS[item.agent].name}`), el("time", "mono", clock(item.at)));
+        if (item.steer) head.append(el("span", "kind steer", t("web.steer")));
         const body = el("div", "body md");
         body.innerHTML = renderMarkdown(item.text);
         node.append(mark("you"), head, body);
@@ -790,7 +792,7 @@ export function clientMain({
   const renderHighlight = () => {
     const nodes: Node[] = assist.highlight(input.value, fileSet).map((segment) => {
       if (!segment.kind) return document.createTextNode(segment.text);
-      return el("mark", segment.kind === "agent" ? `hl-${segment.text.slice(1)}` : `hl-${segment.kind}`, segment.text);
+      return el("mark", segment.kind === "agent" ? `hl-${segment.text.slice(1).replace(/!$/, "")}` : `hl-${segment.kind}`, segment.text);
     });
     // 末尾の改行も高さに反映されるよう、幅の無い文字を足す
     highlightLayer.replaceChildren(...nodes, document.createTextNode("\u200b"));

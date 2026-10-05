@@ -126,3 +126,10 @@ describe("applyFeedItem", () => {
     expect(next[1]).not.toBe(first[1]);
   });
 });
+
+describe("applyFeedItem の割り込み", () => {
+  it("人間の steer の入力に印を付ける", () => {
+    const item: FeedItem = { type: "event", seq: 900, event: { kind: "human", agent: "codex", text: "fix", steer: true, at: AT } };
+    expect(applyFeedItem([], item)).toMatchObject([{ kind: "human", text: "fix", steer: true }]);
+  });
+});

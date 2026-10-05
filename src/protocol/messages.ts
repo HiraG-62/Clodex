@@ -34,6 +34,10 @@ export const sendMessageShape = {
   files: z.array(z.string().min(1)).optional().describe("File paths relative to the project root"),
   status: z.enum(RESULT_STATUSES).optional().describe("RESULT only"),
   issues: z.array(issueSchema).optional().describe("RESULT or ISSUE only"),
+  interrupt: z.boolean().optional().describe(
+    "Deliver into the recipient's running turn when it is working on your request. " +
+    "Use only for corrections that would otherwise waste the recipient's work",
+  ),
 };
 
 const sendMessageSchema = z.object(sendMessageShape);
