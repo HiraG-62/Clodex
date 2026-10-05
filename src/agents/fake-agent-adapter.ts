@@ -9,6 +9,7 @@ export class FakeAgentAdapter implements AgentAdapter {
   permission: PermissionLevel = "edit";
   readonly starts: AgentStartOptions[] = [];
   readonly sent: string[] = [];
+  compacts = 0;
   startError: Error | undefined;
   private readonly handlers = new Set<AgentEventHandler>();
   private resolveTurn: ((result: TurnResult) => void) | undefined;
@@ -25,6 +26,13 @@ export class FakeAgentAdapter implements AgentAdapter {
   send(text: string): Promise<TurnResult> {
     if (this.status !== "idle") return Promise.reject(new Error(`${this.id} is ${this.status}`));
     this.sent.push(text);
+    this.status = "busy";
+    return new Promise((resolve) => (this.resolveTurn = resolve));
+  }
+
+  compact(): Promise<TurnResult> {
+    if (this.status !== "idle") return Promise.reject(new Error(`${this.id} is ${this.status}`));
+    this.compacts++;
     this.status = "busy";
     return new Promise((resolve) => (this.resolveTurn = resolve));
   }

@@ -104,6 +104,12 @@ export class Coordinator {
     return undefined;
   }
 
+  // 省略時は起動中の Agent だけ（停止中の Agent は compact するものが無い）
+  compact(id?: AgentId): Promise<TurnResult[]> {
+    const targets = id ? [id] : AGENT_IDS.filter((agent) => this.options.agents[agent].status !== "stopped");
+    return Promise.all(targets.map((target) => this.mailboxes[target].enqueueCompact()));
+  }
+
   async interrupt(id?: AgentId): Promise<void> {
     const targets = id ? [id] : AGENT_IDS;
     await Promise.all(targets.map((target) => this.options.agents[target].interrupt()));

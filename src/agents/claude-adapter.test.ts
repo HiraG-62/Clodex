@@ -120,6 +120,24 @@ describe("ClaudeAdapter", () => {
     expect(events.findIndex((e) => e.type === "turn_started")).toBeLessThan(events.findIndex((e) => e.type === "turn"));
   });
 
+  it("compact は /compact を 1 ターンとして送り、compact_boundary で compacted を流す", async () => {
+    const { adapter, proc, events } = await setup();
+    const turn = adapter.compact();
+    expect(adapter.status).toBe("busy");
+    expect(proc.written).toContainEqual({ type: "user", message: { role: "user", content: "/compact" } });
+    proc.emit({ type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "manual", pre_tokens: 30000, post_tokens: 3000 } });
+    proc.emit(result(""));
+    await expect(turn).resolves.toEqual({ status: "completed", text: "" });
+    expect(events).toContainEqual({ type: "compacted" });
+    expect(events.filter((e) => e.type === "turn_started")).toHaveLength(1);
+  });
+
+  it("busy 中の compact は拒否する", async () => {
+    const { adapter } = await setup();
+    void adapter.send("x");
+    await expect(adapter.compact()).rejects.toThrow(/busy/);
+  });
+
   it("busy 中の send は拒否する", async () => {
     const { adapter } = await setup();
     void adapter.send("first");

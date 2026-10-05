@@ -64,6 +64,12 @@ class FakeCoordinator implements ShellCoordinator {
     this.interrupted.push(agent);
   }
 
+  readonly compacted: Array<AgentId | undefined> = [];
+  compact(agent?: AgentId): Promise<unknown> {
+    this.compacted.push(agent);
+    return new Promise(() => {}); // 完了を待たずに次の入力を受け付けることを確認する
+  }
+
   status() {
     return this.states;
   }
@@ -198,6 +204,14 @@ describe("createShell", () => {
     await shell.handleLine("/new");
     expect(history.started).toBe(0);
     expect(printed).toEqual(["claude is busy. Use /interrupt first."]);
+  });
+
+  it("/compact は完了を待たずに Coordinator に渡す", async () => {
+    const { coordinator, printed, shell } = setup();
+    await expect(shell.handleLine("/compact claude")).resolves.toBe("continue");
+    await shell.handleLine("/compact");
+    expect(coordinator.compacted).toEqual(["claude", undefined]);
+    expect(printed).toEqual(["compact queued: claude", "compact queued: running agents"]);
   });
 
   it("/exit は exit を返す", async () => {

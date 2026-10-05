@@ -57,7 +57,7 @@ export class UsageMonitor {
       if (event.kind !== "agent") return;
       const { agent, event: agentEvent } = event;
       // session が変わったら前のコンテキストの大きさは当てはまらない
-      if (agentEvent.type === "session") this.contexts.delete(agent);
+      if (agentEvent.type === "session" || agentEvent.type === "compacted") this.contexts.delete(agent);
       if (agentEvent.type === "context") {
         this.contexts.set(agent, { tokens: agentEvent.tokens, ...(agentEvent.window ? { window: agentEvent.window } : {}) });
       }

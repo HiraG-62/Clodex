@@ -15,6 +15,7 @@ export interface AgentState {
 export interface ShellCoordinator {
   sendToAgent(agent: AgentId, text: string): Promise<TurnResult>;
   interrupt(agent?: AgentId): Promise<void>;
+  compact(agent?: AgentId): Promise<unknown>;
   setPermission(level: PermissionLevel, agent?: AgentId): Promise<void>;
   switchSessions(sessions: SavedSessions, targets?: readonly AgentId[]): Promise<string | undefined>;
   status(): AgentState[];
@@ -48,6 +49,7 @@ const HELP_LINES = (primary: AgentId) => [
   "/primary <agent>    change where plain text goes",
   "/resume [number]    list past conversations, or switch to one",
   "/new [agent]        start fresh sessions (a new conversation if agent is omitted)",
+  "/compact [agent]    summarize the conversation to reduce context (running agents if omitted)",
   "/verbose            toggle detailed output (tools, usage, intermediate text)",
   "/permission [agent] <read-only|edit|full>  change what agents may do without asking",
   "/exit               stop all agents and quit",
@@ -135,6 +137,11 @@ export const createShell = ({ coordinator, primary: initialPrimary, print, toggl
         return "continue";
       case "new":
         await startFresh(command.agent);
+        return "continue";
+      case "compact":
+        // 1 ターンとしてキューに積むだけ。進み具合は Event Bus 経由で表示される
+        void coordinator.compact(command.agent);
+        print(`compact queued: ${command.agent ?? "running agents"}`);
         return "continue";
       case "resume":
         if (command.index === undefined) listConversations();

@@ -163,6 +163,27 @@ describe("CodexAdapter", () => {
     expect(events).toContainEqual({ type: "text", text: "PONG" });
   });
 
+  it("compact は thread/compact/start を送り、そのターンの完了で resolve する。前のターンの発言は持ち越さない", async () => {
+    const { adapter, started, proc } = await setup();
+    await started;
+    const first = adapter.send("a");
+    await flush();
+    proc.emit(agentMessage("long essay"));
+    proc.emit(turnCompleted("completed"));
+    await first;
+
+    const compacted = adapter.compact();
+    expect(adapter.status).toBe("busy");
+    await flush();
+    expect(proc.writtenWith("method", "thread/compact/start")[0]!.params).toEqual({ threadId: THREAD_ID });
+    proc.emit({ method: "turn/started", params: { threadId: THREAD_ID, turn: { id: "turn-compact" } } });
+    await adapter.interrupt();
+    expect(proc.writtenWith("method", "turn/interrupt")[0]!.params).toEqual({ threadId: THREAD_ID, turnId: "turn-compact" });
+    proc.emit({ method: "item/completed", params: { item: { type: "contextCompaction" } } });
+    proc.emit(turnCompleted("completed"));
+    await expect(compacted).resolves.toEqual({ status: "completed", text: "" });
+  });
+
   it("前のターンの発言を次のターンの結果に持ち越さない", async () => {
     const { adapter, started, proc } = await setup();
     await started;

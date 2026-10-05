@@ -36,6 +36,7 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   }
   protected abstract handleMessage(message: unknown): void;
   protected abstract writeTurn(text: string): void;
+  protected abstract writeCompact(): void;
 
   onEvent(handler: AgentEventHandler): () => void {
     this.handlers.add(handler);
@@ -43,11 +44,19 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   }
 
   send(text: string): Promise<TurnResult> {
+    return this.beginTurn(() => this.writeTurn(text));
+  }
+
+  compact(): Promise<TurnResult> {
+    return this.beginTurn(() => this.writeCompact());
+  }
+
+  private beginTurn(write: () => void): Promise<TurnResult> {
     if (this.status !== "idle") return Promise.reject(new Error(`${this.id} is ${this.status}`));
     this.status = "busy";
     this.emit({ type: "turn_started" });
     const turn = new Promise<TurnResult>((resolve) => (this.resolveTurn = resolve));
-    this.writeTurn(text);
+    write();
     return turn;
   }
 

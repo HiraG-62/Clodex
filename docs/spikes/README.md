@@ -10,6 +10,7 @@ CLI: Claude Code 2.1.289 / codex-cli 0.156.1
 | C Windows PTY | node-pty 1.1.0 + ConPTY は日本語・resize・Ctrl+C で動作。kill 時に子プロセスで `AttachConsole failed` が出る | [windows-pty.md](windows-pty.md) |
 | D MCP | Coordinator 内の Streamable HTTP MCP server へ両 CLI から `send_message` を送れた。Codex は tool 承認設定が必要 | [mcp.md](mcp.md) |
 | F 権限変更 | Claude は `set_permission_mode`、Codex は `turn/start` の `sandboxPolicy` で、再起動せずに権限を変えられる | [permission.md](permission.md) |
+| G 手動 compact | Claude は `/compact` の送信、Codex は `thread/compact/start` で compact できる。どちらも 1 ターンとして動く | [compact.md](compact.md) |
 | E Authentication | Claude は `ANTHROPIC_API_KEY` があると黙って API key 課金に切り替わる。Codex app-server は ChatGPT 認証のまま | [authentication.md](authentication.md) |
 
 ## 設計への影響

@@ -137,10 +137,21 @@ export class CodexAdapter extends BaseAgentAdapter {
     this.pendingSandbox = level;
   }
 
-  protected writeTurn(text: string): void {
+  // thread/compact/start は 1 ターンとして動く。turn ID は turn/started から得る（docs/spikes/compact.md）
+  protected writeCompact(): void {
+    this.resetTurnState();
+    this.request("thread/compact/start", { threadId: this.sessionId })
+      .catch((error: Error) => this.finishTurn({ status: "failed", text: error.message }));
+  }
+
+  private resetTurnState(): void {
     this.lastAgentText = "";
     this.turnId = undefined;
     this.interruptPending = false;
+  }
+
+  protected writeTurn(text: string): void {
+    this.resetTurnState();
     const sandbox = this.pendingSandbox;
     this.pendingSandbox = undefined;
     this.request("turn/start", {

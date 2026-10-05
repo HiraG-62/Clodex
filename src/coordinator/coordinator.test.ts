@@ -299,6 +299,20 @@ describe("Coordinator", () => {
     expect(claude.status).toBe("busy");
   });
 
+  it("compact は指定 Agent、省略時は起動中の全 Agent を compact する", async () => {
+    const { claude, codex, coordinator } = setup();
+    claude.status = "idle";
+    codex.status = "idle";
+    void coordinator.compact("codex");
+    await flush();
+    expect([claude.compacts, codex.compacts]).toEqual([0, 1]);
+    codex.completeTurn();
+    await flush();
+    void coordinator.compact();
+    await flush();
+    expect([claude.compacts, codex.compacts]).toEqual([1, 2]);
+  });
+
   it("stop は全 Agent を止める", async () => {
     const { claude, codex, coordinator } = setup();
     claude.status = "idle";

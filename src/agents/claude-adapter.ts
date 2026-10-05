@@ -12,6 +12,7 @@ const STREAM_ARGS = ["-p", "--input-format", "stream-json", "--output-format", "
 const SUBSCRIPTION_API_KEY_SOURCE = "none";
 const HTTP_UNAUTHORIZED = 401;
 const RATIO_TO_PERCENT = 100;
+const COMPACT_COMMAND = "/compact";
 
 // 権限レベル → Claude の permission mode（DESIGN.md §9 Permission）
 // read-only は plan: default はユーザー設定の許可リストで書き込めてしまうため（docs/spikes/permission.md）
@@ -115,6 +116,11 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     this.proc?.write(JSON.stringify({ type: "user", message: { role: "user", content: text } }));
   }
 
+  // stream-json に /compact を送ると 1 ターンとして compact される（docs/spikes/compact.md）
+  protected writeCompact(): void {
+    this.writeTurn(COMPACT_COMMAND);
+  }
+
   protected handleMessage(message: unknown): void {
     const event = message as ClaudeEvent;
     switch (event.type) {
@@ -138,6 +144,12 @@ export class ClaudeAdapter extends BaseAgentAdapter {
   private handleSystem(event: ClaudeEvent): void {
     if (event.subtype === "init" && event.apiKeySource !== SUBSCRIPTION_API_KEY_SOURCE) {
       this.abort(`claude is not using subscription auth (apiKeySource: ${event.apiKeySource})`);
+      return;
+    }
+    // compact 後の正確な大きさは次のターンまで分からない（post_tokens は system prompt を含まない）
+    if (event.subtype === "compact_boundary") {
+      this.lastUsage = undefined;
+      this.emit({ type: "compacted" });
       return;
     }
     if (event.subtype === "api_retry" && event.error_status === HTTP_UNAUTHORIZED) {

@@ -40,6 +40,7 @@ export type AgentEvent =
   | { type: "turn"; result: TurnResult }
   | { type: "rate_limit"; fiveHour?: RateLimitWindow; weekly?: RateLimitWindow }
   | { type: "context"; tokens: number; window?: number }
+  | { type: "compacted" }
   | { type: "exit"; code: number | null }
   | { type: "error"; message: string };
 
@@ -53,6 +54,8 @@ export interface AgentAdapter {
 
   start(options: AgentStartOptions): Promise<void>;
   send(text: string): Promise<TurnResult>;
+  // 手動 compact。1 ターンとして扱う（docs/spikes/compact.md）
+  compact(): Promise<TurnResult>;
   // 停止中なら次の起動時に使う
   setPermission(level: PermissionLevel): Promise<void>;
   interrupt(): Promise<void>;

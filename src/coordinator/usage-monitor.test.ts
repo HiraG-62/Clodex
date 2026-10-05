@@ -91,6 +91,13 @@ describe("UsageMonitor", () => {
     expect(monitor.snapshot("claude")).toEqual({});
   });
 
+  it("compacted でコンテキストの大きさを unknown に戻す", () => {
+    const { monitor, bus } = setup();
+    bus.publish({ kind: "agent", agent: "claude", event: { type: "context", tokens: 30000 } });
+    bus.publish({ kind: "agent", agent: "claude", event: { type: "compacted" } });
+    expect(monitor.snapshot("claude")).toEqual({});
+  });
+
   it("clearContext でコンテキストの大きさを unknown に戻す", () => {
     const { monitor, bus } = setup();
     bus.publish({ kind: "agent", agent: "codex", event: { type: "context", tokens: 1000 } });

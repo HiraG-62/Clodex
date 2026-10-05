@@ -120,6 +120,28 @@ describe("AgentMailbox", () => {
     expect(idle).toBe(true);
   });
 
+  it("enqueueCompact は送信と同じキューで直列に compact する", async () => {
+    const { agent, mailbox } = setup();
+    agent.status = "idle";
+    const first = mailbox.enqueue("first");
+    const compacted = mailbox.enqueueCompact();
+    await flush();
+    expect(agent.compacts).toBe(0);
+    agent.completeTurn();
+    await first;
+    await flush();
+    expect(agent.compacts).toBe(1);
+    agent.completeTurn({ status: "completed", text: "" });
+    await expect(compacted).resolves.toEqual({ status: "completed", text: "" });
+  });
+
+  it("停止中の Agent は compact のために起動しない", async () => {
+    const { agent, mailbox, onError } = setup();
+    await expect(mailbox.enqueueCompact()).resolves.toEqual({ status: "failed", text: "codex is not running" });
+    expect(agent.starts).toEqual([]);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it("前のターンが終わるまで次を送らない（FIFO）", async () => {
     const { agent, mailbox } = setup();
     const first = mailbox.enqueue("first");
