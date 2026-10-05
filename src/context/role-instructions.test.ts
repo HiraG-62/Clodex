@@ -37,3 +37,11 @@ describe("buildRoleInstructions", () => {
     expect(text).toMatch(/only when an independent view/);
   });
 });
+
+describe("buildRoleInstructions の方針と言語", () => {
+  it("作業前に方針を書くよう伝え、言語の指定があれば添える", () => {
+    expect(buildRoleInstructions("claude", undefined)).toMatch(/before you start working/);
+    expect(buildRoleInstructions("claude", undefined)).not.toContain("Japanese");
+    expect(buildRoleInstructions("codex", undefined, "ja")).toContain("Japanese");
+  });
+});

@@ -63,3 +63,11 @@ describe("buildEnvelope", () => {
     expect(envelope).toContain("No reply is required.");
   });
 });
+
+describe("buildEnvelope の言語", () => {
+  it("言語の指定があれば末尾に 1 行添える", () => {
+    const lines = buildEnvelope(base, "ja").split("\n");
+    expect(lines.at(-1)).toContain("Japanese");
+    expect(buildEnvelope(base)).not.toContain("Japanese");
+  });
+});

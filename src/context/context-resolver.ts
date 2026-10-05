@@ -1,6 +1,7 @@
 // formal message から宛先 Agent への Task envelope を組み立てる（DESIGN.md §13）
 import type { AgentMessage, Issue, MessageType } from "../protocol/messages.js";
 import { COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL } from "../agents/agent-adapter.js";
+import { languageDirective, type Language } from "./language.js";
 
 // 返信を求める依頼系。RESULT / ISSUE には返信を求めず、返信の連鎖を作らない
 const REQUEST_TYPES = new Set<MessageType>(["QUESTION", "REVIEW_REQUEST", "DELEGATE"]);
@@ -17,7 +18,8 @@ const replyInstruction = (m: AgentMessage): string[] =>
     ]
     : ["No reply is required."];
 
-export const buildEnvelope = (m: AgentMessage): string => {
+// language: 長い会話でも依頼のたびに言語を思い出させる（DESIGN.md §13 Language）
+export const buildEnvelope = (m: AgentMessage, language?: Language): string => {
   const lines = [`[Clodex] Message ${m.id} from ${m.from}`, `Type: ${m.type}`, `Task: ${m.taskId}`];
   if (m.replyTo) lines.push(`Reply-To: ${m.replyTo}`);
   if (m.status) lines.push(`Status: ${m.status}`);
@@ -26,5 +28,6 @@ export const buildEnvelope = (m: AgentMessage): string => {
   if (m.files?.length) lines.push("Files:", ...m.files.map((file) => `- ${file}`));
   if (m.issues?.length) lines.push("Issues:", ...m.issues.map(formatIssue));
   lines.push("", m.body, "", ...replyInstruction(m));
+  if (language) lines.push(languageDirective(language));
   return lines.join("\n");
 };

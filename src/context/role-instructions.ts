@@ -1,6 +1,7 @@
 // Agent の起動時に system prompt へ追加する定型文と役割（DESIGN.md §13 Roles）
 import { AGENT_IDS, COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, type AgentId } from "../agents/agent-adapter.js";
 import type { RolesConfig } from "../config/config.js";
+import { languageDirective, type Language } from "./language.js";
 
 const NOT_SPECIFIED = "not specified";
 
@@ -15,6 +16,9 @@ const SEND_TOOL = `the ${SEND_MESSAGE_TOOL} tool of the "${COORDINATOR_MCP_SERVE
 const PERMISSION_NOTE =
   "The human cannot approve tool permissions interactively. If an action is denied, say so and suggest the Clodex /permission command.";
 
+// 指示してから完了するまで何も見えない状態を避ける（DESIGN.md §17 ログの「方針」）
+const PLAN_NOTE = "When you receive a request, state in one or two sentences what you will do before you start working.";
+
 const roleLines = (agent: AgentId, peer: AgentId, roles: RolesConfig | undefined): string[] => {
   if (!roles?.[agent] && !roles?.[peer]) {
     return [`Ask the peer with ${SEND_TOOL} only when an independent view helps (review, hard bugs, uncertain design).`];
@@ -27,7 +31,10 @@ const roleLines = (agent: AgentId, peer: AgentId, roles: RolesConfig | undefined
   ];
 };
 
-export const buildRoleInstructions = (agent: AgentId, roles: RolesConfig | undefined): string => {
+export const buildRoleInstructions = (agent: AgentId, roles: RolesConfig | undefined, language?: Language): string => {
   const peer = peerOf(agent);
-  return [header(agent, peer), ...roleLines(agent, peer, roles), PERMISSION_NOTE].join("\n");
+  return [
+    header(agent, peer), ...roleLines(agent, peer, roles), PERMISSION_NOTE, PLAN_NOTE,
+    ...(language ? [languageDirective(language)] : []),
+  ].join("\n");
 };

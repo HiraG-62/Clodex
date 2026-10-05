@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { AGENT_IDS, PERMISSION_LEVELS } from "../agents/agent-adapter.js";
+import { LANGUAGES } from "../context/language.js";
 
 const USER_CONFIG_PATH = join(".clodex", "config.json");
 const PROJECT_CONFIG_FILE = ".clodex.json";
@@ -12,6 +13,7 @@ const role = z.string().min(1);
 
 const configSchema = z.strictObject({
   primary: z.enum(AGENT_IDS).optional(),
+  language: z.enum(LANGUAGES).optional(),
   permission: z.enum(PERMISSION_LEVELS).optional(),
   roles: z.strictObject({ claude: role.optional(), codex: role.optional() }).optional(),
   limits: z.strictObject({

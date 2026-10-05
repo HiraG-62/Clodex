@@ -3,6 +3,7 @@ import {
   AGENT_IDS, type AgentAdapter, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult,
 } from "../agents/agent-adapter.js";
 import { buildEnvelope } from "../context/context-resolver.js";
+import type { Language } from "../context/language.js";
 import { createMessage, type CreateMessageResult } from "../protocol/messages.js";
 import { AgentMailbox } from "./agent-mailbox.js";
 import { BudgetManager, type BudgetLimits } from "./budget-manager.js";
@@ -36,6 +37,8 @@ export interface CoordinatorOptions {
   createMessageId?: () => string;
   limits?: BudgetLimits;
   settings?: Partial<Record<AgentId, AgentStartSettings>>;
+  // 人が読む文章の言語。Task envelope に添える（DESIGN.md §13 Language）
+  language?: Language;
   usageAlert?: Partial<UsageAlert>;
   // clodex --resume: 各 Agent の最初の起動で継続する session（DESIGN.md §18）
   resumeSessionIds?: Partial<Record<AgentId, string>>;
@@ -93,7 +96,7 @@ export class Coordinator {
 
     bus.publish({ kind: "message", message });
     // ACK は記録のみ。配送して Agent を起こさない（DESIGN.md §12, §25）
-    if (message.type !== "ACK") void this.mailboxes[message.to].enqueue(buildEnvelope(message), message);
+    if (message.type !== "ACK") void this.mailboxes[message.to].enqueue(buildEnvelope(message, this.options.language), message);
     return result;
   }
 

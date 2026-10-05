@@ -10,6 +10,7 @@ import { createCommandRunner } from "./cli/command-runner.js";
 import { completeCommand } from "./cli/commands.js";
 import { createShell } from "./cli/shell.js";
 import { loadConfig } from "./config/config.js";
+import { detectLanguage } from "./context/language.js";
 import { buildRoleInstructions } from "./context/role-instructions.js";
 import { DEFAULT_LIMITS } from "./coordinator/budget-manager.js";
 import { Coordinator } from "./coordinator/coordinator.js";
@@ -48,6 +49,7 @@ const main = async (): Promise<void> => {
   const config = loadConfig({ homeDir: homedir(), projectRoot });
   // 優先順位: 起動オプション > 設定ファイル > 既定値（DESIGN.md §13 Roles）
   const primary = args.primary ?? config.primary ?? DEFAULT_PRIMARY;
+  const language = config.language ?? detectLanguage();
 
   const bus = new EventBus();
   const statePath = conversationStatePath(homedir(), projectRoot);
@@ -65,10 +67,11 @@ const main = async (): Promise<void> => {
     mcpUrlFor: (agent) => mcp.urlFor(agent),
     // 優先順位: 起動オプション > 保存した値 > 設定ファイル（DESIGN.md §9 Agent の設定の保存）
     settings: resolveStartSettings({ saved: savedSettings, models: args.models, ...(config.permission ? { configPermission: config.permission } : {}) }),
-    instructions: Object.fromEntries(AGENT_IDS.map((id) => [id, buildRoleInstructions(id, config.roles)])),
+    instructions: Object.fromEntries(AGENT_IDS.map((id) => [id, buildRoleInstructions(id, config.roles, language)])),
     limits: { ...DEFAULT_LIMITS, ...config.limits },
     ...(config.usageAlert ? { usageAlert: config.usageAlert } : {}),
     resumeSessionIds,
+    language,
   });
 
   const interactive = Boolean(process.stdin.isTTY);
@@ -144,7 +147,7 @@ const main = async (): Promise<void> => {
     agents: coordinator.status(),
     pendingInputs: coordinator.pendingInputs(),
     conversations: history.list().map((c) => ({ ...c, current: c.id === history.currentId })),
-  }));
+  }), language);
   const handleLine = async (line: string) => {
     const outcome = await shell.handleLine(line);
     refreshState();
