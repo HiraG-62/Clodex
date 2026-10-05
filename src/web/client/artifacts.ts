@@ -1,0 +1,48 @@
+// 会話で触れたファイル（成果物）を feed から組み立てる（DESIGN.md §28 v0.3 B）。
+// ブラウザへ関数のまま埋め込むため、外部を参照しない 1 つの関数として書く（型の import のみ）
+import type { TimelineItem } from "./timeline.js";
+
+export interface Artifact {
+  path: string;
+  kind: "changed" | "referenced" | "image";
+  at: string;
+}
+
+// 新しい順、同じパスは 1 つ（最後に触れたときの種類）
+export function collectArtifacts(items: readonly TimelineItem[]): Artifact[] {
+  // 本文に書かれた画像のパス（Windows のドライブ付き・相対・~ を含む）
+  const IMAGE_PATH = /(?:[A-Za-z]:)?[\w.~\\/-]*[\w-]\.(?:png|jpe?g|gif|webp)(?![\w])/gi;
+  const found = new Map<string, Artifact>();
+  const key = (path: string) => path.replace(/\\/g, "/").toLowerCase();
+  const add = (path: string, kind: Artifact["kind"], at: string) => {
+    const k = key(path);
+    found.delete(k);
+    found.set(k, { path, kind, at });
+  };
+  const images = (text: string, at: string) => {
+    for (const match of text.matchAll(IMAGE_PATH)) add(match[0], "image", at);
+  };
+
+  for (const item of items) {
+    if (item.kind === "turn") {
+      for (const step of item.steps) {
+        if (step.kind === "tool") for (const file of step.files ?? []) add(file, "changed", item.at);
+        else images(step.text, item.at);
+      }
+      if (item.plan) images(item.plan, item.at);
+      images(item.text, item.at);
+    }
+    if (item.kind === "message") {
+      for (const file of item.message.files ?? []) add(file, "referenced", item.at);
+      images(item.message.body, item.at);
+    }
+  }
+  return [...found.values()].reverse();
+}
+
+// project の中なら相対パスで見せる
+export function displayPath(path: string, projectRoot: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  const root = projectRoot.replace(/\\/g, "/").replace(/\/$/, "");
+  return normalized.toLowerCase().startsWith(`${root.toLowerCase()}/`) ? normalized.slice(root.length + 1) : normalized;
+}

@@ -14,7 +14,7 @@ describe("WEB_PAGE", () => {
   });
 
   it("画面の振る舞いに必要な要素がそろっている", () => {
-    for (const id of ["log", "newer", "input", "input-highlight", "suggest", "pending", "composer", "status", "agents", "conversations", "sheet", "conn", "toast", "detail"]) {
+    for (const id of ["log", "newer", "input", "input-highlight", "suggest", "pending", "open-artifacts", "composer", "status", "agents", "conversations", "sheet", "conn", "toast", "detail"]) {
       expect(WEB_PAGE).toContain(`id="${id}"`);
     }
   });

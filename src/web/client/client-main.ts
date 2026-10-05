@@ -9,17 +9,22 @@ import type { TimelineItem, applyFeedItem as ApplyFeedItem } from "./timeline.js
 import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
 import type { SlashCommand } from "../../cli/commands.js";
 import type { Suggestion, createInputAssist as CreateInputAssist } from "./input-assist.js";
+import type { collectArtifacts as CollectArtifacts, displayPath as DisplayPath } from "./artifacts.js";
 
 export interface ClientDeps {
   renderMarkdown: typeof RenderMarkdown;
   applyFeedItem: typeof ApplyFeedItem;
   composeInputLine: typeof ComposeInputLine;
   createInputAssist: typeof CreateInputAssist;
+  collectArtifacts: typeof CollectArtifacts;
+  displayPath: typeof DisplayPath;
   commands: readonly SlashCommand[];
   version: string;
 }
 
-export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, createInputAssist, commands, version }: ClientDeps): void {
+export function clientMain({
+  renderMarkdown, applyFeedItem, composeInputLine, createInputAssist, collectArtifacts, displayPath, commands, version,
+}: ClientDeps): void {
   const AGENTS: Record<AgentId, { name: string; mark: string }> = {
     claude: { name: "Claude", mark: "C" },
     codex: { name: "Codex", mark: "X" },
@@ -47,6 +52,7 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
   const FILES_REFRESH_MS = 30_000;
   // @path の参照として本文の末尾に足された部分（cli/file-references.ts）。編集で入力欄に戻すときは外す
   const REFERENCES_SEPARATOR = "\n\nReferenced files:\n";
+  const ARTIFACT_LABEL: Record<"changed" | "referenced" | "image", string> = { changed: "変更", referenced: "参照", image: "画像" };
   const THEME_KEY = "clodex-theme";
   const DETAIL_KEY = "clodex-detail";
 
@@ -204,7 +210,12 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
     node.append(route, text);
     if (message.files?.length) {
       const refs = el("div", "refs");
-      for (const file of message.files) refs.append(el("span", "ref", file));
+      for (const file of message.files) {
+        const ref = el("button", "ref", file) as HTMLButtonElement;
+        ref.type = "button";
+        ref.addEventListener("click", () => void openViewer(file));
+        refs.append(ref);
+      }
       node.append(refs);
     }
     for (const issue of message.issues ?? []) {
@@ -478,12 +489,14 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
 
   // ---- シート（スマホの操作パネル・会話・設定） ----
   let sheetAgent: AgentId | undefined;
-  let sheetKind: "agent" | "agentSettings" | "settings" | "conversations" | "conversationMenu" | undefined;
+  let sheetKind: "agent" | "agentSettings" | "settings" | "conversations" | "conversationMenu" | "artifacts" | "viewer" | undefined;
   let pendingPrimary: AgentId | undefined;
   const sheet = $("#sheet");
   const openSheet = (title: string, content: HTMLElement[]) => {
     $("#sheet-title").textContent = title;
     $("#sheet-body").replaceChildren(...content);
+    // ファイルの表示は PC では広く使う
+    sheet.querySelector(".sheet-panel")?.classList.toggle("wide", sheetKind === "viewer");
     sheet.hidden = false;
   };
   const closeSheet = () => {
@@ -516,6 +529,64 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
     button.addEventListener("click", run);
     return button;
   };
+  // ---- 成果物（DESIGN.md §28 v0.3 B） ----
+  const fileUrl = (api: "file" | "diff", path: string) => `/api/${api}?path=${encodeURIComponent(path)}`;
+  const openArtifacts = () => {
+    sheetKind = "artifacts";
+    sheetAgent = undefined;
+    const artifacts = collectArtifacts(items);
+    const rows: HTMLElement[] = artifacts.map((artifact) => {
+      const row = el("button", "artifact") as HTMLButtonElement;
+      row.type = "button";
+      row.append(el("span", `kind ${artifact.kind}`, ARTIFACT_LABEL[artifact.kind]),
+        el("span", "path mono", displayPath(artifact.path, state?.project ?? "")));
+      row.addEventListener("click", () => void openViewer(artifact.path));
+      return row;
+    });
+    openSheet("成果物", rows.length ? rows : [el("p", "muted small", "この会話で触れたファイルはまだありません")]);
+  };
+  const openViewer = async (path: string) => {
+    sheetKind = "viewer";
+    sheetAgent = undefined;
+    const isImage = /\.(png|jpe?g|gif|webp)$/i.test(path);
+    const view = el("div", "viewer");
+    const show = async (api: "file" | "diff") => {
+      if (isImage) {
+        const image = el("img") as HTMLImageElement;
+        image.src = fileUrl("file", path);
+        image.alt = path;
+        return view.replaceChildren(image);
+      }
+      view.replaceChildren(el("p", "muted small", "読み込んでいます…"));
+      try {
+        const response = await fetch(fileUrl(api, path));
+        const text = await response.text();
+        if (!response.ok) return view.replaceChildren(el("p", "muted small", text || `読めませんでした（${response.status}）`));
+        if (api === "diff" && !text) return view.replaceChildren(el("p", "muted small", "変更はありません（git の管理外か、まだ変更されていません）"));
+        if (api === "file" && /\.md$/i.test(path)) {
+          const doc = el("div", "md");
+          doc.innerHTML = renderMarkdown(text);
+          return view.replaceChildren(doc);
+        }
+        const pre = el("pre", api === "diff" ? "code diff" : "code");
+        for (const line of text.split("\n")) {
+          const cls = api !== "diff" ? "" : line.startsWith("+") && !line.startsWith("+++") ? "add" : line.startsWith("-") && !line.startsWith("---") ? "del" : line.startsWith("@@") ? "hunk" : "";
+          pre.append(el("span", cls, `${line}\n`));
+        }
+        view.replaceChildren(pre);
+      } catch {
+        view.replaceChildren(el("p", "muted small", "読めませんでした"));
+      }
+    };
+    const content: HTMLElement[] = [];
+    if (!isImage) {
+      content.push(choice("view", "表示", ["file", "diff"] as const, "file", (v) => (v === "file" ? "内容" : "差分"), (v) => void show(v)));
+    }
+    content.push(view);
+    openSheet(displayPath(path, state?.project ?? ""), content);
+    await show("file");
+  };
+
   // 会話の操作: 名前の変更は今の会話だけ（/rename）。今の会話は削除できない
   const openConversationMenu = (conversation: WebState["conversations"][number], number: number) => {
     sheetKind = "conversationMenu";
@@ -662,6 +733,7 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
   $("#open-conversations").addEventListener("click", openConversations);
   $("#open-settings").addEventListener("click", openSettings);
   $("#new-conversation").addEventListener("click", () => void send("/new"));
+  $("#open-artifacts").addEventListener("click", openArtifacts);
 
   // ---- 詳細表示 ----
   const detailButton = $("#detail");

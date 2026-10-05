@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { SLASH_COMMANDS } from "../cli/commands.js";
 import { clientMain } from "./client/client-main.js";
 import { createInputAssist } from "./client/input-assist.js";
+import { collectArtifacts, displayPath } from "./client/artifacts.js";
 import { renderMarkdown } from "./client/markdown.js";
 import { applyFeedItem } from "./client/timeline.js";
 import { composeInputLine } from "./client/compose-input.js";
@@ -148,7 +149,17 @@ const STYLE = `
   .handoff .task { margin-left: auto; color: var(--muted); font-size: 12px; }
   .handoff .text { color: var(--fg); overflow-wrap: anywhere; }
   .refs { display: flex; flex-wrap: wrap; gap: 4px 10px; }
-  .ref { font: 12px/1.4 var(--font-mono); color: var(--fg-2); overflow-wrap: anywhere; }
+  .ref { font: 12px/1.4 var(--font-mono); color: var(--fg-2); overflow-wrap: anywhere; border: 0; background: none; padding: 0; text-align: left; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  .artifact { display: flex; align-items: baseline; gap: 10px; width: 100%; border: 0; background: transparent; padding: 9px 4px; border-bottom: 1px solid var(--line); text-align: left; min-width: 0; }
+  .artifact:hover { background: var(--sunken); }
+  .artifact .kind { flex: none; font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--sunken); color: var(--fg-2); }
+  .artifact .kind.changed { background: color-mix(in srgb, var(--claude) 22%, transparent); }
+  .artifact .kind.image { background: color-mix(in srgb, var(--warn) 24%, transparent); }
+  .artifact .path { font-size: 12.5px; overflow-wrap: anywhere; min-width: 0; }
+  .viewer { margin-top: 10px; min-width: 0; }
+  .viewer img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; }
+  .viewer .code { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; font: 12px/1.55 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--sunken); }
+  .viewer .diff .add { color: #1a7f37; } .viewer .diff .del { color: var(--crit); } .viewer .diff .hunk { color: var(--muted); }
   .ref::before { content: "↳ "; color: var(--muted); }
   .finding { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; padding: 10px 12px; border-left: 2px solid var(--warn); background: var(--sunken); border-radius: 0 6px 6px 0; font-size: 13px; }
   .finding.high, .finding.critical { border-left-color: var(--crit); }
@@ -215,6 +226,7 @@ const STYLE = `
   .sheet-backdrop { position: absolute; inset: 0; background: var(--scrim); border: 0; }
   .sheet-panel { position: relative; background: var(--panel); border-radius: 14px 14px 0 0; max-height: 80vh; overflow-y: auto;
     padding: 8px 16px; padding-bottom: max(20px, env(safe-area-inset-bottom)); width: 100%; max-width: 560px; margin: 0 auto; }
+  .sheet-panel.wide { max-width: 960px; }
   .sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 0 4px; }
   .sheet-head h2 { margin: 0; font-size: 15px; }
   .sheet-close { border: 0; background: none; color: var(--muted); font-size: 13px; padding: 8px 0 8px 12px; }
@@ -241,6 +253,7 @@ const BODY = `
     <span class="brand">Clodex</span>
     <span class="path mono" id="path"></span>
     <button class="ghost" type="button" id="detail" aria-pressed="false" title="作業と全文を開いて表示">詳細</button>
+    <button class="ghost" type="button" id="open-artifacts">成果物</button>
     <button class="ghost" type="button" id="open-conversations">会話</button>
     <button class="ghost" type="button" id="open-settings">設定</button>
   </header>
@@ -296,6 +309,8 @@ const SCRIPT_DEPS = `
   applyFeedItem: ${inlineScript(applyFeedItem.toString())},
   composeInputLine: ${inlineScript(composeInputLine.toString())},
   createInputAssist: ${inlineScript(createInputAssist.toString())},
+  collectArtifacts: ${inlineScript(collectArtifacts.toString())},
+  displayPath: ${inlineScript(displayPath.toString())},
   commands: ${JSON.stringify(SLASH_COMMANDS).replace(/</g, "\\u003c")},`;
 const CLIENT_SOURCE = inlineScript(clientMain.toString());
 
