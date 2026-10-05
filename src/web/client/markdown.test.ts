@@ -29,6 +29,15 @@ describe("renderMarkdown", () => {
       .toBe("<ul><li>a</li><li><code>b</code></li></ul><ol><li>one</li><li>two</li></ol>");
   });
 
+  it("番号付き項目の子リストを入れ子にして親の番号を続ける", () => {
+    expect(renderMarkdown("1. a\n  - x\n2. b"))
+      .toBe("<ol><li>a<ul><li>x</li></ul></li><li>b</li></ol>");
+  });
+
+  it("番号付きリストは書かれた番号から始める", () => {
+    expect(renderMarkdown("3. a\n4. b")).toBe('<ol start="3"><li>a</li><li>b</li></ol>');
+  });
+
   it("見出しは太字の段落にする", () => {
     expect(renderMarkdown("## 結果\n本文")).toBe('<p class="md-h">結果</p><p>本文</p>');
   });
