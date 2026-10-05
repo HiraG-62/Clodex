@@ -59,6 +59,17 @@ describe("CodexAdapter", () => {
     expect(events).toContainEqual({ type: "session", sessionId: THREAD_ID });
   });
 
+  it("instructions 指定時は thread/start と thread/resume の developerInstructions で渡す", async () => {
+    const spawner = createFakeSpawner(defaultResponder());
+    const adapter = new CodexAdapter(spawner.spawn);
+    await adapter.start({ cwd: "C:\\dev\\app", instructions: "You are codex." });
+    expect(spawner.last.writtenWith("method", "thread/start")[0]!.params).toMatchObject({ developerInstructions: "You are codex." });
+
+    const resumed = new CodexAdapter(spawner.spawn);
+    await resumed.start({ cwd: "C:\\dev\\app", resumeSessionId: THREAD_ID, instructions: "You are codex." });
+    expect(spawner.last.writtenWith("method", "thread/resume")[0]!.params).toMatchObject({ developerInstructions: "You are codex." });
+  });
+
   it("ChatGPT 認証でなければ起動を拒否してプロセスを止める", async () => {
     const { adapter, started, proc, events } = await setup({ accountType: "apiKey" });
     await expect(started).rejects.toThrow(/apiKey/);

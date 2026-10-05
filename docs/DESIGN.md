@@ -408,7 +408,7 @@ Project root の解決順:
 | option | 既定 | 内容 |
 |---|---|---|
 | `--project <path>` | 上記の解決順 | Project root |
-| `--primary <claude\|codex>` | `claude` | 通常のテキストの送り先 |
+| `--primary <claude\|codex>` | 設定ファイル（§13 Roles）、無ければ `claude` | 通常のテキストの送り先 |
 | `--claude-model <model>` | CLI の既定 | Claude の model |
 | `--codex-model <model>` | CLI の既定 | Codex の model |
 

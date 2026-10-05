@@ -46,6 +46,23 @@ Agent 同士は MCP tool `send_message` で formal message をやり取りする
 
 ログ: `~/.clodex/logs/<project 名>-<起動時刻>.jsonl`
 
+## 設定（分業）
+
+`~/.clodex/config.json`（全体）と `<project>/.clodex.json`（project ごとに上書き）で、各 Agent の役割などを設定できる。
+
+```json
+{
+  "primary": "claude",
+  "roles": {
+    "claude": "設計とレビューを担当する。実装は codex に DELEGATE する。",
+    "codex": "実装を担当する。設計に迷ったら claude に QUESTION する。"
+  },
+  "limits": { "maxMessagesPerChain": 8 }
+}
+```
+
+役割は各 Agent の system prompt に追加され、どの作業を相手に回すかは Agent が判断する。詳細は [docs/DESIGN.md](docs/DESIGN.md) §13 Roles。
+
 ## 開発
 
 ```powershell

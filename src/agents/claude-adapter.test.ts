@@ -37,6 +37,14 @@ describe("ClaudeAdapter", () => {
     expect(events).toContainEqual({ type: "session", sessionId: SESSION_ID });
   });
 
+  it("instructions 指定時は --append-system-prompt で渡す", async () => {
+    const spawner = createFakeSpawner();
+    const adapter = new ClaudeAdapter(spawner.spawn, () => SESSION_ID);
+    await adapter.start({ cwd: "C:\\dev\\app", instructions: "You are claude." });
+    const args = spawner.calls[0]!.args;
+    expect(args[args.indexOf("--append-system-prompt") + 1]).toBe("You are claude.");
+  });
+
   it("resumeSessionId 指定時は -r で既存 session を継続する", async () => {
     const { spawner, adapter } = await setup({ resumeSessionId: "existing-id" });
     expect(spawner.calls[0]!.args).toEqual(expect.arrayContaining(["-r", "existing-id"]));

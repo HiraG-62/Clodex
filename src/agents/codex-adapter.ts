@@ -65,13 +65,13 @@ export class CodexAdapter extends BaseAgentAdapter {
     super();
   }
 
-  async start({ cwd, resumeSessionId, mcpUrl, model }: AgentStartOptions): Promise<void> {
+  async start({ cwd, resumeSessionId, mcpUrl, model, instructions }: AgentStartOptions): Promise<void> {
     if (this.status !== "stopped") throw new Error(`codex is ${this.status}`);
     this.status = "starting";
     const args = ["app-server", ...(mcpUrl ? mcpArgs(mcpUrl) : [])];
     this.attach(this.spawnProcess(CODEX_COMMAND, args, { cwd, env: agentEnv(process.env, this.id) }));
     try {
-      await this.handshake(cwd, resumeSessionId, model);
+      await this.handshake(cwd, resumeSessionId, model, instructions);
     } catch (error) {
       // 起動途中で失敗したら常駐プロセスを残さない
       this.proc?.kill();
@@ -79,12 +79,16 @@ export class CodexAdapter extends BaseAgentAdapter {
     }
   }
 
-  private async handshake(cwd: string, resumeSessionId: string | undefined, model: string | undefined): Promise<void> {
+  private async handshake(
+    cwd: string, resumeSessionId: string | undefined, model: string | undefined, instructions: string | undefined,
+  ): Promise<void> {
     await this.request("initialize", { clientInfo: CLIENT_INFO, capabilities: null });
     this.notify("initialized");
     await this.verifySubscription();
 
-    const threadParams = { cwd, ...THREAD_POLICY, ...(model ? { model } : {}) };
+    const threadParams = {
+      cwd, ...THREAD_POLICY, ...(model ? { model } : {}), ...(instructions ? { developerInstructions: instructions } : {}),
+    };
     const response = (resumeSessionId
       ? await this.request("thread/resume", { threadId: resumeSessionId, ...threadParams })
       : await this.request("thread/start", threadParams)) as { thread: { id: string } };

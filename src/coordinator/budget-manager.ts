@@ -8,10 +8,11 @@ export interface BudgetLimits {
   maxDelegationDepth: number;
 }
 
+// 分業の流れ（設計 → 実装の委譲 → レビュー → 修正の委譲）が上限に当たらない値（DESIGN.md §14 v0.2）
 export const DEFAULT_LIMITS: BudgetLimits = {
-  maxMessagesPerChain: 4,
-  maxReviewRoundsPerChain: 2,
-  maxDelegationsPerChain: 2,
+  maxMessagesPerChain: 8,
+  maxReviewRoundsPerChain: 3,
+  maxDelegationsPerChain: 4,
   maxDelegationDepth: 2,
 };
 

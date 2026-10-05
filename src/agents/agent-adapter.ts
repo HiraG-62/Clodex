@@ -13,6 +13,8 @@ export interface AgentStartOptions {
   resumeSessionId?: string;
   mcpUrl?: string;
   model?: string;
+  // system prompt に追加する指示（役割など。DESIGN.md §13 Roles）
+  instructions?: string;
 }
 
 export interface TurnResult {

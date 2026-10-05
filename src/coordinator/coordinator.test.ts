@@ -41,6 +41,20 @@ describe("Coordinator", () => {
     expect(codex.sent[0]).toContain("[Clodex] Message msg_00000001 from claude");
   });
 
+  it("Agent ごとの instructions を起動時に渡す", async () => {
+    const claude = new FakeAgentAdapter("claude");
+    const codex = new FakeAgentAdapter("codex");
+    const coordinator = new Coordinator({
+      projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor,
+      instructions: { codex: "You are codex." },
+    });
+    coordinator.receiveMessage("claude", reviewRequest);
+    void coordinator.sendToAgent("claude", "hi");
+    await flush();
+    expect(codex.starts[0]).toMatchObject({ instructions: "You are codex." });
+    expect(claude.starts[0]).not.toHaveProperty("instructions");
+  });
+
   it("不正な message は記録も配送もせず、エラーを返す", async () => {
     const { codex, events, coordinator } = setup();
     const result = coordinator.receiveMessage("claude", { ...reviewRequest, to: "claude" });

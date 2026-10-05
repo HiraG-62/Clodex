@@ -52,7 +52,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     super();
   }
 
-  async start({ cwd, resumeSessionId, mcpUrl, model }: AgentStartOptions): Promise<void> {
+  async start({ cwd, resumeSessionId, mcpUrl, model, instructions }: AgentStartOptions): Promise<void> {
     if (this.status !== "stopped") throw new Error(`claude is ${this.status}`);
     // session ID を Coordinator 側で決めておくと、最初のターン前から resume 用 ID が確定する
     this.sessionId = resumeSessionId ?? this.createId();
@@ -60,6 +60,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
       ...STREAM_ARGS,
       ...(resumeSessionId ? ["-r", resumeSessionId] : ["--session-id", this.sessionId]),
       ...(model ? ["--model", model] : []),
+      ...(instructions ? ["--append-system-prompt", instructions] : []),
       ...(mcpUrl ? mcpArgs(mcpUrl) : []),
     ];
     const proc = this.spawnProcess(CLAUDE_COMMAND, args, { cwd, env: agentEnv(process.env, this.id) });

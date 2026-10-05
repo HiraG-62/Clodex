@@ -12,6 +12,7 @@ export interface CoordinatorOptions {
   bus: EventBus;
   mcpUrlFor: (agent: AgentId) => string;
   models?: Partial<Record<AgentId, string>>;
+  instructions?: Partial<Record<AgentId, string>>;
   createMessageId?: () => string;
   limits?: BudgetLimits;
 }
@@ -21,16 +22,20 @@ export class Coordinator {
   private readonly budget: BudgetManager;
 
   constructor(private readonly options: CoordinatorOptions) {
-    const { agents, bus, projectRoot, mcpUrlFor, models, limits } = options;
+    const { agents, bus, projectRoot, mcpUrlFor, models, instructions, limits } = options;
     this.budget = new BudgetManager(limits);
     for (const id of AGENT_IDS) {
       agents[id].onEvent((event) => bus.publish({ kind: "agent", agent: id, event }));
     }
     const createMailbox = (id: AgentId) => {
       const model = models?.[id];
+      const instruction = instructions?.[id];
       return new AgentMailbox(
         agents[id],
-        { cwd: projectRoot, mcpUrl: mcpUrlFor(id), ...(model ? { model } : {}) },
+        {
+          cwd: projectRoot, mcpUrl: mcpUrlFor(id),
+          ...(model ? { model } : {}), ...(instruction ? { instructions: instruction } : {}),
+        },
         (message) => bus.publish({ kind: "agent", agent: id, event: { type: "error", message } }),
       );
     };

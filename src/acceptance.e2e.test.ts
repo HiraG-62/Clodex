@@ -57,7 +57,7 @@ describe.runIf(process.env.CLODEX_E2E === "1")("v0.1 acceptance (real clodex pro
     };
 
     await waitForOutput(/Clodex v0\.1 {2}project: (.+)/);
-    expect(output).toContain(`project: ${root}`);
+    expect(output).toContain(`project: ${root}  primary:`);
     const logPath = (await waitForOutput(/log: (.+\.jsonl)/))[1]!.trim();
 
     // 2〜9. Claude → Codex の REVIEW_REQUEST、Codex の RESULT が Claude に届き Claude が継続する

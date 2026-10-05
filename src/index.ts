@@ -1,10 +1,15 @@
 #!/usr/bin/env node
 // clodex コマンドの入口。部品の組み立てと terminal I/O だけを行う
+import { homedir } from "node:os";
 import { clearLine, createInterface, cursorTo } from "node:readline";
+import { AGENT_IDS, type AgentId } from "./agents/agent-adapter.js";
 import { ClaudeAdapter } from "./agents/claude-adapter.js";
 import { CodexAdapter } from "./agents/codex-adapter.js";
 import { parseCliArgs } from "./cli/args.js";
 import { createShell } from "./cli/shell.js";
+import { loadConfig } from "./config/config.js";
+import { buildRoleInstructions } from "./context/role-instructions.js";
+import { DEFAULT_LIMITS } from "./coordinator/budget-manager.js";
 import { Coordinator } from "./coordinator/coordinator.js";
 import { EventBus } from "./coordinator/event-bus.js";
 import { attachEventLog, defaultLogPath, type DisplayMode } from "./logging/event-log.js";
@@ -12,6 +17,7 @@ import { startMcpServer } from "./mcp/server.js";
 import { resolveProjectRoot } from "./project/project-root.js";
 
 const PROMPT = "clodex> ";
+const DEFAULT_PRIMARY: AgentId = "claude";
 const EXIT_FAILURE = 1;
 // cleanup 後に何かが残って終わらない場合の保険
 const FORCE_EXIT_DELAY_MS = 3_000;
@@ -21,6 +27,9 @@ const errorMessage = (error: unknown) => (error instanceof Error ? error.message
 const main = async (): Promise<void> => {
   const args = parseCliArgs(process.argv.slice(2));
   const projectRoot = resolveProjectRoot({ ...(args.project ? { explicitProject: args.project } : {}), cwd: process.cwd() });
+  const config = loadConfig({ homeDir: homedir(), projectRoot });
+  // 優先順位: 起動オプション > 設定ファイル > 既定値（DESIGN.md §13 Roles）
+  const primary = args.primary ?? config.primary ?? DEFAULT_PRIMARY;
 
   const bus = new EventBus();
   let coordinator: Coordinator | undefined;
@@ -31,6 +40,8 @@ const main = async (): Promise<void> => {
     bus,
     mcpUrlFor: (agent) => mcp.urlFor(agent),
     models: args.models,
+    instructions: Object.fromEntries(AGENT_IDS.map((id) => [id, buildRoleInstructions(id, config.roles)])),
+    limits: { ...DEFAULT_LIMITS, ...config.limits },
   });
 
   const interactive = Boolean(process.stdin.isTTY);
@@ -50,7 +61,7 @@ const main = async (): Promise<void> => {
   const logPath = defaultLogPath(projectRoot, new Date());
   let displayMode: DisplayMode = "normal";
   attachEventLog(bus, { path: logPath, print, mode: () => displayMode });
-  print(`Clodex v0.1  project: ${projectRoot}`);
+  print(`Clodex v0.1  project: ${projectRoot}  primary: ${primary}`);
   print(`log: ${logPath}`);
   print("Type /help for usage.");
 
@@ -58,7 +69,7 @@ const main = async (): Promise<void> => {
     displayMode = displayMode === "verbose" ? "normal" : "verbose";
     return displayMode === "verbose";
   };
-  const shell = createShell({ coordinator, primary: args.primary, print, toggleVerbose });
+  const shell = createShell({ coordinator, primary, print, toggleVerbose });
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) return;

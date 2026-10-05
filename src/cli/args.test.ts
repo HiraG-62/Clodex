@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { parseCliArgs } from "./args.js";
 
 describe("parseCliArgs", () => {
-  it("既定値は primary=claude、project と model は未指定", () => {
-    expect(parseCliArgs([])).toEqual({ primary: "claude", models: {} });
+  it("未指定の option は undefined（既定値は設定ファイルとあわせて決める）", () => {
+    expect(parseCliArgs([])).toEqual({ models: {} });
   });
 
   it("全 option を読む", () => {
