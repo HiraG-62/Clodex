@@ -3,6 +3,7 @@
 import { clientMain } from "./client/client-main.js";
 import { renderMarkdown } from "./client/markdown.js";
 import { applyFeedItem } from "./client/timeline.js";
+import { composeInputLine } from "./client/compose-input.js";
 
 const STYLE = `
   :root {
@@ -256,7 +257,7 @@ export const WEB_PAGE = `<!doctype html>
 <body>
 ${BODY}
 <script>
-(${inlineScript(clientMain.toString())})(${inlineScript(renderMarkdown.toString())}, ${inlineScript(applyFeedItem.toString())});
+(${inlineScript(clientMain.toString())})(${inlineScript(renderMarkdown.toString())}, ${inlineScript(applyFeedItem.toString())}, ${inlineScript(composeInputLine.toString())});
 </script>
 </body>
 </html>

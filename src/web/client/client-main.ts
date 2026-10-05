@@ -1,13 +1,14 @@
 // Web UI の画面の振る舞い（DESIGN.md §17 Web UI）。
 // ブラウザ側にそのまま埋め込むため、外部のものを参照しない 1 つの関数として書く（型の import のみ）。
-// renderMarkdown と applyFeedItem は引数で受け取る
-import type { AgentId } from "../../agents/agent-adapter.js";
+// renderMarkdown・applyFeedItem・composeInputLine は引数で受け取る
+import type { AgentId, AgentStatus, TurnResult } from "../../agents/agent-adapter.js";
 import type { AgentState } from "../../cli/shell.js";
 import type { FeedItem, WebState } from "../web-feed.js";
 import type { renderMarkdown as RenderMarkdown } from "./markdown.js";
 import type { TimelineItem, applyFeedItem as ApplyFeedItem } from "./timeline.js";
+import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
 
-export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem: typeof ApplyFeedItem): void {
+export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem: typeof ApplyFeedItem, composeInputLine: typeof ComposeInputLine): void {
   const AGENTS: Record<AgentId, { name: string; mark: string }> = {
     claude: { name: "Claude", mark: "C" },
     codex: { name: "Codex", mark: "X" },
@@ -21,9 +22,11 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
   const THEMES = ["system", "light", "dark"] as const;
   type Theme = (typeof THEMES)[number];
   const THEME_LABEL: Record<Theme, string> = { system: "システム", light: "ライト", dark: "ダーク" };
-  const STATUS_LABEL: Record<string, string> = { busy: "Working", idle: "Idle", starting: "Starting", stopped: "Stopped" };
-  const TURN_LABEL: Record<string, string> = { working: "Working", interrupted: "Interrupted", failed: "Failed", completed: "" };
+  const STATUS_LABEL: Record<AgentStatus, string> = { busy: "Working", idle: "Idle", starting: "Starting", stopped: "Stopped" };
+  const TURN_LABEL: Record<"working" | TurnResult["status"], string> = { working: "Working", interrupted: "Interrupted", failed: "Failed", completed: "" };
   const NEAR_BOTTOM_PX = 120;
+  const TOAST_DURATION_MS = 3000;
+  const TOKENS_PER_K = 1000;
   const THEME_KEY = "clodex-theme";
   const DETAIL_KEY = "clodex-detail";
 
@@ -43,7 +46,7 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
     const d = new Date(iso);
     return `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${clock(iso)}`;
   };
-  const kTokens = (n: number) => `${Math.round(n / 1000)}k`;
+  const kTokens = (n: number) => `${Math.round(n / TOKENS_PER_K)}k`;
   const storage = {
     get: (key: string) => { try { return localStorage.getItem(key); } catch { return null; } },
     set: (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* 保存できなくても動く */ } },
@@ -61,10 +64,11 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
   let target: AgentId | undefined; // undefined なら primary に送る
   const opened = new Map<string, boolean>(); // 人が開閉した details の状態（項目 ID ごと）
   const rendered = new Map<string, { item: TimelineItem; node: HTMLElement }>();
+  const controlUpdaters = new WeakMap<HTMLElement, (agent: AgentState) => void>();
 
   const log = $("#log");
   const newer = $("#newer");
-  const input = $("#input") as unknown as HTMLTextAreaElement;
+  const input = document.querySelector<HTMLTextAreaElement>("#input")!;
 
   // ---- 送信 ----
   // 送れたら true。失敗したら理由をトーストで出す
@@ -96,7 +100,7 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
     toast.textContent = text;
     toast.hidden = false;
     window.clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(() => { toast.hidden = true; }, 3000);
+    toastTimer = window.setTimeout(() => { toast.hidden = true; }, TOAST_DURATION_MS);
   };
 
   // ---- ログの描画 ----
@@ -236,17 +240,37 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
     return node;
   };
 
+  const syncGauge = (node: HTMLElement, label: string, value: string, percent: number | undefined, over = false, tick?: number) => {
+    const key = node.querySelector<HTMLElement>(".k")!;
+    const val = node.querySelector<HTMLElement>(".v")!;
+    const track = node.querySelector<HTMLElement>(".track")!;
+    key.textContent = label;
+    val.textContent = value;
+    val.classList.toggle("over", over);
+    track.querySelector<HTMLElement>("i")!.style.width = `${Math.max(0, Math.min(100, percent ?? 0))}%`;
+    let marker = track.querySelector<HTMLElement>(".tick");
+    if (tick === undefined) { marker?.remove(); return; }
+    if (!marker) {
+      marker = el("span", "tick");
+      marker.title = "今の時点での目安";
+      track.append(marker);
+    }
+    marker.style.left = `${Math.max(0, Math.min(100, tick))}%`;
+  };
+
   const agentControls = (agent: AgentState) => {
     const wrap = el("div", "controls");
     const { usage } = agent;
-    wrap.append(el("div", "setting", `Model: ${agent.model ?? "default"} · Effort: ${agent.effort ?? "default"}`));
+    const setting = el("div", "setting", `Model: ${agent.model ?? "default"} · Effort: ${agent.effort ?? "default"}`);
+    wrap.append(setting);
     const pace = usage.weeklyPace;
+    const fiveHour = gauge("5 時間", usage.fiveHourPercent === undefined ? "—" : `${usage.fiveHourPercent}%`, usage.fiveHourPercent, agent.id);
+    const weekly = gauge(pace === undefined ? "週" : `週（ペース ${pace > 0 ? "+" : ""}${pace}）`, usage.weeklyPercent === undefined ? "—" : `${usage.weeklyPercent}%`,
+      usage.weeklyPercent, agent.id, (pace ?? 0) > 0, pace === undefined || usage.weeklyPercent === undefined ? undefined : usage.weeklyPercent - pace);
+    const context = gauge("コンテキスト", usage.contextTokens === undefined ? "—" : `${kTokens(usage.contextTokens)}${usage.contextWindow ? ` / ${kTokens(usage.contextWindow)}` : ""}`,
+      usage.contextTokens && usage.contextWindow ? (usage.contextTokens / usage.contextWindow) * 100 : 0, agent.id);
     wrap.append(
-      gauge("5 時間", usage.fiveHourPercent === undefined ? "—" : `${usage.fiveHourPercent}%`, usage.fiveHourPercent, agent.id),
-      gauge(pace === undefined ? "週" : `週（ペース ${pace > 0 ? "+" : ""}${pace}）`, usage.weeklyPercent === undefined ? "—" : `${usage.weeklyPercent}%`,
-        usage.weeklyPercent, agent.id, (pace ?? 0) > 0, pace === undefined || usage.weeklyPercent === undefined ? undefined : usage.weeklyPercent - pace),
-      gauge("コンテキスト", usage.contextTokens === undefined ? "—" : `${kTokens(usage.contextTokens)}${usage.contextWindow ? ` / ${kTokens(usage.contextWindow)}` : ""}`,
-        usage.contextTokens && usage.contextWindow ? (usage.contextTokens / usage.contextWindow) * 100 : 0, agent.id),
+      fiveHour, weekly, context,
     );
     wrap.append(el("div", "eyebrow", "権限"));
     const seg = el("div", "seg");
@@ -279,16 +303,36 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
       button.disabled = disabled;
       button.addEventListener("click", () => void send(command));
       links.append(button);
+      return button;
     };
-    action("Interrupt", `/interrupt ${agent.id}`, "danger", agent.status !== "busy");
-    action("Compact", `/compact ${agent.id}`, "", agent.status === "stopped");
+    const interrupt = action("Interrupt", `/interrupt ${agent.id}`, "danger", agent.status !== "busy");
+    const compact = action("Compact", `/compact ${agent.id}`, "", agent.status === "stopped");
     action("New", `/new ${agent.id}`);
     wrap.append(links);
+    controlUpdaters.set(wrap, (current) => {
+      const values = current.usage;
+      const weeklyPace = values.weeklyPace;
+      setting.textContent = `Model: ${current.model ?? "default"} · Effort: ${current.effort ?? "default"}`;
+      syncGauge(fiveHour, "5 時間", values.fiveHourPercent === undefined ? "—" : `${values.fiveHourPercent}%`, values.fiveHourPercent);
+      syncGauge(weekly, weeklyPace === undefined ? "週" : `週（ペース ${weeklyPace > 0 ? "+" : ""}${weeklyPace}）`,
+        values.weeklyPercent === undefined ? "—" : `${values.weeklyPercent}%`, values.weeklyPercent, (weeklyPace ?? 0) > 0,
+        weeklyPace === undefined || values.weeklyPercent === undefined ? undefined : values.weeklyPercent - weeklyPace);
+      syncGauge(context, "コンテキスト", values.contextTokens === undefined ? "—" : `${kTokens(values.contextTokens)}${values.contextWindow ? ` / ${kTokens(values.contextWindow)}` : ""}`,
+        values.contextTokens && values.contextWindow ? (values.contextTokens / values.contextWindow) * 100 : 0);
+      for (const button of seg.querySelectorAll<HTMLButtonElement>("button")) {
+        button.setAttribute("aria-pressed", String(button.textContent === current.permission));
+      }
+      for (const button of effort.querySelectorAll<HTMLButtonElement>("button")) {
+        button.setAttribute("aria-pressed", String(button.textContent === current.effort));
+      }
+      interrupt.disabled = current.status !== "busy";
+      compact.disabled = current.status === "stopped";
+    });
     return wrap;
   };
 
   const stateLabel = (agent: AgentState) => {
-    const node = el("span", `state ${agent.status === "busy" ? "working" : ""}`, STATUS_LABEL[agent.status] ?? agent.status);
+    const node = el("span", `state ${agent.status === "busy" ? "working" : ""}`, STATUS_LABEL[agent.status]);
     return node;
   };
 
@@ -334,7 +378,7 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
       const id = button.dataset.agent as AgentId;
       button.setAttribute("aria-pressed", String((target ?? state.primary) === id));
     }
-    if (sheetAgent) openAgentSheet(sheetAgent);
+    refreshOpenSheet();
   };
 
   const conversationList = () => {
@@ -357,6 +401,8 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
 
   // ---- シート（スマホの操作パネル・会話・設定） ----
   let sheetAgent: AgentId | undefined;
+  let sheetKind: "agent" | "settings" | "conversations" | undefined;
+  let pendingPrimary: AgentId | undefined;
   const sheet = $("#sheet");
   const openSheet = (title: string, content: HTMLElement[]) => {
     $("#sheet-title").textContent = title;
@@ -366,15 +412,19 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
   const closeSheet = () => {
     sheet.hidden = true;
     sheetAgent = undefined;
+    sheetKind = undefined;
   };
   const openAgentSheet = (id: AgentId) => {
     const agent = state?.agents.find((a) => a.id === id);
     if (!agent) return;
     sheetAgent = id;
+    sheetKind = "agent";
     const role = state?.roles[id];
     openSheet(AGENTS[id].name, [...(role ? [el("div", "role", role)] : []), agentControls(agent)]);
   };
   const openConversations = () => {
+    sheetKind = "conversations";
+    sheetAgent = undefined;
     const fresh = el("button", "primary-action", "新しい会話を始める") as HTMLButtonElement;
     fresh.type = "button";
     fresh.addEventListener("click", () => {
@@ -383,35 +433,61 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
     });
     openSheet("会話", [fresh, ...conversationList()]);
   };
-  const choice = <T extends string>(label: string, options: readonly T[], current: T, name: (v: T) => string, pick: (v: T) => void) => {
+  const choice = <T extends string>(key: string, label: string, options: readonly T[], current: T, name: (v: T) => string, pick: (v: T) => void) => {
     const wrap = el("div", "setting");
     wrap.append(el("div", "eyebrow", label));
     const seg = el("div", "seg");
+    seg.dataset.choice = key;
     for (const option of options) {
       const button = el("button", "", name(option)) as HTMLButtonElement;
       button.type = "button";
+      button.dataset.value = option;
       button.setAttribute("aria-pressed", String(option === current));
       button.addEventListener("click", () => {
         pick(option);
-        openSettings();
+        for (const selected of seg.querySelectorAll<HTMLButtonElement>("button")) {
+          selected.setAttribute("aria-pressed", String(selected === button));
+        }
       });
       seg.append(button);
     }
     wrap.append(seg);
     return wrap;
   };
-  const openSettings = () => openSheet("設定", [
-    choice("テーマ", THEMES, theme, (t) => THEME_LABEL[t], (t) => {
-      theme = t;
-      storage.set(THEME_KEY, t);
-      applyTheme(t);
-    }),
-    choice("テキストの送り先", AGENT_IDS, state?.primary ?? "claude", (a) => AGENTS[a].name, (a) => {
-      target = undefined;
-      void send(`/primary ${a}`);
-    }),
-    choice("作業と全文", ["closed", "open"] as const, detail ? "open" : "closed", (v) => (v === "open" ? "開いて表示" : "畳んで表示"), (v) => setDetail(v === "open")),
-  ]);
+  const openSettings = () => {
+    sheetKind = "settings";
+    sheetAgent = undefined;
+    openSheet("設定", [
+      choice("theme", "テーマ", THEMES, theme, (t) => THEME_LABEL[t], (t) => {
+        theme = t;
+        storage.set(THEME_KEY, t);
+        applyTheme(t);
+      }),
+      choice("primary", "テキストの送り先", AGENT_IDS, target ?? state?.primary ?? "claude", (a) => AGENTS[a].name, (a) => {
+        target = a;
+        pendingPrimary = a;
+        void send(`/primary ${a}`);
+        renderState();
+      }),
+      choice("detail", "作業と全文", ["closed", "open"] as const, detail ? "open" : "closed", (v) => (v === "open" ? "開いて表示" : "畳んで表示"), (v) => setDetail(v === "open")),
+    ]);
+  };
+
+  const refreshOpenSheet = () => {
+    if (sheet.hidden) return;
+    if (sheetKind === "agent" && sheetAgent) {
+      const agent = state?.agents.find((candidate) => candidate.id === sheetAgent);
+      const controls = $("#sheet-body").querySelector<HTMLElement>(".controls");
+      if (agent && controls) controlUpdaters.get(controls)?.(agent);
+    }
+    if (sheetKind === "settings") {
+      const selected = target ?? state?.primary;
+      const buttons = $("#sheet-body").querySelectorAll<HTMLButtonElement>('[data-choice="primary"] button');
+      for (const button of buttons) {
+        button.setAttribute("aria-pressed", String(button.dataset.value === selected));
+      }
+    }
+  };
 
   $("#sheet-close").addEventListener("click", closeSheet);
   $("#sheet-backdrop").addEventListener("click", closeSheet);
@@ -445,7 +521,7 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
     if (!text || sendButton.disabled) return;
     const to = target ?? state?.primary;
     sendButton.disabled = true;
-    const sent = await send(text.startsWith("/") || text.startsWith("@") || !to ? text : `@${to} ${text}`);
+    const sent = await send(composeInputLine(text, to));
     sendButton.disabled = false;
     if (!sent) return;
     if (input.value.trim() === text) input.value = "";
@@ -489,6 +565,10 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
       const item = JSON.parse(e.data) as FeedItem;
       if (item.type === "state") {
         state = item.state;
+        if (pendingPrimary && state.primary === pendingPrimary) {
+          if (target === pendingPrimary) target = undefined;
+          pendingPrimary = undefined;
+        }
         renderState();
         return;
       }
