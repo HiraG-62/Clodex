@@ -31,6 +31,23 @@ describe("AgentMailbox", () => {
     expect(agent.starts).toEqual([{ ...START_OPTIONS, resumeSessionId: "old-session" }]);
   });
 
+  it("startOptions の resumeSessionId は、Agent に session が無いときの最初の起動で使う", async () => {
+    const agent = new FakeAgentAdapter("codex");
+    const mailbox = new AgentMailbox(agent, { ...START_OPTIONS, resumeSessionId: "saved" }, vi.fn());
+    void mailbox.enqueue("hello");
+    await flush();
+    expect(agent.starts[0]).toMatchObject({ resumeSessionId: "saved" });
+  });
+
+  it("Agent の session がある（一度起動した）なら、保存された ID より Agent の session を優先する", async () => {
+    const agent = new FakeAgentAdapter("codex");
+    agent.sessionId = "current";
+    const mailbox = new AgentMailbox(agent, { ...START_OPTIONS, resumeSessionId: "saved" }, vi.fn());
+    void mailbox.enqueue("hello");
+    await flush();
+    expect(agent.starts[0]).toMatchObject({ resumeSessionId: "current" });
+  });
+
   it("起動中の Agent には start しない", async () => {
     const { agent, mailbox } = setup();
     agent.status = "idle";

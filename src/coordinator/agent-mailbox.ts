@@ -72,10 +72,11 @@ export class AgentMailbox {
     }
   }
 
-  // Lazy Delegation: 必要になったときに起動し、以前の session があれば resume する
+  // Lazy Start: 必要になったときに起動し、以前の session があれば resume する。
+  // 一度起動した後は Agent の session を、初回は startOptions の resumeSessionId（clodex --resume）を使う
   private async ensureRunning(): Promise<void> {
     if (this.agent.status !== "stopped") return;
-    const { sessionId } = this.agent;
-    await this.agent.start({ ...this.startOptions, ...(sessionId ? { resumeSessionId: sessionId } : {}) });
+    const resumeSessionId = this.agent.sessionId ?? this.startOptions.resumeSessionId;
+    await this.agent.start({ ...this.startOptions, ...(resumeSessionId ? { resumeSessionId } : {}) });
   }
 }

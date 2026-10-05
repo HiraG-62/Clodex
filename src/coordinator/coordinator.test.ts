@@ -55,6 +55,20 @@ describe("Coordinator", () => {
     expect(claude.starts[0]).not.toHaveProperty("instructions");
   });
 
+  it("resumeSessionIds の Agent は最初の起動で resume する", async () => {
+    const claude = new FakeAgentAdapter("claude");
+    const codex = new FakeAgentAdapter("codex");
+    const coordinator = new Coordinator({
+      projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor,
+      resumeSessionIds: { claude: "saved-claude" },
+    });
+    void coordinator.sendToAgent("claude", "hi");
+    coordinator.receiveMessage("claude", reviewRequest);
+    await flush();
+    expect(claude.starts[0]).toMatchObject({ resumeSessionId: "saved-claude" });
+    expect(codex.starts[0]).not.toHaveProperty("resumeSessionId");
+  });
+
   it("不正な message は記録も配送もせず、エラーを返す", async () => {
     const { codex, events, coordinator } = setup();
     const result = coordinator.receiveMessage("claude", { ...reviewRequest, to: "claude" });

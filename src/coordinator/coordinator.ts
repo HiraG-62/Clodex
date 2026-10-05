@@ -20,6 +20,8 @@ export interface CoordinatorOptions {
   limits?: BudgetLimits;
   permission?: PermissionLevel;
   usageAlert?: Partial<UsageAlert>;
+  // clodex --resume: 各 Agent の最初の起動で継続する session（DESIGN.md §18）
+  resumeSessionIds?: Partial<Record<AgentId, string>>;
 }
 
 export class Coordinator {
@@ -39,11 +41,13 @@ export class Coordinator {
     const createMailbox = (id: AgentId) => {
       const model = models?.[id];
       const instruction = instructions?.[id];
+      const resumeSessionId = options.resumeSessionIds?.[id];
       return new AgentMailbox(
         agents[id],
         {
           cwd: projectRoot, mcpUrl: mcpUrlFor(id),
           ...(model ? { model } : {}), ...(instruction ? { instructions: instruction } : {}),
+          ...(resumeSessionId ? { resumeSessionId } : {}),
         },
         (message) => bus.publish({ kind: "agent", agent: id, event: { type: "error", message } }),
       );

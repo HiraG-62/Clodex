@@ -46,7 +46,7 @@ PS C:\dev\my-project> clodex
 
 Agent 同士は MCP tool `send_message` で formal message をやり取りする。Agent は必要になるまで起動しない。
 
-起動オプション: `--project <path>` / `--primary <claude|codex>` / `--claude-model <model>` / `--codex-model <model>`
+起動オプション: `--project <path>` / `--primary <claude|codex>` / `--claude-model <model>` / `--codex-model <model>` / `--resume`（前回の会話を続ける）
 
 ログ: `~/.clodex/logs/<project 名>-<起動時刻>.jsonl`
 

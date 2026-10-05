@@ -15,6 +15,7 @@ import { EventBus } from "./coordinator/event-bus.js";
 import { attachEventLog, defaultLogPath, type DisplayMode } from "./logging/event-log.js";
 import { startMcpServer } from "./mcp/server.js";
 import { resolveProjectRoot } from "./project/project-root.js";
+import { attachSessionStore, loadSessions, sessionStatePath } from "./project/session-store.js";
 
 const PROMPT = "clodex> ";
 const DEFAULT_PRIMARY: AgentId = "claude";
@@ -32,6 +33,9 @@ const main = async (): Promise<void> => {
   const primary = args.primary ?? config.primary ?? DEFAULT_PRIMARY;
 
   const bus = new EventBus();
+  const statePath = sessionStatePath(homedir(), projectRoot);
+  const resumeSessionIds = args.resume ? loadSessions(statePath) : {};
+  attachSessionStore(bus, statePath, resumeSessionIds);
   let coordinator: Coordinator | undefined;
   const mcp = await startMcpServer((from, input) => coordinator!.receiveMessage(from, input));
   coordinator = new Coordinator({
@@ -44,6 +48,7 @@ const main = async (): Promise<void> => {
     limits: { ...DEFAULT_LIMITS, ...config.limits },
     ...(config.permission ? { permission: config.permission } : {}),
     ...(config.usageAlert ? { usageAlert: config.usageAlert } : {}),
+    resumeSessionIds,
   });
 
   const interactive = Boolean(process.stdin.isTTY);
@@ -65,6 +70,10 @@ const main = async (): Promise<void> => {
   attachEventLog(bus, { path: logPath, print, mode: () => displayMode });
   print(`Clodex v0.1  project: ${projectRoot}  primary: ${primary}`);
   print(`log: ${logPath}`);
+  if (args.resume) {
+    const resumed = AGENT_IDS.filter((id) => resumeSessionIds[id]).map((id) => `${id} ${resumeSessionIds[id]}`);
+    print(`resume: ${resumed.length ? resumed.join(", ") : "no saved session (starting new sessions)"}`);
+  }
   print("Type /help for usage.");
 
   const toggleVerbose = () => {

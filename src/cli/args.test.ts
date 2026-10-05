@@ -3,13 +3,13 @@ import { parseCliArgs } from "./args.js";
 
 describe("parseCliArgs", () => {
   it("未指定の option は undefined（既定値は設定ファイルとあわせて決める）", () => {
-    expect(parseCliArgs([])).toEqual({ models: {} });
+    expect(parseCliArgs([])).toEqual({ models: {}, resume: false });
   });
 
   it("全 option を読む", () => {
     expect(parseCliArgs([
-      "--project", "C:\\dev\\app", "--primary", "codex", "--claude-model", "haiku", "--codex-model", "gpt-5.5",
-    ])).toEqual({ project: "C:\\dev\\app", primary: "codex", models: { claude: "haiku", codex: "gpt-5.5" } });
+      "--project", "C:\\dev\\app", "--primary", "codex", "--claude-model", "haiku", "--codex-model", "gpt-5.5", "--resume",
+    ])).toEqual({ project: "C:\\dev\\app", primary: "codex", models: { claude: "haiku", codex: "gpt-5.5" }, resume: true });
   });
 
   it("未知の primary はエラー", () => {

@@ -411,6 +411,7 @@ Project root の解決順:
 | `--primary <claude\|codex>` | 設定ファイル（§13 Roles）、無ければ `claude` | 通常のテキストの送り先 |
 | `--claude-model <model>` | CLI の既定 | Claude の model |
 | `--codex-model <model>` | CLI の既定 | Codex の model |
+| `--resume` | なし | 前回この project で使った各 Agent の session を継続する（§18） |
 
 ---
 
@@ -1005,6 +1006,17 @@ simple event log
 ```
 
 から開始してよい。
+
+## Session の継続（`--resume`）
+
+`clodex` を起動し直しても Agent の会話を続けられるよう、各 Agent の session ID だけをファイルに保存する。
+
+- 保存先: `~/.clodex/state/<project root の英数字以外を - にした名前>-<パスのハッシュ 8 桁>.json`（例: `E--dev-Clodex-1a2b3c4d.json`）。ハッシュは大文字小文字を区別しないパスから作り、`C:\a-b` と `C:\a\b` のような衝突を防ぐ
+- 内容: `{ "claude": "<session ID>", "codex": "<thread ID>" }`。Agent の `session` event のたびに、その Agent の分だけ上書きする
+- `--resume` なしで起動したときは保存内容を空にしてから始める（前回と今回の session を混ぜない）
+- `clodex --resume` は保存された ID を各 Agent の最初の起動で resume する（Agent は必要になるまで起動しない点は同じ。§3.2）
+- 保存された ID が無い Agent は新しい session で起動する
+- message の未配送分、Budget の chain、利用状況は保存しない（v0.2 でも in-memory）
 
 将来的には SQLite。
 
