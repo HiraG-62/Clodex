@@ -2,7 +2,7 @@ import {
   COORDINATOR_MCP_SERVER, summarizeToolInput,
   type AgentStartOptions, type RateLimitWindow, type TurnResult,
 } from "./agent-adapter.js";
-import { spawnAgentProcess, subscriptionEnv, type SpawnAgentProcess } from "./agent-process.js";
+import { agentEnv, spawnAgentProcess, type SpawnAgentProcess } from "./agent-process.js";
 import { BaseAgentAdapter } from "./base-agent-adapter.js";
 
 // codex app-server の JSON-RPC プロトコル（docs/spikes/codex-lifecycle.md）
@@ -69,7 +69,7 @@ export class CodexAdapter extends BaseAgentAdapter {
     if (this.status !== "stopped") throw new Error(`codex is ${this.status}`);
     this.status = "starting";
     const args = ["app-server", ...(mcpUrl ? mcpArgs(mcpUrl) : [])];
-    this.attach(this.spawnProcess(CODEX_COMMAND, args, { cwd, env: subscriptionEnv(process.env) }));
+    this.attach(this.spawnProcess(CODEX_COMMAND, args, { cwd, env: agentEnv(process.env, this.id) }));
     try {
       await this.handshake(cwd, resumeSessionId, model);
     } catch (error) {

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import type { AgentId } from "./agent-adapter.js";
 
 // 1 行 1 JSON の stdio でやり取りする常駐プロセス。テストで差し替えられるよう抽象化する
 export interface AgentProcess {
@@ -24,6 +25,12 @@ const API_KEY_ENV_VARS = new Set(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "
 // Windows の環境変数名は大文字小文字を区別しないので、大文字で比較する
 export const subscriptionEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv =>
   Object.fromEntries(Object.entries(env).filter(([key]) => !API_KEY_ENV_VARS.has(key.toUpperCase())));
+
+// hook や skill が Clodex 配下の Agent かを判定するための環境変数（DESIGN.md §9）
+export const CLODEX_AGENT_ENV = "CLODEX_AGENT";
+
+export const agentEnv = (env: NodeJS.ProcessEnv, agent: AgentId): NodeJS.ProcessEnv =>
+  ({ ...subscriptionEnv(env), [CLODEX_AGENT_ENV]: agent });
 
 export const spawnAgentProcess: SpawnAgentProcess = (command, args, { cwd, env }) => {
   const child = spawn(command, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });

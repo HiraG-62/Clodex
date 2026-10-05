@@ -47,6 +47,7 @@ describe("CodexAdapter", () => {
     expect(call.command).toBe("codex");
     expect(call.args[0]).toBe("app-server");
     expect(call.options.env.OPENAI_API_KEY).toBeUndefined();
+    expect(call.options.env.CLODEX_AGENT).toBe("codex");
 
     const methods = spawner.last.written.map((m) => m.method);
     expect(methods).toEqual(["initialize", "initialized", "account/read", "thread/start"]);

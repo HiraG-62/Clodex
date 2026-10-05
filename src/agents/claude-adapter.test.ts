@@ -31,6 +31,7 @@ describe("ClaudeAdapter", () => {
     expect(call.args).toEqual(expect.arrayContaining(["--session-id", SESSION_ID]));
     expect(call.options.cwd).toBe("C:\\dev\\app");
     expect(call.options.env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(call.options.env.CLODEX_AGENT).toBe("claude");
     expect(adapter.status).toBe("idle");
     expect(adapter.sessionId).toBe(SESSION_ID);
     expect(events).toContainEqual({ type: "session", sessionId: SESSION_ID });

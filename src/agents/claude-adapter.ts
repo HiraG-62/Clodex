@@ -3,7 +3,7 @@ import {
   COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, summarizeToolInput,
   type AgentStartOptions, type RateLimitWindow,
 } from "./agent-adapter.js";
-import { spawnAgentProcess, subscriptionEnv, type SpawnAgentProcess } from "./agent-process.js";
+import { agentEnv, spawnAgentProcess, type SpawnAgentProcess } from "./agent-process.js";
 import { BaseAgentAdapter } from "./base-agent-adapter.js";
 
 // claude -p の stream-json プロトコル（docs/spikes/claude-lifecycle.md）
@@ -62,7 +62,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
       ...(model ? ["--model", model] : []),
       ...(mcpUrl ? mcpArgs(mcpUrl) : []),
     ];
-    const proc = this.spawnProcess(CLAUDE_COMMAND, args, { cwd, env: subscriptionEnv(process.env) });
+    const proc = this.spawnProcess(CLAUDE_COMMAND, args, { cwd, env: agentEnv(process.env, this.id) });
     this.attach(proc);
     this.status = "starting";
     // Claude は最初のターンまで何も出力しないので、プロセスの起動成功をもって start 完了とする

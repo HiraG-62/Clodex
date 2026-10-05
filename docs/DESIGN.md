@@ -497,6 +497,7 @@ Spike の結果、v0.1 で使う操作（送信・interrupt・resume・MCP）は
 Adapter の必須処理:
 
 - 子プロセスの環境変数から API key を取り除く（§10）
+- 子プロセスに `CLODEX_AGENT=<claude|codex>` を設定する。ユーザーの hook や skill が「Clodex 配下の Agent か」を判定できるようにする（例: Agent 単体での委譲 plugin を Clodex 配下では無効にする）
 - 認証方式がサブスクリプションでなければ、プロセスを止めて `error` を出す
 - 実行中ターンへの追加送信（steer）は v0.1 では使わない。busy 中の `send` は Coordinator 側でキューに積む（§12）
 - 予期しない承認要求（Codex の server request）はエラー応答し、`error` を出す。v0.1 の Codex は `approvalPolicy: "never"` + `sandbox: "workspace-write"` で起動し、Coordinator の MCP tool だけ自動承認する
