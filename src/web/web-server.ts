@@ -4,7 +4,7 @@ import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { FeedItem, WebFeed } from "./web-feed.js";
-import { WEB_PAGE } from "./web-page.js";
+import { PAGE_VERSION, WEB_PAGE } from "./web-page.js";
 
 const HOST = "127.0.0.1";
 const COOKIE_NAME = "clodex_token";
@@ -76,7 +76,8 @@ export const startWebServer = async ({ port, token, feed, onInput, listFiles, on
 
   const handleEvents = (req: IncomingMessage, res: ServerResponse) => {
     res.writeHead(HTTP.ok, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-    // 接続（再接続を含む）のたびに直近の履歴と最新の状態を送る
+    // 接続（再接続を含む）のたびに画面の版、直近の履歴、最新の状態を送る
+    sendItem(res, { type: "version", version: PAGE_VERSION });
     for (const item of feed.recent()) sendItem(res, item);
     const state = feed.latestState();
     if (state) sendItem(res, { type: "state", state });

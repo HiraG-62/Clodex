@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { WebFeed, type FeedItem, type WebState } from "./web-feed.js";
+import { PAGE_VERSION } from "./web-page.js";
 import { startWebServer, type WebServerHandle } from "./web-server.js";
 
 const TOKEN = "a".repeat(64);
@@ -74,14 +75,15 @@ describe("startWebServer", () => {
     expect(await response.text()).toContain("/events");
   });
 
-  it("/events は直近の履歴と最新の状態を送ってから、新しいものを流す", async () => {
+  it("/events は画面の版・直近の履歴・最新の状態を送ってから、新しいものを流す", async () => {
     const { base, feed } = await setup();
     feed.publishOutput("old line");
     feed.publishState(STATE);
     const response = await fetch(`${base}/events`, { headers: { cookie: COOKIE } });
     expect(response.headers.get("content-type")).toMatch(/text\/event-stream/);
     setTimeout(() => feed.publishOutput("new line"), 50);
-    expect(await readEvents(response, 3)).toEqual([
+    expect(await readEvents(response, 4)).toEqual([
+      { type: "version", version: PAGE_VERSION },
       { type: "output", seq: 1, text: "old line" },
       { type: "state", state: STATE },
       { type: "output", seq: 2, text: "new line" },

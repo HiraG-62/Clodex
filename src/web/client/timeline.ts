@@ -24,7 +24,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   const limit = (list: TimelineItem[]) => (list.length > MAX_ITEMS ? list.slice(list.length - MAX_ITEMS) : list);
   type Turn = Extract<TimelineItem, { kind: "turn" }>;
 
-  if (item.type === "state") return items;
+  if (item.type === "state" || item.type === "version") return items;
   if (item.type === "reset") return [];
   if (item.type === "output") {
     const last = items[items.length - 1];

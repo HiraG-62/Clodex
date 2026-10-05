@@ -22,7 +22,9 @@ export type FeedItem =
   | { type: "event"; seq: number; event: CoordinatorEvent; envelope?: string }
   | { type: "output"; seq: number; text: string }
   | { type: "state"; state: WebState }
-  | { type: "reset" };
+  | { type: "reset" }
+  // 接続のたびに最初に送る。画面の版が違えば再読み込みする
+  | { type: "version"; version: string };
 
 export type HistoryItem = Extract<FeedItem, { type: "event" | "output" }>;
 export type FeedHandler = (item: FeedItem) => void;

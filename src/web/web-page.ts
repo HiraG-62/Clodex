@@ -1,5 +1,6 @@
 // Web UI の画面（DESIGN.md §17 Web UI）。HTML 1 枚に CSS と JS を inline で持つ。
 // 画面の振る舞いは src/web/client/ に型付きで書き、関数のソースをそのまま埋め込む
+import { createHash } from "node:crypto";
 import { SLASH_COMMANDS } from "../cli/commands.js";
 import { clientMain } from "./client/client-main.js";
 import { createInputAssist } from "./client/input-assist.js";
@@ -289,6 +290,19 @@ const BODY = `
 // 関数のソースに </script> が含まれていても script 要素が途中で閉じないようにする
 const inlineScript = (source: string) => source.replace(/<\/script/gi, "<\\/script");
 
+const PAGE_VERSION_LENGTH = 12;
+const SCRIPT_DEPS = `
+  renderMarkdown: ${inlineScript(renderMarkdown.toString())},
+  applyFeedItem: ${inlineScript(applyFeedItem.toString())},
+  composeInputLine: ${inlineScript(composeInputLine.toString())},
+  createInputAssist: ${inlineScript(createInputAssist.toString())},
+  commands: ${JSON.stringify(SLASH_COMMANDS).replace(/</g, "\\u003c")},`;
+const CLIENT_SOURCE = inlineScript(clientMain.toString());
+
+// 画面の中身から決まる版。Clodex を更新して起動し直すと変わり、開いている画面は再読み込みする（DESIGN.md §17）
+export const PAGE_VERSION = createHash("sha256").update(STYLE).update(BODY).update(CLIENT_SOURCE).update(SCRIPT_DEPS)
+  .digest("hex").slice(0, PAGE_VERSION_LENGTH);
+
 export const WEB_PAGE = `<!doctype html>
 <html lang="ja">
 <head>
@@ -304,12 +318,8 @@ export const WEB_PAGE = `<!doctype html>
 <body>
 ${BODY}
 <script>
-(${inlineScript(clientMain.toString())})({
-  renderMarkdown: ${inlineScript(renderMarkdown.toString())},
-  applyFeedItem: ${inlineScript(applyFeedItem.toString())},
-  composeInputLine: ${inlineScript(composeInputLine.toString())},
-  createInputAssist: ${inlineScript(createInputAssist.toString())},
-  commands: ${JSON.stringify(SLASH_COMMANDS).replace(/</g, "\\u003c")},
+(${CLIENT_SOURCE})({${SCRIPT_DEPS}
+  version: "${PAGE_VERSION}",
 });
 </script>
 </body>

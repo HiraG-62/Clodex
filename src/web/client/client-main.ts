@@ -16,9 +16,10 @@ export interface ClientDeps {
   composeInputLine: typeof ComposeInputLine;
   createInputAssist: typeof CreateInputAssist;
   commands: readonly SlashCommand[];
+  version: string;
 }
 
-export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, createInputAssist, commands }: ClientDeps): void {
+export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, createInputAssist, commands, version }: ClientDeps): void {
   const AGENTS: Record<AgentId, { name: string; mark: string }> = {
     claude: { name: "Claude", mark: "C" },
     codex: { name: "Codex", mark: "X" },
@@ -831,6 +832,11 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
     };
     events.onmessage = (e: MessageEvent<string>) => {
       const item = JSON.parse(e.data) as FeedItem;
+      // Clodex が更新されて起動し直したら、古い画面のまま使わない
+      if (item.type === "version") {
+        if (item.version !== version) location.reload();
+        return;
+      }
       if (item.type === "state") {
         state = item.state;
         if (pendingPrimary && state.primary === pendingPrimary) {
