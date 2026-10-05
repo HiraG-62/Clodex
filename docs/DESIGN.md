@@ -1732,12 +1732,41 @@ dogfooding で出た要望を 4 段階で入れる。小さく確実なものか
 - Web UI は起動時の言語で画面を作り（`buildWebPage(language)`）、その言語の文言カタログを画面に埋め込む。言語が変われば画面の版も変わる
 - コードに文言を直接書かない。Agent 向けの指示（定型文・Task envelope・Budget のエラー）とプロトコルの値（コマンド名・状態名）は対象外
 
-### D — 本体と UI の分離、並列の会話
+### D — 本体と UI の分離、並列の会話（設計案。実装前に人が確認する）
 
-- 本体（Coordinator・Agent・Event Bus・保存）を HTTP + SSE の API を持つサーバーとし、UI はその上に載せる: Web UI（スマホ・ブラウザ。PWA にしてホーム画面に置けるようにする）、Tauri の GUI（Web UI を埋め込み、プロジェクトの選択と本体の起動・管理を足す）、TUI（CLI）
-- 1 つの会話 = 1 つの Coordinator（Agent プロセス・mailbox・MCP token を持つ）。複数の会話を同時に動かせるようにする
-- 同時に動かす会話は、それぞれ別の git worktree で作業する（同じ working tree を同時に編集しない。§16）。worktree の作成・削除・マージは人の操作で行う
-- 詳細な設計は A〜C の後、実装前にこの節を更新して決める
+構成:
+
+```text
+                 ┌──────────── Clodex Hub（常駐する 1 プロセス。ユーザーごと） ────────────┐
+ Tauri GUI ──┐   │  Project A                                                               │
+ (WebView2)  │   │   ├── 会話 1（active）── Coordinator ── Claude / Codex プロセス           │
+ Web UI ─────┼──>│   ├── 会話 2（active, worktree A-2）── Coordinator ── Claude / Codex     │
+ (スマホ PWA) │   │   └── 会話 3（保存のみ）                                                 │
+ TUI / CLI ──┘   │  Project B …                                                             │
+   HTTP + SSE    │  共有: 利用枠の監視（アカウント単位）、設定、保存                           │
+                 └──────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Hub**: Coordinator 群と保存を持つ常駐プロセス（`clodex serve`）。127.0.0.1 で HTTP + SSE を待ち受け、token で認証する（§17 と同じ）。UI は Hub の API だけを使う（Web 専用の経路を作らない、の延長）
+- **会話の状態**: active（Coordinator と Agent プロセスが動いている）と、保存のみ（履歴と session ID だけ）。active にできる数に上限を設ける（設定 `maxActiveConversations`、既定 3。1 つの会話で Agent プロセスが 2 つ動き、利用枠も共有するため）
+- **同じ project で並列に動かす会話**は、それぞれ別の git worktree で作業する（§16）。2 つ目以降の会話を active にするとき、Hub は worktree を作るか尋ねる（`git worktree add <project の隣>/<project 名>-<会話の短い ID> -b clodex/<会話の短い ID>`）。作成・削除・マージは人の操作。会話には worktree のパスとブランチを記録する
+- **利用枠**: Claude / Codex の利用枠はアカウント単位なので、利用状況の監視（§14）と通知は Hub で 1 つにする。Budget の chain は会話ごと
+- **API**（現在の 1 会話の API を会話 ID 付きに広げる）: `GET /api/projects`、`POST /api/projects`（フォルダを開く）、`GET /api/conversations?project=`、`POST /api/conversations`（新しい会話・worktree の指定）、`GET /events?conversation=`、`POST /api/input`（`conversation` と `line`）。ファイル系（`/api/file` 等）も会話（＝作業する場所）を指定する
+
+UI:
+
+- **Web UI**: 今の画面に project と会話の切り替えを足す。active な会話には作業中の印を出す。スマホは Web のまま、PWA（manifest とアイコン）にしてホーム画面に置けるようにする
+- **Tauri GUI**（Windows）: Hub を起動・監視し、Web UI を WebView2 で表示する薄い殻。足すのはネイティブの機能だけ（フォルダの選択、通知、トレイ常駐）。画面そのものは Web UI と同じものを使う（作り分けない）
+- **TUI**（CLI）: `clodex` を project で起動すると、Hub が動いていればそれにつなぎ、無ければ Hub を同じプロセスの中で起動する（今の使い方を変えない）。表示は今の readline 版を、入力中の候補表示などができる TUI に置き換える
+
+段階:
+
+1. **D1**: 1 つのプロセスの中で、1 つの project の複数の会話を active にできるようにする（Coordinator を会話ごとに作る。worktree の作成。Web UI の会話の切り替えと active の印）。PWA の manifest
+2. **D2**: Hub として複数の project を扱う（`clodex serve`、project の API、CLI から Hub へつなぐ）
+3. **D3**: Tauri GUI（`gui/` に Tauri のプロジェクト。Hub の起動、フォルダの選択、Web UI の表示）
+4. **D4**: TUI
+
+確認したいこと（実装前）: Hub をユーザーごとの常駐プロセスにすること、active な会話の上限、worktree の置き場所と名前、TUI に使うライブラリ（依存を増やすか）
 
 ---
 
