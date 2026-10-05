@@ -9,6 +9,7 @@ const PROJECT_ROOT = "C:\\dev\\app";
 const mcpUrlFor = (agent: string) => `http://127.0.0.1:5000/mcp/token-${agent}`;
 
 const setup = () => {
+  let seq = 0;
   const claude = new FakeAgentAdapter("claude");
   const codex = new FakeAgentAdapter("codex");
   const bus = new EventBus(() => new Date(NOW));
@@ -19,7 +20,7 @@ const setup = () => {
     agents: { claude, codex },
     bus,
     mcpUrlFor,
-    createMessageId: () => "msg_00000001",
+    createMessageId: () => `msg_${String(++seq).padStart(8, "0")}`,
   });
   return { claude, codex, events, coordinator };
 };
@@ -109,6 +110,40 @@ describe("Coordinator", () => {
     expect(codex.status).toBe("stopped");
     expect(codex.starts).toHaveLength(1);
     expect(codex.sent).toHaveLength(1);
+  });
+
+  it("依頼の入れ子が maxDelegationDepth を超えたら拒否し、送信元の error として流す", async () => {
+    const { claude, codex, events, coordinator } = setup();
+    // 人間のターン中: claude -> codex（深さ 1）
+    const first = coordinator.receiveMessage("claude", reviewRequest);
+    expect(first.ok).toBe(true);
+    await flush();
+    expect(codex.sent).toHaveLength(1);
+
+    // codex が first を処理中: codex -> claude（深さ 2）
+    const second = coordinator.receiveMessage("codex", { to: "claude", type: "QUESTION", taskId: "T-1", body: "?" });
+    expect(second.ok).toBe(true);
+    await flush();
+    expect(claude.sent).toHaveLength(1);
+
+    // claude が second を処理中: claude -> codex（深さ 3）は拒否
+    const third = coordinator.receiveMessage("claude", { to: "codex", type: "QUESTION", taskId: "T-9", body: "?" });
+    expect(third).toMatchObject({ ok: false, error: expect.stringContaining("maxDelegationDepth") });
+    expect(events).toContainEqual(expect.objectContaining({
+      kind: "agent", agent: "claude", event: { type: "error", message: expect.stringContaining("maxDelegationDepth") },
+    }));
+    expect(events.filter((e) => e.kind === "message")).toHaveLength(2);
+  });
+
+  it("人間の入力を処理中のターンから送った message は新しい chain になる", async () => {
+    const { claude, coordinator } = setup();
+    void coordinator.sendToAgent("claude", "human task");
+    await flush();
+    expect(claude.sent).toEqual(["human task"]);
+    // 同じ chain なら 3 回目の REVIEW_REQUEST は maxReviewRoundsPerChain で拒否されるが、各々が新しい chain なので受理される
+    for (let i = 0; i < 3; i++) {
+      expect(coordinator.receiveMessage("claude", { ...reviewRequest, taskId: `T-${i}` }).ok).toBe(true);
+    }
   });
 
   it("stop は全 Agent を止める", async () => {

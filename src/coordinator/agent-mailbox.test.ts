@@ -40,6 +40,25 @@ describe("AgentMailbox", () => {
     expect(agent.sent).toEqual(["hello"]);
   });
 
+  it("配送中は current に処理中の message を持ち、ターン完了で外す", async () => {
+    const { agent, mailbox } = setup();
+    const message = {
+      id: "msg_1", from: "claude", to: "codex", type: "QUESTION", taskId: "T-1", body: "?",
+      repository: "C:\\dev\\app", createdAt: "2026-10-05T07:00:00.000Z",
+    } as const;
+    const first = mailbox.enqueue("envelope", message);
+    const second = mailbox.enqueue("human");
+    await flush();
+    expect(mailbox.current).toEqual(message);
+    agent.completeTurn();
+    await first;
+    await flush();
+    expect(mailbox.current).toBeUndefined();
+    agent.completeTurn();
+    await second;
+    expect(mailbox.current).toBeUndefined();
+  });
+
   it("前のターンが終わるまで次を送らない（FIFO）", async () => {
     const { agent, mailbox } = setup();
     const first = mailbox.enqueue("first");

@@ -729,28 +729,39 @@ AGENTS.md → Codex
 
 # 14. Budget Manager
 
-初期設定例:
+Agent 同士が無限に会話しないよう hard limit を持つ。
 
-```yaml
-budget:
-  mode: economy
+## Chain
 
-  maxDelegationsPerTask: 2
-  maxReviewRounds: 2
-  maxMessageHops: 4
-  maxDelegationDepth: 2
+上限は Agent が付ける `taskId` ではなく、Coordinator が追跡する **chain** 単位で数える。`taskId` は Agent が自由に作れるため、上限の単位にすると新しい `taskId` で回避できてしまう。
 
-context:
-  strategy: lazy
-  includeConversationHistory: false
-  preferGitDiff: true
-  preferFileReference: true
+- 人間の入力で始まったターン中に Agent が送った message は、新しい chain を始める
+- Agent が message を処理しているターン中に送った message は、その message と同じ chain に属する
+- ACK は数えない（配送もしない。§12）
 
-delegation:
-  strategy: single-agent-first
-```
+## 上限（v0.1）
 
-将来の `/budget` イメージ:
+v0.1 は設定ファイルを持たず、`coordinator/budget-manager.ts` の定数とする。
+
+| 上限 | 既定値 | 数え方 |
+|---|---|---|
+| `maxMessagesPerChain` | 4 | chain 内の message 数（ACK 以外） |
+| `maxReviewRoundsPerChain` | 2 | chain 内の `REVIEW_REQUEST` 数 |
+| `maxDelegationsPerChain` | 2 | chain 内の `DELEGATE` + `QUESTION` 数 |
+| `maxDelegationDepth` | 2 | 依頼の入れ子の深さ（下記） |
+
+依頼の深さ:
+
+- 人間の入力によるターン中に送った依頼は深さ 1
+- 依頼（`QUESTION` / `REVIEW_REQUEST` / `DELEGATE`）を処理中に送った依頼は、処理中の依頼の深さ + 1
+- 結果（`RESULT` / `ISSUE`）を処理中に送った依頼は、処理中の message と同じ深さ（2 回目のレビュー依頼など、同じ階層での継続）
+- 依頼以外の message の深さは、処理中の message と同じ（無ければ 1）
+
+上限を超える message は受理せず、送信元へ tool エラーで理由を返し、Event Bus に `error` を出す。エラー文では「上限に達したので人間に報告する」よう Agent に促す。
+
+## 将来
+
+設定ファイル化、mode（economy 等）、CLI の利用率 telemetry（`rate_limit` event）による制御、`/budget` 表示は v0.2 以降。
 
 ```text
 Session Budget
@@ -758,22 +769,17 @@ Session Budget
 Claude
   Calls           12
   Delegations      2
-  Context         MEDIUM
+  5h usage        2%
 
 Codex
   Calls            3
   Delegations      0
-  Context          LOW
+  5h usage         1%
 
 Cross-Agent
   Messages         7
   Review rounds    1 / 2
-
-Mode
-  ● Economy
 ```
-
-Agent 同士が無限に会話しないよう hard limit を持つ。
 
 ---
 
@@ -880,6 +886,17 @@ Coordinator 内の observable event は in-memory の Event Bus（`coordinator/e
 | `message` | Coordinator が受理した formal message（§11） |
 
 全 event に Coordinator が `at`（ISO 8601）を付ける。購読者の例外は他の購読者と publish 元に波及させない。
+
+## Event Log（v0.1）
+
+`logging/event-log.ts` が Event Bus を購読し、2 つの出力を行う。
+
+| 出力 | 形式 | 内容 |
+|---|---|---|
+| terminal | `HH:MM:SS [CLAUDE] ...` / `[CODEX]` / `[MESSAGE]` | 人が読む用。`rate_limit` も 1 行に要約して出す |
+| file | JSONL（1 event 1 行、Event Bus の event そのまま） | 記録用。`~/.clodex/logs/<project 名>-<起動時刻>.jsonl` |
+
+log file は project の外（ホームディレクトリ）に置き、project の working tree を汚さない。
 
 ---
 
@@ -1242,11 +1259,10 @@ Full conversation history は渡さない。
 
 Agent 同士の runaway conversation を禁止する。
 
-上限値は §14 の `budget` 設定を使う。
-
-`ACK → ACK → ACK` のような無意味な往復を発生させない。
-
-Message Router は同一 message ID の重複処理を避けられる構造にする。
+- 上限は §14（chain 単位の hard limit）
+- `ACK` は配送しないので、`ACK → ACK → ACK` の往復は起きない（§12）
+- 返信を求めるのは依頼系の message だけ（§13）
+- message ID は Coordinator が採番するので、v0.1 では重複受信は起きない。再送（retry）を入れる v0.2 で idempotency を扱う
 
 ---
 

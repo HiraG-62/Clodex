@@ -3,6 +3,7 @@ import { AGENT_IDS, type AgentAdapter, type AgentId, type TurnResult } from "../
 import { buildEnvelope } from "../context/context-resolver.js";
 import { createMessage, type CreateMessageResult } from "../protocol/messages.js";
 import { AgentMailbox } from "./agent-mailbox.js";
+import { BudgetManager, type BudgetLimits } from "./budget-manager.js";
 import type { EventBus } from "./event-bus.js";
 
 export interface CoordinatorOptions {
@@ -12,13 +13,16 @@ export interface CoordinatorOptions {
   mcpUrlFor: (agent: AgentId) => string;
   models?: Partial<Record<AgentId, string>>;
   createMessageId?: () => string;
+  limits?: BudgetLimits;
 }
 
 export class Coordinator {
   private readonly mailboxes: Record<AgentId, AgentMailbox>;
+  private readonly budget: BudgetManager;
 
   constructor(private readonly options: CoordinatorOptions) {
-    const { agents, bus, projectRoot, mcpUrlFor, models } = options;
+    const { agents, bus, projectRoot, mcpUrlFor, models, limits } = options;
+    this.budget = new BudgetManager(limits);
     for (const id of AGENT_IDS) {
       agents[id].onEvent((event) => bus.publish({ kind: "agent", agent: id, event }));
     }
@@ -40,12 +44,18 @@ export class Coordinator {
       from, repository: projectRoot, ...(createMessageId ? { createId: createMessageId } : {}),
     });
     if (!result.ok) return result;
+    const { message } = result;
 
-    bus.publish({ kind: "message", message: result.message });
-    // ACK は記録のみ。配送して Agent を起こさない（DESIGN.md §12, §25）
-    if (result.message.type !== "ACK") {
-      void this.mailboxes[result.message.to].enqueue(buildEnvelope(result.message));
+    // 送信元が処理中の message を親として chain を決める（DESIGN.md §14）
+    const budgetError = this.budget.admit(message, this.mailboxes[from].current);
+    if (budgetError) {
+      bus.publish({ kind: "agent", agent: from, event: { type: "error", message: budgetError } });
+      return { ok: false, error: budgetError };
     }
+
+    bus.publish({ kind: "message", message });
+    // ACK は記録のみ。配送して Agent を起こさない（DESIGN.md §12, §25）
+    if (message.type !== "ACK") void this.mailboxes[message.to].enqueue(buildEnvelope(message), message);
     return result;
   }
 
