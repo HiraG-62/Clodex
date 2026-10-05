@@ -661,34 +661,46 @@ MCP message を受け取った後、
 
 を判断するのは Coordinator。
 
+## Endpoint
+
+- Coordinator は `127.0.0.1` のランダムポートで Streamable HTTP の MCP server を起動する
+- URL は `http://127.0.0.1:<port>/mcp/<token>`。`<token>` は起動ごと・Agent ごとのランダム値
+- 送信元（`from`）は `<token>` から決める。Agent ごとに token を分けるので、同じ PC の他プロセスや相手 Agent が送信元を偽れない
+- tool は `send_message` の 1 つだけ。入力 schema は §11
+
+## 配送ルール（v0.1）
+
+- Agent ごとに mailbox（FIFO キュー）を持ち、人間の入力と formal message を同じキューで直列に送る。実行中のターンには割り込まない
+- 宛先 Agent が stopped なら、送る前に起動する。以前の session ID があれば resume する（Lazy Delegation: Agent は必要になるまで起動しない）
+- `ACK` は記録のみで宛先に配送しない（ACK の往復で Agent を起こさない。§25）
+- 送信元への tool 応答は受理結果（message ID）だけを返す。返信は送信元の現在のターンが終わった後、新しいターンとして届く
+- 起動や送信に失敗したら Event Bus に `error` を出し、そのメッセージは破棄する（v0.1 は再送しない）
+- Coordinator の停止時は、先に全 mailbox を閉じて未配送分を破棄してから Agent を止める（停止中に Agent を再起動しない）
+
 ---
 
 # 13. Context Resolver
 
-Agent B に渡す Context は Task envelope を基本とする。
+Agent B に渡す Context は Task envelope を基本とする。formal message（§11）から決定論的に組み立て、宛先 Agent への 1 ターン分の入力として送る。
 
 ```text
+[Clodex] Message msg_1a2b3c4d from claude
+Type: REVIEW_REQUEST
 Task: AUTH-142
-
-Objective:
-refresh token の race condition をレビュー
-
-Repository:
-C:\dev\my-app
-
-Commit:
-a82f39c
-
-Relevant files:
+Repository: C:\dev\my-app
+Commit: a82f39c
+Files:
 - src/auth/refresh.ts
 
-Requested output:
-- severity
-- file / line
-- concise summary
+refresh token の race condition をレビュー
+
+Reply with the clodex send_message tool: to="claude", type="RESULT", taskId="AUTH-142", replyTo="msg_1a2b3c4d".
+Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.
 ```
 
-Agent B は必要に応じて Repository を読む。
+- 依頼系（`QUESTION` / `REVIEW_REQUEST` / `DELEGATE`）には返信方法を指示する
+- `RESULT` / `ISSUE` には返信を求めない（返信の連鎖を作らない）
+- 会話履歴は含めない。Agent B は必要に応じて Repository を読む
 
 ## Native configuration
 
@@ -1092,8 +1104,8 @@ src/
 │
 ├── coordinator/
 │   ├── coordinator.ts
+│   ├── agent-mailbox.ts
 │   ├── event-bus.ts
-│   ├── message-router.ts
 │   ├── task-manager.ts
 │   └── budget-manager.ts
 │

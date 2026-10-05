@@ -1,0 +1,85 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { afterEach, describe, expect, it } from "vitest";
+import type { AgentId } from "../agents/agent-adapter.js";
+import type { CreateMessageResult } from "../protocol/messages.js";
+import { startMcpServer, type McpServerHandle } from "./server.js";
+
+let server: McpServerHandle | undefined;
+afterEach(async () => {
+  await server?.close();
+  server = undefined;
+});
+
+const connect = async (url: string) => {
+  const client = new Client({ name: "test", version: "0.0.0" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(url)));
+  return client;
+};
+
+const accepted: CreateMessageResult = {
+  ok: true,
+  message: {
+    id: "msg_00000001", from: "claude", to: "codex", type: "QUESTION", taskId: "T-1", body: "?",
+    repository: "C:\\dev\\app", createdAt: "2026-10-05T07:00:00.000Z",
+  },
+};
+
+describe("startMcpServer", () => {
+  it("send_message を公開し、URL の agentId を送信元として handler に渡す", async () => {
+    const calls: Array<{ from: AgentId; input: unknown }> = [];
+    server = await startMcpServer((from, input) => {
+      calls.push({ from, input });
+      return accepted;
+    });
+    expect(server.urlFor("claude")).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp\/[0-9a-f]{32}$/);
+    expect(server.urlFor("claude")).not.toBe(server.urlFor("codex"));
+
+    const client = await connect(server.urlFor("claude"));
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name)).toEqual(["send_message"]);
+
+    const result = await client.callTool({
+      name: "send_message", arguments: { to: "codex", type: "QUESTION", taskId: "T-1", body: "?" },
+    });
+    expect(calls).toEqual([{ from: "claude", input: { to: "codex", type: "QUESTION", taskId: "T-1", body: "?" } }]);
+    expect(result.isError).toBeFalsy();
+    expect(JSON.stringify(result.content)).toContain("msg_00000001");
+    await client.close();
+  });
+
+  it("handler が拒否したらエラー文を tool エラーとして返す", async () => {
+    server = await startMcpServer(() => ({ ok: false, error: "replyTo: required for RESULT" }));
+    const client = await connect(server.urlFor("codex"));
+    const result = await client.callTool({
+      name: "send_message", arguments: { to: "claude", type: "RESULT", taskId: "T-1", body: "x" },
+    });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("replyTo: required for RESULT");
+    await client.close();
+  });
+
+  it("Codex の URL からの送信は codex として扱う（URL で送信元が決まる）", async () => {
+    const froms: AgentId[] = [];
+    server = await startMcpServer((from) => {
+      froms.push(from);
+      return accepted;
+    });
+    const client = await connect(server.urlFor("codex"));
+    await client.callTool({ name: "send_message", arguments: { to: "claude", type: "QUESTION", taskId: "T-1", body: "?" } });
+    expect(froms).toEqual(["codex"]);
+    await client.close();
+  });
+
+  it("token が違う、または token の後ろに path を足した URL は 404", async () => {
+    server = await startMcpServer(() => accepted);
+    const port = new URL(server.urlFor("claude")).port;
+    const post = (path: string) => fetch(`http://127.0.0.1:${port}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    });
+    expect((await post("/mcp/wrong-token/claude")).status).toBe(404);
+    expect((await post(`${new URL(server.urlFor("codex")).pathname}/claude`)).status).toBe(404);
+  });
+});
