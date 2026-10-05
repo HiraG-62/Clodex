@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Hub の入口。project ごとの初期化は ProjectContext に任せる（DESIGN.md §28 D2a）
 import { homedir } from "node:os";
-import { clearLine, createInterface, cursorTo } from "node:readline";
+import { readFileSync } from "node:fs";
+import { createInterface } from "node:readline";
 import { AGENT_IDS, type AgentId } from "./agents/agent-adapter.js";
 import { parseCliArgs } from "./cli/args.js";
 import { createCommandRunner } from "./cli/command-runner.js";
@@ -11,7 +12,7 @@ import { loadConfig } from "./config/config.js";
 import { detectLanguage } from "./context/language.js";
 import type { CoordinatorEvent } from "./coordinator/event-bus.js";
 import { Hub } from "./hub/hub.js";
-import { clearHubLock, writeHubLock } from "./hub/hub-lock.js";
+import { clearHubLock, isHubAlive, readHubLock, writeHubLock } from "./hub/hub-lock.js";
 import { openProject, type ProjectContext } from "./hub/project-context.js";
 import { selectProject } from "./hub/project-selection.js";
 import { setLanguage, t } from "./i18n/i18n.js";
@@ -19,11 +20,13 @@ import { defaultLogPath, type DisplayMode } from "./logging/event-log.js";
 import { listProjectFiles } from "./project/project-files.js";
 import { resolveProjectRoot } from "./project/project-root.js";
 import { saveProjectRole } from "./project/role-settings.js";
+import { createLocalFeedClient, createRemoteFeedClient } from "./tui/feed-client.js";
+import { startTui } from "./tui/tui.js";
 import { MAX_UPLOAD_BYTES, isUploadType, saveUpload } from "./project/uploads.js";
 import { DEFAULT_RECENT_ITEMS, WebFeed } from "./web/web-feed.js";
 import { buildWebPage } from "./web/web-page.js";
 import { startWebServer } from "./web/web-server.js";
-import { loadOrCreateWebToken } from "./web/web-token.js";
+import { loadOrCreateWebToken, webTokenPath } from "./web/web-token.js";
 import { connectWebFeed, historyItemOf } from "./web/web-ui.js";
 
 const PROMPT = "clodex> ";
@@ -54,15 +57,20 @@ const main = async (): Promise<void> => {
   const language = hubConfig.language ?? detectLanguage();
   setLanguage(language);
   const interactive = !args.serve && Boolean(process.stdin.isTTY);
-  const rl = args.serve ? undefined : createInterface({
-    input: process.stdin, output: process.stdout, prompt: PROMPT, terminal: interactive, completer: completeCommand,
+  const liveHub = interactive ? readHubLock(homeDir) : undefined;
+  if (liveHub && isHubAlive(liveHub)) {
+    const token = readFileSync(webTokenPath(homeDir), "utf8").trim();
+    const client = createRemoteFeedClient(liveHub, token);
+    await client.send(`/project ${cwd}`);
+    await startTui(client);
+    return;
+  }
+  const rl = args.serve || interactive ? undefined : createInterface({
+    input: process.stdin, output: process.stdout, prompt: PROMPT, terminal: false, completer: completeCommand,
   });
   const printTerminal = (line: string) => {
-    if (!interactive || !rl) { process.stdout.write(`${line}\n`); return; }
-    clearLine(process.stdout, 0);
-    cursorTo(process.stdout, 0);
+    if (interactive) return;
     process.stdout.write(`${line}\n`);
-    rl.prompt(true);
   };
   let displayMode: DisplayMode = "normal";
   let refreshState = () => {};
@@ -215,7 +223,11 @@ const main = async (): Promise<void> => {
       if (shuttingDown) return;
       void lines.then(() => hub.current?.workspace.current.coordinator.whenIdle()).then(shutdown);
     });
-    if (interactive) rl.prompt();
+  }
+  if (interactive) {
+    await startTui(createLocalFeedClient(feed, async (line) => { await handleLine(line); },
+      () => hub.current ? listProjectFiles(hub.current.workspace.current.workDir) : Promise.resolve([])));
+    await shutdown();
   }
   if (args.serve) {
     process.on("SIGINT", () => void shutdown());

@@ -125,6 +125,11 @@ export const en = {
   "web.assist.project": "Project",
   "web.assist.worktree": "Worktree",
   "web.assist.queued": "Queued input",
+  "tui.input": "Message or command (Enter to send, Ctrl+J for newline)",
+  "tui.exitHint": "Press Ctrl+D to quit",
+  "tui.pending": "Queued",
+  "tui.you": "You",
+  "tui.failed": "Failed",
 
   // CLI: /help
   "help.text": "send to the primary agent ({primary})",
@@ -354,6 +359,11 @@ export const ja: Messages = {
   "web.assist.project": "プロジェクト",
   "web.assist.worktree": "worktree",
   "web.assist.queued": "送信待ち",
+  "tui.input": "メッセージまたはコマンド（Enter で送信、Ctrl+J で改行）",
+  "tui.exitHint": "終了するには Ctrl+D",
+  "tui.pending": "送信待ち",
+  "tui.you": "あなた",
+  "tui.failed": "失敗",
 
   "help.text": "primary の Agent（{primary}）に送る",
   "help.claude": "Claude に送る",
