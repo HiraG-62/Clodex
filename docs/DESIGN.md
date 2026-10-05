@@ -455,6 +455,8 @@ Internal command（v0.1）:
 | `/compact [claude\|codex]` | 会話を要約してコンテキストを減らす。1 ターンとして mailbox で直列に送る。停止中の Agent には何もしない（docs/spikes/compact.md） |
 | `/new [claude\|codex]` | 新しい session で始め直す。省略時は両 Agent を新しい会話として、指定時はその Agent だけを今の会話の中で始め直す（§18） |
 | `/permission [claude\|codex] <read-only\|edit\|full>` | Agent（省略時は両方）の権限レベルを切り替える（§9 Permission） |
+| `/model <claude\|codex> <model>` | Agent の model を切り替える（§9 Model / Effort） |
+| `/effort [claude\|codex] <level>` | Agent（省略時は両方）の reasoning effort を切り替える（§9 Model / Effort） |
 | `/help` | 入力方法の一覧 |
 | `/exit` | 全 Agent を止めて終了 |
 
@@ -550,6 +552,18 @@ Adapter の必須処理:
 - 反映: Claude は即時（`set_permission_mode`）、Codex は次のターンから（`turn/start` の `sandboxPolicy`。以降のターンにも引き継がれる）
 - 停止中の Agent は、次の起動時にそのレベルで起動する
 - 起動処理の途中で変更された場合は、起動が終わった時点で反映する
+
+## Model / Effort
+
+人が `/model`・`/effort` で、会話の途中でも Agent の model と reasoning effort を切り替えられる。
+
+- 既定は各 CLI のユーザー設定（`~/.claude/settings.json`、`~/.codex/config.toml`）。起動オプション `--claude-model` / `--codex-model` で起動時の model を上書きできる
+- 切り替えた値は Clodex を終了するまで保持し、`/new`・`/resume`・プロセスの再起動後も使う。Clodex を起動し直すと既定に戻る（設定ファイルには保存しない）
+- 反映は次のターンから。実行中のターンには影響しない。停止中の Agent は次の起動時にその値で起動する
+- `/model` は model 名を検証しない（CLI が受け付けなければ、そのターンの失敗として表示される）。model 名は Agent ごとに違うので Agent の指定を必須にする
+- `/effort` の値: Claude は `low` / `medium` / `high` / `xhigh` / `max`（`claude --effort`）。Codex は `ReasoningEffort`（文字列。model ごとに対応する値が違う）。Agent を省略したときは両 Agent が受け付ける値だけを許す
+- `/status` と Web UI に、各 Agent の今の model と effort を表示する。CLI の既定のままで実際の値が分からなければ `default`
+- 反映の方法（docs/spikes/model-effort.md で実測する）: Codex は `turn/start` の `model` / `effort`（以降のターンにも引き継がれる）。Claude は control request（`set_model` 等）で変えられればそれを使い、無ければ idle のうちに同じ session を `-r` で起動し直して `--model` / `--effort` を付ける
 
 ---
 
@@ -1049,7 +1063,7 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
 - `event` / `output` は会話ごとにファイルにも保存する（§18）。`clodex` を起動し直しても、`/resume` で戻っても、その会話の流れを表示できる
 - `agent` event のうち、ログに表示するもの（`turn_started` / `text` / `tool` / `turn` / `error` / `compacted`）だけを feed に流して保存する。それ以外（`session` / `rate_limit` / `context` / `exit`）は `state` に反映するだけにする（頻繁な `context` で直近 1,000 件の枠を使い切らない）
 - 保存した feed を読み込んだとき、終わっていない（`turn` が無い）ターンは中断したものとして表示する（作業中のまま残さない）
-- 状態のスナップショット: primary、各 Agent の状態・権限・session・利用枠・コンテキスト（`/status` と同じ内容）、会話の一覧と今の会話
+- 状態のスナップショット: primary、各 Agent の状態・権限・model / effort・session・利用枠・コンテキスト（`/status` と同じ内容）、会話の一覧と今の会話
 
 ### 入力
 
@@ -1060,7 +1074,7 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
 
 レイアウト:
 
-- スマホ（1 列）: 上部に Agent ごとの状態の行 → ログ → 入力欄。状態の行をタップすると、その Agent の操作パネル（利用枠、権限、Interrupt / Compact / New）が下から開く
+- スマホ（1 列）: 上部に Agent ごとの状態の行 → ログ → 入力欄。状態の行をタップすると、その Agent の操作パネル（利用枠、権限、model / effort、Interrupt / Compact / New）が下から開く
 - PC（幅 900px 以上かつマウス操作の端末）: 左に Agent パネルと会話の一覧、右にログと入力欄
 
 ログ:
