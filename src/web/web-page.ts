@@ -106,7 +106,6 @@ const STYLE = `
   .entry .head time { color: var(--muted); font-size: 12px; }
   .entry .body { grid-column: 2; min-width: 0; overflow-wrap: anywhere; color: var(--fg-2); }
   .entry.you .body { color: var(--fg); font-weight: 500; }
-  .body.plain { white-space: pre-wrap; }
   .md > * { margin: 0 0 8px; } .md > *:last-child { margin-bottom: 0; }
   .md .md-h { font-weight: 600; color: var(--fg); }
   .md ul, .md ol { padding-left: 1.3em; }

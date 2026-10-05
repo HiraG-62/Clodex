@@ -176,7 +176,9 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
         const node = el("article", "entry you");
         const head = el("div", "head");
         head.append(el("b", "", "あなた"), el("span", `c-${item.agent}`, `→ ${AGENTS[item.agent].name}`), el("time", "mono", clock(item.at)));
-        node.append(mark("you"), head, el("div", "body plain", item.text));
+        const body = el("div", "body md");
+        body.innerHTML = renderMarkdown(item.text);
+        node.append(mark("you"), head, body);
         return node;
       }
       case "turn": return renderTurn(item);
