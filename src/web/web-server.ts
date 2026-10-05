@@ -13,7 +13,7 @@ const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 const KEEPALIVE_MS = 25_000;
 const MAX_BODY_BYTES = 64 * 1024;
 const HTTP = {
-  ok: 200, noContent: 204, found: 302, badRequest: 400, unauthorized: 401, notFound: 404, tooLarge: 413, serverError: 500,
+  ok: 200, noContent: 204, found: 302, badRequest: 400, unauthorized: 401, notFound: 404, tooLarge: 413, unsupported: 415, serverError: 500,
 } as const;
 
 export interface WebServerOptions {
@@ -29,6 +29,8 @@ export interface WebServerOptions {
     file(path: string): Promise<PreviewResult>;
     diff(path: string): Promise<PreviewResult>;
   };
+  // 貼り付けた画像を保存し、フルパスを返す（DESIGN.md §28 v0.3 C）
+  upload: { maxBytes: number; accepts(contentType: string): boolean; save(contentType: string, body: Buffer): Promise<string> };
   onError?: (error: unknown) => void;
 }
 
@@ -50,17 +52,20 @@ const cookieToken = (req: IncomingMessage) =>
 
 // 上限を超えたら読み捨てて最後まで受け取る（413 を返せるよう接続は切らない）。
 // UTF-8 がチャンクの境目で分かれても化けないよう、バイト列をつなげてからデコードする
-const readBody = (req: IncomingMessage): Promise<string | undefined> =>
+const readBytes = (req: IncomingMessage, maxBytes: number): Promise<Buffer | undefined> =>
   new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
     req.on("data", (chunk: Buffer) => {
       size += chunk.length;
-      if (size <= MAX_BODY_BYTES) chunks.push(chunk);
+      if (size <= maxBytes) chunks.push(chunk);
     });
-    req.on("end", () => resolve(size > MAX_BODY_BYTES ? undefined : Buffer.concat(chunks).toString("utf8")));
+    req.on("end", () => resolve(size > maxBytes ? undefined : Buffer.concat(chunks)));
     req.on("error", reject);
   });
+
+const readBody = async (req: IncomingMessage): Promise<string | undefined> =>
+  (await readBytes(req, MAX_BODY_BYTES))?.toString("utf8");
 
 const parseLine = (body: string): string | undefined => {
   try {
@@ -84,7 +89,7 @@ const sendPreview = (res: ServerResponse, result: PreviewResult) => {
   res.end(result.body);
 };
 
-export const startWebServer = async ({ port, token, feed, page, onInput, listFiles, preview, onError }: WebServerOptions): Promise<WebServerHandle> => {
+export const startWebServer = async ({ port, token, feed, page, onInput, listFiles, preview, upload, onError }: WebServerOptions): Promise<WebServerHandle> => {
   const streams = new Set<ServerResponse>();
 
   const handleEvents = (req: IncomingMessage, res: ServerResponse) => {
@@ -115,6 +120,14 @@ export const startWebServer = async ({ port, token, feed, page, onInput, listFil
     res.writeHead(HTTP.noContent).end();
   };
 
+  const handleUpload = async (req: IncomingMessage, res: ServerResponse) => {
+    const contentType = (req.headers["content-type"] ?? "").split(";")[0]?.trim() ?? "";
+    if (!upload.accepts(contentType)) return void res.writeHead(HTTP.unsupported).end();
+    const body = await readBytes(req, upload.maxBytes);
+    if (body === undefined) return void res.writeHead(HTTP.tooLarge).end();
+    sendJson(res, { path: await upload.save(contentType, body) });
+  };
+
   const handle = async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", `http://${HOST}`);
     const queryToken = url.searchParams.get("token") ?? undefined;
@@ -141,6 +154,7 @@ export const startWebServer = async ({ port, token, feed, page, onInput, listFil
     if (req.method === "GET" && url.pathname === "/api/file" && previewPath) return sendPreview(res, await preview.file(previewPath));
     if (req.method === "GET" && url.pathname === "/api/diff" && previewPath) return sendPreview(res, await preview.diff(previewPath));
     if (req.method === "POST" && url.pathname === "/api/input") return handleInput(req, res);
+    if (req.method === "POST" && url.pathname === "/api/upload") return handleUpload(req, res);
     res.writeHead(HTTP.notFound).end();
   };
 

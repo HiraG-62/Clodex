@@ -852,6 +852,39 @@ export function clientMain({
     updateSuggest();
   }
 
+  // ---- 画像の添付（DESIGN.md §28 v0.3 C）: 保存してから @<パス> を入力欄に足す ----
+  const insertAtCaret = (text: string) => {
+    const start = input.selectionStart;
+    const before = input.value.slice(0, start);
+    const spacer = before && !/\s$/.test(before) ? " " : "";
+    input.value = `${before}${spacer}${text}${input.value.slice(input.selectionEnd)}`;
+    const caret = before.length + spacer.length + text.length;
+    input.setSelectionRange(caret, caret);
+    onInputChanged();
+  };
+  const attach = async (file: Blob) => {
+    try {
+      const response = await fetch("/api/upload", { method: "POST", headers: { "content-type": file.type }, body: file });
+      if (!response.ok) return showToast(t("web.upload.failed"));
+      const { path } = (await response.json()) as { path: string };
+      insertAtCaret(`@${path} `);
+    } catch {
+      showToast(t("web.upload.failed"));
+    }
+  };
+  const fileInput = document.querySelector<HTMLInputElement>("#attach-file")!;
+  $("#attach").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    for (const file of fileInput.files ?? []) void attach(file);
+    fileInput.value = "";
+  });
+  input.addEventListener("paste", (e) => {
+    const images = [...(e.clipboardData?.files ?? [])].filter((file) => file.type.startsWith("image/"));
+    if (!images.length) return;
+    e.preventDefault();
+    for (const image of images) void attach(image);
+  });
+
   input.addEventListener("input", onInputChanged);
   input.addEventListener("focus", () => void loadFiles());
   input.addEventListener("blur", closeSuggest);

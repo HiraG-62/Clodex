@@ -28,8 +28,9 @@ import { startWebServer } from "./web/web-server.js";
 import { connectWebFeed } from "./web/web-ui.js";
 import { loadOrCreateWebToken } from "./web/web-token.js";
 import { ConversationHistory, conversationStatePath } from "./project/conversation-history.js";
-import { artifactsDirPath, createFilePreview } from "./project/file-preview.js";
-import { isProjectFile, listProjectFiles } from "./project/project-files.js";
+import { artifactsDirPath, createFilePreview, uploadsDirPath } from "./project/file-preview.js";
+import { listProjectFiles } from "./project/project-files.js";
+import { MAX_UPLOAD_BYTES, isUploadType, saveUpload } from "./project/uploads.js";
 import { AgentSettingsStore, agentSettingsPath, resolveStartSettings, type SavedAgentSettings } from "./project/agent-settings.js";
 
 const PROMPT = "clodex> ";
@@ -61,6 +62,9 @@ const main = async (): Promise<void> => {
   // Agent が証跡の画像を置く場所（DESIGN.md §28 v0.3 B）
   const artifactsDir = artifactsDirPath(homedir(), statePath);
   mkdirSync(artifactsDir, { recursive: true });
+  const uploadsDir = uploadsDirPath(homedir(), statePath);
+  // 成果物のプレビューと @path の参照で読んでよい範囲（DESIGN.md §28 v0.3 B・C）
+  const preview = createFilePreview({ projectRoot, allowedDirs: [artifactsDir, uploadsDir] });
   const history = new ConversationHistory(statePath, { resumeLatest: args.resume });
   const resumeSessionIds = history.currentSessions;
   history.attach(bus);
@@ -139,7 +143,7 @@ const main = async (): Promise<void> => {
   const runner = createCommandRunner({ cwd: projectRoot, print });
   const shell = createShell({
     coordinator, primary, print, toggleVerbose, history, runner,
-    isProjectFile: (path) => isProjectFile(projectRoot, path),
+    resolveReference: preview.locate,
     saveSettings: (agents, change) => {
       try {
         settingsStore.update(agents, change);
@@ -174,7 +178,11 @@ const main = async (): Promise<void> => {
         if ((await handleLine(line)) === "exit") void shutdown();
       },
       listFiles: () => listProjectFiles(projectRoot),
-      preview: createFilePreview({ projectRoot, artifactsDir }),
+      preview,
+      upload: {
+        maxBytes: MAX_UPLOAD_BYTES, accepts: isUploadType,
+        save: (contentType, body) => saveUpload(uploadsDir, contentType, body),
+      },
       onError: (error) => print(t("error.generic", { message: errorMessage(error) })),
     })
     : undefined;

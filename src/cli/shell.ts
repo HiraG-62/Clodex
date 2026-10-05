@@ -4,7 +4,7 @@ import type { UsageSnapshot } from "../coordinator/usage-monitor.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
 import { t } from "../i18n/i18n.js";
 import { commandUsage, slashCommands } from "./commands.js";
-import { appendFileReferences } from "./file-references.js";
+import { resolveReferences } from "./file-references.js";
 import { parseInput } from "./input.js";
 
 export interface AgentState {
@@ -18,7 +18,7 @@ export interface AgentState {
 }
 
 export interface ShellCoordinator {
-  sendToAgent(agent: AgentId, text: string): Promise<TurnResult>;
+  sendToAgent(agent: AgentId, text: string, images?: readonly string[]): Promise<TurnResult>;
   steerOrSend(agent: AgentId, text: string): Promise<"steered" | "queued">;
   interrupt(agent?: AgentId): Promise<void>;
   compact(agent?: AgentId): Promise<unknown>;
@@ -67,8 +67,8 @@ export interface ShellOptions {
   runner: CommandRunner;
   // 人が切り替えた設定を保存する（DESIGN.md §9 Agent の設定の保存）
   saveSettings?: (agents: readonly AgentId[], change: SettingsChange) => void;
-  // @path の参照先が project のファイルか（DESIGN.md §28 v0.3 A）
-  isProjectFile?: (path: string) => boolean;
+  // @path の参照先が読んでよいファイルなら実パス（DESIGN.md §28 v0.3 A・C）
+  resolveReference?: (path: string) => Promise<string | undefined>;
 }
 
 export interface SettingsChange {
@@ -133,7 +133,7 @@ const agentsOf = (c: Conversation) => (Object.keys(c.sessions) as AgentId[]).sor
 const titleOf = (c: Conversation) => `"${c.title ?? t("shell.untitled")}"`;
 
 export const createShell = ({
-  coordinator, primary: initialPrimary, print, toggleVerbose, history, runner, saveSettings = () => {}, isProjectFile = () => false,
+  coordinator, primary: initialPrimary, print, toggleVerbose, history, runner, saveSettings = () => {}, resolveReference = async () => undefined,
 }: ShellOptions) => {
   let primary = initialPrimary;
   const targets = (agent: AgentId | undefined): readonly AgentId[] => (agent ? [agent] : AGENT_IDS);
@@ -180,12 +180,15 @@ export const createShell = ({
         return "continue";
       case "send":
         // 送信はキューに積むだけ。ターン完了は Event Bus 経由で表示される
+      {
+        const { text, images } = await resolveReferences(command.text, resolveReference);
         if (command.steer) {
-          await coordinator.steerOrSend(command.agent, appendFileReferences(command.text, isProjectFile));
+          await coordinator.steerOrSend(command.agent, text);
           return "continue";
         }
-        void coordinator.sendToAgent(command.agent, appendFileReferences(command.text, isProjectFile));
+        void coordinator.sendToAgent(command.agent, text, images);
         return "continue";
+      }
       case "interrupt":
         if (!command.agent) runner.stopAll();
         await coordinator.interrupt(command.agent);

@@ -169,13 +169,14 @@ export class CodexAdapter extends BaseAgentAdapter {
     this.interruptPending = false;
   }
 
-  protected writeTurn(text: string): void {
+  protected writeTurn(text: string, images: readonly string[] = []): void {
     this.resetTurnState();
     const sandbox = this.pendingSandbox;
     this.pendingSandbox = undefined;
     this.request("turn/start", {
       threadId: this.sessionId,
-      input: [{ type: "text", text, text_elements: [] }],
+      // 画像は localImage で渡す（docs/spikes/steer-image-subagent.md）
+      input: [{ type: "text", text, text_elements: [] }, ...images.map((path) => ({ type: "localImage", path }))],
       ...(sandbox ? { sandboxPolicy: SANDBOX_POLICY[sandbox] } : {}),
       ...(this.model ? { model: this.model } : {}),
       ...(this.effort ? { effort: this.effort } : {}),

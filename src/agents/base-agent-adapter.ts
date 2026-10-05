@@ -48,7 +48,7 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
     this.effort = level;
   }
   protected abstract handleMessage(message: unknown): void;
-  protected abstract writeTurn(text: string): void;
+  protected abstract writeTurn(text: string, images: readonly string[]): void;
   protected abstract writeCompact(): void;
 
   onEvent(handler: AgentEventHandler): () => void {
@@ -56,8 +56,8 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
     return () => this.handlers.delete(handler);
   }
 
-  send(text: string): Promise<TurnResult> {
-    return this.beginTurn(() => this.writeTurn(text));
+  send(text: string, images: readonly string[] = []): Promise<TurnResult> {
+    return this.beginTurn(() => this.writeTurn(text, images));
   }
 
   compact(): Promise<TurnResult> {

@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { extname } from "node:path";
 import {
   COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, summarizeToolInput,
   type AgentStartOptions, type PermissionLevel, type RateLimitWindow, type TurnResult,
@@ -17,6 +19,15 @@ const COMPACT_COMMAND = "/compact";
 const EDIT_TOOL_PATH_KEYS: Record<string, string> = {
   Edit: "file_path", Write: "file_path", MultiEdit: "file_path", NotebookEdit: "notebook_path",
 };
+
+// 画像は user message の image block（base64）で渡す（docs/spikes/steer-image-subagent.md）
+const IMAGE_MEDIA_TYPES: Record<string, string> = {
+  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp",
+};
+const imageBlock = (path: string) => ({
+  type: "image",
+  source: { type: "base64", media_type: IMAGE_MEDIA_TYPES[extname(path).toLowerCase()] ?? "image/png", data: readFileSync(path).toString("base64") },
+});
 
 const editedFiles = (name: string, input: unknown): string[] | undefined => {
   const key = EDIT_TOOL_PATH_KEYS[name];
@@ -166,9 +177,10 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     }));
   }
 
-  protected writeTurn(text: string): void {
+  protected writeTurn(text: string, images: readonly string[] = []): void {
     this.interruptRequested = false;
-    this.proc?.write(JSON.stringify({ type: "user", message: { role: "user", content: text } }));
+    const content = images.length ? [...images.map(imageBlock), { type: "text", text }] : text;
+    this.proc?.write(JSON.stringify({ type: "user", message: { role: "user", content } }));
   }
 
   // stream-json に /compact を送ると 1 ターンとして compact される（docs/spikes/compact.md）

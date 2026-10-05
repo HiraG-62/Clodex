@@ -25,7 +25,7 @@ describe("buildWebPage", () => {
 
   it("画面の振る舞いに必要な要素がそろっている", () => {
     const { html } = buildWebPage("ja");
-    for (const id of ["log", "newer", "input", "input-highlight", "suggest", "pending", "open-artifacts", "composer", "status", "agents", "conversations", "sheet", "conn", "toast", "detail"]) {
+    for (const id of ["log", "newer", "input", "input-highlight", "suggest", "pending", "open-artifacts", "attach", "attach-file", "composer", "status", "agents", "conversations", "sheet", "conn", "toast", "detail"]) {
       expect(html).toContain(`id="${id}"`);
     }
   });

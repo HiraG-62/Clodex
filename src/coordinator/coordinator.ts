@@ -107,7 +107,7 @@ export class Coordinator {
     const mailbox = this.mailboxes[message.to];
     const steerable = message.interrupt && mailbox.current?.from === message.from;
     if (steerable && await this.options.agents[message.to].steer(envelope)) return;
-    await mailbox.enqueue(envelope, message);
+    await mailbox.enqueue(envelope, { message });
   }
 
   // @agent!: 実行中なら steer し、そうでなければ通常の送信（DESIGN.md §28 v0.3 C）
@@ -120,9 +120,9 @@ export class Coordinator {
     return "queued";
   }
 
-  sendToAgent(id: AgentId, text: string): Promise<TurnResult> {
+  sendToAgent(id: AgentId, text: string, images: readonly string[] = []): Promise<TurnResult> {
     this.options.bus.publish({ kind: "human", agent: id, text });
-    return this.mailboxes[id].enqueue(text, undefined, `${INPUT_ID_PREFIX}${++this.inputSeq}`);
+    return this.mailboxes[id].enqueue(text, { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, images });
   }
 
   // 送った順（ID の連番順）に並べる

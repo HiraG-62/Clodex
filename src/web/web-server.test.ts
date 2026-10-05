@@ -28,6 +28,7 @@ const setup = async (onInput?: (line: string) => Promise<void>) => {
         : { ok: false as const, status: 404, message: `not found: ${path}` }),
       diff: async () => ({ ok: true as const, contentType: "text/plain; charset=utf-8", body: Buffer.from("+x") }),
     },
+    upload: { maxBytes: 4, accepts: (type) => type === "image/png", save: async (type, body) => `C:/up/${body.length}.${type.slice(6)}` },
   });
   return { feed, inputs, errors, base: server.url };
 };
@@ -165,6 +166,17 @@ describe("startWebServer", () => {
     expect((await fetch(`${base}/api/file?path=b.txt`, { headers: { cookie: COOKIE } })).status).toBe(404);
     expect(await (await fetch(`${base}/api/diff?path=a.ts`, { headers: { cookie: COOKIE } })).text()).toBe("+x");
     expect((await fetch(`${base}/api/file?path=a.png`)).status).toBe(401);
+  });
+
+  it("POST /api/upload は画像を保存してパスを返し、種類違い・大きすぎ・token なしは拒否する", async () => {
+    const { base } = await setup();
+    const post = (type: string, body: number[], cookie = COOKIE) =>
+      fetch(`${base}/api/upload`, { method: "POST", headers: { cookie, "content-type": type }, body: new Blob([new Uint8Array(body)]) });
+    const ok = await post("image/png", [1, 2, 3]);
+    expect(await ok.json()).toEqual({ path: "C:/up/3.png" });
+    expect((await post("text/html", [1])).status).toBe(415);
+    expect((await post("image/png", [1, 2, 3, 4, 5])).status).toBe(413);
+    expect((await post("image/png", [1], "")).status).toBe(401);
   });
 
   it("未知の path は 404", async () => {

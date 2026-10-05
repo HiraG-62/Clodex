@@ -439,3 +439,19 @@ describe("ClaudeAdapter の steer", () => {
     expect(adapter.status).toBe("busy");
   });
 });
+
+describe("ClaudeAdapter の画像", () => {
+  it("画像は base64 の image block として本文の前に並べる", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const path = join(mkdtempSync(join(tmpdir(), "clodex-img-")), "a.png");
+    writeFileSync(path, Buffer.from([1, 2, 3]));
+    const { adapter, proc } = await setup();
+    void adapter.send("見て", [path]);
+    expect(proc.written).toContainEqual({ type: "user", message: { role: "user", content: [
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "AQID" } },
+      { type: "text", text: "見て" },
+    ] } });
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appendFileReferences, extractFileReferences } from "./file-references.js";
+import { appendFileReferences, extractFileReferences, resolveReferences } from "./file-references.js";
 
 describe("extractFileReferences", () => {
   it("空白の後の @path を取り出し、重複を除く", () => {
@@ -20,14 +20,20 @@ describe("extractFileReferences", () => {
 });
 
 describe("appendFileReferences", () => {
-  const exists = (path: string) => ["src/a.ts", "README.md"].includes(path);
-
-  it("存在するファイルだけを末尾に列挙する", () => {
-    expect(appendFileReferences("@src/a.ts と @codex と @nope.ts", exists))
-      .toBe("@src/a.ts と @codex と @nope.ts\n\nReferenced files:\n- src/a.ts");
+  it("ファイルを末尾に列挙し、無ければ本文をそのまま返す", () => {
+    expect(appendFileReferences("見て", ["src/a.ts"])).toBe("見て\n\nReferenced files:\n- src/a.ts");
+    expect(appendFileReferences("hello", [])).toBe("hello");
   });
+});
 
-  it("参照が無ければ本文をそのまま返す", () => {
-    expect(appendFileReferences("hello @nope", exists)).toBe("hello @nope");
+describe("resolveReferences", () => {
+  const files: Record<string, string> = { "src/a.ts": "C:/p/src/a.ts", "C:/up/shot.png": "C:/up/shot.png" };
+  const resolve = async (path: string) => files[path];
+
+  it("読めるファイルだけを末尾に並べ、画像は実パスで返す", async () => {
+    await expect(resolveReferences("@src/a.ts と @C:/up/shot.png と @nope.ts", resolve)).resolves.toEqual({
+      text: "@src/a.ts と @C:/up/shot.png と @nope.ts\n\nReferenced files:\n- src/a.ts\n- C:/up/shot.png",
+      images: ["C:/up/shot.png"],
+    });
   });
 });

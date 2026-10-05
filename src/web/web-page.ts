@@ -220,6 +220,8 @@ const STYLE = `
   .to button[aria-pressed="true"] { background: var(--panel); color: var(--fg); box-shadow: 0 0 0 1px var(--line); }
   .to button[data-agent="claude"][aria-pressed="true"]::before { background: var(--claude); opacity: 1; }
   .to button[data-agent="codex"][aria-pressed="true"]::before { background: var(--codex); opacity: 1; }
+  .attach { margin-left: auto; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 7px 12px; font-size: 12.5px; color: var(--fg-2); }
+  .attach + input + .send { margin-left: 0; }
   .send { margin-left: auto; border: 0; border-radius: 6px; padding: 8px 16px; font-weight: 600; font-size: 13px; background: var(--invert-bg); color: var(--invert-fg); }
 
   .conn { padding: 6px 16px; font-size: 12.5px; background: var(--warn); color: var(--invert-fg); text-align: center; }
@@ -294,6 +296,8 @@ const body = (messages: Messages) => {
           <button type="button" data-agent="claude" aria-pressed="true">Claude</button>
           <button type="button" data-agent="codex" aria-pressed="false">Codex</button>
         </div>
+        <button class="attach" type="button" id="attach" title="${m("web.attach.label")}">${m("web.attach")}</button>
+        <input type="file" id="attach-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
         <button class="send" type="submit">${m("web.send")}</button>
       </div>
     </div>

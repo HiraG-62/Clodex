@@ -57,7 +57,8 @@ export interface AgentAdapter {
   readonly effort: string | undefined;
 
   start(options: AgentStartOptions): Promise<void>;
-  send(text: string): Promise<TurnResult>;
+  // images: 画像のファイル（実パス）。Agent に画像として渡す（DESIGN.md §28 v0.3 C）
+  send(text: string, images?: readonly string[]): Promise<TurnResult>;
   // 手動 compact。1 ターンとして扱う（docs/spikes/compact.md）
   compact(): Promise<TurnResult>;
   // 実行中のターンに指示を足す。足せなければ false（DESIGN.md §28 v0.3 C）

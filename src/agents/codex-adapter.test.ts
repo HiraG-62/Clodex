@@ -418,3 +418,15 @@ describe("CodexAdapter の steer", () => {
     await expect(rejected).resolves.toBe(false);
   });
 });
+
+describe("CodexAdapter の画像", () => {
+  it("画像は localImage として turn/start に並べる", async () => {
+    const { adapter, started, proc } = await setup();
+    await started;
+    void adapter.send("見て", ["C:\\up\\a.png"]);
+    await flush();
+    expect(proc.writtenWith("method", "turn/start")[0]!.params).toMatchObject({
+      input: [{ type: "text", text: "見て", text_elements: [] }, { type: "localImage", path: "C:\\up\\a.png" }],
+    });
+  });
+});

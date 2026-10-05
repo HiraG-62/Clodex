@@ -25,7 +25,9 @@ export class FakeAgentAdapter implements AgentAdapter {
     this.status = "idle";
   }
 
-  send(text: string): Promise<TurnResult> {
+  readonly sentImages: Array<readonly string[]> = [];
+  send(text: string, images: readonly string[] = []): Promise<TurnResult> {
+    if (images.length) this.sentImages.push(images);
     if (this.status !== "idle") return Promise.reject(new Error(`${this.id} is ${this.status}`));
     this.sent.push(text);
     this.status = "busy";

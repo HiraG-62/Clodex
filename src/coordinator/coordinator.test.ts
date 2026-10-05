@@ -484,3 +484,12 @@ describe("Coordinator の割り込み（steer）", () => {
     expect(claude.steered).toEqual([]);
   });
 });
+
+describe("Coordinator の画像", () => {
+  it("人間の入力に添えた画像を Agent に渡す", async () => {
+    const { codex, coordinator } = setup();
+    void coordinator.sendToAgent("codex", "見て", ["C:/up/a.png"]);
+    await flush();
+    expect(codex.sentImages).toEqual([["C:/up/a.png"]]);
+  });
+});

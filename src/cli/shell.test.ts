@@ -98,8 +98,10 @@ class FakeCoordinator implements ShellCoordinator {
     return "steered";
   }
 
-  sendToAgent(agent: AgentId, text: string): Promise<TurnResult> {
+  readonly images: Array<readonly string[] | undefined> = [];
+  sendToAgent(agent: AgentId, text: string, images?: readonly string[]): Promise<TurnResult> {
     this.sent.push({ agent, text });
+    this.images.push(images);
     return new Promise(() => {}); // ターン完了を待たずに次の入力を受け付けることを確認する
   }
 
@@ -144,7 +146,7 @@ const setup = () => {
   const shell = createShell({
     coordinator, primary: "claude", print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history, runner,
     saveSettings: (agents, change) => saved.push({ agents, change }),
-    isProjectFile: (path) => path === "src/a.ts",
+    resolveReference: async (path) => ({ "src/a.ts": "C:/p/src/a.ts", "shot.png": "C:/up/shot.png" } as Record<string, string>)[path],
   });
   return { coordinator, printed, shell, history, runner, saved };
 };
@@ -155,6 +157,12 @@ describe("createShell", () => {
     await expect(shell.handleLine("hello")).resolves.toBe("continue");
     await expect(shell.handleLine("@codex review")).resolves.toBe("continue");
     expect(coordinator.sent).toEqual([{ agent: "claude", text: "hello" }, { agent: "codex", text: "review" }]);
+  });
+
+  it("@path の画像は実パスで Agent に画像として渡す", async () => {
+    const { coordinator, shell } = setup();
+    await shell.handleLine("@codex @shot.png を見て");
+    expect(coordinator.images).toEqual([["C:/up/shot.png"]]);
   });
 
   it("@agent! は Coordinator の steerOrSend に渡す", async () => {

@@ -17,7 +17,7 @@ const setup = (limits = {}) => {
   writeFileSync(join(root, "bin.dat"), Buffer.from([1, 0, 2, 3]));
   writeFileSync(join(artifacts, "shot.png"), PNG);
   writeFileSync(join(outside, "secret.txt"), "secret");
-  const preview = createFilePreview({ projectRoot: root, artifactsDir: artifacts, ...limits });
+  const preview = createFilePreview({ projectRoot: root, allowedDirs: [artifacts], ...limits });
   return { root, artifacts, outside, preview };
 };
 
@@ -61,6 +61,15 @@ describe("createFilePreview.file", () => {
     const { preview } = setup({ maxTextBytes: 8 });
     await expect(preview.file("bin.dat")).resolves.toMatchObject({ ok: false, status: 415 });
     await expect(preview.file("src/a.ts")).resolves.toMatchObject({ ok: false, status: 413 });
+  });
+});
+
+describe("createFilePreview.locate", () => {
+  it("読んでよいファイルなら実パス、そうでなければ undefined", async () => {
+    const { root, outside, preview } = setup();
+    expect(await preview.locate("src/a.ts")).toMatch(/a\.ts$/);
+    expect(await preview.locate(join(outside, "secret.txt"))).toBeUndefined();
+    expect(await preview.locate(join(root, "missing"))).toBeUndefined();
   });
 });
 
