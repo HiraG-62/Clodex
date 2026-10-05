@@ -3,7 +3,8 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CoordinatorEvent } from "../coordinator/event-bus.js";
-import { createJsonlWriter, defaultLogPath, formatEvent } from "./event-log.js";
+import { EventBus } from "../coordinator/event-bus.js";
+import { attachEventLog, createJsonlWriter, defaultLogPath, formatEvent } from "./event-log.js";
 
 // ローカル時刻 14:32:10 の ISO 文字列（タイムゾーンに依存しないテストにする）
 const AT = new Date(2026, 9, 5, 14, 32, 10).toISOString();
@@ -110,5 +111,27 @@ describe("defaultLogPath", () => {
   it("ホームの .clodex/logs に project 名と起動時刻で置く", () => {
     const path = defaultLogPath("C:\\dev\\my-app", new Date(2026, 9, 5, 14, 32, 10));
     expect(path).toBe(join(homedir(), ".clodex", "logs", "my-app-20261005-143210.jsonl"));
+  });
+
+  it("ドライブ直下では project root の置換名を使う", () => {
+    expect(defaultLogPath("C:\\", new Date(2026, 9, 5, 14, 32, 10)))
+      .toBe(join(homedir(), ".clodex", "logs", "C---20261005-143210.jsonl"));
+  });
+});
+
+describe("attachEventLog", () => {
+  it("全 event を JSONL に保存し、表示モードに合う行だけ印字する", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "clodex-log-")), "log.jsonl");
+    const bus = new EventBus(() => new Date(AT));
+    const printed: string[] = [];
+    const detach = attachEventLog(bus, { path, print: (line) => printed.push(line), mode: () => "normal" });
+    const hidden = agentEvent("claude", { type: "text", text: "途中" });
+    const shown = agentEvent("claude", { type: "turn", result: { status: "completed", text: "完了" } });
+    bus.publish(hidden);
+    bus.publish(shown);
+    detach();
+    bus.publish(agentEvent("claude", { type: "error", message: "後続" }));
+    expect(readFileSync(path, "utf8").trim().split("\n").map((line) => JSON.parse(line))).toEqual([hidden, shown]);
+    expect(printed).toEqual([formatEvent(shown, "normal")]);
   });
 });

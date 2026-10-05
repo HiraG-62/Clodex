@@ -89,7 +89,8 @@ export const createJsonlWriter = (path: string) => {
 export const defaultLogPath = (projectRoot: string, startedAt: Date): string => {
   const d = startedAt;
   const stamp = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
-  return join(homedir(), LOG_DIR, `${basename(projectRoot)}-${stamp}${LOG_EXTENSION}`);
+  const name = basename(projectRoot) || projectRoot.replace(/[^A-Za-z0-9]/g, "-");
+  return join(homedir(), LOG_DIR, `${name}-${stamp}${LOG_EXTENSION}`);
 };
 
 export interface EventLogOptions {
