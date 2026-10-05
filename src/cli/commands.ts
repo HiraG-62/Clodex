@@ -24,7 +24,7 @@ const SPECS: readonly SlashCommandSpec[] = [
   { name: "rename", args: "<title>", description: "cmd.rename" },
   { name: "delete", args: "<number>", description: "cmd.delete" },
   { name: "pin", args: "<number>", description: "cmd.pin" },
-  { name: "new", args: "[agent]", description: "cmd.new" },
+  { name: "new", args: "[worktree|agent]", description: "cmd.new" },
   { name: "compact", args: "[agent]", description: "cmd.compact" },
   { name: "permission", args: "[agent] <read-only|edit|full>", description: "cmd.permission" },
   { name: "model", args: "<agent> <model>", description: "cmd.model" },

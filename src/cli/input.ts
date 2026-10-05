@@ -15,7 +15,7 @@ export type ShellCommand =
   | { kind: "effort"; agent?: AgentId; level: string }
   | { kind: "primary"; agent: AgentId }
   | { kind: "resume"; index?: number }
-  | { kind: "new"; agent?: AgentId }
+  | { kind: "new"; agent?: AgentId; worktree?: true }
   | { kind: "compact"; agent?: AgentId }
   | { kind: "cancel"; id?: string }
   | { kind: "rename"; title: string }
@@ -67,6 +67,8 @@ const parseEffort = (arg: string): ShellCommand => {
 };
 
 // /resume の一覧の番号（1 始まり）
+const NEW_WORKTREE_ARG = "worktree";
+
 const isConversationNumber = (arg: string) => /^[1-9]\d*$/.test(arg);
 
 const unsupported = (feature: string): ShellCommand =>
@@ -97,6 +99,10 @@ const parseCommand = (name: string, arg: string): ShellCommand => {
     case "effort":
       return parseEffort(arg);
     case "new":
+      // /new worktree: 新しい会話を worktree で始める（DESIGN.md §28 D1）
+      if (arg === NEW_WORKTREE_ARG) return { kind: "new", worktree: true };
+      if (!arg) return { kind: name };
+      return isAgentId(arg) ? { kind: name, agent: arg } : unknownAgent(arg);
     case "compact":
       if (!arg) return { kind: name };
       return isAgentId(arg) ? { kind: name, agent: arg } : unknownAgent(arg);

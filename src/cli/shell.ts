@@ -40,8 +40,10 @@ export interface PendingInput {
 export interface ConversationList {
   readonly currentId: string;
   list(): Conversation[];
-  switchTo(id: string): Conversation | undefined;
-  startNew(): void;
+  // 今の会話を切り替える。前の会話の Agent は止めない（DESIGN.md §28 D1）
+  switchTo(id: string): Promise<Conversation | undefined>;
+  // worktree: 新しい会話用の worktree を作る。作れなければ理由を返す
+  startNew(options?: { worktree?: boolean }): Promise<string | undefined>;
   clearSession(agent: AgentId): void;
   rename(title: string): void;
   // 削除できなければ理由を返す
@@ -58,7 +60,10 @@ export interface CommandRunner {
 }
 
 export interface ShellOptions {
-  coordinator: ShellCoordinator;
+  // 今の会話の Coordinator（会話ごとに Coordinator がある。DESIGN.md §28 D1）
+  coordinator: () => ShellCoordinator;
+  // 同じ作業場所で別の会話の Agent が作業中か（送る前に worktree を勧める）
+  busyElsewhere?: () => boolean;
   primary: AgentId;
   print: (line: string) => void;
   // terminal の詳細表示を切り替え、切り替え後の状態を返す
@@ -134,6 +139,7 @@ const titleOf = (c: Conversation) => `"${c.title ?? t("shell.untitled")}"`;
 
 export const createShell = ({
   coordinator, primary: initialPrimary, print, toggleVerbose, history, runner, saveSettings = () => {}, resolveReference = async () => undefined,
+  busyElsewhere = () => false,
 }: ShellOptions) => {
   let primary = initialPrimary;
   const targets = (agent: AgentId | undefined): readonly AgentId[] => (agent ? [agent] : AGENT_IDS);
@@ -146,25 +152,25 @@ export const createShell = ({
     print(t("shell.resumeHint"));
   };
 
-  const startFresh = async (agent: AgentId | undefined) => {
-    const error = await coordinator.switchSessions({}, agent ? [agent] : undefined);
-    if (error) return print(error);
+  const startFresh = async (agent: AgentId | undefined, worktree: boolean) => {
     if (agent) {
+      const error = await coordinator().switchSessions({}, [agent]);
+      if (error) return print(error);
       history.clearSession(agent);
       return print(t("shell.agentFresh", { agent }));
     }
-    history.startNew();
-    print(t("shell.newConversation"));
+    const error = await history.startNew({ worktree });
+    if (error) return print(t("shell.worktreeFailed", { error }));
+    const { workDir, branch } = history.list().find((c) => c.id === history.currentId) ?? {};
+    print(workDir && branch ? t("shell.newWorktree", { workDir, branch }) : t("shell.newConversation"));
   };
 
   const resumeConversation = async (index: number) => {
     const picked = pickConversation(index);
     if (!picked) return;
     if (picked.id === history.currentId) return print(t("shell.alreadyHere"));
-    const error = await coordinator.switchSessions(picked.sessions);
-    if (error) return print(error);
-    history.switchTo(picked.id);
-    print(t("shell.resumed", { title: titleOf(picked), agents: agentsOf(picked) }));
+    await history.switchTo(picked.id);
+    print(t("shell.resumed", { title: titleOf(picked) }));
   };
 
   const pickConversation = (index: number) => {
@@ -181,17 +187,18 @@ export const createShell = ({
       case "send":
         // 送信はキューに積むだけ。ターン完了は Event Bus 経由で表示される
       {
+        if (busyElsewhere()) print(t("notice.sameDirBusy"));
         const { text, images } = await resolveReferences(command.text, resolveReference);
         if (command.steer) {
-          await coordinator.steerOrSend(command.agent, text);
+          await coordinator().steerOrSend(command.agent, text);
           return "continue";
         }
-        void coordinator.sendToAgent(command.agent, text, images);
+        void coordinator().sendToAgent(command.agent, text, images);
         return "continue";
       }
       case "interrupt":
         if (!command.agent) runner.stopAll();
-        await coordinator.interrupt(command.agent);
+        await coordinator().interrupt(command.agent);
         return "continue";
       case "run":
         // 終了を待たずに次の入力を受け付ける。出力は runner が表示する
@@ -199,7 +206,11 @@ export const createShell = ({
         return "continue";
       case "status":
         print(t("shell.primary", { agent: primary }));
-        for (const { id, status, sessionId, permission, model, effort, usage } of coordinator.status()) {
+        {
+          const { workDir, branch } = history.list().find((c) => c.id === history.currentId) ?? {};
+          if (workDir && branch) print(t("shell.worktree", { workDir, branch }));
+        }
+        for (const { id, status, sessionId, permission, model, effort, usage } of coordinator().status()) {
           print(t("shell.status", {
             id, status, permission, model: model ?? t("shell.default"), effort: effort ?? t("shell.default"),
             session: sessionId ? t("shell.session", { id: sessionId }) : "",
@@ -207,21 +218,21 @@ export const createShell = ({
           print(formatUsage(usage));
           print(formatContext(usage));
         }
-        for (const input of coordinator.pendingInputs()) print(t("shell.queued", { id: input.id, agent: input.agent, text: input.text }));
+        for (const input of coordinator().pendingInputs()) print(t("shell.queued", { id: input.id, agent: input.agent, text: input.text }));
         return "continue";
       case "cancel": {
-        const canceled = coordinator.cancelInput(command.id);
+        const canceled = coordinator().cancelInput(command.id);
         print(canceled
           ? t("shell.canceled", { id: canceled.id, agent: canceled.agent })
           : t("shell.nothingToCancel", { id: command.id ? `: ${command.id}` : "" }));
         return "continue";
       }
       case "new":
-        await startFresh(command.agent);
+        await startFresh(command.agent, command.worktree === true);
         return "continue";
       case "compact":
         // 1 ターンとしてキューに積むだけ。進み具合は Event Bus 経由で表示される
-        void coordinator.compact(command.agent);
+        void coordinator().compact(command.agent);
         print(t("shell.compactQueued", { target: command.agent ?? t("shell.runningAgents") }));
         return "continue";
       case "resume":
@@ -252,18 +263,18 @@ export const createShell = ({
         HELP_LINES(primary).forEach((l) => print(l));
         return "continue";
       case "permission":
-        await coordinator.setPermission(command.level, command.agent);
+        await coordinator().setPermission(command.level, command.agent);
         saveSettings(targets(command.agent), { permission: command.level });
         print(t("shell.permission", { target: command.agent ?? t("shell.allAgents"), level: command.level }));
         return "continue";
       case "model":
-        if ((await coordinator.setModel(command.model, command.agent))?.status !== "failed") {
+        if ((await coordinator().setModel(command.model, command.agent))?.status !== "failed") {
           saveSettings([command.agent], { model: command.model });
           print(t("shell.model", { agent: command.agent, model: command.model }));
         }
         return "continue";
       case "effort":
-        if ((await coordinator.setEffort(command.level, command.agent))?.status !== "failed") {
+        if ((await coordinator().setEffort(command.level, command.agent))?.status !== "failed") {
           saveSettings(targets(command.agent), { effort: command.level });
           print(t("shell.effort", { target: command.agent ?? t("shell.allAgents"), level: command.level }));
         }
@@ -281,13 +292,13 @@ export const createShell = ({
   };
 
   const handleSigint = async (): Promise<void> => {
-    const busy = coordinator.status().filter((s) => s.status === "busy");
+    const busy = coordinator().status().filter((s) => s.status === "busy");
     const stoppedCommands = runner.stopAll();
     if (busy.length === 0 && stoppedCommands === 0) {
       print(t("shell.noTurn"));
       return;
     }
-    await Promise.all(busy.map(({ id }) => coordinator.interrupt(id)));
+    await Promise.all(busy.map(({ id }) => coordinator().interrupt(id)));
   };
 
   return { handleLine, handleSigint, getPrimary: () => primary };

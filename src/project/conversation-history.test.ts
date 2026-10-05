@@ -206,3 +206,24 @@ describe("ConversationHistory のリネーム・削除・ピン止め", () => {
     expect(history.togglePin("missing")).toBeUndefined();
   });
 });
+
+describe("ConversationHistory の複数の会話（DESIGN.md §28 D1）", () => {
+  it("attach に会話 ID を渡すと、今の会話でなくてもその会話に session と名前を記録する", () => {
+    const { history, path } = setup();
+    const bus = new EventBus();
+    const firstId = history.currentId;
+    history.attach(bus, firstId);
+    bus.publish({ kind: "human", agent: "claude", text: "最初の会話" });
+    history.startNew();
+    bus.publish({ kind: "agent", agent: "codex", event: { type: "session", sessionId: "x-1" } });
+    const saved = new ConversationHistory(path, { resumeLatest: false }).list().find((c) => c.id === firstId);
+    expect(saved).toMatchObject({ title: "最初の会話", sessions: { codex: "x-1" } });
+  });
+
+  it("作業場所（worktree）付きの新しい会話は、入力の前でも保存する", () => {
+    const { history, path } = setup();
+    history.startNew({ workDir: "C:\dev\app-1a2b", branch: "clodex/1a2b" });
+    expect(history.current).toMatchObject({ workDir: "C:\dev\app-1a2b", branch: "clodex/1a2b" });
+    expect(new ConversationHistory(path, { resumeLatest: true }).current).toMatchObject({ workDir: "C:\dev\app-1a2b" });
+  });
+});

@@ -473,10 +473,12 @@ export function clientMain({
   const conversationList = () => {
     if (!state) return [];
     const nodes: HTMLElement[] = state.conversations.map((conversation, index) => {
-      const row = el("div", `conv-row${conversation.current ? " current" : ""}`);
+      const row = el("div", `conv-row${conversation.current ? " current" : ""}${conversation.activity === "busy" ? " busy" : ""}`);
       const button = el("button", `conv${conversation.current ? " current" : ""}`) as HTMLButtonElement;
       button.type = "button";
-      const meta = `${conversation.pinned ? t("web.conv.pinned") : ""}${shortDate(conversation.updatedAt)} · ${Object.keys(conversation.sessions).join(", ") || "—"}${conversation.current ? t("web.conv.current") : ""}`;
+      const activity = conversation.activity ? `${t(STATUS_LABEL[conversation.activity])} · ` : "";
+      const branch = conversation.branch ? ` · ⎇ ${conversation.branch}` : "";
+      const meta = `${conversation.pinned ? t("web.conv.pinned") : ""}${activity}${shortDate(conversation.updatedAt)} · ${Object.keys(conversation.sessions).join(", ") || "—"}${branch}${conversation.current ? t("web.conv.current") : ""}`;
       button.append(el("span", "t", conversation.title ?? t("web.conv.untitled")), el("span", "m mono", meta));
       button.disabled = conversation.current;
       button.addEventListener("click", () => {

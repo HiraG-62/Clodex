@@ -13,11 +13,15 @@ class FakeHistory implements ConversationList {
     { id: "conv-old", startedAt: at(20), updatedAt: at(26), title: "Remember BANANA", sessions: { claude: "c-old", codex: "x-old" } },
     { id: "conv-none", startedAt: at(10), updatedAt: at(11), sessions: { codex: "x-1" } },
   ];
-  started = 0;
+  started: Array<{ worktree?: boolean } | undefined> = [];
+  worktreeError: string | undefined;
   list() { return this.conversations; }
-  startNew() {
-    this.started++;
+  async startNew(options?: { worktree?: boolean }) {
+    if (options?.worktree && this.worktreeError) return this.worktreeError;
+    this.started.push(options);
     this.currentId = "conv-fresh";
+    if (options?.worktree) this.conversations.push({ id: "conv-fresh", startedAt: at(40), updatedAt: at(40), sessions: {}, workDir: "C:\\dev\\app-1a2b", branch: "clodex/1a2b" });
+    return undefined;
   }
   readonly cleared: AgentId[] = [];
   clearSession(agent: AgentId) {
@@ -37,7 +41,7 @@ class FakeHistory implements ConversationList {
     found.pinned = !found.pinned;
     return found.pinned;
   }
-  switchTo(id: string) {
+  async switchTo(id: string) {
     this.currentId = id;
     return this.conversations.find((c) => c.id === id);
   }
@@ -142,13 +146,14 @@ const setup = () => {
   const printed: string[] = [];
   let verbose = false;
   const history = new FakeHistory();
+  const busy = { value: false };
   const saved: Array<{ agents: readonly AgentId[]; change: object }> = [];
   const shell = createShell({
-    coordinator, primary: "claude", print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history, runner,
+    coordinator: () => coordinator, primary: "claude", busyElsewhere: () => busy.value, print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history, runner,
     saveSettings: (agents, change) => saved.push({ agents, change }),
     resolveReference: async (path) => ({ "src/a.ts": "C:/p/src/a.ts", "shot.png": "C:/up/shot.png" } as Record<string, string>)[path],
   });
-  return { coordinator, printed, shell, history, runner, saved };
+  return { coordinator, printed, shell, history, runner, saved, busy };
 };
 
 describe("createShell", () => {
@@ -323,12 +328,12 @@ describe("createShell", () => {
     ]);
   });
 
-  it("/resume <番号> は会話を切り替える", async () => {
+  it("/resume <番号> は会話を切り替え、前の会話の Agent は止めない", async () => {
     const { coordinator, history, printed, shell } = setup();
     await shell.handleLine("/resume 2");
-    expect(coordinator.switched).toEqual([{ claude: "c-old", codex: "x-old" }]);
+    expect(coordinator.switched).toEqual([]);
     expect(history.currentId).toBe("conv-old");
-    expect(printed).toEqual(['resumed: "Remember BANANA" (claude, codex resume on next use)']);
+    expect(printed).toEqual(['switched to: "Remember BANANA"']);
   });
 
   it("/resume で今の会話や存在しない番号を選んだら何もしない", async () => {
@@ -339,38 +344,47 @@ describe("createShell", () => {
     expect(printed).toEqual(["already in this conversation", "no conversation #9 (see /resume)"]);
   });
 
-  it("切り替えが拒否されたら履歴を変えずに理由を表示する", async () => {
-    const { coordinator, history, printed, shell } = setup();
-    coordinator.switchError = "claude is busy. Use /interrupt first.";
-    await shell.handleLine("/resume 2");
-    expect(history.currentId).toBe("conv-new");
-    expect(printed).toEqual(["claude is busy. Use /interrupt first."]);
-  });
-
-  it("/new は両 Agent を新しい会話で始め直す", async () => {
+  it("/new は新しい会話を今の会話にし、前の会話の Agent は止めない", async () => {
     const { coordinator, history, printed, shell } = setup();
     await shell.handleLine("/new");
-    expect(coordinator.switched).toEqual([{}]);
-    expect(coordinator.switchTargets).toEqual([undefined]);
-    expect(history.started).toBe(1);
+    expect(coordinator.switched).toEqual([]);
+    expect(history.started).toEqual([{ worktree: false }]);
     expect(printed).toEqual(["new conversation (agents start fresh on next use)"]);
+  });
+
+  it("/new worktree は worktree で新しい会話を始め、作れなければ理由を表示する", async () => {
+    const { history, printed, shell } = setup();
+    await shell.handleLine("/new worktree");
+    expect(history.started).toEqual([{ worktree: true }]);
+    expect(printed).toEqual(["new conversation in worktree C:\\dev\\app-1a2b (branch clodex/1a2b)"]);
+    history.worktreeError = "fatal: not a git repository";
+    await shell.handleLine("/new worktree");
+    expect(printed.at(-1)).toBe("could not create a worktree: fatal: not a git repository");
+  });
+
+  it("同じ作業場所で別の会話が作業中なら、送る前に worktree を勧める", async () => {
+    const { busy, coordinator, printed, shell } = setup();
+    busy.value = true;
+    await shell.handleLine("hello");
+    expect(printed).toEqual(["Another chat is working in the same directory. Consider /new worktree for parallel work."]);
+    expect(coordinator.sent).toEqual([{ agent: "claude", text: "hello" }]);
   });
 
   it("/new <agent> はその Agent だけを今の会話の中で始め直す", async () => {
     const { coordinator, history, printed, shell } = setup();
     await shell.handleLine("/new codex");
     expect(coordinator.switchTargets).toEqual([["codex"]]);
-    expect(history.started).toBe(0);
+    expect(history.started).toEqual([]);
     expect(history.cleared).toEqual(["codex"]);
     expect(printed).toEqual(["codex starts a new session on next use"]);
   });
 
-  it("/new が拒否されたら会話を変えずに理由を表示する", async () => {
+  it("/new <agent> が拒否されたら理由を表示する", async () => {
     const { coordinator, history, printed, shell } = setup();
-    coordinator.switchError = "claude is busy. Use /interrupt first.";
-    await shell.handleLine("/new");
-    expect(history.started).toBe(0);
-    expect(printed).toEqual(["claude is busy. Use /interrupt first."]);
+    coordinator.switchError = "codex is busy. Use /interrupt first.";
+    await shell.handleLine("/new codex");
+    expect(history.cleared).toEqual([]);
+    expect(printed).toEqual(["codex is busy. Use /interrupt first."]);
   });
 
   it("/compact は完了を待たずに Coordinator に渡す", async () => {

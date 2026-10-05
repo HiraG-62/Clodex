@@ -5,7 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import type { PreviewResult } from "../project/file-preview.js";
 import type { FeedItem, WebFeed } from "./web-feed.js";
-import type { WebPage } from "./web-page.js";
+import { ICON_SVG, MANIFEST, type WebPage } from "./web-page.js";
 
 const HOST = "127.0.0.1";
 const COOKIE_NAME = "clodex_token";
@@ -140,6 +140,13 @@ export const startWebServer = async ({ port, token, feed, page, onInput, listFil
         "set-cookie": `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${COOKIE_MAX_AGE_SECONDS}`,
       });
       return void res.end();
+    }
+    // PWA の manifest とアイコンは秘密を含まないので、認証の前に返す
+    if (req.method === "GET" && url.pathname === "/manifest.webmanifest") {
+      return void res.writeHead(HTTP.ok, { "content-type": "application/manifest+json" }).end(MANIFEST);
+    }
+    if (req.method === "GET" && url.pathname === "/icon.svg") {
+      return void res.writeHead(HTTP.ok, { "content-type": "image/svg+xml" }).end(ICON_SVG);
     }
     if (!sameToken(cookieToken(req), token)) return void res.writeHead(HTTP.unauthorized).end();
 

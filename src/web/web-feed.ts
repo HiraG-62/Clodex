@@ -7,13 +7,15 @@ import type { Conversation } from "../project/conversation-history.js";
 export const DEFAULT_RECENT_ITEMS = 1000;
 
 import type { PendingInput } from "../cli/shell.js";
+import type { ConversationActivity } from "../hub/workspace.js";
 
 export interface WebState {
   project: string;
   primary: AgentId;
   roles: Partial<Record<AgentId, string>>;
   agents: AgentState[];
-  conversations: Array<Conversation & { current: boolean }>;
+  // activity: 動いている会話の状態（無ければ保存のみ。DESIGN.md §28 D1）
+  conversations: Array<Conversation & { current: boolean; activity?: ConversationActivity }>;
   // 配送待ちの人間の入力（取り消し・編集の対象）
   pendingInputs: PendingInput[];
 }

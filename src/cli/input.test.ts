@@ -109,3 +109,10 @@ describe("@agent! で割り込む", () => {
     expect(parseInput("@claude 普通", "codex")).toEqual({ kind: "send", agent: "claude", text: "普通" });
   });
 });
+
+describe("/new worktree", () => {
+  it("新しい会話を worktree で始める指定", () => {
+    expect(parseInput("/new worktree", "claude")).toEqual({ kind: "new", worktree: true });
+    expect(parseInput("/new codex", "claude")).toEqual({ kind: "new", agent: "codex" });
+  });
+});

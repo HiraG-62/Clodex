@@ -166,3 +166,10 @@ describe("createTerminalFormatter（既定表示の方針）", () => {
     expect(format(agentEvent("claude", { type: "text", text: "a" }), "verbose")).toBe("14:32:10 [CLAUDE] a");
   });
 });
+
+describe("defaultLogPath の会話ごとのファイル", () => {
+  it("suffix を名前の末尾に足す", () => {
+    expect(defaultLogPath("C:\\dev\\Clodex", new Date(2026, 9, 5, 14, 32, 10), "1a2b3c4d"))
+      .toBe(join(homedir(), ".clodex", "logs", "Clodex-20261005-143210-1a2b3c4d.jsonl"));
+  });
+});

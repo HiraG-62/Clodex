@@ -20,6 +20,9 @@ const conversationSchema = z.strictObject({
   updatedAt: z.string(),
   title: z.string().optional(),
   pinned: z.boolean().optional(),
+  // worktree で作業する会話の作業場所とブランチ（DESIGN.md §28 D1）
+  workDir: z.string().min(1).optional(),
+  branch: z.string().min(1).optional(),
   sessions: sessionsSchema,
 });
 const stateSchema = z.strictObject({ conversations: z.array(conversationSchema) });
@@ -45,7 +48,7 @@ const loadConversations = (path: string): Conversation[] => {
   }
 };
 
-const isWorthSaving = (c: Conversation) => Boolean(c.title || c.sessions.claude || c.sessions.codex);
+const isWorthSaving = (c: Conversation) => Boolean(c.title || c.workDir || c.sessions.claude || c.sessions.codex);
 const byNewest = (a: Conversation, b: Conversation) => b.updatedAt.localeCompare(a.updatedAt);
 // ピン止めした会話は先頭に並べ、最大件数の枠に数えない
 const arrange = (conversations: Conversation[]): Conversation[] => {
@@ -61,7 +64,7 @@ export interface ConversationHistoryOptions {
 
 export class ConversationHistory {
   private conversations: Conversation[];
-  private current: Conversation;
+  private currentConversation: Conversation;
   private readonly now: () => Date;
   private readonly createId: () => string;
   private readonly switchListeners: Array<(id: string) => void> = [];
@@ -72,12 +75,13 @@ export class ConversationHistory {
     this.createId = createId;
     this.conversations = arrange(loadConversations(path));
     const latest = this.conversations[0];
-    this.current = resumeLatest && latest ? latest : this.emptyConversation();
+    this.currentConversation = resumeLatest && latest ? latest : this.emptyConversation();
   }
 
-  // /new: 新しい会話を始める。前の会話は履歴に残る（session も入力も無いうちは保存しない）
-  startNew(): void {
-    this.current = this.emptyConversation();
+  // /new: 新しい会話を始める。前の会話は履歴に残る（session も入力も作業場所も無いうちは保存しない）
+  startNew(place: Pick<Conversation, "workDir" | "branch"> = {}): void {
+    this.currentConversation = { ...this.emptyConversation(), ...place };
+    if (place.workDir) this.save((list) => list);
     this.notifySwitch();
   }
 
@@ -98,19 +102,19 @@ export class ConversationHistory {
 
   // /pin: ピン止めを切り替え、切り替え後の状態を返す。無い会話なら undefined
   togglePin(id: string): boolean | undefined {
-    const found = id === this.current.id ? this.current : this.conversations.find((c) => c.id === id);
+    const found = id === this.currentConversation.id ? this.currentConversation : this.conversations.find((c) => c.id === id);
     if (!found) return undefined;
     const pinned = !found.pinned;
     const { pinned: _old, ...rest } = found;
     const changed: Conversation = pinned ? { ...rest, pinned } : rest;
-    if (id === this.current.id) this.current = changed;
+    if (id === this.currentConversation.id) this.currentConversation = changed;
     this.save((list) => list.map((c) => (c.id === id ? changed : c)));
     return pinned;
   }
 
   // /delete: 今の会話以外を削除する。削除できなければ理由を返す
   remove(id: string): string | undefined {
-    if (id === this.current.id) return t("reject.deleteCurrent");
+    if (id === this.currentConversation.id) return t("reject.deleteCurrent");
     if (!this.conversations.some((c) => c.id === id)) return t("reject.notFound");
     this.save((list) => list.filter((c) => c.id !== id));
     for (const listener of this.removeListeners) listener(id);
@@ -118,12 +122,12 @@ export class ConversationHistory {
   }
 
   private notifySwitch(): void {
-    for (const listener of this.switchListeners) listener(this.current.id);
+    for (const listener of this.switchListeners) listener(this.currentConversation.id);
   }
 
   // /new <agent>: その Agent の session を今の会話から外して保存する（再起動しても古い session に戻らない）
   clearSession(agent: AgentId): void {
-    const { [agent]: _removed, ...rest } = this.current.sessions;
+    const { [agent]: _removed, ...rest } = this.currentConversation.sessions;
     this.update({ sessions: rest });
   }
 
@@ -133,11 +137,16 @@ export class ConversationHistory {
   }
 
   get currentId(): string {
-    return this.current.id;
+    return this.currentConversation.id;
+  }
+
+  // 今の会話（作業場所の確認などに使う）
+  get current(): Conversation {
+    return this.currentConversation;
   }
 
   get currentSessions(): SavedSessions {
-    return { ...this.current.sessions };
+    return { ...this.currentConversation.sessions };
   }
 
   list(): Conversation[] {
@@ -148,31 +157,46 @@ export class ConversationHistory {
   switchTo(id: string): Conversation | undefined {
     const found = this.conversations.find((c) => c.id === id);
     if (!found) return undefined;
-    this.current = found;
+    this.currentConversation = found;
     this.notifySwitch();
     return found;
   }
 
-  attach(bus: EventBus): () => void {
+  // conversationId を渡すと、その会話の Event Bus として記録する（会話ごとに Coordinator を持つ。DESIGN.md §28 D1）。
+  // 省略すると、その時点の今の会話に記録する
+  attach(bus: EventBus, conversationId?: string): () => void {
     return bus.subscribe((event) => {
+      const id = conversationId ?? this.currentConversation.id;
+      const target = this.find(id);
+      if (!target) return;
       if (event.kind === "agent" && event.event.type === "session") {
-        this.update({ sessions: { ...this.current.sessions, [event.agent]: event.event.sessionId } });
+        this.updateConversation(id, { sessions: { ...target.sessions, [event.agent]: event.event.sessionId } });
       }
-      if (event.kind === "human" && !this.current.title) {
-        this.update({ title: event.text.slice(0, TITLE_LENGTH) });
+      if (event.kind === "human" && !target.title) {
+        this.updateConversation(id, { title: event.text.slice(0, TITLE_LENGTH) });
       }
     });
   }
 
+  private find(id: string): Conversation | undefined {
+    return id === this.currentConversation.id ? this.currentConversation : this.conversations.find((c) => c.id === id);
+  }
+
+  private updateConversation(id: string, change: Partial<Conversation>): void {
+    if (id === this.currentConversation.id) return this.update(change);
+    const updatedAt = this.now().toISOString();
+    this.save((list) => list.map((c) => (c.id === id ? { ...c, ...change, updatedAt } : c)));
+  }
+
   private update(change: Partial<Conversation>): void {
-    this.current = { ...this.current, ...change, updatedAt: this.now().toISOString() };
+    this.currentConversation = { ...this.currentConversation, ...change, updatedAt: this.now().toISOString() };
     this.save((list) => list);
   }
 
   // 他のプロセスの会話を消さないよう、書く直前に読み直して今の会話を重ねる
   private save(edit: (conversations: Conversation[]) => Conversation[]): void {
-    const others = loadConversations(this.path).filter((c) => c.id !== this.current.id);
-    this.conversations = arrange(edit([this.current, ...others]));
+    const others = loadConversations(this.path).filter((c) => c.id !== this.currentConversation.id);
+    this.conversations = arrange(edit([this.currentConversation, ...others]));
     writeFileAtomic(this.path, `${JSON.stringify({ conversations: this.conversations }, null, 2)}\n`);
   }
 }

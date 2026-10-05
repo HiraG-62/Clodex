@@ -100,6 +100,8 @@ const STYLE = `
   .ghost.small { padding: 4px 10px; font-size: 12px; }
   .conv-row { display: flex; align-items: center; gap: 2px; min-width: 0; }
   .conv-row .conv { flex: 1; }
+  .conv-row.busy .conv .m { color: var(--fg-2); }
+  .conv-row.busy .conv .t::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--claude); margin-right: 6px; vertical-align: middle; }
   .conv-menu { flex: none; border: 0; background: transparent; color: var(--muted); border-radius: 6px; padding: 6px 8px; font-size: 15px; line-height: 1; }
   .conv-menu:hover { background: var(--sunken); color: var(--fg); }
   .badge { font: 600 11px/1 var(--font-mono); padding: 3px 6px; border-radius: 4px; background: var(--crit); color: var(--invert-fg); }
@@ -328,6 +330,14 @@ const FUNCTIONS = `
   displayPath: ${inlineScript(displayPath.toString())},`;
 const json = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
 
+// ホーム画面に置けるようにする（DESIGN.md §28 D: PWA）
+export const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="#111"/><text x="256" y="330" font-family="Arial, sans-serif" font-size="260" font-weight="700" text-anchor="middle" fill="#fff">C</text></svg>`;
+export const MANIFEST = JSON.stringify({
+  name: "Clodex", short_name: "Clodex", start_url: "/", display: "standalone",
+  background_color: "#111111", theme_color: "#111111",
+  icons: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" }],
+});
+
 export interface WebPage {
   html: string;
   // 画面の中身から決まる版。Clodex を更新して起動し直すと変わり、開いている画面は再読み込みする（DESIGN.md §17）
@@ -352,7 +362,10 @@ export const buildWebPage = (language: Language): WebPage => {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <title>Clodex</title>
-<link rel="icon" href="data:,">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
+<meta name="theme-color" content="#111111">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
 <style>${STYLE}</style>

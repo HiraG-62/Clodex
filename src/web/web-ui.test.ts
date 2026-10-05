@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { EventBus } from "../coordinator/event-bus.js";
 import { WebFeed, type FeedItem, type WebState } from "./web-feed.js";
-import { connectWebFeed } from "./web-ui.js";
+import { connectWebFeed, historyItemOf } from "./web-ui.js";
 
 const STATE: WebState = { project: "C:\\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [] };
 const message = {
@@ -65,5 +65,12 @@ describe("connectWebFeed", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("historyItemOf", () => {
+  it("feed に流す event は保存する形にし、状態専用の event は undefined", () => {
+    expect(historyItemOf({ kind: "message", message, at: "x" })).toMatchObject({ type: "event", seq: 0, envelope: expect.stringContaining("msg_1") });
+    expect(historyItemOf({ kind: "agent", agent: "claude", event: { type: "context", tokens: 1 }, at: "x" })).toBeUndefined();
   });
 });

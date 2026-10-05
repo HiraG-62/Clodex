@@ -24,7 +24,8 @@ export interface CommandProcess {
 }
 
 export interface CommandRunnerOptions {
-  cwd: string;
+  // 関数なら実行のたびに呼ぶ（今の会話の作業場所。DESIGN.md §28 D1）
+  cwd: string | (() => string);
   print: (line: string) => void;
   spawnShell?: (file: string, args: string[], cwd: string) => CommandProcess;
   // 子プロセスごと止める（child.kill だけではシェルの子が残る）
@@ -63,7 +64,7 @@ export const createCommandRunner = ({
   const elapsed = (startedAt: number) => `${((now() - startedAt) / MS_PER_SECOND).toFixed(1)}s`;
 
   const start = (command: string, startedAt: number, resolve: () => void, index = shellIndex) => {
-    const child = spawnShell(SHELLS[index]!, [...SHELL_ARGS, `${UTF8_PREFIX}${command}${EXIT_CODE_SUFFIX}`], cwd);
+    const child = spawnShell(SHELLS[index]!, [...SHELL_ARGS, `${UTF8_PREFIX}${command}${EXIT_CODE_SUFFIX}`], typeof cwd === "function" ? cwd() : cwd);
     const entry = { stopped: false, failed: false };
     running.set(child, entry);
     const out = lineSplitter(print);

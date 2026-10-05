@@ -179,6 +179,14 @@ describe("startWebServer", () => {
     expect((await post("image/png", [1], "")).status).toBe(401);
   });
 
+  it("PWA の manifest とアイコンは token なしで返す", async () => {
+    const { base } = await setup();
+    const manifest = await fetch(`${base}/manifest.webmanifest`);
+    expect(manifest.status).toBe(200);
+    expect(await manifest.json()).toMatchObject({ name: "Clodex", display: "standalone" });
+    expect((await fetch(`${base}/icon.svg`)).headers.get("content-type")).toBe("image/svg+xml");
+  });
+
   it("未知の path は 404", async () => {
     const { base } = await setup();
     expect((await fetch(`${base}/unknown`, { headers: { cookie: COOKIE } })).status).toBe(404);
