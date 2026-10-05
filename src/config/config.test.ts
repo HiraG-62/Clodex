@@ -39,6 +39,11 @@ describe("loadConfig", () => {
     });
   });
 
+  it("permission を読み、未知のレベルは拒否する", () => {
+    expect(loadConfig(setup({ user: { permission: "full" } }))).toEqual({ permission: "full" });
+    expect(() => loadConfig(setup({ user: { permission: "admin" } }))).toThrow(/permission/);
+  });
+
   it("limits と usageAlert を読む", () => {
     const config = {
       limits: { maxMessagesPerChain: 8, maxReviewRoundsPerChain: 3, maxDelegationsPerChain: 4, maxDelegationDepth: 2 },

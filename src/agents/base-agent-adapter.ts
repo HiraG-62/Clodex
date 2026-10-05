@@ -1,5 +1,7 @@
-import type {
-  AgentAdapter, AgentEvent, AgentEventHandler, AgentId, AgentStartOptions, AgentStatus, TurnResult,
+import {
+  DEFAULT_PERMISSION,
+  type AgentAdapter, type AgentEvent, type AgentEventHandler, type AgentId, type AgentStartOptions, type AgentStatus,
+  type PermissionLevel, type TurnResult,
 } from "./agent-adapter.js";
 import type { AgentProcess } from "./agent-process.js";
 
@@ -8,6 +10,9 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   abstract readonly id: AgentId;
   status: AgentStatus = "stopped";
   sessionId: string | undefined;
+  permission: PermissionLevel = DEFAULT_PERMISSION;
+  // 起動に使った権限レベル。起動中に変更されたら起動完了時に差分を反映する
+  protected launchPermission: PermissionLevel = DEFAULT_PERMISSION;
 
   protected proc: AgentProcess | undefined;
   private readonly handlers = new Set<AgentEventHandler>();
@@ -17,6 +22,18 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
 
   abstract start(options: AgentStartOptions): Promise<void>;
   abstract interrupt(): Promise<void>;
+  // 起動中の Agent に権限レベルの変更を反映する（CLI 固有）
+  protected abstract applyPermission(level: PermissionLevel): Promise<void>;
+
+  async setPermission(level: PermissionLevel): Promise<void> {
+    this.permission = level;
+    if (this.proc && this.status !== "starting") await this.applyPermission(level);
+  }
+
+  // サブスクラスが起動完了時に呼ぶ
+  protected async applyPermissionChangedDuringStart(): Promise<void> {
+    if (this.permission !== this.launchPermission) await this.applyPermission(this.permission);
+  }
   protected abstract handleMessage(message: unknown): void;
   protected abstract writeTurn(text: string): void;
 

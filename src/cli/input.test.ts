@@ -15,6 +15,8 @@ describe("parseInput", () => {
     ["/help", { kind: "help" }],
     ["/exit", { kind: "exit" }],
     ["/verbose", { kind: "verbose" }],
+    ["/permission full", { kind: "permission", level: "full" }],
+    ["/permission codex read-only", { kind: "permission", agent: "codex", level: "read-only" }],
   ])("%j", (line, expected) => {
     expect(parseInput(line, "claude")).toEqual(expected);
   });
@@ -38,6 +40,9 @@ describe("parseInput", () => {
     ["@gemini hi", /unknown agent/],
     ["/interrupt gemini", /unknown agent/],
     ["/foo", /unknown command/],
+    ["/permission", /usage/],
+    ["/permission admin", /usage/],
+    ["/permission gemini edit", /unknown agent/],
   ])("不正な入力 %j は invalid", (line, pattern) => {
     const result = parseInput(line, "claude");
     expect(result.kind).toBe("invalid");

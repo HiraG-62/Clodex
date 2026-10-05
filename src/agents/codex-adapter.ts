@@ -1,6 +1,6 @@
 import {
   COORDINATOR_MCP_SERVER, summarizeToolInput,
-  type AgentStartOptions, type RateLimitWindow, type TurnResult,
+  type AgentStartOptions, type PermissionLevel, type RateLimitWindow, type TurnResult,
 } from "./agent-adapter.js";
 import { agentEnv, spawnAgentProcess, type SpawnAgentProcess } from "./agent-process.js";
 import { BaseAgentAdapter } from "./base-agent-adapter.js";
@@ -9,8 +9,20 @@ import { BaseAgentAdapter } from "./base-agent-adapter.js";
 const CODEX_COMMAND = "codex";
 const SUBSCRIPTION_ACCOUNT_TYPE = "chatgpt";
 const CLIENT_INFO = { name: "clodex", title: "Clodex", version: "0.0.0" };
-// v0.1 は承認要求を扱わない。承認なしで動く範囲に sandbox で制限する（DESIGN.md §9）
-const THREAD_POLICY = { approvalPolicy: "never", sandbox: "workspace-write" } as const;
+// 承認要求は扱わない。権限は sandbox で制限する（DESIGN.md §9 Permission）
+const APPROVAL_POLICY = "never";
+
+const SANDBOX_MODE: Record<PermissionLevel, string> = {
+  "read-only": "read-only",
+  edit: "workspace-write",
+  full: "danger-full-access",
+};
+
+const SANDBOX_POLICY: Record<PermissionLevel, unknown> = {
+  "read-only": { type: "readOnly", networkAccess: false },
+  edit: { type: "workspaceWrite", writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false },
+  full: { type: "dangerFullAccess" },
+};
 const METHOD_NOT_FOUND = -32601;
 
 interface RpcMessage {
@@ -59,6 +71,8 @@ export class CodexAdapter extends BaseAgentAdapter {
   private readonly pending = new Map<number | string, PendingRequest>();
   private turnId: string | undefined;
   private interruptPending = false;
+  // 次の turn/start で sandbox を変える。以降のターンにも引き継がれるので 1 回だけ送る
+  private pendingSandbox: PermissionLevel | undefined;
   private lastAgentText = "";
 
   constructor(private readonly spawnProcess: SpawnAgentProcess = spawnAgentProcess) {
@@ -86,14 +100,16 @@ export class CodexAdapter extends BaseAgentAdapter {
     this.notify("initialized");
     await this.verifySubscription();
 
+    this.launchPermission = this.permission;
     const threadParams = {
-      cwd, ...THREAD_POLICY, ...(model ? { model } : {}), ...(instructions ? { developerInstructions: instructions } : {}),
+      cwd, approvalPolicy: APPROVAL_POLICY, sandbox: SANDBOX_MODE[this.launchPermission], ...(model ? { model } : {}), ...(instructions ? { developerInstructions: instructions } : {}),
     };
     const response = (resumeSessionId
       ? await this.request("thread/resume", { threadId: resumeSessionId, ...threadParams })
       : await this.request("thread/start", threadParams)) as { thread: { id: string } };
     this.sessionId = response.thread.id;
     this.status = "idle";
+    await this.applyPermissionChangedDuringStart();
     this.emit({ type: "session", sessionId: this.sessionId });
   }
 
@@ -115,11 +131,21 @@ export class CodexAdapter extends BaseAgentAdapter {
     this.interrupt().catch((error: Error) => this.emit({ type: "error", message: `codex: interrupt failed: ${error.message}` }));
   }
 
+  protected async applyPermission(level: PermissionLevel): Promise<void> {
+    this.pendingSandbox = level;
+  }
+
   protected writeTurn(text: string): void {
     this.lastAgentText = "";
     this.turnId = undefined;
     this.interruptPending = false;
-    this.request("turn/start", { threadId: this.sessionId, input: [{ type: "text", text, text_elements: [] }] })
+    const sandbox = this.pendingSandbox;
+    this.pendingSandbox = undefined;
+    this.request("turn/start", {
+      threadId: this.sessionId,
+      input: [{ type: "text", text, text_elements: [] }],
+      ...(sandbox ? { sandboxPolicy: SANDBOX_POLICY[sandbox] } : {}),
+    })
       .then((response) => this.setTurnId((response as { turn?: { id?: string } }).turn?.id))
       .catch((error: Error) => this.finishTurn({ status: "failed", text: error.message }));
   }

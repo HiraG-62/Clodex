@@ -1,11 +1,12 @@
 // テスト用: AgentAdapter の偽物。start / send を記録し、ターン完了をテストから制御する
 import type {
-  AgentAdapter, AgentEvent, AgentEventHandler, AgentId, AgentStartOptions, AgentStatus, TurnResult,
+  AgentAdapter, AgentEvent, AgentEventHandler, AgentId, AgentStartOptions, AgentStatus, PermissionLevel, TurnResult,
 } from "./agent-adapter.js";
 
 export class FakeAgentAdapter implements AgentAdapter {
   status: AgentStatus = "stopped";
   sessionId: string | undefined;
+  permission: PermissionLevel = "edit";
   readonly starts: AgentStartOptions[] = [];
   readonly sent: string[] = [];
   startError: Error | undefined;
@@ -36,6 +37,10 @@ export class FakeAgentAdapter implements AgentAdapter {
   }
 
   async interrupt(): Promise<void> {}
+
+  async setPermission(level: PermissionLevel): Promise<void> {
+    this.permission = level;
+  }
 
   async stop(): Promise<void> {
     this.status = "stopped";

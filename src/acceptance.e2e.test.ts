@@ -84,7 +84,7 @@ describe.runIf(process.env.CLODEX_E2E === "1")("v0.1 acceptance (real clodex pro
     await waitForOutput(/\[CLAUDE\] interrupted/);
 
     send("/status");
-    await waitForOutput(/claude: idle \(session /);
+    await waitForOutput(/claude: idle, permission edit \(session /);
 
     // 10. message が timestamp / from / to / type / taskId 付きで記録される
     const logged = readFileSync(logPath, "utf8").trim().split("\n").map((l) => JSON.parse(l) as CoordinatorEvent);

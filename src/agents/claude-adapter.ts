@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, summarizeToolInput,
-  type AgentStartOptions, type RateLimitWindow,
+  type AgentStartOptions, type PermissionLevel, type RateLimitWindow,
 } from "./agent-adapter.js";
 import { agentEnv, spawnAgentProcess, type SpawnAgentProcess } from "./agent-process.js";
 import { BaseAgentAdapter } from "./base-agent-adapter.js";
@@ -12,6 +12,14 @@ const STREAM_ARGS = ["-p", "--input-format", "stream-json", "--output-format", "
 const SUBSCRIPTION_API_KEY_SOURCE = "none";
 const HTTP_UNAUTHORIZED = 401;
 const RATIO_TO_PERCENT = 100;
+
+// 権限レベル → Claude の permission mode（DESIGN.md §9 Permission）
+// read-only は plan: default はユーザー設定の許可リストで書き込めてしまうため（docs/spikes/permission.md）
+const PERMISSION_MODE: Record<PermissionLevel, string> = {
+  "read-only": "plan",
+  edit: "acceptEdits",
+  full: "bypassPermissions",
+};
 
 interface ContentBlock {
   type: string;
@@ -56,8 +64,12 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     if (this.status !== "stopped") throw new Error(`claude is ${this.status}`);
     // session ID を Coordinator 側で決めておくと、最初のターン前から resume 用 ID が確定する
     this.sessionId = resumeSessionId ?? this.createId();
+    this.launchPermission = this.permission;
     const args = [
       ...STREAM_ARGS,
+      "--permission-mode", PERMISSION_MODE[this.permission],
+      // 後から full（bypassPermissions）へ切り替えられるようにする。付けるだけでは bypass にならない
+      "--allow-dangerously-skip-permissions",
       ...(resumeSessionId ? ["-r", resumeSessionId] : ["--session-id", this.sessionId]),
       ...(model ? ["--model", model] : []),
       ...(instructions ? ["--append-system-prompt", instructions] : []),
@@ -69,6 +81,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     // Claude は最初のターンまで何も出力しないので、プロセスの起動成功をもって start 完了とする
     await proc.spawned;
     this.status = "idle";
+    await this.applyPermissionChangedDuringStart();
     this.emit({ type: "session", sessionId: this.sessionId });
   }
 
@@ -77,6 +90,13 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     this.interruptRequested = true;
     this.proc?.write(JSON.stringify({
       type: "control_request", request_id: this.createId(), request: { subtype: "interrupt" },
+    }));
+  }
+
+  protected async applyPermission(level: PermissionLevel): Promise<void> {
+    this.proc?.write(JSON.stringify({
+      type: "control_request", request_id: this.createId(),
+      request: { subtype: "set_permission_mode", mode: PERMISSION_MODE[level] },
     }));
   }
 

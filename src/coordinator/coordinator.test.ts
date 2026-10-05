@@ -177,14 +177,29 @@ describe("Coordinator", () => {
     expect(calls).toEqual(["codex", "claude", "codex"]);
   });
 
-  it("status は各 Agent の状態と session ID を返す", async () => {
+  it("status は各 Agent の状態・session ID・権限レベルを返す", async () => {
     const { claude, coordinator } = setup();
     claude.status = "busy";
     claude.sessionId = "s-1";
     expect(coordinator.status()).toEqual([
-      { id: "claude", status: "busy", sessionId: "s-1" },
-      { id: "codex", status: "stopped", sessionId: undefined },
+      { id: "claude", status: "busy", sessionId: "s-1", permission: "edit" },
+      { id: "codex", status: "stopped", sessionId: undefined, permission: "edit" },
     ]);
+  });
+
+  it("setPermission は指定 Agent、省略時は全 Agent の権限を変える", async () => {
+    const { claude, codex, coordinator } = setup();
+    await coordinator.setPermission("full", "codex");
+    expect([claude.permission, codex.permission]).toEqual(["edit", "full"]);
+    await coordinator.setPermission("read-only");
+    expect([claude.permission, codex.permission]).toEqual(["read-only", "read-only"]);
+  });
+
+  it("起動時の権限レベルを全 Agent に設定する", () => {
+    const claude = new FakeAgentAdapter("claude");
+    const codex = new FakeAgentAdapter("codex");
+    new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor, permission: "read-only" });
+    expect([claude.permission, codex.permission]).toEqual(["read-only", "read-only"]);
   });
 
   it("whenIdle は Agent 間の配送の連鎖が終わるまで待つ", async () => {

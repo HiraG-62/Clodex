@@ -1,11 +1,12 @@
 // 人間の入力を Coordinator の操作に変換する（DESIGN.md §8）。readline 等の I/O は index.ts が持つ
-import type { AgentId, AgentStatus, TurnResult } from "../agents/agent-adapter.js";
+import type { AgentId, AgentStatus, PermissionLevel, TurnResult } from "../agents/agent-adapter.js";
 import { parseInput } from "./input.js";
 
 export interface ShellCoordinator {
   sendToAgent(agent: AgentId, text: string): Promise<TurnResult>;
   interrupt(agent?: AgentId): Promise<void>;
-  status(): Array<{ id: AgentId; status: AgentStatus; sessionId: string | undefined }>;
+  setPermission(level: PermissionLevel, agent?: AgentId): Promise<void>;
+  status(): Array<{ id: AgentId; status: AgentStatus; sessionId: string | undefined; permission: PermissionLevel }>;
 }
 
 export interface ShellOptions {
@@ -25,6 +26,7 @@ const HELP_LINES = (primary: AgentId) => [
   "/interrupt [agent]  interrupt the running turn (all agents if omitted)",
   "/status             show agent status",
   "/verbose            toggle detailed output (tools, usage, intermediate text)",
+  "/permission [agent] <read-only|edit|full>  change what agents may do without asking",
   "/exit               stop all agents and quit",
   "Ctrl+C              interrupt running turns",
 ];
@@ -43,12 +45,16 @@ export const createShell = ({ coordinator, primary, print, toggleVerbose }: Shel
         await coordinator.interrupt(command.agent);
         return "continue";
       case "status":
-        for (const { id, status, sessionId } of coordinator.status()) {
-          print(`${id}: ${status}${sessionId ? ` (session ${sessionId})` : ""}`);
+        for (const { id, status, sessionId, permission } of coordinator.status()) {
+          print(`${id}: ${status}, permission ${permission}${sessionId ? ` (session ${sessionId})` : ""}`);
         }
         return "continue";
       case "help":
         HELP_LINES(primary).forEach((l) => print(l));
+        return "continue";
+      case "permission":
+        await coordinator.setPermission(command.level, command.agent);
+        print(`permission: ${command.agent ?? "all agents"} -> ${command.level}`);
         return "continue";
       case "verbose":
         print(`verbose: ${toggleVerbose() ? "on" : "off"}`);

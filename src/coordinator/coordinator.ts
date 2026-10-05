@@ -1,5 +1,7 @@
 // Agent 間の routing と lifecycle を決定論的に行う（DESIGN.md §3.9, §12）
-import { AGENT_IDS, type AgentAdapter, type AgentId, type AgentStatus, type TurnResult } from "../agents/agent-adapter.js";
+import {
+  AGENT_IDS, type AgentAdapter, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult,
+} from "../agents/agent-adapter.js";
 import { buildEnvelope } from "../context/context-resolver.js";
 import { createMessage, type CreateMessageResult } from "../protocol/messages.js";
 import { AgentMailbox } from "./agent-mailbox.js";
@@ -15,6 +17,7 @@ export interface CoordinatorOptions {
   instructions?: Partial<Record<AgentId, string>>;
   createMessageId?: () => string;
   limits?: BudgetLimits;
+  permission?: PermissionLevel;
 }
 
 export class Coordinator {
@@ -22,10 +25,12 @@ export class Coordinator {
   private readonly budget: BudgetManager;
 
   constructor(private readonly options: CoordinatorOptions) {
-    const { agents, bus, projectRoot, mcpUrlFor, models, instructions, limits } = options;
+    const { agents, bus, projectRoot, mcpUrlFor, models, instructions, limits, permission } = options;
     this.budget = new BudgetManager(limits);
     for (const id of AGENT_IDS) {
       agents[id].onEvent((event) => bus.publish({ kind: "agent", agent: id, event }));
+      // 起動前なので値を保持するだけ（次の起動時に使われる）
+      if (permission) void agents[id].setPermission(permission);
     }
     const createMailbox = (id: AgentId) => {
       const model = models?.[id];
@@ -81,10 +86,15 @@ export class Coordinator {
     await Promise.all(targets.map((target) => this.options.agents[target].interrupt()));
   }
 
-  status(): Array<{ id: AgentId; status: AgentStatus; sessionId: string | undefined }> {
+  async setPermission(level: PermissionLevel, id?: AgentId): Promise<void> {
+    const targets = id ? [id] : AGENT_IDS;
+    await Promise.all(targets.map((target) => this.options.agents[target].setPermission(level)));
+  }
+
+  status(): Array<{ id: AgentId; status: AgentStatus; sessionId: string | undefined; permission: PermissionLevel }> {
     return AGENT_IDS.map((id) => {
-      const { status, sessionId } = this.options.agents[id];
-      return { id, status, sessionId };
+      const { status, sessionId, permission } = this.options.agents[id];
+      return { id, status, sessionId, permission };
     });
   }
 

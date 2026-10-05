@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
-import type { AgentId, AgentStatus, TurnResult } from "../agents/agent-adapter.js";
+import type { AgentId, AgentStatus, PermissionLevel, TurnResult } from "../agents/agent-adapter.js";
 import { createShell, type ShellCoordinator } from "./shell.js";
 
 class FakeCoordinator implements ShellCoordinator {
   readonly sent: Array<{ agent: AgentId; text: string }> = [];
   readonly interrupted: Array<AgentId | undefined> = [];
-  states: Array<{ id: AgentId; status: AgentStatus; sessionId: string | undefined }> = [
-    { id: "claude", status: "idle", sessionId: "s-claude" },
-    { id: "codex", status: "stopped", sessionId: undefined },
+  readonly permissions: Array<{ level: PermissionLevel; agent: AgentId | undefined }> = [];
+  states: Array<{ id: AgentId; status: AgentStatus; sessionId: string | undefined; permission: PermissionLevel }> = [
+    { id: "claude", status: "idle", sessionId: "s-claude", permission: "edit" },
+    { id: "codex", status: "stopped", sessionId: undefined, permission: "full" },
   ];
+
+  async setPermission(level: PermissionLevel, agent?: AgentId): Promise<void> {
+    this.permissions.push({ level, agent });
+  }
 
   sendToAgent(agent: AgentId, text: string): Promise<TurnResult> {
     this.sent.push({ agent, text });
@@ -52,7 +57,7 @@ describe("createShell", () => {
   it("/status は各 Agent の状態を表示する", async () => {
     const { printed, shell } = setup();
     await shell.handleLine("/status");
-    expect(printed).toEqual(["claude: idle (session s-claude)", "codex: stopped"]);
+    expect(printed).toEqual(["claude: idle, permission edit (session s-claude)", "codex: stopped, permission full"]);
   });
 
   it("/help は入力方法を表示する", async () => {
@@ -67,6 +72,14 @@ describe("createShell", () => {
     await shell.handleLine("/verbose");
     await shell.handleLine("/verbose");
     expect(printed).toEqual(["verbose: on", "verbose: off"]);
+  });
+
+  it("/permission は Coordinator に渡して結果を表示する", async () => {
+    const { coordinator, printed, shell } = setup();
+    await shell.handleLine("/permission codex read-only");
+    await shell.handleLine("/permission full");
+    expect(coordinator.permissions).toEqual([{ level: "read-only", agent: "codex" }, { level: "full", agent: undefined }]);
+    expect(printed).toEqual(["permission: codex -> read-only", "permission: all agents -> full"]);
   });
 
   it("/exit は exit を返す", async () => {
@@ -85,8 +98,8 @@ describe("createShell", () => {
   it("Ctrl+C は実行中の Agent だけ interrupt する", async () => {
     const { coordinator, shell } = setup();
     coordinator.states = [
-      { id: "claude", status: "busy", sessionId: "s1" },
-      { id: "codex", status: "idle", sessionId: "s2" },
+      { id: "claude", status: "busy", sessionId: "s1", permission: "edit" },
+      { id: "codex", status: "idle", sessionId: "s2", permission: "edit" },
     ];
     await shell.handleSigint();
     expect(coordinator.interrupted).toEqual(["claude"]);

@@ -25,6 +25,11 @@ describe("buildRoleInstructions", () => {
     expect(text).toContain("Role of claude: 設計");
   });
 
+  it("役割の有無にかかわらず /permission を案内するよう伝える", () => {
+    expect(buildRoleInstructions("claude", undefined)).toContain("/permission");
+    expect(buildRoleInstructions("codex", { claude: "設計" })).toContain("/permission");
+  });
+
   it("役割が無ければ相手の Agent がいることだけを伝える", () => {
     const text = buildRoleInstructions("claude", undefined);
     expect(text).toContain('peer agent "codex"');

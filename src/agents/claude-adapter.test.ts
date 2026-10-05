@@ -37,6 +37,44 @@ describe("ClaudeAdapter", () => {
     expect(events).toContainEqual({ type: "session", sessionId: SESSION_ID });
   });
 
+  it("既定は edit（acceptEdits）で起動し、後から full にできるよう skip permissions を許可しておく", async () => {
+    const { spawner, adapter } = await setup();
+    const args = spawner.calls[0]!.args;
+    expect(args[args.indexOf("--permission-mode") + 1]).toBe("acceptEdits");
+    expect(args).toContain("--allow-dangerously-skip-permissions");
+    expect(adapter.permission).toBe("edit");
+  });
+
+  it("起動前に setPermission したレベルで起動する", async () => {
+    const spawner = createFakeSpawner();
+    const adapter = new ClaudeAdapter(spawner.spawn, () => SESSION_ID);
+    await adapter.setPermission("full");
+    await adapter.start({ cwd: "C:\\dev\\app" });
+    const args = spawner.calls[0]!.args;
+    expect(args[args.indexOf("--permission-mode") + 1]).toBe("bypassPermissions");
+  });
+
+  it("起動中の setPermission は set_permission_mode を即時に送る", async () => {
+    const { adapter, proc } = await setup();
+    await adapter.setPermission("read-only");
+    expect(proc.writtenWith("type", "control_request")[0]).toMatchObject({
+      request: { subtype: "set_permission_mode", mode: "plan" },
+    });
+    expect(adapter.permission).toBe("read-only");
+  });
+
+  it("起動中に変更された権限は起動完了時に反映する", async () => {
+    const spawner = createFakeSpawner();
+    const adapter = new ClaudeAdapter(spawner.spawn, () => SESSION_ID);
+    const started = adapter.start({ cwd: "C:\\dev\\app" });
+    expect(adapter.status).toBe("starting");
+    await adapter.setPermission("full");
+    await started;
+    expect(spawner.last.writtenWith("type", "control_request")[0]).toMatchObject({
+      request: { subtype: "set_permission_mode", mode: "bypassPermissions" },
+    });
+  });
+
   it("instructions 指定時は --append-system-prompt で渡す", async () => {
     const spawner = createFakeSpawner();
     const adapter = new ClaudeAdapter(spawner.spawn, () => SESSION_ID);

@@ -439,6 +439,7 @@ Internal command（v0.1）:
 | `/status` | 各 Agent の状態と session ID |
 | `/verbose` | terminal の詳細表示を切り替える（§17） |
 | `/primary <claude\|codex>` | 通常のテキストの送り先を切り替える（v0.2。§3.10） |
+| `/permission [claude\|codex] <read-only\|edit\|full>` | Agent（省略時は両方）の権限レベルを切り替える（§9 Permission） |
 | `/help` | 入力方法の一覧 |
 | `/exit` | 全 Agent を止めて終了 |
 
@@ -475,6 +476,7 @@ interface AgentAdapter {
 
   start(options: AgentStartOptions): Promise<void>;
   send(text: string): Promise<TurnResult>; // ターン完了で resolve。busy 中は拒否する
+  setPermission(level: PermissionLevel): Promise<void>; // 停止中なら次の起動時に使う
   interrupt(): Promise<void>;
   stop(): Promise<void>;
   onEvent(handler: (event: AgentEvent) => void): () => void;
@@ -502,7 +504,23 @@ Adapter の必須処理:
 - 子プロセスに `CLODEX_AGENT=<claude|codex>` を設定する。ユーザーの hook や skill が「Clodex 配下の Agent か」を判定できるようにする（例: Agent 単体での委譲 plugin を Clodex 配下では無効にする）
 - 認証方式がサブスクリプションでなければ、プロセスを止めて `error` を出す
 - 実行中ターンへの追加送信（steer）は v0.1 では使わない。busy 中の `send` は Coordinator 側でキューに積む（§12）
-- 予期しない承認要求（Codex の server request）はエラー応答し、`error` を出す。v0.1 の Codex は `approvalPolicy: "never"` + `sandbox: "workspace-write"` で起動し、Coordinator の MCP tool だけ自動承認する
+- 予期しない承認要求（Codex の server request）はエラー応答し、`error` を出す。Codex は `approvalPolicy: "never"` で起動し、Coordinator の MCP tool だけ自動承認する
+
+## Permission
+
+`-p` / app-server で動く Agent には、その場で人が権限確認に答える手段がない。代わりに、両 Agent 共通の権限レベルを持ち、人が `/permission` で切り替える（docs/spikes/permission.md）。
+
+| レベル | Claude（`--permission-mode` / `set_permission_mode`） | Codex（`sandbox` / `sandboxPolicy`） |
+|---|---|---|
+| `read-only` | `plan`（読み取りと計画のみ。ユーザー設定で許可済みの tool でも編集・実行しない） | `read-only` |
+| `edit`（既定） | `acceptEdits` | `workspace-write` |
+| `full` | `bypassPermissions` | `danger-full-access` |
+
+- 既定は `edit`。設定ファイルの `permission` で変えられる（§13 Roles）
+- Claude は `full` へ後から切り替えられるよう、常に `--allow-dangerously-skip-permissions` を付けて起動する（付けるだけでは bypass にならない）
+- 反映: Claude は即時（`set_permission_mode`）、Codex は次のターンから（`turn/start` の `sandboxPolicy`。以降のターンにも引き継がれる）
+- 停止中の Agent は、次の起動時にそのレベルで起動する
+- 起動処理の途中で変更された場合は、起動が終わった時点で反映する
 
 ---
 
@@ -747,6 +765,7 @@ AGENTS.md → Codex
 ```json
 {
   "primary": "claude",
+  "permission": "edit",
   "roles": {
     "claude": "設計とレビューを担当する。実装は codex に DELEGATE する。",
     "codex": "実装を担当する。設計に迷ったら claude に QUESTION する。"
@@ -754,8 +773,9 @@ AGENTS.md → Codex
 }
 ```
 
+- `permission` は起動時の権限レベル（§9 Permission）。両 Agent に同じレベルを使う
 - 優先順位: 起動オプション > project の設定 > ユーザーの設定 > 既定値（primary: `claude`、roles: なし）
-- Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」を伝える
+- Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」「権限は人が `/permission` で変えるので、拒否されたらそう伝えること」を伝える
 - 役割が無い Agent には、相手の Agent がいることだけを伝える
 - 役割の本文は Agent の native configuration（CLAUDE.md / AGENTS.md）と結合しない。追加の指示として渡すだけ
 

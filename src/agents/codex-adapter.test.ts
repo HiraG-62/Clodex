@@ -70,6 +70,47 @@ describe("CodexAdapter", () => {
     expect(spawner.last.writtenWith("method", "thread/resume")[0]!.params).toMatchObject({ developerInstructions: "You are codex." });
   });
 
+  it("起動前に setPermission したレベルの sandbox で thread を始める", async () => {
+    const spawner = createFakeSpawner(defaultResponder());
+    const adapter = new CodexAdapter(spawner.spawn);
+    await adapter.setPermission("read-only");
+    await adapter.start({ cwd: "C:\\dev\\app" });
+    expect(spawner.last.writtenWith("method", "thread/start")[0]!.params).toMatchObject({ sandbox: "read-only" });
+    expect(adapter.permission).toBe("read-only");
+  });
+
+  it("thread/start を送った後の起動中に変更された権限は、最初の turn/start で反映する", async () => {
+    const responder = defaultResponder();
+    const spawner = createFakeSpawner((m) => (m.method === "thread/start" ? undefined : responder(m)));
+    const adapter = new CodexAdapter(spawner.spawn);
+    const started = adapter.start({ cwd: "C:\\dev\\app" });
+    await flush();
+    const threadStart = spawner.last.writtenWith("method", "thread/start")[0]!;
+    expect(threadStart.params).toMatchObject({ sandbox: "workspace-write" });
+    await adapter.setPermission("read-only");
+    spawner.last.emit({ id: threadStart.id, result: { thread: { id: THREAD_ID } } });
+    await started;
+
+    void adapter.send("a");
+    await flush();
+    expect(spawner.last.writtenWith("method", "turn/start")[0]!.params).toMatchObject({ sandboxPolicy: { type: "readOnly" } });
+  });
+
+  it("起動中の setPermission は次の turn/start に sandboxPolicy を 1 回だけ付ける", async () => {
+    const { adapter, started, proc } = await setup();
+    await started;
+    await adapter.setPermission("full");
+    const first = adapter.send("a");
+    await flush();
+    expect(proc.writtenWith("method", "turn/start")[0]!.params).toMatchObject({ sandboxPolicy: { type: "dangerFullAccess" } });
+    proc.emit(turnCompleted("completed"));
+    await first;
+
+    void adapter.send("b");
+    await flush();
+    expect(proc.writtenWith("method", "turn/start")[1]!.params).not.toHaveProperty("sandboxPolicy");
+  });
+
   it("ChatGPT 認証でなければ起動を拒否してプロセスを止める", async () => {
     const { adapter, started, proc, events } = await setup({ accountType: "apiKey" });
     await expect(started).rejects.toThrow(/apiKey/);
