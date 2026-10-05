@@ -1785,14 +1785,23 @@ D1 の詳細（1 つのプロセスの中の複数の会話）:
 D2 の詳細（Hub として複数の project を扱う）。2 段に分ける:
 
 - **D2a: 1 つのプロセスで複数の project**
-  - 今の \`main()\` の project ごとの部分（設定・履歴・Agent の設定・Workspace・feed の保存・成果物のプレビュー・アップロード先）を **ProjectContext** として切り出す（\`hub/project-context.ts\`）。Hub は project root ごとに ProjectContext を持ち、開いた project を残す（会話と同じく、切り替えても Agent を止めない）
+  - 今の `main()` の project ごとの部分（設定・履歴・Agent の設定・Workspace・feed の保存・成果物のプレビュー・アップロード先）を **ProjectContext** として切り出す（`hub/project-context.ts`）。Hub は project root ごとに ProjectContext を持ち、開いた project を残す（会話と同じく、切り替えても Agent を止めない）
   - 人が見ている project（**今の project**）は 1 つ。terminal と Web UI は今の project の今の会話を表示する
-  - \`/project\` で開いている project の一覧、\`/project <path>\` でその project を開いて今の project にする（path は resolveProjectRoot と同じ規則で解決する）。Web UI は上部に project の切り替えを出し、\`/project <path>\` を送る
-  - 開いた project の一覧は \`~/.clodex/hub.json\` に保存し、次の起動で一覧に出す（開くのは選んだとき）
-  - \`clodex serve\`: terminal の Shell を持たずに Hub と Web UI だけを動かす（\`--web\` 相当。project は Web UI から開く。起動時の project は省略可）
-  - 言語・Web の token・ポートは Hub で 1 つ。project ごとの設定（\`.clodex.json\`）は ProjectContext ごとに読む
+  - `/project` で開いている project の一覧、`/project <path>` でその project を開いて今の project にする（path は resolveProjectRoot と同じ規則で解決する）。Web UI は上部に project の切り替えを出し、`/project <path>` を送る
+  - 開いた project の一覧は `~/.clodex/hub.json` に保存し、次の起動で一覧に出す（開くのは選んだとき）
+  - `clodex serve`: terminal の Shell を持たずに Hub と Web UI だけを動かす（`--web` 相当。project は Web UI から開く。起動時の project は省略可）
+  - 言語・Web の token・ポートは Hub で 1 つ。project ごとの設定（`.clodex.json`）は ProjectContext ごとに読む
 - **D2b: CLI から Hub へつなぐ**（D4 の TUI と一緒に行う）
-  - Hub は起動時に \`~/.clodex/hub.lock\`（pid・port）を書く。\`clodex\` は lock の Hub が生きていれば、HTTP + SSE のクライアントとしてつなぐ。いなければ今どおり同じプロセスで動く
+  - Hub は起動時に `~/.clodex/hub.lock`（pid・port）を書く。`clodex` は lock の Hub が生きていれば、HTTP + SSE のクライアントとしてつなぐ。いなければ今どおり同じプロセスで動く
+
+
+D3 の詳細（Tauri GUI。Windows）:
+
+- `gui/` に Tauri v2 のプロジェクトを置く（Rust。`pnpm gui:dev` / `pnpm gui:build`。Tauri の CLI は devDependency の `@tauri-apps/cli`）
+- GUI は Hub を探し、いなければ起動する。そのため `clodex serve` は起動時に `~/.clodex/hub.lock`（`{ pid, port, url }`）を書き、終了時に消す（D2b の lock を先に入れる）。GUI は lock の pid が生きていればその Hub を使い、いなければ `clodex serve` を子プロセスで起動して lock を待つ。GUI が起動した Hub は GUI の終了で止める
+- ウィンドウは Hub の Web UI（`<url>/?token=<~/.clodex/web-token>`）を WebView2 で開くだけ。画面は Web UI と同じものを使う
+- ネイティブで足すのはフォルダの選択だけ（D3 の範囲）: Web UI の「開く」は、Tauri の中（`window.__TAURI__` がある）ならフォルダ選択のダイアログで選んだパスを `/project <path>` として送る。ブラウザでは今どおりパスを入力する。Tauri の IPC は Hub の URL（127.0.0.1）からだけ許す（capability の remote の設定）
+- 通知・トレイ常駐は D3 の後に検討する
 
 ---
 
