@@ -38,7 +38,11 @@ PS C:\dev\my-project> clodex
 | テキスト | primary Agent（既定 Claude）へ送信 |
 | `@claude ...` / `@codex ...` | 指定 Agent へ送信 |
 | `/interrupt [claude\|codex]` / Ctrl+C | 実行中のターンを interrupt |
-| `/status` / `/help` / `/exit` | 状態表示 / ヘルプ / 終了 |
+| `/primary <claude\|codex>` | テキストの送り先を切り替える |
+| `/permission [claude\|codex] <read-only\|edit\|full>` | Agent の権限レベル（既定 `edit`。`full` は Codex の yolo 相当） |
+| `/status` | 各 Agent の状態、権限、利用枠（5 時間 / 週と週のペース） |
+| `/verbose` | tool 呼び出しや途中の発言も表示する |
+| `/help` / `/exit` | ヘルプ / 終了 |
 
 Agent 同士は MCP tool `send_message` で formal message をやり取りする。Agent は必要になるまで起動しない。
 
@@ -57,7 +61,9 @@ Agent 同士は MCP tool `send_message` で formal message をやり取りする
     "claude": "設計とレビューを担当する。実装は codex に DELEGATE する。",
     "codex": "実装を担当する。設計に迷ったら claude に QUESTION する。"
   },
-  "limits": { "maxMessagesPerChain": 8 }
+  "permission": "edit",
+  "limits": { "maxMessagesPerChain": 8 },
+  "usageAlert": { "weeklyPaceThreshold": 15, "fiveHourThreshold": 90 }
 }
 ```
 
