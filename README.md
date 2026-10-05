@@ -53,6 +53,17 @@ Agent 同士は MCP tool `send_message` で formal message をやり取りする
 
 ログ: `~/.clodex/logs/<project 名>-<起動時刻>.jsonl`
 
+## スマホから使う（Web UI）
+
+```powershell
+clodex --web                     # 127.0.0.1:4319 で Web UI を開く（設定ファイルの "web": { "port": 4319 } でも可）
+tailscale serve --bg 4319        # 初回だけ。tailnet 内の端末から https://<PC名>.<tailnet>.ts.net で開ける
+```
+
+- 初回はスマホで `https://<PC名>.<tailnet>.ts.net/?token=<token>` を開く（token は `~/.clodex/web-token`）。以後は cookie で入れる
+- 表示と入力は terminal と同じ。スマホの接続が切れても `clodex` は PC で動き続ける
+- Clodex は `127.0.0.1` でしか待ち受けない。外からの接続は Tailscale に任せる
+
 ## 設定（分業）
 
 `~/.clodex/config.json`（全体）と `<project>/.clodex.json`（project ごとに上書き）で、各 Agent の役割などを設定できる。

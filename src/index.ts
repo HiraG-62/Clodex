@@ -15,9 +15,13 @@ import { EventBus } from "./coordinator/event-bus.js";
 import { attachEventLog, defaultLogPath, type DisplayMode } from "./logging/event-log.js";
 import { startMcpServer } from "./mcp/server.js";
 import { resolveProjectRoot } from "./project/project-root.js";
+import { DisplayHub } from "./web/display-hub.js";
+import { startWebServer } from "./web/web-server.js";
+import { loadOrCreateWebToken } from "./web/web-token.js";
 import { ConversationHistory, conversationStatePath } from "./project/conversation-history.js";
 
 const PROMPT = "clodex> ";
+const DEFAULT_WEB_PORT = 4319;
 const DEFAULT_PRIMARY: AgentId = "claude";
 const EXIT_FAILURE = 1;
 // cleanup 後に何かが残って終わらない場合の保険
@@ -53,8 +57,10 @@ const main = async (): Promise<void> => {
 
   const interactive = Boolean(process.stdin.isTTY);
   const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: PROMPT, terminal: interactive });
+  const hub = new DisplayHub();
   // 入力途中の行を壊さないよう、プロンプトの上に出力してから入力行を描き直す
   const print = (line: string) => {
+    hub.publish(line);
     if (!interactive) {
       process.stdout.write(`${line}\n`);
       return;
@@ -81,6 +87,21 @@ const main = async (): Promise<void> => {
     return displayMode === "verbose";
   };
   const shell = createShell({ coordinator, primary, print, toggleVerbose, history });
+
+  const webEnabled = args.web || config.web !== undefined;
+  const web = webEnabled
+    ? await startWebServer({
+      port: config.web?.port ?? DEFAULT_WEB_PORT,
+      token: loadOrCreateWebToken(homedir()),
+      hub,
+      // terminal と同じ解釈を通す。/exit も受け付ける
+      onInput: async (line) => {
+        if ((await shell.handleLine(line)) === "exit") void shutdown();
+      },
+      onError: (error) => print(`error: ${errorMessage(error)}`),
+    })
+    : undefined;
+  if (web) print(`web: ${web.url}/?token=<~/.clodex/web-token>  (remote: tailscale serve)`);
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) return;
@@ -88,6 +109,7 @@ const main = async (): Promise<void> => {
     rl.close();
     await coordinator.stop();
     await mcp.close();
+    await web?.close();
     // process.exit は出力のフラッシュ前に終了しうるので、自然終了させる
     setTimeout(() => process.exit(0), FORCE_EXIT_DELAY_MS).unref();
   };

@@ -7,6 +7,7 @@ export interface CliArgs {
   primary?: AgentId;
   models: Partial<Record<AgentId, string>>;
   resume: boolean;
+  web: boolean;
 }
 
 const isAgentId = (value: string): value is AgentId => (AGENT_IDS as readonly string[]).includes(value);
@@ -20,6 +21,7 @@ export const parseCliArgs = (argv: string[]): CliArgs => {
       "claude-model": { type: "string" },
       "codex-model": { type: "string" },
       resume: { type: "boolean" },
+      web: { type: "boolean" },
     },
     strict: true,
   });
@@ -34,5 +36,6 @@ export const parseCliArgs = (argv: string[]): CliArgs => {
   return {
     ...(values.project ? { project: values.project } : {}), ...(primary ? { primary } : {}), models,
     resume: values.resume ?? false,
+    web: values.web ?? false,
   };
 };

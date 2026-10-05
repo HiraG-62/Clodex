@@ -44,6 +44,12 @@ describe("loadConfig", () => {
     expect(() => loadConfig(setup({ user: { permission: "admin" } }))).toThrow(/permission/);
   });
 
+  it("web の port を読み、範囲外は拒否する", () => {
+    expect(loadConfig(setup({ user: { web: { port: 5000 } } }))).toEqual({ web: { port: 5000 } });
+    expect(loadConfig(setup({ user: { web: {} } }))).toEqual({ web: {} });
+    expect(() => loadConfig(setup({ user: { web: { port: 70000 } } }))).toThrow(/port/);
+  });
+
   it("limits と usageAlert を読む", () => {
     const config = {
       limits: { maxMessagesPerChain: 8, maxReviewRoundsPerChain: 3, maxDelegationsPerChain: 4, maxDelegationDepth: 2 },

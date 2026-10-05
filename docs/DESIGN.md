@@ -412,6 +412,7 @@ Project root の解決順:
 | `--claude-model <model>` | CLI の既定 | Claude の model |
 | `--codex-model <model>` | CLI の既定 | Codex の model |
 | `--resume` | なし | この project の最新の会話を続ける（§18） |
+| `--web` | 設定ファイルの `web` | Web UI を有効にする（§17 Web UI） |
 
 ---
 
@@ -999,6 +1000,25 @@ terminal の表示（「誰が何をしていて、誰が誰に何を頼んだ�
 | 途中の発言（`text`）・`tool`・`rate_limit`・`session`・`exit` | × | ✓ |
 
 log file は project の外（ホームディレクトリ）に置き、project の working tree を汚さない。
+
+## Web UI（v0.2）
+
+PC で動いている `clodex` を、スマホ等のブラウザから操作・観測できるようにする。スマホの接続が切れても `clodex` は PC で動き続ける。
+
+```text
+スマホのブラウザ ──HTTPS──> tailscale serve ──> 127.0.0.1:<port>（clodex の Web サーバー）
+                                                    ├── GET  /         画面（HTML 1 枚、JS / CSS は inline）
+                                                    ├── GET  /events   表示行の配信（Server-Sent Events）
+                                                    └── POST /api/input 1 行の入力
+```
+
+- **起動**: `clodex --web` または設定ファイルの `"web": { "port": 4319 }`。既定ポートは 4319
+- **待ち受け**: `127.0.0.1` だけ。外部からの接続は Tailscale の `tailscale serve`（tailnet 内の端末だけが HTTPS で入れる）に任せ、Clodex は `0.0.0.0` で待ち受けない
+- **認証**: 起動をまたいで同じ token を使う（`~/.clodex/web-token`、初回に生成）。`/?token=<token>` で開くと HttpOnly cookie を設定し、以後は cookie で認証する。token が無い・違うリクエストは 401
+- **表示**: terminal に出す行（§17 の表示モードに従う行と、コマンドの出力）をそのまま配信する。接続時に直近 500 行を送り、以後は新しい行を流す
+- **入力**: terminal と同じ `parseInput` / Shell を通す（§8）。テキスト、`@claude` / `@codex`、全スラッシュコマンドが使える
+- **画面**: スマホ向け。ログ（Agent ごとに色分け）、入力欄、よく使う操作のボタン（Interrupt / Status）
+- 依存パッケージを増やさない（`node:http` と SSE のみ）
 
 ---
 
