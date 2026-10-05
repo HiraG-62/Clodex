@@ -4,7 +4,7 @@ import { cleanup, render } from "ink-testing-library";
 import { setLanguage } from "../i18n/i18n.js";
 import type { FeedItem } from "../web/web-feed.js";
 import type { FeedClient } from "./feed-client.js";
-import { TuiApp } from "./tui.js";
+import { TuiApp, freshScreen } from "./tui.js";
 
 afterEach(cleanup);
 
@@ -56,5 +56,24 @@ describe("TuiApp", () => {
     emit({ type: "event", seq: 3, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "turn", result: { status: "completed", text: "終了" } } } });
     await tick();
     expect(app.frames.join("\n")).toContain("Read: src/a.ts");
+  });
+
+  it("空の入力欄はカーソルと同じ行に薄い案内を出し、入力すると消す", async () => {
+    setLanguage("ja");
+    const { client } = fakeClient();
+    const app = render(React.createElement(TuiApp, { client }));
+    await tick();
+    const lines = (app.lastFrame() ?? "").split("\n");
+    const inputLine = lines.findIndex((line) => line.includes("メッセージ"));
+    expect(lines[inputLine + 1]).toContain("╰");
+    app.stdin.write("a");
+    await tick();
+    expect(app.lastFrame()).not.toContain("メッセージ");
+  });
+});
+
+describe("freshScreen", () => {
+  it("画面の行数ぶん改行して前の内容をスクロールへ押し出し、先頭へ戻る", () => {
+    expect(freshScreen(3)).toBe("\n\n\n\x1b[H");
   });
 });

@@ -13,6 +13,7 @@ const h = React.createElement;
 const MAX_SUGGESTIONS = 5;
 const SPINNER_INTERVAL_MS = 250;
 const SPINNER_FRAMES = ["◐", "◓", "◑", "◒"] as const;
+const CURSOR_HOME = "\x1b[H";
 const LINE_COLOR = "#d4d4d8";
 const MUTED_COLOR = "#80808a";
 const WARN_COLOR = "#b7791f";
@@ -172,15 +173,19 @@ export const TuiApp = ({ client }: { client: FeedClient }) => {
     choices.length ? h(Box, { borderStyle: "round", borderColor: LINE_COLOR, flexDirection: "column", paddingX: 1 },
       ...choices.map((choice, i) => h(Text, { key: `${choice.insert}${i}`, color: i === selected ? CODEX_COLOR : MUTED_COLOR }, `${i === selected ? "▸" : " "} ${choice.label} · ${choice.detail}`))) : null,
     h(Box, { borderStyle: "round", borderColor: LINE_COLOR, flexDirection: "column", paddingX: 1 },
-      h(Text, { color: MUTED_COLOR }, t("tui.inputLabel")),
-      h(Text, { wrap: "wrap" }, cursor.before, h(Text, { inverse: true }, cursor.at), cursor.after)),
+      h(Text, { wrap: "wrap" }, cursor.before, h(Text, { inverse: true }, cursor.at), cursor.after,
+        buffer.text ? null : h(Text, { color: MUTED_COLOR }, t("tui.inputLabel")))),
     h(StatusPanel, { state, feed, now }),
     notice ? h(Text, { color: WARN_COLOR }, notice) : null,
     h(Text, { color: MUTED_COLOR, wrap: "truncate-end" }, `${project} · ${t("tui.footer", { queued: state.pendingInputs.length })}`),
   );
 };
 
+/** 画面の行数ぶん改行して起動前の内容を端末のスクロールへ押し出し、カーソルを画面の先頭へ戻す */
+export const freshScreen = (rows: number): string => `${"\n".repeat(rows)}${CURSOR_HOME}`;
+
 export const startTui = async (client: FeedClient): Promise<void> => {
+  if (process.stdout.isTTY) process.stdout.write(freshScreen(process.stdout.rows));
   const instance = render(h(TuiApp, { client }), { exitOnCtrlC: false });
   await instance.waitUntilExit();
 };
