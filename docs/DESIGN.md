@@ -478,7 +478,6 @@ interface AgentStartOptions {
   cwd: string;
   resumeSessionId?: string; // 指定時は既存 session を継続する
   mcpUrl?: string;          // Coordinator の MCP endpoint（§12）
-  model?: string;
   instructions?: string;    // system prompt に追加する定型文と役割（§13 Roles）
 }
 
@@ -492,11 +491,15 @@ interface AgentAdapter {
   readonly status: AgentStatus;
   readonly sessionId: string | undefined;
   readonly permission: PermissionLevel;
+  readonly model: string | undefined;
+  readonly effort: string | undefined;
 
   start(options: AgentStartOptions): Promise<void>;
   send(text: string): Promise<TurnResult>; // ターン完了で resolve。自発ターン中は終わるのを待って送る。それ以外の busy 中は拒否する
   compact(): Promise<TurnResult>;          // 手動 compact。1 ターンとして扱う
   setPermission(level: PermissionLevel): Promise<void>; // 停止中なら次の起動時に使う
+  setModel(model: string): Promise<TurnResult | void>;
+  setEffort(level: string): Promise<TurnResult | void>;
   interrupt(): Promise<void>;
   stop(): Promise<void>;
   onEvent(handler: (event: AgentEvent) => void): () => void;
@@ -563,7 +566,7 @@ Adapter の必須処理:
 - `/model` は model 名を検証しない（CLI が受け付けなければ、そのターンの失敗として表示される）。model 名は Agent ごとに違うので Agent の指定を必須にする
 - `/effort` の値: Claude は `low` / `medium` / `high` / `xhigh` / `max`（`claude --effort`）。Codex は `ReasoningEffort`（文字列。model ごとに対応する値が違う）。Agent を省略したときは両 Agent が受け付ける値だけを許す
 - `/status` と Web UI に、各 Agent の今の model と effort を表示する。CLI の既定のままで実際の値が分からなければ `default`
-- 反映の方法（docs/spikes/model-effort.md で実測する）: Codex は `turn/start` の `model` / `effort`（以降のターンにも引き継がれる）。Claude は control request（`set_model` 等）で変えられればそれを使い、無ければ idle のうちに同じ session を `-r` で起動し直して `--model` / `--effort` を付ける
+- 反映の方法（docs/spikes/model-effort.md で実測）: Codex は `turn/start` の `model` / `effort`（以降のターンにも引き継がれる）。Claude は `/model <model>` / `/effort <level>` を user message として mailbox の 1 ターンで直列に送る。CLI の result 文言で成功を確認し、無効値は failed の turn として表示する
 
 ---
 

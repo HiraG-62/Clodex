@@ -4,7 +4,7 @@ import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { AgentAdapter, AgentStartOptions } from "./agent-adapter.js";
+import type { AgentAdapter } from "./agent-adapter.js";
 import { ClaudeAdapter } from "./claude-adapter.js";
 import { CodexAdapter } from "./codex-adapter.js";
 
@@ -18,10 +18,11 @@ const makeRepo = (): string => {
   return dir;
 };
 
-const scenario = (create: () => AgentAdapter, extra: Partial<AgentStartOptions>) => async () => {
+const scenario = (create: () => AgentAdapter, model?: string) => async () => {
   const cwd = makeRepo();
   const agent = create();
-  await agent.start({ cwd, ...extra });
+  if (model) await agent.setModel(model);
+  await agent.start({ cwd });
   expect(await agent.send("Reply with exactly: PONG")).toEqual({ status: "completed", text: expect.stringContaining("PONG") });
 
   const long = agent.send("Write the numbers 1 to 500, one per line. Do not use tools.");
@@ -34,13 +35,14 @@ const scenario = (create: () => AgentAdapter, extra: Partial<AgentStartOptions>)
   expect(agent.status).toBe("stopped");
 
   const resumed = create();
-  await resumed.start({ cwd, resumeSessionId: sessionId, ...extra });
+  if (model) await resumed.setModel(model);
+  await resumed.start({ cwd, resumeSessionId: sessionId });
   const recall = await resumed.send("What exact word did you reply to my first message? Answer with that word only.");
   expect(recall.text).toContain("PONG");
   await resumed.stop();
 };
 
 describe.runIf(process.env.CLODEX_E2E === "1")("Agent adapters (real CLI)", () => {
-  it("Claude: 送信・interrupt・停止後の resume", scenario(() => new ClaudeAdapter(), { model: CLAUDE_E2E_MODEL }), E2E_TIMEOUT_MS);
-  it("Codex: 送信・interrupt・停止後の resume", scenario(() => new CodexAdapter(), {}), E2E_TIMEOUT_MS);
+  it("Claude: 送信・interrupt・停止後の resume", scenario(() => new ClaudeAdapter(), CLAUDE_E2E_MODEL), E2E_TIMEOUT_MS);
+  it("Codex: 送信・interrupt・停止後の resume", scenario(() => new CodexAdapter()), E2E_TIMEOUT_MS);
 });

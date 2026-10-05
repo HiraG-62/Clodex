@@ -82,6 +82,53 @@ describe("CodexAdapter", () => {
     expect(adapter.permission).toBe("read-only");
   });
 
+  it("停止中の model / effort は起動後の最初の turn/start に反映する", async () => {
+    const spawner = createFakeSpawner(defaultResponder());
+    const adapter = new CodexAdapter(spawner.spawn);
+    await adapter.setModel("gpt-6-sol");
+    await adapter.setEffort("low");
+    await adapter.start({ cwd: "C:\\dev\\app" });
+    expect(spawner.last.writtenWith("method", "thread/start")[0]!.params).toMatchObject({ model: "gpt-6-sol" });
+    const turn = adapter.send("a");
+    expect(spawner.last.writtenWith("method", "turn/start")[0]!.params).toMatchObject({ model: "gpt-6-sol", effort: "low" });
+    spawner.last.emit(turnCompleted("completed"));
+    await turn;
+  });
+
+  it("idle と busy 中の model / effort 変更は次の turn/start に反映する", async () => {
+    const { adapter, started, proc } = await setup();
+    await started;
+    await adapter.setModel("gpt-6-sol");
+    await adapter.setEffort("high");
+    const first = adapter.send("a");
+    expect(proc.writtenWith("method", "turn/start")[0]!.params).toMatchObject({ model: "gpt-6-sol", effort: "high" });
+    await adapter.setEffort("low");
+    await adapter.setModel("gpt-5.6-luna");
+    proc.emit(turnCompleted("completed"));
+    await first;
+    const second = adapter.send("b");
+    expect(proc.writtenWith("method", "turn/start")[1]!.params).toMatchObject({ model: "gpt-5.6-luna", effort: "low" });
+    proc.emit(turnCompleted("completed"));
+    await second;
+  });
+
+  it("起動処理中の model / effort 変更は最初の turn/start に反映する", async () => {
+    const responder = defaultResponder();
+    const spawner = createFakeSpawner((message) => message.method === "thread/start" ? undefined : responder(message));
+    const adapter = new CodexAdapter(spawner.spawn);
+    const started = adapter.start({ cwd: "C:\\dev\\app" });
+    await flush();
+    await adapter.setModel("gpt-5.6-luna");
+    await adapter.setEffort("high");
+    const request = spawner.last.writtenWith("method", "thread/start")[0]!;
+    spawner.last.emit({ id: request.id, result: { thread: { id: THREAD_ID }, model: "gpt-6-sol", reasoningEffort: "medium" } });
+    await started;
+    const turn = adapter.send("a");
+    expect(spawner.last.writtenWith("method", "turn/start")[0]!.params).toMatchObject({ model: "gpt-5.6-luna", effort: "high" });
+    spawner.last.emit(turnCompleted("completed"));
+    await turn;
+  });
+
   it("thread/start を送った後の起動中に変更された権限は、最初の turn/start で反映する", async () => {
     const responder = defaultResponder();
     const spawner = createFakeSpawner((m) => (m.method === "thread/start" ? undefined : responder(m)));

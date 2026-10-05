@@ -9,6 +9,8 @@ export interface AgentState {
   status: AgentStatus;
   sessionId: string | undefined;
   permission: PermissionLevel;
+  model?: string;
+  effort?: string;
   usage: UsageSnapshot;
 }
 
@@ -17,6 +19,8 @@ export interface ShellCoordinator {
   interrupt(agent?: AgentId): Promise<void>;
   compact(agent?: AgentId): Promise<unknown>;
   setPermission(level: PermissionLevel, agent?: AgentId): Promise<void>;
+  setModel(model: string, agent: AgentId): Promise<TurnResult | void>;
+  setEffort(level: string, agent?: AgentId): Promise<TurnResult | void>;
   switchSessions(sessions: SavedSessions, targets?: readonly AgentId[]): Promise<string | undefined>;
   status(): AgentState[];
 }
@@ -61,6 +65,8 @@ const HELP_LINES = (primary: AgentId) => [
   "/compact [agent]    summarize the conversation to reduce context (running agents if omitted)",
   "/verbose            toggle detailed output (tools, usage, intermediate text)",
   "/permission [agent] <read-only|edit|full>  change what agents may do without asking",
+  "/model <agent> <model>  change an agent's model",
+  "/effort [agent] <level>  change reasoning effort",
   "/exit               stop all agents and quit",
   "Ctrl+C              interrupt running turns and !commands",
 ];
@@ -143,8 +149,8 @@ export const createShell = ({ coordinator, primary: initialPrimary, print, toggl
         return "continue";
       case "status":
         print(`primary: ${primary}`);
-        for (const { id, status, sessionId, permission, usage } of coordinator.status()) {
-          print(`${id}: ${status}, permission ${permission}${sessionId ? ` (session ${sessionId})` : ""}`);
+        for (const { id, status, sessionId, permission, model, effort, usage } of coordinator.status()) {
+          print(`${id}: ${status}, permission ${permission}, model ${model ?? "default"}, effort ${effort ?? "default"}${sessionId ? ` (session ${sessionId})` : ""}`);
           print(formatUsage(usage));
           print(formatContext(usage));
         }
@@ -171,6 +177,16 @@ export const createShell = ({ coordinator, primary: initialPrimary, print, toggl
       case "permission":
         await coordinator.setPermission(command.level, command.agent);
         print(`permission: ${command.agent ?? "all agents"} -> ${command.level}`);
+        return "continue";
+      case "model":
+        if ((await coordinator.setModel(command.model, command.agent))?.status !== "failed") {
+          print(`model: ${command.agent} -> ${command.model}`);
+        }
+        return "continue";
+      case "effort":
+        if ((await coordinator.setEffort(command.level, command.agent))?.status !== "failed") {
+          print(`effort: ${command.agent ?? "all agents"} -> ${command.level}`);
+        }
         return "continue";
       case "verbose":
         print(`verbose: ${toggleVerbose() ? "on" : "off"}`);

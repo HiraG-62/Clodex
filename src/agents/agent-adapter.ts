@@ -8,6 +8,8 @@ export type AgentStatus = "stopped" | "starting" | "idle" | "busy";
 export const PERMISSION_LEVELS = ["read-only", "edit", "full"] as const;
 export type PermissionLevel = (typeof PERMISSION_LEVELS)[number];
 export const DEFAULT_PERMISSION: PermissionLevel = "edit";
+export const COMMON_EFFORT_LEVELS = ["low", "medium", "high", "xhigh"] as const;
+export const CLAUDE_EFFORT_LEVELS = [...COMMON_EFFORT_LEVELS, "max"] as const;
 
 // Coordinator が両 Agent に提供する MCP server と tool の名前（DESIGN.md §12）
 export const COORDINATOR_MCP_SERVER = "clodex";
@@ -17,7 +19,6 @@ export interface AgentStartOptions {
   cwd: string;
   resumeSessionId?: string;
   mcpUrl?: string;
-  model?: string;
   // system prompt に追加する指示（役割など。DESIGN.md §13 Roles）
   instructions?: string;
 }
@@ -51,6 +52,8 @@ export interface AgentAdapter {
   readonly status: AgentStatus;
   readonly sessionId: string | undefined;
   readonly permission: PermissionLevel;
+  readonly model: string | undefined;
+  readonly effort: string | undefined;
 
   start(options: AgentStartOptions): Promise<void>;
   send(text: string): Promise<TurnResult>;
@@ -58,6 +61,8 @@ export interface AgentAdapter {
   compact(): Promise<TurnResult>;
   // 停止中なら次の起動時に使う
   setPermission(level: PermissionLevel): Promise<void>;
+  setModel(model: string): Promise<TurnResult | void>;
+  setEffort(level: string): Promise<TurnResult | void>;
   interrupt(): Promise<void>;
   stop(): Promise<void>;
   onEvent(handler: AgentEventHandler): () => void;

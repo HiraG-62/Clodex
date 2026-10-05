@@ -7,6 +7,8 @@ export class FakeAgentAdapter implements AgentAdapter {
   status: AgentStatus = "stopped";
   sessionId: string | undefined;
   permission: PermissionLevel = "edit";
+  model: string | undefined;
+  effort: string | undefined;
   readonly starts: AgentStartOptions[] = [];
   readonly sent: string[] = [];
   compacts = 0;
@@ -48,6 +50,12 @@ export class FakeAgentAdapter implements AgentAdapter {
 
   async setPermission(level: PermissionLevel): Promise<void> {
     this.permission = level;
+  }
+  async setModel(model: string): Promise<TurnResult | void> {
+    this.model = model;
+  }
+  async setEffort(level: string): Promise<TurnResult | void> {
+    this.effort = level;
   }
 
   async stop(): Promise<void> {

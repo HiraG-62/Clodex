@@ -24,6 +24,11 @@ describe("parseInput", () => {
     ["/new codex", { kind: "new", agent: "codex" }],
     ["/resume 3", { kind: "resume", index: 3 }],
     ["/permission codex read-only", { kind: "permission", agent: "codex", level: "read-only" }],
+    ["/model claude haiku", { kind: "model", agent: "claude", model: "haiku" }],
+    ["/model codex gpt-6-sol", { kind: "model", agent: "codex", model: "gpt-6-sol" }],
+    ["/effort high", { kind: "effort", level: "high" }],
+    ["/effort claude max", { kind: "effort", agent: "claude", level: "max" }],
+    ["/effort codex minimal", { kind: "effort", agent: "codex", level: "minimal" }],
   ])("%j", (line, expected) => {
     expect(parseInput(line, "claude")).toEqual(expected);
   });
@@ -61,6 +66,13 @@ describe("parseInput", () => {
     ["/primary gemini", /unknown agent/],
     ["/permission admin", /usage/],
     ["/permission gemini edit", /unknown agent/],
+    ["/model", /usage/],
+    ["/model haiku", /usage/],
+    ["/model gemini x", /unknown agent/],
+    ["/effort", /usage/],
+    ["/effort max", /usage/],
+    ["/effort claude minimal", /usage/],
+    ["/effort codex", /usage/],
   ])("不正な入力 %j は invalid", (line, pattern) => {
     const result = parseInput(line, "claude");
     expect(result.kind).toBe("invalid");

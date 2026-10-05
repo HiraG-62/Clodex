@@ -55,6 +55,19 @@ describe("Coordinator", () => {
     expect(claude.starts[0]).not.toHaveProperty("instructions");
   });
 
+  it("起動オプションの model は setModel で保持し、AgentStartOptions には渡さない", async () => {
+    const claude = new FakeAgentAdapter("claude");
+    const codex = new FakeAgentAdapter("codex");
+    const coordinator = new Coordinator({
+      projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor,
+      models: { claude: "haiku" },
+    });
+    expect(claude.model).toBe("haiku");
+    void coordinator.sendToAgent("claude", "hi");
+    await flush();
+    expect(claude.starts[0]).not.toHaveProperty("model");
+  });
+
   it("resumeSessionIds の Agent は最初の起動で resume する", async () => {
     const claude = new FakeAgentAdapter("claude");
     const codex = new FakeAgentAdapter("codex");
@@ -112,6 +125,47 @@ describe("Coordinator", () => {
     await human;
     await flush();
     expect(codex.sent).toHaveLength(2);
+  });
+
+  it("Claude の model / effort を通常の入力と同じ順序で配送する", async () => {
+    const { claude, coordinator } = setup();
+    claude.setModel = async (model) => claude.send(`/model ${model}`);
+    claude.setEffort = async (level) => claude.send(`/effort ${level}`);
+    const first = coordinator.sendToAgent("claude", "first");
+    const model = coordinator.setModel("haiku", "claude");
+    const effort = coordinator.setEffort("high", "claude");
+    const last = coordinator.sendToAgent("claude", "last");
+    await flush();
+    expect(claude.sent).toEqual(["first"]);
+    claude.completeTurn();
+    await first;
+    await flush();
+    expect(claude.sent).toEqual(["first", "/model haiku"]);
+    claude.completeTurn();
+    await model;
+    await flush();
+    expect(claude.sent).toEqual(["first", "/model haiku", "/effort high"]);
+    claude.completeTurn();
+    await effort;
+    await flush();
+    expect(claude.sent).toEqual(["first", "/model haiku", "/effort high", "last"]);
+    claude.completeTurn();
+    await last;
+  });
+
+  it("Codex の設定も mailbox で busy ターンの完了を待つ", async () => {
+    const { codex, coordinator } = setup();
+    const first = coordinator.sendToAgent("codex", "first");
+    const model = coordinator.setModel("gpt-6-sol", "codex");
+    const effort = coordinator.setEffort("high", "codex");
+    await flush();
+    expect(codex.model).toBeUndefined();
+    expect(codex.effort).toBeUndefined();
+    codex.completeTurn();
+    await first;
+    await Promise.all([model, effort]);
+    expect(codex.model).toBe("gpt-6-sol");
+    expect(codex.effort).toBe("high");
   });
 
   it("Agent の event に送信元を付けて Event Bus へ流す", () => {
@@ -196,8 +250,8 @@ describe("Coordinator", () => {
     claude.status = "busy";
     claude.sessionId = "s-1";
     expect(coordinator.status()).toEqual([
-      { id: "claude", status: "busy", sessionId: "s-1", permission: "edit", usage: {} },
-      { id: "codex", status: "stopped", sessionId: undefined, permission: "edit", usage: {} },
+      { id: "claude", status: "busy", sessionId: "s-1", permission: "edit", model: undefined, effort: undefined, usage: {} },
+      { id: "codex", status: "stopped", sessionId: undefined, permission: "edit", model: undefined, effort: undefined, usage: {} },
     ]);
   });
 
@@ -213,6 +267,17 @@ describe("Coordinator", () => {
     expect([claude.permission, codex.permission]).toEqual(["edit", "full"]);
     await coordinator.setPermission("read-only");
     expect([claude.permission, codex.permission]).toEqual(["read-only", "read-only"]);
+  });
+
+  it("model と effort を Agent に設定し、status に反映する", async () => {
+    const { claude, codex, coordinator } = setup();
+    await coordinator.setModel("haiku", "claude");
+    await coordinator.setEffort("low");
+    expect([claude.model, codex.model]).toEqual(["haiku", undefined]);
+    expect([claude.effort, codex.effort]).toEqual(["low", "low"]);
+    expect(coordinator.status().map(({ model, effort }) => ({ model, effort }))).toEqual([
+      { model: "haiku", effort: "low" }, { model: undefined, effort: "low" },
+    ]);
   });
 
   it("起動時の権限レベルを全 Agent に設定する", () => {

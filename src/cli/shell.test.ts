@@ -33,9 +33,12 @@ class FakeCoordinator implements ShellCoordinator {
   readonly sent: Array<{ agent: AgentId; text: string }> = [];
   readonly interrupted: Array<AgentId | undefined> = [];
   readonly permissions: Array<{ level: PermissionLevel; agent: AgentId | undefined }> = [];
+  readonly models: Array<{ model: string; agent: AgentId }> = [];
+  readonly efforts: Array<{ level: string; agent: AgentId | undefined }> = [];
+  settingResult: TurnResult | undefined;
   states: AgentState[] = [
     {
-      id: "claude", status: "idle", sessionId: "s-claude", permission: "edit",
+      id: "claude", status: "idle", sessionId: "s-claude", permission: "edit", model: "haiku", effort: "high",
       usage: { fiveHourPercent: 12, weeklyPercent: 50, weeklyPace: -20, contextTokens: 85400, contextWindow: 200000 },
     },
     { id: "codex", status: "stopped", sessionId: undefined, permission: "full", usage: {} },
@@ -43,6 +46,14 @@ class FakeCoordinator implements ShellCoordinator {
 
   async setPermission(level: PermissionLevel, agent?: AgentId): Promise<void> {
     this.permissions.push({ level, agent });
+  }
+  async setModel(model: string, agent: AgentId): Promise<TurnResult | void> {
+    this.models.push({ model, agent });
+    return this.settingResult;
+  }
+  async setEffort(level: string, agent?: AgentId): Promise<TurnResult | void> {
+    this.efforts.push({ level, agent });
+    return this.settingResult;
   }
 
   readonly switched: SavedSessions[] = [];
@@ -132,10 +143,10 @@ describe("createShell", () => {
     await shell.handleLine("/status");
     expect(printed).toEqual([
       "primary: claude",
-      "claude: idle, permission edit (session s-claude)",
+      "claude: idle, permission edit, model haiku, effort high (session s-claude)",
       "  usage: 5h 12%, 7d 50% (pace -20)",
       "  context: 85k / 200k tokens (43%)",
-      "codex: stopped, permission full",
+      "codex: stopped, permission full, model default, effort default",
       "  usage: unknown",
       "  context: unknown",
     ]);
@@ -146,6 +157,8 @@ describe("createShell", () => {
     await shell.handleLine("/help");
     expect(printed.join("\n")).toMatch(/@codex/);
     expect(printed.join("\n")).toMatch(/\/interrupt/);
+    expect(printed.join("\n")).toMatch(/\/model/);
+    expect(printed.join("\n")).toMatch(/\/effort/);
   });
 
   it("/verbose は詳細表示を切り替えて状態を表示する", async () => {
@@ -161,6 +174,24 @@ describe("createShell", () => {
     await shell.handleLine("/permission full");
     expect(coordinator.permissions).toEqual([{ level: "read-only", agent: "codex" }, { level: "full", agent: undefined }]);
     expect(printed).toEqual(["permission: codex -> read-only", "permission: all agents -> full"]);
+  });
+
+  it("/model と /effort を Coordinator に渡す", async () => {
+    const { coordinator, printed, shell } = setup();
+    await shell.handleLine("/model claude haiku");
+    await shell.handleLine("/effort codex low");
+    await shell.handleLine("/effort high");
+    expect(coordinator.models).toEqual([{ agent: "claude", model: "haiku" }]);
+    expect(coordinator.efforts).toEqual([{ agent: "codex", level: "low" }, { agent: undefined, level: "high" }]);
+    expect(printed).toEqual(["model: claude -> haiku", "effort: codex -> low", "effort: all agents -> high"]);
+  });
+
+  it("設定ターンが failed のとき成功表示を出さない", async () => {
+    const { coordinator, printed, shell } = setup();
+    coordinator.settingResult = { status: "failed", text: "Model not found" };
+    await shell.handleLine("/model claude missing-model");
+    await shell.handleLine("/effort claude high");
+    expect(printed).toEqual([]);
   });
 
   it("/primary は通常のテキストの送り先を切り替える", async () => {

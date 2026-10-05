@@ -135,6 +135,27 @@ describe("AgentMailbox", () => {
     await expect(compacted).resolves.toEqual({ status: "completed", text: "" });
   });
 
+  it("model / effort の設定も送信と同じ FIFO キューで待つ", async () => {
+    const { agent, mailbox } = setup();
+    agent.status = "idle";
+    const first = mailbox.enqueue("first");
+    const model = mailbox.enqueueModel("haiku");
+    const effort = mailbox.enqueueEffort("high");
+    const last = mailbox.enqueue("last");
+    await flush();
+    expect(agent.model).toBeUndefined();
+    agent.completeTurn();
+    await first;
+    await expect(model).resolves.toMatchObject({ status: "completed" });
+    await expect(effort).resolves.toMatchObject({ status: "completed" });
+    await flush();
+    expect(agent.model).toBe("haiku");
+    expect(agent.effort).toBe("high");
+    expect(agent.sent).toEqual(["first", "last"]);
+    agent.completeTurn();
+    await last;
+  });
+
   it("停止中の Agent は compact のために起動しない", async () => {
     const { agent, mailbox, onError } = setup();
     await expect(mailbox.enqueueCompact()).resolves.toEqual({ status: "failed", text: "codex is not running" });

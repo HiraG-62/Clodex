@@ -81,13 +81,13 @@ export class CodexAdapter extends BaseAgentAdapter {
     super();
   }
 
-  async start({ cwd, resumeSessionId, mcpUrl, model, instructions }: AgentStartOptions): Promise<void> {
+  async start({ cwd, resumeSessionId, mcpUrl, instructions }: AgentStartOptions): Promise<void> {
     if (this.status !== "stopped") throw new Error(`codex is ${this.status}`);
     this.status = "starting";
     const args = ["app-server", ...(mcpUrl ? mcpArgs(mcpUrl) : [])];
     this.attach(this.spawnProcess(CODEX_COMMAND, args, { cwd, env: agentEnv(process.env, this.id) }));
     try {
-      await this.handshake(cwd, resumeSessionId, model, instructions);
+      await this.handshake(cwd, resumeSessionId, instructions);
     } catch (error) {
       // 起動途中で失敗したら常駐プロセスを残さない
       this.proc?.kill();
@@ -96,7 +96,7 @@ export class CodexAdapter extends BaseAgentAdapter {
   }
 
   private async handshake(
-    cwd: string, resumeSessionId: string | undefined, model: string | undefined, instructions: string | undefined,
+    cwd: string, resumeSessionId: string | undefined, instructions: string | undefined,
   ): Promise<void> {
     await this.request("initialize", { clientInfo: CLIENT_INFO, capabilities: null });
     this.notify("initialized");
@@ -104,12 +104,14 @@ export class CodexAdapter extends BaseAgentAdapter {
 
     this.launchPermission = this.permission;
     const threadParams = {
-      cwd, approvalPolicy: APPROVAL_POLICY, sandbox: SANDBOX_MODE[this.launchPermission], ...(model ? { model } : {}), ...(instructions ? { developerInstructions: instructions } : {}),
+      cwd, approvalPolicy: APPROVAL_POLICY, sandbox: SANDBOX_MODE[this.launchPermission], ...(this.model ? { model: this.model } : {}), ...(instructions ? { developerInstructions: instructions } : {}),
     };
     const response = (resumeSessionId
       ? await this.request("thread/resume", { threadId: resumeSessionId, ...threadParams })
-      : await this.request("thread/start", threadParams)) as { thread: { id: string } };
+      : await this.request("thread/start", threadParams)) as { thread: { id: string }; model?: string; reasoningEffort?: string | null };
     this.sessionId = response.thread.id;
+    this.model ??= response.model;
+    this.effort ??= response.reasoningEffort ?? undefined;
     this.status = "idle";
     await this.applyPermissionChangedDuringStart();
     this.emit({ type: "session", sessionId: this.sessionId });
@@ -159,6 +161,8 @@ export class CodexAdapter extends BaseAgentAdapter {
       threadId: this.sessionId,
       input: [{ type: "text", text, text_elements: [] }],
       ...(sandbox ? { sandboxPolicy: SANDBOX_POLICY[sandbox] } : {}),
+      ...(this.model ? { model: this.model } : {}),
+      ...(this.effort ? { effort: this.effort } : {}),
     })
       .then((response) => this.setTurnId((response as { turn?: { id?: string } }).turn?.id))
       .catch((error: Error) => this.finishTurn({ status: "failed", text: error.message }));

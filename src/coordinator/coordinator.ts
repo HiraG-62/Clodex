@@ -37,16 +37,16 @@ export class Coordinator {
       agents[id].onEvent((event) => bus.publish({ kind: "agent", agent: id, event }));
       // 起動前なので値を保持するだけ（次の起動時に使われる）
       if (permission) void agents[id].setPermission(permission);
+      if (models?.[id]) void agents[id].setModel(models[id]);
     }
     const createMailbox = (id: AgentId) => {
-      const model = models?.[id];
       const instruction = instructions?.[id];
       const resumeSessionId = options.resumeSessionIds?.[id];
       return new AgentMailbox(
         agents[id],
         {
           cwd: projectRoot, mcpUrl: mcpUrlFor(id),
-          ...(model ? { model } : {}), ...(instruction ? { instructions: instruction } : {}),
+          ...(instruction ? { instructions: instruction } : {}),
           ...(resumeSessionId ? { resumeSessionId } : {}),
         },
         (message) => bus.publish({ kind: "agent", agent: id, event: { type: "error", message } }),
@@ -125,12 +125,23 @@ export class Coordinator {
     await Promise.all(targets.map((target) => this.options.agents[target].setPermission(level)));
   }
 
+  async setModel(model: string, id: AgentId): Promise<TurnResult | void> {
+    return this.mailboxes[id].enqueueModel(model);
+  }
+
+  async setEffort(level: string, id?: AgentId): Promise<TurnResult | void> {
+    if (id) return this.mailboxes[id].enqueueEffort(level);
+    const results = await Promise.all(AGENT_IDS.map((agent) => this.mailboxes[agent].enqueueEffort(level)));
+    return results.find((result) => result.status === "failed") ?? results[0];
+  }
+
   status(): Array<{
-    id: AgentId; status: AgentStatus; sessionId: string | undefined; permission: PermissionLevel; usage: UsageSnapshot;
+    id: AgentId; status: AgentStatus; sessionId: string | undefined; permission: PermissionLevel;
+    model: string | undefined; effort: string | undefined; usage: UsageSnapshot;
   }> {
     return AGENT_IDS.map((id) => {
-      const { status, permission } = this.options.agents[id];
-      return { id, status, sessionId: this.mailboxes[id].sessionId, permission, usage: this.usage.snapshot(id) };
+      const { status, permission, model, effort } = this.options.agents[id];
+      return { id, status, sessionId: this.mailboxes[id].sessionId, permission, model, effort, usage: this.usage.snapshot(id) };
     });
   }
 

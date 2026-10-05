@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, summarizeToolInput,
-  type AgentStartOptions, type PermissionLevel, type RateLimitWindow,
+  type AgentStartOptions, type PermissionLevel, type RateLimitWindow, type TurnResult,
 } from "./agent-adapter.js";
 import { agentEnv, spawnAgentProcess, type SpawnAgentProcess } from "./agent-process.js";
 import { BaseAgentAdapter } from "./base-agent-adapter.js";
@@ -13,6 +13,11 @@ const SUBSCRIPTION_API_KEY_SOURCE = "none";
 const HTTP_UNAUTHORIZED = 401;
 const RATIO_TO_PERCENT = 100;
 const COMPACT_COMMAND = "/compact";
+const MODEL_COMMAND = "/model";
+const EFFORT_COMMAND = "/effort";
+const MODEL_SUCCESS = "Set model to ";
+const EFFORT_SUCCESS = "Set effort level to ";
+type SettingKind = "model" | "effort";
 
 // 権限レベル → Claude の permission mode（DESIGN.md §9 Permission）
 // read-only は plan: default はユーザー設定の許可リストで書き込めてしまうため（docs/spikes/permission.md）
@@ -44,6 +49,7 @@ interface MessageUsage {
 interface ClaudeEvent {
   type?: string;
   subtype?: string;
+  model?: string;
   parent_tool_use_id?: string | null;
   apiKeySource?: string;
   error_status?: number;
@@ -64,6 +70,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
   private interruptRequested = false;
   // 最後の API 呼び出しの usage。今のコンテキストの大きさとして使う（DESIGN.md §9）
   private lastUsage: MessageUsage | undefined;
+  private settingTurn: SettingKind | undefined;
 
   constructor(
     private readonly spawnProcess: SpawnAgentProcess = spawnAgentProcess,
@@ -72,7 +79,8 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     super();
   }
 
-  async start({ cwd, resumeSessionId, mcpUrl, model, instructions }: AgentStartOptions): Promise<void> {
+  async start(options: AgentStartOptions): Promise<void> {
+    const { cwd, resumeSessionId, mcpUrl, instructions } = options;
     if (this.status !== "stopped") throw new Error(`claude is ${this.status}`);
     // session ID を Coordinator 側で決めておくと、最初のターン前から resume 用 ID が確定する
     this.sessionId = resumeSessionId ?? this.createId();
@@ -83,7 +91,8 @@ export class ClaudeAdapter extends BaseAgentAdapter {
       // 後から full（bypassPermissions）へ切り替えられるようにする。付けるだけでは bypass にならない
       "--allow-dangerously-skip-permissions",
       ...(resumeSessionId ? ["-r", resumeSessionId] : ["--session-id", this.sessionId]),
-      ...(model ? ["--model", model] : []),
+      ...(this.model ? ["--model", this.model] : []),
+      ...(this.effort ? ["--effort", this.effort] : []),
       ...(instructions ? ["--append-system-prompt", instructions] : []),
       ...(mcpUrl ? mcpArgs(mcpUrl) : []),
     ];
@@ -94,7 +103,34 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     await proc.spawned;
     this.status = "idle";
     await this.applyPermissionChangedDuringStart();
+    if (this.proc !== proc) return;
     this.emit({ type: "session", sessionId: this.sessionId });
+  }
+
+  async setModel(model: string): Promise<TurnResult | void> {
+    if (this.status === "stopped") { this.model = model; return; }
+    return this.runSetting("model", model);
+  }
+
+  async setEffort(level: string): Promise<TurnResult | void> {
+    if (this.status === "stopped") { this.effort = level; return; }
+    return this.runSetting("effort", level);
+  }
+
+  private async runSetting(kind: SettingKind, value: string): Promise<TurnResult> {
+    if (this.status === "starting") await this.proc?.spawned;
+    const spontaneous = this.activeSpontaneousTurn;
+    if (spontaneous) await spontaneous;
+    const command = `${kind === "model" ? MODEL_COMMAND : EFFORT_COMMAND} ${value}`;
+    if (this.status !== "idle") return super.send(command);
+    this.settingTurn = kind;
+    try {
+      const result = await super.send(command);
+      if (result.status === "completed") this[kind] = value;
+      return result;
+    } finally {
+      this.settingTurn = undefined;
+    }
   }
 
   async interrupt(): Promise<void> {
@@ -136,9 +172,12 @@ export class ClaudeAdapter extends BaseAgentAdapter {
         this.emit({ type: "rate_limit", ...(fiveHour && { fiveHour }), ...(weekly && { weekly }) });
         return;
       }
-      case "result":
+      case "result": {
         this.emitContext(event);
-        return this.finishTurn({ status: this.resultStatus(event), text: event.result ?? "" });
+        const setting = this.settingTurn;
+        this.settingTurn = undefined;
+        return this.finishTurn({ status: this.resultStatus(event, setting), text: event.result ?? "" });
+      }
     }
   }
 
@@ -147,7 +186,10 @@ export class ClaudeAdapter extends BaseAgentAdapter {
       this.abort(`claude is not using subscription auth (apiKeySource: ${event.apiKeySource})`);
       return;
     }
-    if (event.subtype === "init") this.beginSpontaneousTurn();
+    if (event.subtype === "init") {
+      this.model ??= event.model;
+      this.beginSpontaneousTurn();
+    }
     // compact 後の正確な大きさは次のターンまで分からない（post_tokens は system prompt を含まない）
     if (event.subtype === "compact_boundary") {
       this.lastUsage = undefined;
@@ -181,8 +223,9 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     }
   }
 
-  private resultStatus(event: ClaudeEvent) {
-    if (event.subtype === "success" && !event.is_error) return "completed" as const;
+  private resultStatus(event: ClaudeEvent, setting?: SettingKind) {
+    const acknowledged = !setting || (event.result ?? "").startsWith(setting === "model" ? MODEL_SUCCESS : EFFORT_SUCCESS);
+    if (event.subtype === "success" && !event.is_error && acknowledged) return "completed" as const;
     return this.interruptRequested ? "interrupted" as const : "failed" as const;
   }
 }

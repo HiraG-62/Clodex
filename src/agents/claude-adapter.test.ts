@@ -83,6 +83,101 @@ describe("ClaudeAdapter", () => {
     expect(args[args.indexOf("--append-system-prompt") + 1]).toBe("You are claude.");
   });
 
+  it("停止中の model / effort は起動引数に反映する", async () => {
+    const spawner = createFakeSpawner();
+    const adapter = new ClaudeAdapter(spawner.spawn, () => SESSION_ID);
+    await adapter.setModel("haiku");
+    await adapter.setEffort("high");
+    await adapter.start({ cwd: "C:\\dev\\app" });
+    expect(spawner.calls[0]!.args).toEqual(expect.arrayContaining(["--model", "haiku", "--effort", "high"]));
+  });
+
+  it("idle の model / effort 変更は slash command を各 1 ターンとして送る", async () => {
+    const { adapter, spawner, proc } = await setup();
+    const model = adapter.setModel("haiku");
+    expect(proc.writtenWith("type", "user")).toContainEqual({ type: "user", message: { role: "user", content: "/model haiku" } });
+    proc.emit(result("Set model to `Haiku 4.5` for this session only"));
+    await expect(model).resolves.toMatchObject({ status: "completed" });
+    const effort = adapter.setEffort("medium");
+    expect(proc.writtenWith("type", "user")).toContainEqual({ type: "user", message: { role: "user", content: "/effort medium" } });
+    proc.emit(result("Set effort level to medium (this session only)"));
+    await expect(effort).resolves.toMatchObject({ status: "completed" });
+    expect(spawner.calls).toHaveLength(1);
+    const turn = adapter.send("hello");
+    proc.emit(result("done"));
+    await expect(turn).resolves.toEqual({ status: "completed", text: "done" });
+  });
+
+  it("不正な model / effort は is_error=false でも failed にする", async () => {
+    const { adapter, proc, events } = await setup();
+    const model = adapter.setModel("missing-model");
+    proc.emit(result("Model 'missing-model' not found"));
+    await expect(model).resolves.toEqual({ status: "failed", text: "Model 'missing-model' not found" });
+    const effort = adapter.setEffort("bogus");
+    proc.emit(result("Invalid argument: bogus. Valid options are: low, medium, high, xhigh, max, auto"));
+    await expect(effort).resolves.toMatchObject({ status: "failed" });
+    expect(adapter.model).toBeUndefined();
+    expect(adapter.effort).toBeUndefined();
+    expect(events).toContainEqual({ type: "turn", result: { status: "failed", text: "Model 'missing-model' not found" } });
+  });
+
+  it("一時的な API error は failed のターンにし、プロセスは続ける", async () => {
+    const { adapter, proc } = await setup();
+    const first = adapter.send("first");
+    proc.emit({ ...result("API overloaded"), is_error: true, terminal_reason: "api_error" });
+    await expect(first).resolves.toEqual({ status: "failed", text: "API overloaded" });
+    expect(adapter.status).toBe("idle");
+    const second = adapter.send("second");
+    proc.emit(result("ok"));
+    await expect(second).resolves.toEqual({ status: "completed", text: "ok" });
+  });
+
+  it("busy 中の直接の設定は拒否し、mailbox 側の直列化に任せる", async () => {
+    const { adapter, proc } = await setup();
+    const first = adapter.send("first");
+    await expect(adapter.setModel("haiku")).rejects.toThrow(/busy/);
+    await expect(adapter.setEffort("high")).rejects.toThrow(/busy/);
+    proc.emit(result("done"));
+    await first;
+  });
+
+  it("起動処理中の model / effort 変更は起動後に各 1 ターンとして送る", async () => {
+    const spawner = createFakeSpawner();
+    const adapter = new ClaudeAdapter(spawner.spawn, () => SESSION_ID);
+    const started = adapter.start({ cwd: "C:\\dev\\app" });
+    const model = adapter.setModel("haiku");
+    await started;
+    expect(spawner.calls).toHaveLength(1);
+    await flush();
+    expect(spawner.last.writtenWith("type", "user")).toContainEqual({ type: "user", message: { role: "user", content: "/model haiku" } });
+    spawner.last.emit(result("Set model to `Haiku 4.5` for this session only"));
+    await model;
+    const effort = adapter.setEffort("high");
+    expect(spawner.last.writtenWith("type", "user")).toContainEqual({ type: "user", message: { role: "user", content: "/effort high" } });
+    spawner.last.emit(result("Set effort level to high (this session only)"));
+    await effort;
+    expect(spawner.calls).toHaveLength(1);
+  });
+
+  it("通常の user text の /model は設定ターン判定に使わない", async () => {
+    const { adapter, proc } = await setup();
+    const turn = adapter.send("/model invalid");
+    proc.emit(result("Model 'invalid' not found"));
+    await expect(turn).resolves.toEqual({ status: "completed", text: "Model 'invalid' not found" });
+  });
+
+  it("compact は直前の設定ターンが完了してから送る", async () => {
+    const { adapter, proc } = await setup();
+    const setting = adapter.setEffort("low");
+    await expect(adapter.compact()).rejects.toThrow(/busy/);
+    proc.emit(result("Set effort level to low (this session only)"));
+    await setting;
+    const compacted = adapter.compact();
+    expect(proc.writtenWith("type", "user")).toContainEqual({ type: "user", message: { role: "user", content: "/compact" } });
+    proc.emit(result(""));
+    await expect(compacted).resolves.toEqual({ status: "completed", text: "" });
+  });
+
   it("resumeSessionId 指定時は -r で既存 session を継続する", async () => {
     const { spawner, adapter } = await setup({ resumeSessionId: "existing-id" });
     expect(spawner.calls[0]!.args).toEqual(expect.arrayContaining(["-r", "existing-id"]));

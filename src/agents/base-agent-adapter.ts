@@ -11,6 +11,8 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   status: AgentStatus = "stopped";
   sessionId: string | undefined;
   permission: PermissionLevel = DEFAULT_PERMISSION;
+  model: string | undefined;
+  effort: string | undefined;
   // 起動に使った権限レベル。起動中に変更されたら起動完了時に差分を反映する
   protected launchPermission: PermissionLevel = DEFAULT_PERMISSION;
 
@@ -35,6 +37,12 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   // サブスクラスが起動完了時に呼ぶ
   protected async applyPermissionChangedDuringStart(): Promise<void> {
     if (this.permission !== this.launchPermission) await this.applyPermission(this.permission);
+  }
+  async setModel(model: string): Promise<TurnResult | void> {
+    this.model = model;
+  }
+  async setEffort(level: string): Promise<TurnResult | void> {
+    this.effort = level;
   }
   protected abstract handleMessage(message: unknown): void;
   protected abstract writeTurn(text: string): void;
@@ -68,6 +76,10 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
     this.status = "busy";
     this.spontaneousTurn = new Promise<TurnResult>((resolve) => (this.resolveTurn = resolve));
     this.emit({ type: "turn_started" });
+  }
+
+  protected get activeSpontaneousTurn(): Promise<TurnResult> | undefined {
+    return this.spontaneousTurn;
   }
 
   stop(): Promise<void> {

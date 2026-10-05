@@ -14,6 +14,10 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
   };
   const AGENT_IDS: AgentId[] = ["claude", "codex"];
   const PERMISSIONS = ["read-only", "edit", "full"] as const;
+  const EFFORTS: Record<AgentId, readonly string[]> = {
+    claude: ["low", "medium", "high", "xhigh", "max"],
+    codex: ["minimal", "low", "medium", "high", "xhigh"],
+  };
   const THEMES = ["system", "light", "dark"] as const;
   type Theme = (typeof THEMES)[number];
   const THEME_LABEL: Record<Theme, string> = { system: "システム", light: "ライト", dark: "ダーク" };
@@ -235,6 +239,7 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
   const agentControls = (agent: AgentState) => {
     const wrap = el("div", "controls");
     const { usage } = agent;
+    wrap.append(el("div", "setting", `Model: ${agent.model ?? "default"} · Effort: ${agent.effort ?? "default"}`));
     const pace = usage.weeklyPace;
     wrap.append(
       gauge("5 時間", usage.fiveHourPercent === undefined ? "—" : `${usage.fiveHourPercent}%`, usage.fiveHourPercent, agent.id),
@@ -255,6 +260,18 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
       seg.append(button);
     }
     wrap.append(seg);
+    wrap.append(el("div", "eyebrow", "Effort"));
+    const effort = el("div", "seg");
+    effort.setAttribute("role", "group");
+    effort.setAttribute("aria-label", `${AGENTS[agent.id].name} の effort`);
+    for (const level of EFFORTS[agent.id]) {
+      const button = el("button", "", level) as HTMLButtonElement;
+      button.type = "button";
+      button.setAttribute("aria-pressed", String(agent.effort === level));
+      button.addEventListener("click", () => void send(`/effort ${agent.id} ${level}`));
+      effort.append(button);
+    }
+    wrap.append(effort);
     const links = el("div", "links");
     const action = (label: string, command: string, cls = "", disabled = false) => {
       const button = el("button", cls, label) as HTMLButtonElement;
@@ -295,6 +312,7 @@ export function clientMain(renderMarkdown: typeof RenderMarkdown, applyFeedItem:
       if (agent.usage.fiveHourPercent !== undefined) figs.append(fig("5h", `${agent.usage.fiveHourPercent}%`));
       if (agent.usage.weeklyPace !== undefined) figs.append(fig("週", `${agent.usage.weeklyPace > 0 ? "+" : ""}${agent.usage.weeklyPace}`));
       figs.append(fig("権限", agent.permission));
+      figs.append(fig("model", agent.model ?? "default"), fig("effort", agent.effort ?? "default"));
       row.append(mark(agent.id), figs, stateLabel(agent));
       row.addEventListener("click", () => openAgentSheet(agent.id));
       return row;

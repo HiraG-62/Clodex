@@ -5,7 +5,7 @@ import type { AgentMessage } from "../protocol/messages.js";
 const CLOSED_RESULT: TurnResult = { status: "failed", text: "mailbox is closed" };
 
 interface QueueItem {
-  kind: "send" | "compact";
+  kind: "send" | "compact" | "model" | "effort";
   text: string;
   message: AgentMessage | undefined; // 人間の入力・compact なら undefined
   resolve: (result: TurnResult) => void;
@@ -38,6 +38,16 @@ export class AgentMailbox {
   enqueueCompact(): Promise<TurnResult> {
     if (this.closed) return Promise.resolve(CLOSED_RESULT);
     return this.push({ kind: "compact", text: "", message: undefined });
+  }
+
+  enqueueModel(model: string): Promise<TurnResult> {
+    if (this.closed) return Promise.resolve(CLOSED_RESULT);
+    return this.push({ kind: "model", text: model, message: undefined });
+  }
+
+  enqueueEffort(level: string): Promise<TurnResult> {
+    if (this.closed) return Promise.resolve(CLOSED_RESULT);
+    return this.push({ kind: "effort", text: level, message: undefined });
   }
 
   private push(item: Omit<QueueItem, "resolve">): Promise<TurnResult> {
@@ -83,7 +93,9 @@ export class AgentMailbox {
       for (let item = this.queue.shift(); item; item = this.paused ? undefined : this.queue.shift()) {
         this.current = item.message;
         try {
-          const result = item.kind === "compact" ? await this.compact() : await this.deliver(item.text);
+          const result = item.kind === "compact" ? await this.compact()
+            : item.kind === "model" || item.kind === "effort" ? await this.setting(item.kind, item.text)
+              : await this.deliver(item.text);
           item.resolve(result);
         } finally {
           this.current = undefined;
@@ -111,6 +123,18 @@ export class AgentMailbox {
     try {
       await this.ensureRunning();
       return await this.agent.send(text);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.onError(message);
+      return { status: "failed", text: message };
+    }
+  }
+
+  private async setting(kind: "model" | "effort", value: string): Promise<TurnResult> {
+    try {
+      // 停止中は次の起動時に使う。Claude は slash command のターン、Codex は値の保持で反映する。
+      const result = kind === "model" ? await this.agent.setModel(value) : await this.agent.setEffort(value);
+      return result ?? { status: "completed", text: "" };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.onError(message);
