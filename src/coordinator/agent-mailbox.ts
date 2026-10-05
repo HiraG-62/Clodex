@@ -14,6 +14,7 @@ export class AgentMailbox {
   private readonly queue: QueueItem[] = [];
   private draining = false;
   private closed = false;
+  private idleWaiters: Array<() => void> = [];
   // 配送中のターンが処理している message。Budget の chain 追跡に使う（DESIGN.md §14）
   current: AgentMessage | undefined;
 
@@ -29,6 +30,16 @@ export class AgentMailbox {
     const result = new Promise<TurnResult>((resolve) => this.queue.push({ text, message, resolve }));
     void this.drain();
     return result;
+  }
+
+  get isIdle(): boolean {
+    return !this.draining && this.queue.length === 0;
+  }
+
+  // キューが空になり配送中のターンも終わったら resolve する
+  whenIdle(): Promise<void> {
+    if (this.isIdle) return Promise.resolve();
+    return new Promise((resolve) => this.idleWaiters.push(resolve));
   }
 
   // 未配送分を破棄し、以後は Agent を起動しない（停止中の再起動を防ぐ）
@@ -47,6 +58,7 @@ export class AgentMailbox {
       item.resolve(result);
     }
     this.draining = false;
+    for (const resolve of this.idleWaiters.splice(0)) resolve();
   }
 
   private async deliver(text: string): Promise<TurnResult> {

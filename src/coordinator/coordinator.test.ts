@@ -146,6 +146,45 @@ describe("Coordinator", () => {
     }
   });
 
+  it("interrupt は指定 Agent、省略時は全 Agent を interrupt する", async () => {
+    const { claude, codex, coordinator } = setup();
+    const calls: string[] = [];
+    claude.interrupt = async () => void calls.push("claude");
+    codex.interrupt = async () => void calls.push("codex");
+    await coordinator.interrupt("codex");
+    expect(calls).toEqual(["codex"]);
+    await coordinator.interrupt();
+    expect(calls).toEqual(["codex", "claude", "codex"]);
+  });
+
+  it("status は各 Agent の状態と session ID を返す", async () => {
+    const { claude, coordinator } = setup();
+    claude.status = "busy";
+    claude.sessionId = "s-1";
+    expect(coordinator.status()).toEqual([
+      { id: "claude", status: "busy", sessionId: "s-1" },
+      { id: "codex", status: "stopped", sessionId: undefined },
+    ]);
+  });
+
+  it("whenIdle は Agent 間の配送の連鎖が終わるまで待つ", async () => {
+    const { claude, codex, coordinator } = setup();
+    void coordinator.sendToAgent("claude", "human task");
+    let idle = false;
+    void coordinator.whenIdle().then(() => (idle = true));
+    await flush();
+
+    // claude のターン中に codex へ依頼し、claude のターンが終わる
+    coordinator.receiveMessage("claude", reviewRequest);
+    claude.completeTurn();
+    await flush();
+    expect(idle).toBe(false);
+
+    codex.completeTurn();
+    await flush();
+    expect(idle).toBe(true);
+  });
+
   it("stop は全 Agent を止める", async () => {
     const { claude, codex, coordinator } = setup();
     claude.status = "idle";

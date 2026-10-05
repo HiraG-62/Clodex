@@ -28,7 +28,7 @@ describe("buildEnvelope", () => {
       "",
       "refresh token の race condition をレビュー",
       "",
-      'Reply with the clodex send_message tool: to="claude", type="RESULT", taskId="AUTH-142", replyTo="msg_1a2b3c4d".',
+      'Reply with the send_message tool of the "clodex" MCP server (not a shell command): to="claude", type="RESULT", taskId="AUTH-142", replyTo="msg_1a2b3c4d".',
       "Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.",
     ].join("\n"));
   });

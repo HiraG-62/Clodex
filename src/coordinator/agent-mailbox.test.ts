@@ -59,6 +59,19 @@ describe("AgentMailbox", () => {
     expect(mailbox.current).toBeUndefined();
   });
 
+  it("whenIdle はキューが空になりターンが終わるまで待つ", async () => {
+    const { agent, mailbox } = setup();
+    await mailbox.whenIdle();
+    void mailbox.enqueue("first");
+    let idle = false;
+    void mailbox.whenIdle().then(() => (idle = true));
+    await flush();
+    expect(idle).toBe(false);
+    agent.completeTurn();
+    await flush();
+    expect(idle).toBe(true);
+  });
+
   it("前のターンが終わるまで次を送らない（FIFO）", async () => {
     const { agent, mailbox } = setup();
     const first = mailbox.enqueue("first");

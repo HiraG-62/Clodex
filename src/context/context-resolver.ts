@@ -10,7 +10,8 @@ const formatIssue = ({ file, line, severity, summary }: Issue): string =>
 const replyInstruction = (m: AgentMessage): string[] =>
   REQUEST_TYPES.has(m.type)
     ? [
-      `Reply with the clodex send_message tool: to="${m.from}", type="RESULT", taskId="${m.taskId}", replyTo="${m.id}".`,
+      // 他の連携手段（skill や CLI）と取り違えないよう、MCP tool であることを明示する
+      `Reply with the send_message tool of the "clodex" MCP server (not a shell command): to="${m.from}", type="RESULT", taskId="${m.taskId}", replyTo="${m.id}".`,
       "Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.",
     ]
     : ["No reply is required."];

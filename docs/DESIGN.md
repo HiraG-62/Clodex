@@ -404,37 +404,44 @@ Project root の解決順:
 2. `git rev-parse --show-toplevel`
 3. `process.cwd()`
 
+起動オプション（v0.1）:
+
+| option | 既定 | 内容 |
+|---|---|---|
+| `--project <path>` | 上記の解決順 | Project root |
+| `--primary <claude\|codex>` | `claude` | 通常のテキストの送り先 |
+| `--claude-model <model>` | CLI の既定 | Claude の model |
+| `--codex-model <model>` | CLI の既定 | Codex の model |
+
 ---
 
 # 8. Input UX
 
-将来的な入力形式。
+| Input | Action | v0.1 |
+|---|---|---|
+| 普通のテキスト | Primary Agent へ送信 | ✓ |
+| `@claude ...` | Claude へ直接送信 | ✓ |
+| `@codex ...` | Codex へ直接送信 | ✓ |
+| `@all ...` | 両方へ送信（高コスト操作なので警告対象） | 未対応 |
+| `!command` | foreground shell command | 未対応（§15） |
+| `!& command` | background process | 未対応（§15） |
+| `/command` | Shell internal command | ✓（下記） |
+| Ctrl+C | 実行中の全 Agent のターンを interrupt。実行中が無ければ終了方法を案内 | ✓ |
+| Ctrl+D / 入力の終端 | 受け付けた配送（Agent 間の連鎖を含む）が終わるのを待ってから終了 | ✓ |
 
-| Input | Action |
+- 送信はキューに積むだけで、入力はすぐ次を受け付ける（§12 の mailbox）
+- 未対応の入力は、未対応である旨を表示して何もしない
+
+Internal command（v0.1）:
+
+| command | 内容 |
 |---|---|
-| 普通のテキスト | Primary Agent |
-| `@claude ...` | Claude へ直接送信 |
-| `@codex ...` | Codex へ直接送信 |
-| `@all ...` | 両方へ送信 |
-| `!command` | foreground shell command |
-| `!& command` | background process |
-| `/command` | Shell internal command |
+| `/interrupt [claude\|codex]` | 指定 Agent（省略時は全 Agent）の実行中ターンを interrupt する。キュー済みの message はそのまま配送される |
+| `/status` | 各 Agent の状態と session ID |
+| `/help` | 入力方法の一覧 |
+| `/exit` | 全 Agent を止めて終了 |
 
-`@all` は高コスト操作なので警告対象とする。
-
-Internal command 候補:
-
-```text
-/status
-/agents
-/tasks
-/messages
-/budget
-/worktree
-/processes
-/help
-/exit
-```
+将来の候補: `/agents`, `/tasks`, `/messages`, `/budget`, `/worktree`, `/processes`
 
 ---
 
@@ -694,7 +701,7 @@ Files:
 
 refresh token の race condition をレビュー
 
-Reply with the clodex send_message tool: to="claude", type="RESULT", taskId="AUTH-142", replyTo="msg_1a2b3c4d".
+Reply with the send_message tool of the "clodex" MCP server (not a shell command): to="claude", type="RESULT", taskId="AUTH-142", replyTo="msg_1a2b3c4d".
 Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.
 ```
 
@@ -947,19 +954,19 @@ v0.1 の目的は、
 
 ## 必須
 
-- [ ] TypeScript / Node.js project
-- [ ] Windows native execution
-- [ ] Project root detection
-- [ ] Claude Code CLI launch
-- [ ] Codex CLI launch
-- [ ] Real-time observable output
-- [ ] Formal Claude → Codex message
-- [ ] Formal Codex → Claude message
-- [ ] Target Agent wake / resume
-- [ ] Message logging
-- [ ] Human interrupt
-- [ ] Existing subscription authentication
-- [ ] Minimal hard budget limits
+- [x] TypeScript / Node.js project
+- [x] Windows native execution
+- [x] Project root detection
+- [x] Claude Code CLI launch
+- [x] Codex CLI launch
+- [x] Real-time observable output
+- [x] Formal Claude → Codex message
+- [x] Formal Codex → Claude message
+- [x] Target Agent wake / resume
+- [x] Message logging
+- [x] Human interrupt
+- [x] Existing subscription authentication
+- [x] Minimal hard budget limits
 
 ## v0.1 では作らない
 

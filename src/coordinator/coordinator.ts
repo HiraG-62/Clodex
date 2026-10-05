@@ -1,5 +1,5 @@
 // Agent 間の routing と lifecycle を決定論的に行う（DESIGN.md §3.9, §12）
-import { AGENT_IDS, type AgentAdapter, type AgentId, type TurnResult } from "../agents/agent-adapter.js";
+import { AGENT_IDS, type AgentAdapter, type AgentId, type AgentStatus, type TurnResult } from "../agents/agent-adapter.js";
 import { buildEnvelope } from "../context/context-resolver.js";
 import { createMessage, type CreateMessageResult } from "../protocol/messages.js";
 import { AgentMailbox } from "./agent-mailbox.js";
@@ -61,6 +61,25 @@ export class Coordinator {
 
   sendToAgent(id: AgentId, text: string): Promise<TurnResult> {
     return this.mailboxes[id].enqueue(text);
+  }
+
+  // 全 Agent の配送が終わるまで待つ。配送中のターンが相手へ message を送ることがあるので、全員が同時に空になるまで繰り返す
+  async whenIdle(): Promise<void> {
+    while (!AGENT_IDS.every((id) => this.mailboxes[id].isIdle)) {
+      await Promise.all(AGENT_IDS.map((id) => this.mailboxes[id].whenIdle()));
+    }
+  }
+
+  async interrupt(id?: AgentId): Promise<void> {
+    const targets = id ? [id] : AGENT_IDS;
+    await Promise.all(targets.map((target) => this.options.agents[target].interrupt()));
+  }
+
+  status(): Array<{ id: AgentId; status: AgentStatus; sessionId: string | undefined }> {
+    return AGENT_IDS.map((id) => {
+      const { status, sessionId } = this.options.agents[id];
+      return { id, status, sessionId };
+    });
   }
 
   async stop(): Promise<void> {
