@@ -791,6 +791,7 @@ Put findings in issues (file, line, severity, summary). Do not paste large conte
 ```
 
 - 依頼系（`QUESTION` / `REVIEW_REQUEST` / `DELEGATE`）には返信方法を指示する
+- 末尾に、人が読む文章の言語（下記 Language）を 1 行で添える。長い会話でも依頼のたびに思い出させる
 - `RESULT` / `ISSUE` には返信を求めない（返信の連鎖を作らない）
 - 会話履歴は含めない。Agent B は必要に応じて Repository を読む
 
@@ -817,6 +818,15 @@ AGENTS.md → Codex
 
 ただし全 Agent が常時すべて読む設計にはしない。
 
+## Language
+
+人が読む文章（Agent の方針・途中の発言・最終応答・`send_message` の本文、Clodex の画面）の言語。
+
+- 設定ファイルの `language`（`ja` / `en`）。無ければ OS のロケールから決める（`ja` で始まれば `ja`、それ以外は `en`）
+- Agent には system prompt の定型文と Task envelope の末尾で「人が読む文章はすべてこの言語で書く。コード・識別子・コマンド・パスはそのまま」と指示する。指示の本体（定型文・envelope）はモデル向けなので英語のまま
+- 守られることは保証できない（自動翻訳はしない）。英語が残る場合は指示の文言を見直す
+- Clodex の画面の文言（Web UI・CLI）も将来この言語で出す（§28 v0.3 の i18n）
+
 ## Roles（v0.2）
 
 ユーザーは設定ファイルで、各 Agent の役割と既定の primary を指定できる。
@@ -840,7 +850,7 @@ AGENTS.md → Codex
 - `permission` は起動時の権限レベル（§9 Permission）。両 Agent に同じレベルを使う
 - UTF-8（BOM の有無は問わない。Windows PowerShell 5.1 は BOM 付きで書く）
 - 優先順位: 起動オプション > project の設定 > ユーザーの設定 > 既定値（primary: `claude`、roles: なし）
-- Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」「権限は人が `/permission` で変えるので、拒否されたらそう伝えること」を伝える
+- Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」「権限は人が `/permission` で変えるので、拒否されたらそう伝えること」「依頼を受けたら、作業に入る前に何をするかを 1〜2 文で書くこと」「人が読む文章の言語（下記 Language）」を伝える
 - 役割が無い Agent には、相手の Agent がいることだけを伝える
 - 役割の本文は Agent の native configuration（CLAUDE.md / AGENTS.md）と結合しない。追加の指示として渡すだけ
 
@@ -1045,7 +1055,8 @@ terminal の表示（「誰が何をしていて、誰が誰に何を頼んだ�
 | `error` | ✓ | ✓ |
 | 通知（`notice`） | `[CLODEX] ...` | ✓ |
 | 人間の入力（`human`） | ×（入力行が画面に残っているため） | ✓ |
-| 途中の発言（`text`）・`tool`・`rate_limit`・`session`・`exit` | × | ✓ |
+| ターンの最初の発言（方針。`text`） | ✓ | ✓ |
+| 途中の発言（2 つ目以降の `text`）・`tool`・`rate_limit`・`session`・`exit` | × | ✓ |
 
 log file は project の外（ホームディレクトリ）に置き、project の working tree を汚さない。
 
@@ -1102,7 +1113,11 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
 ログ:
 
 - 人間の入力、各 Agent のターン、Agent 間の message、通知、エラー、コマンドの出力を時系列に並べる
-- Agent のターンは、最終応答を本文として表示し、途中の発言と tool 呼び出しを「作業」として起きた順に並べる（既定は畳む。上部の「詳細」で一括して開閉）
+- Agent のターンは次の順に表示する。指示してから完了するまでの様子が、チャット欄を増やさずに分かるようにする
+  - **方針**: ターンの最初の発言。常に表示し、完了後も残す。最終応答と同じ内容（発言が 1 つだけのターン）なら出さない
+  - **作業**: 2 つ目以降の発言と tool 呼び出しを起きた順に並べる（既定は畳む。上部の「詳細」で一括して開閉）
+  - **今の作業**: 作業中だけ、直近の発言か tool を 1 行で出し、新しいものが来たら同じ行を書き換える。経過時間を添える。完了したら消す
+  - **最終応答**: 本文として表示する
 - Agent の応答と人間の入力は簡易な Markdown（段落、見出し、箇条書き、コードブロック、インラインコード、太字）として表示する
   - 番号付きリストは書かれた番号から始める（`<ol start>`）
   - 字下げした項目は直前の項目の子として入れ子にする（1 段まで）。番号付きリストの項目の下に字下げした `-` があっても、リストを区切らず番号を続ける
@@ -1696,6 +1711,11 @@ dogfooding で出た要望を 4 段階で入れる。小さく確実なものか
 画像の貼り付け:
 
 - Web UI で画像を貼り付け・選択して送る。画像は project の外（`~/.clodex/uploads/`）に保存し、Agent にはファイルとして渡す。各 CLI の画像入力（Claude: user message の image block、Codex: `UserInput` の画像）を実測して決める
+
+### i18n — 画面の文言
+
+- Web UI・CLI の文言を `ja` / `en` の文言カタログ（型付き。キーの欠けは型チェックで分かる）から引く。言語は §13 Language
+- B の後、C・D の前に行う（コードに直接書いた文言をこれ以上増やさない）
 
 ### D — 本体と UI の分離、並列の会話
 
