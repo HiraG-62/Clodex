@@ -1804,6 +1804,16 @@ D3 の詳細（Tauri GUI。Windows）:
 - 通知・トレイ常駐は D3 の後に検討する
 
 
+D4 の詳細（TUI。D2b と一緒に行う）:
+
+- TUI は Ink（React で端末の画面を組む）で作る。`clodex` を terminal（TTY）で起動したときの既定の画面にする。stdin が TTY でないとき（パイプ入力）は今の行ごとの処理のまま
+- TUI は **feed のクライアント**として作る。Web UI と同じく、feed の項目（`event` / `output` / `state` / `reset`）を受け取り、1 行の入力を送るだけ。つなぎ先は 2 通りで、TUI は違いを知らない:
+  - **Hub につなぐ（D2b）**: `~/.clodex/hub.lock` の Hub が生きていれば、HTTP + SSE（`/events`・`/api/input`・`/api/files`、token は `~/.clodex/web-token`）でつなぎ、起動した場所の project を `/project <cwd>` で開く。TUI を閉じても Hub は止めない
+  - **同じプロセスで動かす**: Hub がいなければ今どおり同じプロセスで Hub を動かし、feed と入力を直接つなぐ
+- 画面: 上に project と Agent の状態（作業中・利用枠・model / effort / 権限）、中央にログ（Web UI のターン表示と同じ: 方針・作業の件数・今の作業・最終応答。Markdown は端末向けに簡易に描く）、下に送信待ちと入力欄。作業中のターンは上の Agent の状態の行に今の作業を 1 行で出す
+- 入力: Enter で送信、改行は Ctrl+J。`/` と `@` の候補は Web UI と同じ `createInputAssist`（引数の候補を含む）を使い、↑↓ と Tab で選ぶ。Ctrl+C は今の会話の実行中のターンを止める（無ければ終了の案内）、Ctrl+D は終了
+- ログは端末の高さに合わせて最後の部分を描き、PageUp / PageDown で遡る
+
 ### E — 役割の編集と画面の改善
 
 役割:
