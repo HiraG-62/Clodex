@@ -12,8 +12,10 @@ export const DEFAULT_USAGE_ALERT: UsageAlert = { weeklyPaceThreshold: 15, fiveHo
 
 export interface UsageSnapshot {
   fiveHourPercent?: number;
+  fiveHourResetsAt?: number; // epoch 秒
   weeklyPercent?: number;
   weeklyPace?: number;
+  weeklyResetsAt?: number; // epoch 秒
   contextTokens?: number;
   contextWindow?: number;
 }
@@ -81,8 +83,8 @@ export class UsageMonitor {
     const fiveHour = current(stored.fiveHour);
     const weekly = current(stored.weekly);
     return {
-      ...(fiveHour && { fiveHourPercent: fiveHour.usedPercent }),
-      ...(weekly && { weeklyPercent: weekly.usedPercent, weeklyPace: weeklyPace(weekly, nowSeconds) }),
+      ...(fiveHour && { fiveHourPercent: fiveHour.usedPercent, fiveHourResetsAt: fiveHour.resetsAt }),
+      ...(weekly && { weeklyPercent: weekly.usedPercent, weeklyPace: weeklyPace(weekly, nowSeconds), weeklyResetsAt: weekly.resetsAt }),
       ...this.contextOf(agent),
     };
   }

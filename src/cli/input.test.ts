@@ -43,6 +43,13 @@ describe("parseInput", () => {
     expect(parseInput("hello", "codex")).toEqual({ kind: "send", agent: "codex", text: "hello" });
   });
 
+  it("/rename・/delete・/pin を解釈する", () => {
+    expect(parseInput("/rename 新しい 名前", "claude")).toEqual({ kind: "rename", title: "新しい 名前" });
+    expect(parseInput("/delete 2", "claude")).toEqual({ kind: "delete", index: 2 });
+    expect(parseInput("/pin 1", "claude")).toEqual({ kind: "pin", index: 1 });
+    for (const line of ["/rename", "/delete", "/delete x", "/pin 0"]) expect(parseInput(line, "claude").kind).toBe("invalid");
+  });
+
   it("/cancel は ID を省略できる", () => {
     expect(parseInput("/cancel", "claude")).toEqual({ kind: "cancel" });
     expect(parseInput("/cancel in3", "claude")).toEqual({ kind: "cancel", id: "in3" });

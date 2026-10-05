@@ -455,6 +455,9 @@ Internal command（v0.1）:
 | `/verbose` | terminal の詳細表示を切り替える（§17） |
 | `/primary <claude\|codex>` | 通常のテキストの送り先を切り替える（§3.10） |
 | `/resume [番号]` | 番号なしで過去の会話の一覧、番号付きでその会話に切り替える（§18） |
+| `/rename <title>` | 今の会話の名前を変える（§18） |
+| `/delete <番号>` | 過去の会話を削除する（`/resume` の番号。今の会話は削除できない。§18） |
+| `/pin <番号>` | 会話のピン止めを切り替える（`/resume` の番号。§18） |
 | `/compact [claude\|codex]` | 会話を要約してコンテキストを減らす。1 ターンとして mailbox で直列に送る。停止中の Agent には何もしない（docs/spikes/compact.md） |
 | `/new [claude\|codex]` | 新しい session で始め直す。省略時は両 Agent を新しい会話として、指定時はその Agent だけを今の会話の中で始め直す（§18） |
 | `/permission [claude\|codex] <read-only\|edit\|full>` | Agent（省略時は両方）の権限レベルを切り替える（§9 Permission） |
@@ -1091,8 +1094,10 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
 
 レイアウト:
 
-- スマホ（1 列）: 上部に Agent ごとの状態の行 → ログ → 入力欄。状態の行をタップすると、その Agent の操作パネル（利用枠、権限、model / effort、Interrupt / Compact / New）が下から開く
-- PC（幅 900px 以上かつマウス操作の端末）: 左に Agent パネルと会話の一覧、右にログと入力欄
+- スマホ（1 列）: 上部に Agent ごとの状態の行 → ログ → 入力欄。状態の行には利用枠（コンテキスト・5 時間・週のペース）と、権限が `full` のときだけ目印を出す。タップすると、その Agent の操作パネル（設定の要約、利用枠と reset 時刻、Interrupt / Compact / 設定）が下から開く
+- PC（幅 900px 以上かつマウス操作の端末）: 左に Agent パネル（操作パネルと同じ内容）と会話の一覧（「新しい会話」ボタン付き）、右にログと入力欄
+- Agent の「設定」は、権限・model・effort と「この Agent だけ session を始め直す」（`/new <agent>`）をまとめたポップアップを開く
+- 会話の一覧の各項目の「⋯」から、名前の変更（今の会話のみ）・ピン止め・削除（今の会話以外）を行う
 
 ログ:
 
@@ -1133,10 +1138,11 @@ simple event log
 `clodex` を起動し直しても Agent の会話を続けられるよう、**会話**（1 回の `clodex` の起動で使った Claude と Codex の session の組）の履歴をファイルに保存する。
 
 - 保存先: `~/.clodex/state/<project root の英数字以外を - にした名前>-<パスのハッシュ 8 桁>.json`（例: `E--dev-Clodex-1a2b3c4d.json`）。ハッシュは大文字小文字を区別しないパスから作り、`C:\a-b` と `C:\a\b` のような衝突を防ぐ
-- 内容: 会話の配列。各会話は `{ id, startedAt, updatedAt, title, sessions: { claude?, codex? } }`
+- 内容: 会話の配列。各会話は `{ id, startedAt, updatedAt, title, pinned?, sessions: { claude?, codex? } }`
   - `sessions`: Agent の `session` event のたびに、その Agent の分を上書きする
   - `title`: その会話で最初の人間の入力（先頭 60 文字）
-  - session も title も無い会話は保存しない。新しい順に最大 20 件残す
+  - session も title も無い会話は保存しない。ピン止めした会話を先頭に、それ以外を新しい順に最大 20 件残す（ピン止めは枠に数えない）
+  - `/rename` で名前を変えた会話は、以後の入力で名前を上書きしない。`/delete` した会話は feed も消す
 - 起動時は新しい会話として始める。`clodex --resume` は最新の会話を続ける（各 Agent の最初の起動で、その会話の session を resume する）
 - `/resume` は過去の会話を新しい順に番号付きで表示する。`/resume <番号>` でその会話に切り替える
   - 実行中のターンがある Agent がいれば拒否する（先に `/interrupt`）

@@ -37,6 +37,10 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
   const NEAR_BOTTOM_PX = 120;
   const TOAST_DURATION_MS = 3000;
   const TOKENS_PER_K = 1000;
+  const MS_PER_SECOND = 1000;
+  const PERCENT = 100;
+  // model の入力候補（自由入力もできる）
+  const MODEL_SUGGESTIONS: Record<AgentId, readonly string[]> = { claude: ["opus", "sonnet", "haiku"], codex: [] };
   // @path の候補を取り直す間隔（入力欄に入るたびに取ると重い）
   const FILES_REFRESH_MS = 30_000;
   // @path の参照として本文の末尾に足された部分（cli/file-references.ts）。編集で入力欄に戻すときは外す
@@ -274,73 +278,65 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
     marker.style.left = `${Math.max(0, Math.min(100, tick))}%`;
   };
 
+  const resetLabel = (epochSeconds: number | undefined, withDate: boolean) => {
+    if (epochSeconds === undefined) return "";
+    const iso = new Date(epochSeconds * MS_PER_SECOND).toISOString();
+    return ` · ${withDate ? shortDate(iso) : clock(iso)} にリセット`;
+  };
+
+  // 利用枠とコンテキストのゲージの表示内容。作るときと更新するときで共有する
+  const gaugeValues = (usage: AgentState["usage"]) => {
+    const pace = usage.weeklyPace;
+    const contextValue = usage.contextTokens === undefined
+      ? "—" : `${kTokens(usage.contextTokens)}${usage.contextWindow ? ` / ${kTokens(usage.contextWindow)}` : ""}`;
+    return [
+      {
+        label: `5 時間${resetLabel(usage.fiveHourResetsAt, false)}`,
+        value: usage.fiveHourPercent === undefined ? "—" : `${usage.fiveHourPercent}%`,
+        percent: usage.fiveHourPercent, over: false, tick: undefined,
+      },
+      {
+        label: `週${pace === undefined ? "" : `（ペース ${pace > 0 ? "+" : ""}${pace}）`}${resetLabel(usage.weeklyResetsAt, true)}`,
+        value: usage.weeklyPercent === undefined ? "—" : `${usage.weeklyPercent}%`,
+        percent: usage.weeklyPercent, over: (pace ?? 0) > 0,
+        tick: pace === undefined || usage.weeklyPercent === undefined ? undefined : usage.weeklyPercent - pace,
+      },
+      {
+        label: "コンテキスト", value: contextValue,
+        percent: usage.contextTokens && usage.contextWindow ? (usage.contextTokens / usage.contextWindow) * PERCENT : 0,
+        over: false, tick: undefined,
+      },
+    ];
+  };
+
+  const describeSettings = (agent: AgentState) =>
+    `${agent.model ?? "default"} · effort ${agent.effort ?? "default"} · 権限 ${agent.permission}`;
+
+  // Agent パネル: 設定の要約、利用枠、操作。権限・model・effort は「設定」から開くポップアップで変える
   const agentControls = (agent: AgentState) => {
     const wrap = el("div", "controls");
-    const { usage } = agent;
-    const setting = el("div", "setting", `Model: ${agent.model ?? "default"} · Effort: ${agent.effort ?? "default"}`);
-    wrap.append(setting);
-    const pace = usage.weeklyPace;
-    const fiveHour = gauge("5 時間", usage.fiveHourPercent === undefined ? "—" : `${usage.fiveHourPercent}%`, usage.fiveHourPercent, agent.id);
-    const weekly = gauge(pace === undefined ? "週" : `週（ペース ${pace > 0 ? "+" : ""}${pace}）`, usage.weeklyPercent === undefined ? "—" : `${usage.weeklyPercent}%`,
-      usage.weeklyPercent, agent.id, (pace ?? 0) > 0, pace === undefined || usage.weeklyPercent === undefined ? undefined : usage.weeklyPercent - pace);
-    const context = gauge("コンテキスト", usage.contextTokens === undefined ? "—" : `${kTokens(usage.contextTokens)}${usage.contextWindow ? ` / ${kTokens(usage.contextWindow)}` : ""}`,
-      usage.contextTokens && usage.contextWindow ? (usage.contextTokens / usage.contextWindow) * 100 : 0, agent.id);
-    wrap.append(
-      fiveHour, weekly, context,
-    );
-    wrap.append(el("div", "eyebrow", "権限"));
-    const seg = el("div", "seg");
-    seg.setAttribute("role", "group");
-    seg.setAttribute("aria-label", `${AGENTS[agent.id].name} の権限`);
-    for (const level of PERMISSIONS) {
-      const button = el("button", "", level) as HTMLButtonElement;
-      button.type = "button";
-      button.setAttribute("aria-pressed", String(agent.permission === level));
-      button.addEventListener("click", () => void send(`/permission ${agent.id} ${level}`));
-      seg.append(button);
-    }
-    wrap.append(seg);
-    wrap.append(el("div", "eyebrow", "Effort"));
-    const effort = el("div", "seg");
-    effort.setAttribute("role", "group");
-    effort.setAttribute("aria-label", `${AGENTS[agent.id].name} の effort`);
-    for (const level of EFFORTS[agent.id]) {
-      const button = el("button", "", level) as HTMLButtonElement;
-      button.type = "button";
-      button.setAttribute("aria-pressed", String(agent.effort === level));
-      button.addEventListener("click", () => void send(`/effort ${agent.id} ${level}`));
-      effort.append(button);
-    }
-    wrap.append(effort);
+    const summary = el("div", "setting mono small", describeSettings(agent));
+    const gauges = gaugeValues(agent.usage).map((g) => gauge(g.label, g.value, g.percent, agent.id, g.over, g.tick));
+    wrap.append(summary, ...gauges);
     const links = el("div", "links");
-    const action = (label: string, command: string, cls = "", disabled = false) => {
+    const action = (label: string, run: () => void, cls = "", disabled = false) => {
       const button = el("button", cls, label) as HTMLButtonElement;
       button.type = "button";
       button.disabled = disabled;
-      button.addEventListener("click", () => void send(command));
+      button.addEventListener("click", run);
       links.append(button);
       return button;
     };
-    const interrupt = action("Interrupt", `/interrupt ${agent.id}`, "danger", agent.status !== "busy");
-    const compact = action("Compact", `/compact ${agent.id}`, "", agent.status === "stopped");
-    action("New", `/new ${agent.id}`);
+    const interrupt = action("Interrupt", () => void send(`/interrupt ${agent.id}`), "danger", agent.status !== "busy");
+    const compact = action("Compact", () => void send(`/compact ${agent.id}`), "", agent.status === "stopped");
+    action("設定", () => openAgentSettings(agent.id));
     wrap.append(links);
     controlUpdaters.set(wrap, (current) => {
-      const values = current.usage;
-      const weeklyPace = values.weeklyPace;
-      setting.textContent = `Model: ${current.model ?? "default"} · Effort: ${current.effort ?? "default"}`;
-      syncGauge(fiveHour, "5 時間", values.fiveHourPercent === undefined ? "—" : `${values.fiveHourPercent}%`, values.fiveHourPercent);
-      syncGauge(weekly, weeklyPace === undefined ? "週" : `週（ペース ${weeklyPace > 0 ? "+" : ""}${weeklyPace}）`,
-        values.weeklyPercent === undefined ? "—" : `${values.weeklyPercent}%`, values.weeklyPercent, (weeklyPace ?? 0) > 0,
-        weeklyPace === undefined || values.weeklyPercent === undefined ? undefined : values.weeklyPercent - weeklyPace);
-      syncGauge(context, "コンテキスト", values.contextTokens === undefined ? "—" : `${kTokens(values.contextTokens)}${values.contextWindow ? ` / ${kTokens(values.contextWindow)}` : ""}`,
-        values.contextTokens && values.contextWindow ? (values.contextTokens / values.contextWindow) * 100 : 0);
-      for (const button of seg.querySelectorAll<HTMLButtonElement>("button")) {
-        button.setAttribute("aria-pressed", String(button.textContent === current.permission));
-      }
-      for (const button of effort.querySelectorAll<HTMLButtonElement>("button")) {
-        button.setAttribute("aria-pressed", String(button.textContent === current.effort));
-      }
+      summary.textContent = describeSettings(current);
+      gaugeValues(current.usage).forEach((g, index) => {
+        const node = gauges[index];
+        if (node) syncGauge(node, g.label, g.value, g.percent, g.over, g.tick);
+      });
       interrupt.disabled = current.status !== "busy";
       compact.disabled = current.status === "stopped";
     });
@@ -371,8 +367,7 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
       if (agent.usage.contextTokens !== undefined) figs.append(fig("ctx", kTokens(agent.usage.contextTokens)));
       if (agent.usage.fiveHourPercent !== undefined) figs.append(fig("5h", `${agent.usage.fiveHourPercent}%`));
       if (agent.usage.weeklyPace !== undefined) figs.append(fig("週", `${agent.usage.weeklyPace > 0 ? "+" : ""}${agent.usage.weeklyPace}`));
-      figs.append(fig("権限", agent.permission));
-      figs.append(fig("model", agent.model ?? "default"), fig("effort", agent.effort ?? "default"));
+      if (agent.permission === "full") figs.append(el("span", "badge", "full"));
       row.append(mark(agent.id), figs, stateLabel(agent));
       row.addEventListener("click", () => openAgentSheet(agent.id));
       return row;
@@ -432,16 +427,22 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
   const conversationList = () => {
     if (!state) return [];
     const nodes: HTMLElement[] = state.conversations.map((conversation, index) => {
+      const row = el("div", `conv-row${conversation.current ? " current" : ""}`);
       const button = el("button", `conv${conversation.current ? " current" : ""}`) as HTMLButtonElement;
       button.type = "button";
-      button.append(el("span", "t", conversation.title ?? "（入力なし）"),
-        el("span", "m mono", `${shortDate(conversation.updatedAt)} · ${Object.keys(conversation.sessions).join(", ") || "—"}${conversation.current ? " · 現在" : ""}`));
+      const meta = `${conversation.pinned ? "固定 · " : ""}${shortDate(conversation.updatedAt)} · ${Object.keys(conversation.sessions).join(", ") || "—"}${conversation.current ? " · 現在" : ""}`;
+      button.append(el("span", "t", conversation.title ?? "（入力なし）"), el("span", "m mono", meta));
       button.disabled = conversation.current;
       button.addEventListener("click", () => {
         void send(`/resume ${index + 1}`);
         closeSheet();
       });
-      return button;
+      const menu = el("button", "conv-menu", "⋯") as HTMLButtonElement;
+      menu.type = "button";
+      menu.setAttribute("aria-label", "会話の操作");
+      menu.addEventListener("click", () => openConversationMenu(conversation, index + 1));
+      row.append(button, menu);
+      return row;
     });
     if (!nodes.length) nodes.push(el("p", "muted small", "まだ会話がありません"));
     return nodes;
@@ -449,7 +450,7 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
 
   // ---- シート（スマホの操作パネル・会話・設定） ----
   let sheetAgent: AgentId | undefined;
-  let sheetKind: "agent" | "settings" | "conversations" | undefined;
+  let sheetKind: "agent" | "agentSettings" | "settings" | "conversations" | "conversationMenu" | undefined;
   let pendingPrimary: AgentId | undefined;
   const sheet = $("#sheet");
   const openSheet = (title: string, content: HTMLElement[]) => {
@@ -481,6 +482,82 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
     });
     openSheet("会話", [fresh, ...conversationList()]);
   };
+  const sheetButton = (label: string, cls: string, run: () => void) => {
+    const button = el("button", cls, label) as HTMLButtonElement;
+    button.type = "button";
+    button.addEventListener("click", run);
+    return button;
+  };
+  // 会話の操作: 名前の変更は今の会話だけ（/rename）。今の会話は削除できない
+  const openConversationMenu = (conversation: WebState["conversations"][number], number: number) => {
+    sheetKind = "conversationMenu";
+    sheetAgent = undefined;
+    const title = conversation.title ?? "（入力なし）";
+    const actions: HTMLElement[] = [];
+    if (conversation.current) {
+      actions.push(sheetButton("名前を変更", "secondary-action", () => {
+        const name = window.prompt("会話の名前", conversation.title ?? "")?.trim();
+        if (name) void send(`/rename ${name}`);
+        closeSheet();
+      }));
+    }
+    actions.push(sheetButton(conversation.pinned ? "ピン止めを外す" : "ピン止め", "secondary-action", () => {
+      void send(`/pin ${number}`);
+      closeSheet();
+    }));
+    if (!conversation.current) {
+      actions.push(sheetButton("削除", "secondary-action danger", () => {
+        if (window.confirm(`「${title}」を削除しますか？`)) void send(`/delete ${number}`);
+        closeSheet();
+      }));
+    }
+    openSheet(title, actions);
+  };
+
+  // Agent の設定: 権限・model・effort と、この Agent だけの session のやり直し
+  const openAgentSettings = (id: AgentId) => {
+    const agent = state?.agents.find((a) => a.id === id);
+    if (!agent) return;
+    sheetAgent = id;
+    sheetKind = "agentSettings";
+    const permission = choice("permission", "権限", PERMISSIONS, agent.permission, (v) => v, (v) => void send(`/permission ${id} ${v}`));
+    const model = el("div", "setting");
+    model.append(el("div", "eyebrow", "Model"));
+    const form = el("form", "model-form") as HTMLFormElement;
+    const field = el("input") as HTMLInputElement;
+    field.name = "model";
+    field.autocomplete = "off";
+    field.placeholder = agent.model ?? "default";
+    field.setAttribute("list", `models-${id}`);
+    field.setAttribute("aria-label", `${AGENTS[id].name} の model`);
+    const options = el("datalist");
+    options.id = `models-${id}`;
+    for (const name of MODEL_SUGGESTIONS[id]) {
+      const option = el("option") as HTMLOptionElement;
+      option.value = name;
+      options.append(option);
+    }
+    const apply = el("button", "", "変更") as HTMLButtonElement;
+    apply.type = "submit";
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const value = field.value.trim();
+      if (!value) return;
+      void send(`/model ${id} ${value}`);
+      field.value = "";
+    });
+    form.append(field, options, apply);
+    model.append(form);
+    const effort = choice("effort", "Effort", EFFORTS[id], agent.effort ?? "", (v) => v, (v) => void send(`/effort ${id} ${v}`));
+    const restart = sheetButton("この Agent だけ session を始め直す", "secondary-action", () => {
+      void send(`/new ${id}`);
+      closeSheet();
+    });
+    openSheet(`${AGENTS[id].name} の設定`, [
+      permission, model, effort, restart, el("p", "muted small", "会話はそのままで、この Agent の文脈だけを新しくします"),
+    ]);
+  };
+
   const choice = <T extends string>(key: string, label: string, options: readonly T[], current: T, name: (v: T) => string, pick: (v: T) => void) => {
     const wrap = el("div", "setting");
     wrap.append(el("div", "eyebrow", label));
@@ -528,6 +605,20 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
       const controls = $("#sheet-body").querySelector<HTMLElement>(".controls");
       if (agent && controls) controlUpdaters.get(controls)?.(agent);
     }
+    if (sheetKind === "agentSettings" && sheetAgent) {
+      const agent = state?.agents.find((candidate) => candidate.id === sheetAgent);
+      if (!agent) return;
+      const body = $("#sheet-body");
+      const press = (key: string, value: string | undefined) => {
+        for (const button of body.querySelectorAll<HTMLButtonElement>(`[data-choice="${key}"] button`)) {
+          button.setAttribute("aria-pressed", String(button.dataset.value === value));
+        }
+      };
+      press("permission", agent.permission);
+      press("effort", agent.effort);
+      const field = body.querySelector<HTMLInputElement>('input[name="model"]');
+      if (field) field.placeholder = agent.model ?? "default";
+    }
     if (sheetKind === "settings") {
       const selected = target ?? state?.primary;
       const buttons = $("#sheet-body").querySelectorAll<HTMLButtonElement>('[data-choice="primary"] button');
@@ -542,6 +633,7 @@ export function clientMain({ renderMarkdown, applyFeedItem, composeInputLine, cr
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !sheet.hidden) closeSheet(); });
   $("#open-conversations").addEventListener("click", openConversations);
   $("#open-settings").addEventListener("click", openSettings);
+  $("#new-conversation").addEventListener("click", () => void send("/new"));
 
   // ---- 詳細表示 ----
   const detailButton = $("#detail");

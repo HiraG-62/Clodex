@@ -5,6 +5,7 @@ interface HistorySource {
   readonly currentId: string;
   list(): Array<{ id: string }>;
   onSwitch(listener: (id: string) => void): void;
+  onRemove(listener: (id: string) => void): void;
 }
 
 interface FeedSource {
@@ -23,4 +24,6 @@ export const connectConversationFeed = (history: HistorySource, store: FeedSourc
   };
   load(history.currentId);
   history.onSwitch(load);
+  // 削除した会話の feed も消す（今の会話は残す）
+  history.onRemove(() => store.prune([history.currentId, ...history.list().map((conversation) => conversation.id)]));
 };

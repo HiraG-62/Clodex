@@ -41,6 +41,11 @@ export interface ConversationList {
   switchTo(id: string): Conversation | undefined;
   startNew(): void;
   clearSession(agent: AgentId): void;
+  rename(title: string): void;
+  // 削除できなければ理由を返す
+  remove(id: string): string | undefined;
+  // 切り替え後のピン止めの状態。無い会話なら undefined
+  togglePin(id: string): boolean | undefined;
 }
 
 export interface CommandRunner {
@@ -85,10 +90,26 @@ const HELP_LINES = (primary: AgentId) => [
   helpLine("Ctrl+C", "interrupt running turns and !commands"),
 ];
 
-const formatUsage = ({ fiveHourPercent, weeklyPercent, weeklyPace }: UsageSnapshot): string => {
+const MS_PER_SECOND = 1000;
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const clockTime = (iso: string) => {
+  const d = new Date(iso);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+const shortTime = (iso: string) => {
+  const d = new Date(iso);
+  return `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${clockTime(iso)}`;
+};
+
+const formatUsage = ({ fiveHourPercent, fiveHourResetsAt, weeklyPercent, weeklyPace, weeklyResetsAt }: UsageSnapshot): string => {
+  const resets = (epochSeconds: number | undefined, format: (iso: string) => string) =>
+    epochSeconds === undefined ? "" : `resets ${format(new Date(epochSeconds * MS_PER_SECOND).toISOString())}`;
+  const fiveHourReset = resets(fiveHourResetsAt, clockTime);
+  const weeklyReset = resets(weeklyResetsAt, shortTime);
+  const pace = `pace ${weeklyPace! > 0 ? "+" : ""}${weeklyPace}`;
   const parts = [
-    ...(fiveHourPercent === undefined ? [] : [`5h ${fiveHourPercent}%`]),
-    ...(weeklyPercent === undefined ? [] : [`7d ${weeklyPercent}% (pace ${weeklyPace! > 0 ? "+" : ""}${weeklyPace})`]),
+    ...(fiveHourPercent === undefined ? [] : [`5h ${fiveHourPercent}%${fiveHourReset ? ` (${fiveHourReset})` : ""}`]),
+    ...(weeklyPercent === undefined ? [] : [`7d ${weeklyPercent}% (${[pace, weeklyReset].filter(Boolean).join(", ")})`]),
   ];
   return `  usage: ${parts.length ? parts.join(", ") : "unknown"}`;
 };
@@ -104,11 +125,7 @@ const formatContext = ({ contextTokens, contextWindow }: UsageSnapshot): string 
   return `  context: ${kTokens(contextTokens)} / ${kTokens(contextWindow)} tokens (${percent}%)`;
 };
 
-const pad2 = (n: number) => String(n).padStart(2, "0");
-const shortTime = (iso: string) => {
-  const d = new Date(iso);
-  return `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-};
+
 const agentsOf = (c: Conversation) => (Object.keys(c.sessions) as AgentId[]).sort().join(", ");
 const titleOf = (c: Conversation) => `"${c.title ?? "(no input)"}"`;
 
@@ -138,13 +155,19 @@ export const createShell = ({
   };
 
   const resumeConversation = async (index: number) => {
-    const picked = history.list()[index - 1];
-    if (!picked) return print(`no conversation #${index} (see /resume)`);
+    const picked = pickConversation(index);
+    if (!picked) return;
     if (picked.id === history.currentId) return print("already in this conversation");
     const error = await coordinator.switchSessions(picked.sessions);
     if (error) return print(error);
     history.switchTo(picked.id);
     print(`resumed: ${titleOf(picked)} (${agentsOf(picked)} resume on next use)`);
+  };
+
+  const pickConversation = (index: number) => {
+    const picked = history.list()[index - 1];
+    if (!picked) print(`no conversation #${index} (see /resume)`);
+    return picked;
   };
 
   const handleLine = async (line: string): Promise<ShellOutcome> => {
@@ -190,6 +213,22 @@ export const createShell = ({
         if (command.index === undefined) listConversations();
         else await resumeConversation(command.index);
         return "continue";
+      case "rename":
+        history.rename(command.title);
+        print(`renamed: "${command.title}"`);
+        return "continue";
+      case "delete": {
+        const picked = pickConversation(command.index);
+        if (!picked) return "continue";
+        print(history.remove(picked.id) ?? `deleted: ${titleOf(picked)}`);
+        return "continue";
+      }
+      case "pin": {
+        const picked = pickConversation(command.index);
+        const pinned = picked ? history.togglePin(picked.id) : undefined;
+        if (picked && pinned !== undefined) print(`${pinned ? "pinned" : "unpinned"}: ${titleOf(picked)}`);
+        return "continue";
+      }
       case "primary":
         primary = command.agent;
         print(`primary: ${primary}`);

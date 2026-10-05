@@ -164,3 +164,45 @@ describe("ConversationHistory", () => {
     expect(new ConversationHistory(path, { resumeLatest: false }).list()).toEqual([]);
   });
 });
+
+describe("ConversationHistory のリネーム・削除・ピン止め", () => {
+  it("今の会話の名前を変え、以後の入力で上書きしない", () => {
+    const { history, human } = setup();
+    human("最初の入力");
+    history.rename("設計の相談");
+    human("次の入力");
+    expect(history.list()[0]?.title).toBe("設計の相談");
+  });
+
+  it("今の会話以外を削除し、削除を通知する。今の会話・無い会話は理由を返す", () => {
+    const { history, human, path } = setup();
+    human("old");
+    history.startNew();
+    human("new");
+    const removed: string[] = [];
+    history.onRemove((id) => removed.push(id));
+    const old = history.list().find((c) => c.title === "old")!;
+    expect(history.remove(history.currentId)).toMatch(/current/);
+    expect(history.remove("missing")).toMatch(/not found/);
+    expect(history.remove(old.id)).toBeUndefined();
+    expect(removed).toEqual([old.id]);
+    expect(new ConversationHistory(path, { resumeLatest: false }).list().map((c) => c.title)).toEqual(["new"]);
+  });
+
+  it("ピン止めした会話は先頭に並び、最大件数の枠から外れる。もう一度で解除する", () => {
+    const { history, human, path } = setup();
+    human("pinned one");
+    const pinnedId = history.currentId;
+    history.startNew();
+    expect(history.togglePin(pinnedId)).toBe(true);
+    for (let i = 0; i < MAX_CONVERSATIONS + 2; i++) {
+      human(`c${i}`);
+      history.startNew();
+    }
+    const list = new ConversationHistory(path, { resumeLatest: false }).list();
+    expect(list[0]).toMatchObject({ id: pinnedId, pinned: true });
+    expect(list.filter((c) => !c.pinned)).toHaveLength(MAX_CONVERSATIONS);
+    expect(history.togglePin(pinnedId)).toBe(false);
+    expect(history.togglePin("missing")).toBeUndefined();
+  });
+});

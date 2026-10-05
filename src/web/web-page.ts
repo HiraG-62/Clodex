@@ -91,6 +91,19 @@ const STYLE = `
   .links { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; font-size: 13px; }
   .links button { border: 0; background: none; padding: 6px 0; color: var(--fg-2); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-strong); }
   .links button.danger { color: var(--crit); text-decoration-color: currentColor; }
+  .side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ghost.small { padding: 4px 10px; font-size: 12px; }
+  .conv-row { display: flex; align-items: center; gap: 2px; min-width: 0; }
+  .conv-row .conv { flex: 1; }
+  .conv-menu { flex: none; border: 0; background: transparent; color: var(--muted); border-radius: 6px; padding: 6px 8px; font-size: 15px; line-height: 1; }
+  .conv-menu:hover { background: var(--sunken); color: var(--fg); }
+  .badge { font: 600 11px/1 var(--font-mono); padding: 3px 6px; border-radius: 4px; background: var(--crit); color: var(--invert-fg); }
+  .model-form { display: flex; gap: 6px; }
+  .model-form input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: 14px var(--font-mono); background: var(--panel); color: var(--fg); }
+  .model-form button { border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; background: var(--invert-bg); color: var(--invert-fg); font-weight: 600; font-size: 13px; }
+  .secondary-action { width: 100%; margin: 14px 0 4px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px; background: var(--panel); color: var(--fg); font-weight: 500; }
+  .secondary-action.danger { color: var(--crit); border-color: currentColor; }
+  .small { font-size: 12px; }
   .conv { display: grid; gap: 1px; padding: 8px 10px; border-radius: 6px; font-size: 13px; border: 0; background: transparent; text-align: left; width: 100%; min-width: 0; }
   .conv:hover:not(:disabled) { background: var(--sunken); }
   .conv.current { background: var(--sunken); }
@@ -229,7 +242,10 @@ const BODY = `
   <div class="status" id="status"></div>
   <aside class="side">
     <div id="agents" style="display:grid;gap:28px"></div>
-    <section><div class="eyebrow">会話</div><div id="conversations"></div></section>
+    <section>
+      <div class="side-head"><div class="eyebrow">会話</div><button class="ghost small" type="button" id="new-conversation">新しい会話</button></div>
+      <div id="conversations"></div>
+    </section>
   </aside>
   <div class="log-wrap">
     <main class="log" id="log" aria-label="ログ" aria-live="polite">

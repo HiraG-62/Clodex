@@ -258,7 +258,7 @@ describe("Coordinator", () => {
   it("status に Agent の rate_limit から集計した利用状況を含める", () => {
     const { claude, coordinator } = setup();
     claude.emit({ type: "rate_limit", fiveHour: { usedPercent: 12, resetsAt: Date.now() / 1000 + 3600 } });
-    expect(coordinator.status()[0]!.usage).toEqual({ fiveHourPercent: 12 });
+    expect(coordinator.status()[0]!.usage).toMatchObject({ fiveHourPercent: 12 });
   });
 
   it("setPermission は指定 Agent、省略時は全 Agent の権限を変える", async () => {

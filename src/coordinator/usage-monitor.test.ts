@@ -39,21 +39,23 @@ describe("UsageMonitor", () => {
     const { monitor, report } = setup();
     expect(monitor.snapshot("claude")).toEqual({});
     report("claude", { usedPercent: 50, resetsAt: weeklyResetsAt(0.7) }, { usedPercent: 12, resetsAt: NOW_SECONDS + 3600 });
-    expect(monitor.snapshot("claude")).toEqual({ fiveHourPercent: 12, weeklyPercent: 50, weeklyPace: -20 });
+    expect(monitor.snapshot("claude")).toEqual({
+      fiveHourPercent: 12, fiveHourResetsAt: NOW_SECONDS + 3600, weeklyPercent: 50, weeklyPace: -20, weeklyResetsAt: weeklyResetsAt(0.7),
+    });
     expect(monitor.snapshot("codex")).toEqual({});
   });
 
   it("reset 時刻を過ぎた枠は表示しない", () => {
     const { monitor, report } = setup();
     report("claude", { usedPercent: 50, resetsAt: NOW_SECONDS - 1 }, { usedPercent: 12, resetsAt: NOW_SECONDS + 3600 });
-    expect(monitor.snapshot("claude")).toEqual({ fiveHourPercent: 12 });
+    expect(monitor.snapshot("claude")).toEqual({ fiveHourPercent: 12, fiveHourResetsAt: NOW_SECONDS + 3600 });
   });
 
   it("片方の枠だけの更新でも、もう片方の値を保持する", () => {
     const { monitor, report } = setup();
     report("codex", { usedPercent: 30, resetsAt: weeklyResetsAt(0.5) }, { usedPercent: 5, resetsAt: NOW_SECONDS + 3600 });
     report("codex", undefined, { usedPercent: 6, resetsAt: NOW_SECONDS + 3600 });
-    expect(monitor.snapshot("codex")).toEqual({ fiveHourPercent: 6, weeklyPercent: 30, weeklyPace: -20 });
+    expect(monitor.snapshot("codex")).toMatchObject({ fiveHourPercent: 6, weeklyPercent: 30, weeklyPace: -20 });
   });
 
   it("週のペース超過が閾値以上になったら、相手 Agent への切り替えを促す通知を 1 回だけ出す", () => {

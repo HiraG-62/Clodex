@@ -23,6 +23,20 @@ class FakeHistory implements ConversationList {
   clearSession(agent: AgentId) {
     this.cleared.push(agent);
   }
+  readonly renamed: string[] = [];
+  rename(title: string) { this.renamed.push(title); }
+  readonly removed: string[] = [];
+  remove(id: string) {
+    if (id === this.currentId) return "cannot delete the current conversation";
+    this.removed.push(id);
+    return undefined;
+  }
+  togglePin(id: string) {
+    const found = this.conversations.find((c) => c.id === id);
+    if (!found) return undefined;
+    found.pinned = !found.pinned;
+    return found.pinned;
+  }
   switchTo(id: string) {
     this.currentId = id;
     return this.conversations.find((c) => c.id === id);
@@ -39,7 +53,11 @@ class FakeCoordinator implements ShellCoordinator {
   states: AgentState[] = [
     {
       id: "claude", status: "idle", sessionId: "s-claude", permission: "edit", model: "haiku", effort: "high",
-      usage: { fiveHourPercent: 12, weeklyPercent: 50, weeklyPace: -20, contextTokens: 85400, contextWindow: 200000 },
+      usage: {
+        fiveHourPercent: 12, fiveHourResetsAt: new Date(2026, 9, 5, 22, 30).getTime() / 1000,
+        weeklyPercent: 50, weeklyPace: -20, weeklyResetsAt: new Date(2026, 9, 9, 10, 0).getTime() / 1000,
+        contextTokens: 85400, contextWindow: 200000,
+      },
     },
     { id: "codex", status: "stopped", sessionId: undefined, permission: "full", usage: {} },
   ];
@@ -173,7 +191,7 @@ describe("createShell", () => {
     expect(printed).toEqual([
       "primary: claude",
       "claude: idle, permission edit, model haiku, effort high (session s-claude)",
-      "  usage: 5h 12%, 7d 50% (pace -20)",
+      "  usage: 5h 12% (resets 22:30), 7d 50% (pace -20, resets 10/09 10:00)",
       "  context: 85k / 200k tokens (43%)",
       "codex: stopped, permission full, model default, effort default",
       "  usage: unknown",
@@ -236,6 +254,30 @@ describe("createShell", () => {
       { agents: ["codex"], change: { permission: "read-only" } },
       { agents: ["claude"], change: { model: "haiku" } },
       { agents: ["claude", "codex"], change: { effort: "low" } },
+    ]);
+  });
+
+  it("/rename は今の会話の名前を変える", async () => {
+    const { history, printed, shell } = setup();
+    await shell.handleLine("/rename 設計の相談 その2");
+    expect(history.renamed).toEqual(["設計の相談 その2"]);
+    expect(printed).toEqual(["renamed: \"設計の相談 その2\""]);
+  });
+
+  it("/delete と /pin は /resume の番号で会話を指定する", async () => {
+    const { history, printed, shell } = setup();
+    await shell.handleLine("/delete 1");
+    await shell.handleLine("/delete 2");
+    await shell.handleLine("/pin 3");
+    await shell.handleLine("/pin 3");
+    await shell.handleLine("/pin 9");
+    expect(history.removed).toEqual(["conv-old"]);
+    expect(printed).toEqual([
+      "cannot delete the current conversation",
+      "deleted: \"Remember BANANA\"",
+      "pinned: \"(no input)\"",
+      "unpinned: \"(no input)\"",
+      "no conversation #9 (see /resume)",
     ]);
   });
 

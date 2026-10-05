@@ -17,6 +17,9 @@ export type ShellCommand =
   | { kind: "new"; agent?: AgentId }
   | { kind: "compact"; agent?: AgentId }
   | { kind: "cancel"; id?: string }
+  | { kind: "rename"; title: string }
+  | { kind: "delete"; index: number }
+  | { kind: "pin"; index: number }
   | { kind: "run"; command: string }
   | { kind: "unsupported"; message: string }
   | { kind: "invalid"; message: string };
@@ -60,6 +63,9 @@ const parseEffort = (arg: string): ShellCommand => {
   return { kind: "effort", agent: first, level: second };
 };
 
+// /resume の一覧の番号（1 始まり）
+const isConversationNumber = (arg: string) => /^[1-9]\d*$/.test(arg);
+
 const unsupported = (feature: string): ShellCommand =>
   ({ kind: "unsupported", message: `${feature} is not supported in v0.1` });
 
@@ -91,7 +97,12 @@ const parseCommand = (name: string, arg: string): ShellCommand => {
       return /^\S+$/.test(arg) ? { kind: "cancel", id: arg } : { kind: "invalid", message: "usage: /cancel [id]" };
     case "resume":
       if (!arg) return { kind: "resume" };
-      return /^[1-9]\d*$/.test(arg) ? { kind: "resume", index: Number(arg) } : { kind: "invalid", message: "usage: /resume [number]" };
+      return isConversationNumber(arg) ? { kind: "resume", index: Number(arg) } : { kind: "invalid", message: "usage: /resume [number]" };
+    case "rename":
+      return arg ? { kind: "rename", title: arg } : { kind: "invalid", message: "usage: /rename <title>" };
+    case "delete":
+    case "pin":
+      return isConversationNumber(arg) ? { kind: name, index: Number(arg) } : { kind: "invalid", message: `usage: /${name} <number>` };
     case "primary":
       if (!arg) return { kind: "invalid", message: `usage: /primary <${AGENT_IDS.join("|")}>` };
       return isAgentId(arg) ? { kind: "primary", agent: arg } : { kind: "invalid", message: `unknown agent: ${arg}` };
