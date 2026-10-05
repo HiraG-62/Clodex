@@ -97,11 +97,17 @@ export class AgentMailbox {
 
   // Lazy Start: 必要になったときに起動し、以前の session があれば resume する。
   // 一度起動した後は Agent の session を、初回は startOptions の resumeSessionId（clodex --resume）を使う
-  private async ensureRunning(): Promise<void> {
-    if (this.agent.status !== "stopped") return;
-    const resumeSessionId = this.nextSession
+  // 起動中は今の session、停止中は次の起動で使う session（undefined なら新規）
+  get sessionId(): string | undefined {
+    if (this.agent.status !== "stopped") return this.agent.sessionId;
+    return this.nextSession
       ? this.nextSession.sessionId
       : (this.agent.sessionId ?? this.startOptions.resumeSessionId);
+  }
+
+  private async ensureRunning(): Promise<void> {
+    if (this.agent.status !== "stopped") return;
+    const resumeSessionId = this.sessionId;
     const { resumeSessionId: _initial, ...options } = this.startOptions;
     await this.agent.start({ ...options, ...(resumeSessionId ? { resumeSessionId } : {}) });
     // 起動に失敗したら次の試行でも選んだ session を使う

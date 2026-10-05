@@ -438,7 +438,7 @@ Internal command（v0.1）:
 | command | 内容 |
 |---|---|
 | `/interrupt [claude\|codex]` | 指定 Agent（省略時は全 Agent）の実行中ターンを interrupt する。キュー済みの message はそのまま配送される |
-| `/status` | 各 Agent の状態と session ID |
+| `/status` | 各 Agent の状態と session ID。停止中は次の起動で使う session（/new 後の新規なら表示しない） |
 | `/verbose` | terminal の詳細表示を切り替える（§17） |
 | `/primary <claude\|codex>` | 通常のテキストの送り先を切り替える（§3.10） |
 | `/resume [番号]` | 番号なしで過去の会話の一覧、番号付きでその会話に切り替える（§18） |

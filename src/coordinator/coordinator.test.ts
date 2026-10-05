@@ -248,6 +248,8 @@ describe("Coordinator", () => {
     codex.sessionId = "x-current";
     await expect(coordinator.switchSessions({ claude: "c-old" })).resolves.toBeUndefined();
     expect([claude.status, codex.status]).toEqual(["stopped", "stopped"]);
+    // 停止中は古い session ではなく、次の起動で使う session を見せる
+    expect(coordinator.status().map((agent) => agent.sessionId)).toEqual(["c-old", undefined]);
 
     void coordinator.sendToAgent("claude", "hi");
     coordinator.receiveMessage("claude", reviewRequest);

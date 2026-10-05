@@ -124,8 +124,8 @@ export class Coordinator {
     id: AgentId; status: AgentStatus; sessionId: string | undefined; permission: PermissionLevel; usage: UsageSnapshot;
   }> {
     return AGENT_IDS.map((id) => {
-      const { status, sessionId, permission } = this.options.agents[id];
-      return { id, status, sessionId, permission, usage: this.usage.snapshot(id) };
+      const { status, permission } = this.options.agents[id];
+      return { id, status, sessionId: this.mailboxes[id].sessionId, permission, usage: this.usage.snapshot(id) };
     });
   }
 
