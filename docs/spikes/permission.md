@@ -13,6 +13,15 @@
 | Codex | `turn/start` の `sandboxPolicy: { type: "workspaceWrite", ... }` | そのターンで作成できた。**以降のターンも上書きした設定のまま**（毎ターン指定しなくてよい） |
 | Claude | `--permission-mode plan` で起動し、`--allowedTools Write "Bash(echo:*)"` で許可済みにしたうえで Write と Bash を指示 | どちらも実行されず、project 内にファイルは作られない（Claude 自身の計画ファイルが `~/.claude/plans` に書かれるだけ）。`default` はユーザー設定の許可リストで書き込めてしまうため、read-only には `plan` を使う |
 
+## 追記: Codex の sandbox と git（2026-10-05）
+
+| 方法 | 結果 |
+|---|---|
+| `workspace-write` で `git add` / `git commit` | `fatal: detected dubious ownership`。Windows の Codex sandbox は別ユーザーとしてコマンドを実行するため |
+| 同じく `git -c safe.directory=* ...` | `Unable to create '.git/index.lock': Permission denied`。`.git` は sandbox の書き込み対象外 |
+
+Codex が `edit` のままでは commit できない。commit は Claude（Bash の許可が必要）、Codex を `full` にする、または人が行う。
+
 ## 結論
 
 両 Agent とも、プロセスを再起動せずに権限を変えられる。Claude は即時、Codex は次のターンから反映される。

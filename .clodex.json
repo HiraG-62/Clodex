@@ -1,0 +1,6 @@
+{
+  "roles": {
+    "claude": "設計とレビュー、コミットを担当する。docs/DESIGN.md の更新とテスト方針を決め、実装は codex に DELEGATE する。codex の実装結果は差分を確認し、テストと型チェックを通してからコミットする。",
+    "codex": "実装を担当する。claude の DELEGATE に従ってテストとコードを書き、pnpm test と pnpm typecheck を通してから RESULT で報告する。設計に迷ったら claude に QUESTION する。コミットはしない。"
+  }
+}
