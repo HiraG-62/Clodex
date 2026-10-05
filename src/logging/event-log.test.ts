@@ -11,41 +11,83 @@ const AT = new Date(2026, 9, 5, 14, 32, 10).toISOString();
 const agentEvent = (agent: "claude" | "codex", event: Extract<CoordinatorEvent, { kind: "agent" }>["event"]): CoordinatorEvent =>
   ({ kind: "agent", agent, event, at: AT });
 
-describe("formatEvent", () => {
+const message = (body: string): CoordinatorEvent => ({
+  kind: "message",
+  at: AT,
+  message: {
+    id: "msg_2", from: "codex", to: "claude", type: "RESULT", taskId: "AUTH-142", body, replyTo: "msg_1",
+    repository: "C:\\dev\\app", createdAt: AT,
+  },
+});
+
+describe("formatEvent（verbose）", () => {
   it.each<[string, CoordinatorEvent, string]>([
     ["session", agentEvent("claude", { type: "session", sessionId: "s-1" }), "14:32:10 [CLAUDE] session s-1"],
     ["text", agentEvent("codex", { type: "text", text: "hello" }), "14:32:10 [CODEX] hello"],
     ["tool", agentEvent("claude", { type: "tool", name: "Read", input: '{"file_path":"a.ts"}' }), '14:32:10 [CLAUDE] tool Read {"file_path":"a.ts"}'],
+    ["turn_started", agentEvent("codex", { type: "turn_started" }), "14:32:10 [CODEX] working..."],
     ["turn", agentEvent("codex", { type: "turn", result: { status: "interrupted", text: "" } }), "14:32:10 [CODEX] turn interrupted"],
     ["exit", agentEvent("claude", { type: "exit", code: 0 }), "14:32:10 [CLAUDE] exited (code 0)"],
     ["error", agentEvent("codex", { type: "error", message: "boom" }), "14:32:10 [CODEX] ERROR boom"],
     ["rate_limit", agentEvent("claude", {
       type: "rate_limit", fiveHour: { usedPercent: 2, resetsAt: 0 }, weekly: { usedPercent: 49, resetsAt: 0 },
     }), "14:32:10 [CLAUDE] usage 5h 2% / 7d 49%"],
+    ["human", { kind: "human", agent: "codex", text: "review this", at: AT }, "14:32:10 [YOU -> CODEX] review this"],
   ])("%s", (_, event, expected) => {
-    expect(formatEvent(event)).toBe(expected);
+    expect(formatEvent(event, "verbose")).toBe(expected);
   });
 
   it("message は from -> to type と task / id / replyTo を出す", () => {
-    const event: CoordinatorEvent = {
-      kind: "message",
-      at: AT,
-      message: {
-        id: "msg_2", from: "codex", to: "claude", type: "RESULT", taskId: "AUTH-142", body: "x", replyTo: "msg_1",
-        repository: "C:\\dev\\app", createdAt: AT,
-      },
-    };
-    expect(formatEvent(event)).toBe("14:32:10 [MESSAGE] codex -> claude RESULT task=AUTH-142 id=msg_2 replyTo=msg_1");
+    expect(formatEvent(message("x"), "verbose")).toBe("14:32:10 [MESSAGE] codex -> claude RESULT task=AUTH-142 id=msg_2 replyTo=msg_1");
   });
 
   it("複数行のテキストは 2 行目以降をインデントする", () => {
-    expect(formatEvent(agentEvent("claude", { type: "text", text: "line1\nline2\r\nline3" })))
+    expect(formatEvent(agentEvent("claude", { type: "text", text: "line1\nline2\r\nline3" }), "verbose"))
       .toBe("14:32:10 [CLAUDE] line1\n    line2\n    line3");
   });
 
   it("片方しかない rate_limit も出せる", () => {
-    expect(formatEvent(agentEvent("codex", { type: "rate_limit", weekly: { usedPercent: 30, resetsAt: 0 } })))
+    expect(formatEvent(agentEvent("codex", { type: "rate_limit", weekly: { usedPercent: 30, resetsAt: 0 } }), "verbose"))
       .toBe("14:32:10 [CODEX] usage 7d 30%");
+  });
+});
+
+describe("formatEvent（既定）", () => {
+  it.each<[string, CoordinatorEvent, string]>([
+    ["turn_started", agentEvent("claude", { type: "turn_started" }), "14:32:10 [CLAUDE] working..."],
+    ["完了したターンは最終応答", agentEvent("claude", { type: "turn", result: { status: "completed", text: "PONG" } }), "14:32:10 [CLAUDE] PONG"],
+    ["最終応答が空なら done", agentEvent("codex", { type: "turn", result: { status: "completed", text: "" } }), "14:32:10 [CODEX] done"],
+    ["interrupted", agentEvent("codex", { type: "turn", result: { status: "interrupted", text: "" } }), "14:32:10 [CODEX] interrupted"],
+    ["failed", agentEvent("claude", { type: "turn", result: { status: "failed", text: "boom" } }), "14:32:10 [CLAUDE] failed: boom"],
+    ["error", agentEvent("codex", { type: "error", message: "boom" }), "14:32:10 [CODEX] ERROR boom"],
+  ])("%s", (_, event, expected) => {
+    expect(formatEvent(event, "normal")).toBe(expected);
+  });
+
+  it("最終応答が複数行なら 2 行目以降をインデントする", () => {
+    expect(formatEvent(agentEvent("claude", { type: "turn", result: { status: "completed", text: "a\nb" } }), "normal"))
+      .toBe("14:32:10 [CLAUDE] a\n    b");
+  });
+
+  it("message は誰が誰に何を頼んだかと本文の先頭 1 行を出す", () => {
+    expect(formatEvent(message("修正が必要\n詳細..."), "normal"))
+      .toBe('14:32:10 [MESSAGE] codex -> claude RESULT task=AUTH-142 "修正が必要"');
+  });
+
+  it("長い本文は切り詰める", () => {
+    const line = formatEvent(message("x".repeat(200)), "normal")!;
+    expect(line).toContain(`"${"x".repeat(80)}..."`);
+  });
+
+  it.each<[string, CoordinatorEvent]>([
+    ["text", agentEvent("claude", { type: "text", text: "途中の発言" })],
+    ["tool", agentEvent("claude", { type: "tool", name: "Bash", input: "ls" })],
+    ["rate_limit", agentEvent("claude", { type: "rate_limit", weekly: { usedPercent: 1, resetsAt: 0 } })],
+    ["session", agentEvent("codex", { type: "session", sessionId: "s" })],
+    ["exit", agentEvent("codex", { type: "exit", code: null })],
+    ["human", { kind: "human", agent: "claude", text: "hi", at: AT }],
+  ])("%s は表示しない", (_, event) => {
+    expect(formatEvent(event, "normal")).toBeUndefined();
   });
 });
 

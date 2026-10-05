@@ -438,6 +438,7 @@ Internal command（v0.1）:
 |---|---|
 | `/interrupt [claude\|codex]` | 指定 Agent（省略時は全 Agent）の実行中ターンを interrupt する。キュー済みの message はそのまま配送される |
 | `/status` | 各 Agent の状態と session ID |
+| `/verbose` | terminal の詳細表示を切り替える（§17） |
 | `/help` | 入力方法の一覧 |
 | `/exit` | 全 Agent を止めて終了 |
 
@@ -487,6 +488,7 @@ interface AgentAdapter {
 | `session` | session ID の確定 |
 | `text` | Agent の発言テキスト |
 | `tool` | tool 呼び出し（名前と入力の要約） |
+| `turn_started` | ターン開始（Agent が busy になった） |
 | `turn` | ターン完了（`TurnResult`） |
 | `rate_limit` | 5 時間 / 7 日の利用率（%）と reset 時刻 |
 | `exit` | プロセス終了 |
@@ -892,6 +894,7 @@ Coordinator 内の observable event は in-memory の Event Bus（`coordinator/e
 |---|---|
 | `agent` | Agent Adapter が出した `AgentEvent`（§9）と、どの Agent か |
 | `message` | Coordinator が受理した formal message（§11） |
+| `human` | 人間の入力と送り先 Agent |
 
 全 event に Coordinator が `at`（ISO 8601）を付ける。購読者の例外は他の購読者と publish 元に波及させない。
 
@@ -901,8 +904,19 @@ Coordinator 内の observable event は in-memory の Event Bus（`coordinator/e
 
 | 出力 | 形式 | 内容 |
 |---|---|---|
-| terminal | `HH:MM:SS [CLAUDE] ...` / `[CODEX]` / `[MESSAGE]` | 人が読む用。`rate_limit` も 1 行に要約して出す |
-| file | JSONL（1 event 1 行、Event Bus の event そのまま） | 記録用。`~/.clodex/logs/<project 名>-<起動時刻>.jsonl` |
+| terminal | `HH:MM:SS [CLAUDE] ...` / `[CODEX]` / `[MESSAGE]` | 人が読む用。既定は要点だけ、`/verbose` で全 event |
+| file | JSONL（1 event 1 行、Event Bus の event そのまま） | 記録用。常に全 event。`~/.clodex/logs/<project 名>-<起動時刻>.jsonl` |
+
+terminal の表示（「誰が何をしていて、誰が誰に何を頼んだか」だけを追えるようにする）:
+
+| event | 既定 | `/verbose` |
+|---|---|---|
+| ターン開始（`turn_started`） | `[CLAUDE] working...` | ✓ |
+| ターン完了（`turn`） | 最終応答。interrupted / failed はその旨 | ✓ |
+| formal message | `[MESSAGE] claude -> codex REVIEW_REQUEST task=... ` と本文の先頭 | ✓ |
+| `error` | ✓ | ✓ |
+| 人間の入力（`human`） | ×（入力行が画面に残っているため） | ✓ |
+| 途中の発言（`text`）・`tool`・`rate_limit`・`session`・`exit` | × | ✓ |
 
 log file は project の外（ホームディレクトリ）に置き、project の working tree を汚さない。
 

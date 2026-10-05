@@ -8,6 +8,7 @@ export type ShellCommand =
   | { kind: "status" }
   | { kind: "help" }
   | { kind: "exit" }
+  | { kind: "verbose" }
   | { kind: "unsupported"; message: string }
   | { kind: "invalid"; message: string };
 
@@ -34,6 +35,7 @@ const parseCommand = (name: string, arg: string): ShellCommand => {
     case "status":
     case "help":
     case "exit":
+    case "verbose":
       return { kind: name };
     default:
       return { kind: "invalid", message: `unknown command: /${name} (see /help)` };

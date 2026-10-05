@@ -54,7 +54,7 @@ const setup = async () => {
     if (e.kind === "message") messages.push(e.message);
   });
   const logPath = join(projectRoot, "..", `${basename(projectRoot)}.jsonl`);
-  attachEventLog(bus, { path: logPath, print: (line) => console.log(line) });
+  attachEventLog(bus, { path: logPath, print: (line) => console.log(line), mode: () => "verbose" });
   let coordinator: Coordinator | undefined;
   const mcp: McpServerHandle = await startMcpServer((from, input) => coordinator!.receiveMessage(from, input));
   coordinator = new Coordinator({

@@ -71,6 +71,7 @@ describe("ClaudeAdapter", () => {
     expect(events).toContainEqual({ type: "tool", name: "Read", input: '{"file_path":"a.ts"}' });
     expect(events).toContainEqual({ type: "text", text: "PONG" });
     expect(events).toContainEqual({ type: "turn", result: { status: "completed", text: "PONG" } });
+    expect(events.findIndex((e) => e.type === "turn_started")).toBeLessThan(events.findIndex((e) => e.type === "turn"));
   });
 
   it("busy 中の send は拒否する", async () => {

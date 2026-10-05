@@ -7,7 +7,7 @@ import { parseCliArgs } from "./cli/args.js";
 import { createShell } from "./cli/shell.js";
 import { Coordinator } from "./coordinator/coordinator.js";
 import { EventBus } from "./coordinator/event-bus.js";
-import { attachEventLog, defaultLogPath } from "./logging/event-log.js";
+import { attachEventLog, defaultLogPath, type DisplayMode } from "./logging/event-log.js";
 import { startMcpServer } from "./mcp/server.js";
 import { resolveProjectRoot } from "./project/project-root.js";
 
@@ -48,12 +48,17 @@ const main = async (): Promise<void> => {
   };
 
   const logPath = defaultLogPath(projectRoot, new Date());
-  attachEventLog(bus, { path: logPath, print });
+  let displayMode: DisplayMode = "normal";
+  attachEventLog(bus, { path: logPath, print, mode: () => displayMode });
   print(`Clodex v0.1  project: ${projectRoot}`);
   print(`log: ${logPath}`);
   print("Type /help for usage.");
 
-  const shell = createShell({ coordinator, primary: args.primary, print });
+  const toggleVerbose = () => {
+    displayMode = displayMode === "verbose" ? "normal" : "verbose";
+    return displayMode === "verbose";
+  };
+  const shell = createShell({ coordinator, primary: args.primary, print, toggleVerbose });
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) return;

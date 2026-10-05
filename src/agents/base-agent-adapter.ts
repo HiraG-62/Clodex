@@ -28,6 +28,7 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   send(text: string): Promise<TurnResult> {
     if (this.status !== "idle") return Promise.reject(new Error(`${this.id} is ${this.status}`));
     this.status = "busy";
+    this.emit({ type: "turn_started" });
     const turn = new Promise<TurnResult>((resolve) => (this.resolveTurn = resolve));
     this.writeTurn(text);
     return turn;

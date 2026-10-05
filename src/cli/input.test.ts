@@ -14,6 +14,7 @@ describe("parseInput", () => {
     ["/status", { kind: "status" }],
     ["/help", { kind: "help" }],
     ["/exit", { kind: "exit" }],
+    ["/verbose", { kind: "verbose" }],
   ])("%j", (line, expected) => {
     expect(parseInput(line, "claude")).toEqual(expected);
   });

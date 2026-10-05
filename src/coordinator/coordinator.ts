@@ -60,6 +60,7 @@ export class Coordinator {
   }
 
   sendToAgent(id: AgentId, text: string): Promise<TurnResult> {
+    this.options.bus.publish({ kind: "human", agent: id, text });
     return this.mailboxes[id].enqueue(text);
   }
 

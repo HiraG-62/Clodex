@@ -29,6 +29,7 @@ export type AgentEvent =
   | { type: "session"; sessionId: string }
   | { type: "text"; text: string }
   | { type: "tool"; name: string; input: string }
+  | { type: "turn_started" }
   | { type: "turn"; result: TurnResult }
   | { type: "rate_limit"; fiveHour?: RateLimitWindow; weekly?: RateLimitWindow }
   | { type: "exit"; code: number | null }

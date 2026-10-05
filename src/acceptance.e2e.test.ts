@@ -81,7 +81,7 @@ describe.runIf(process.env.CLODEX_E2E === "1")("v0.1 acceptance (real clodex pro
     send("@claude Write the numbers 1 to 2000, one per line. Do not use tools.");
     await new Promise((r) => setTimeout(r, INTERRUPT_DELAY_MS));
     send("/interrupt claude");
-    await waitForOutput(/\[CLAUDE\] turn interrupted/);
+    await waitForOutput(/\[CLAUDE\] interrupted/);
 
     send("/status");
     await waitForOutput(/claude: idle \(session /);

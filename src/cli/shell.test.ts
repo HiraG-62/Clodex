@@ -27,7 +27,10 @@ class FakeCoordinator implements ShellCoordinator {
 const setup = () => {
   const coordinator = new FakeCoordinator();
   const printed: string[] = [];
-  const shell = createShell({ coordinator, primary: "claude", print: (line) => printed.push(line) });
+  let verbose = false;
+  const shell = createShell({
+    coordinator, primary: "claude", print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose),
+  });
   return { coordinator, printed, shell };
 };
 
@@ -57,6 +60,13 @@ describe("createShell", () => {
     await shell.handleLine("/help");
     expect(printed.join("\n")).toMatch(/@codex/);
     expect(printed.join("\n")).toMatch(/\/interrupt/);
+  });
+
+  it("/verbose は詳細表示を切り替えて状態を表示する", async () => {
+    const { printed, shell } = setup();
+    await shell.handleLine("/verbose");
+    await shell.handleLine("/verbose");
+    expect(printed).toEqual(["verbose: on", "verbose: off"]);
   });
 
   it("/exit は exit を返す", async () => {

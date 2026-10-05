@@ -12,6 +12,8 @@ export interface ShellOptions {
   coordinator: ShellCoordinator;
   primary: AgentId;
   print: (line: string) => void;
+  // terminal の詳細表示を切り替え、切り替え後の状態を返す
+  toggleVerbose: () => boolean;
 }
 
 export type ShellOutcome = "continue" | "exit";
@@ -22,11 +24,12 @@ const HELP_LINES = (primary: AgentId) => [
   "@codex <text>       send to Codex",
   "/interrupt [agent]  interrupt the running turn (all agents if omitted)",
   "/status             show agent status",
+  "/verbose            toggle detailed output (tools, usage, intermediate text)",
   "/exit               stop all agents and quit",
   "Ctrl+C              interrupt running turns",
 ];
 
-export const createShell = ({ coordinator, primary, print }: ShellOptions) => {
+export const createShell = ({ coordinator, primary, print, toggleVerbose }: ShellOptions) => {
   const handleLine = async (line: string): Promise<ShellOutcome> => {
     const command = parseInput(line, primary);
     switch (command.kind) {
@@ -46,6 +49,9 @@ export const createShell = ({ coordinator, primary, print }: ShellOptions) => {
         return "continue";
       case "help":
         HELP_LINES(primary).forEach((l) => print(l));
+        return "continue";
+      case "verbose":
+        print(`verbose: ${toggleVerbose() ? "on" : "off"}`);
         return "continue";
       case "exit":
         return "exit";

@@ -68,6 +68,12 @@ describe("Coordinator", () => {
     expect(claude.sent[0]).toContain("Status: approved");
   });
 
+  it("人間の入力を human event として記録する", () => {
+    const { events, coordinator } = setup();
+    void coordinator.sendToAgent("codex", "review this");
+    expect(events).toContainEqual({ kind: "human", agent: "codex", text: "review this", at: NOW });
+  });
+
   it("人間の入力も同じ mailbox で直列に送る", async () => {
     const { codex, coordinator } = setup();
     const human = coordinator.sendToAgent("codex", "human task");
