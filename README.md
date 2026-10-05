@@ -15,8 +15,17 @@ Windows ネイティブ環境で Claude Code と Codex CLI を対等な開発エ
 ```powershell
 pnpm install
 pnpm build
-pnpm link --global   # clodex コマンドを使えるようにする
 ```
+
+`clodex` コマンドは、PATH 上（例: `pnpm setup` で作られる `%PNPM_HOME%`）に shim を置いて使う。pnpm 10 の `pnpm link --global` はローカルディレクトリの bin を作らないため。
+
+```bat
+:: %PNPM_HOME%\clodex.cmd
+@ECHO off
+node "E:\dev\Clodex\dist\index.js" %*
+```
+
+ソースを変更したら `pnpm build` で反映される。
 
 ## 使い方
 
