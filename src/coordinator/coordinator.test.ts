@@ -493,3 +493,40 @@ describe("Coordinator の画像", () => {
     expect(codex.sentImages).toEqual([["C:/up/a.png"]]);
   });
 });
+
+describe("Coordinator の言語の 1 行（DESIGN.md §13 Language）", () => {
+  const withLanguage = () => {
+    const claude = new FakeAgentAdapter("claude");
+    const codex = new FakeAgentAdapter("codex");
+    const bus = new EventBus();
+    const events: CoordinatorEvent[] = [];
+    bus.subscribe((e) => events.push(e));
+    const coordinator = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus, mcpUrlFor, language: "ja" });
+    return { claude, codex, events, coordinator };
+  };
+
+  it("人の入力を Agent に渡すときだけ末尾に言語の 1 行を足し、表示・送信待ちには足さない", async () => {
+    const { claude, events, coordinator } = withLanguage();
+    void coordinator.sendToAgent("claude", "直して");
+    void coordinator.sendToAgent("claude", "次も");
+    await flush();
+    expect(claude.sent[0]).toMatch(/^直して\n\n\[Clodex\] .*Japanese/);
+    expect(events).toContainEqual(expect.objectContaining({ kind: "human", text: "直して" }));
+    expect(coordinator.pendingInputs()).toEqual([{ id: "in2", agent: "claude", text: "次も" }]);
+  });
+
+  it("割り込み（steer）にも言語の 1 行を足す", async () => {
+    const { codex, coordinator } = withLanguage();
+    void coordinator.sendToAgent("codex", "作業");
+    await flush();
+    await coordinator.steerOrSend("codex", "追加");
+    expect(codex.steered[0]).toMatch(/^追加\n\n\[Clodex\] .*Japanese/);
+  });
+
+  it("言語の指定が無ければ足さない", async () => {
+    const { claude, coordinator } = setup();
+    void coordinator.sendToAgent("claude", "そのまま");
+    await flush();
+    expect(claude.sent).toEqual(["そのまま"]);
+  });
+});

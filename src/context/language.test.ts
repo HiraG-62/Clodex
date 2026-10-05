@@ -19,3 +19,11 @@ describe("languageDirective", () => {
     expect(languageDirective("en")).toContain("English");
   });
 });
+
+describe("languageReminder", () => {
+  it("毎回の入力の末尾に添える短い 1 行", async () => {
+    const { languageReminder } = await import("./language.js");
+    expect(languageReminder("ja")).toMatch(/^\[Clodex\] .*Japanese/);
+    expect(languageReminder("en")).toContain("English");
+  });
+});

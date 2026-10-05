@@ -828,6 +828,7 @@ AGENTS.md → Codex
 
 - 設定ファイルの `language`（`ja` / `en`）。無ければ OS のロケールから決める（`ja` で始まれば `ja`、それ以外は `en`）
 - Agent には system prompt の定型文と Task envelope の末尾で「人が読む文章はすべてこの言語で書く。コード・識別子・コマンド・パスはそのまま」と指示する。指示の本体（定型文・envelope）はモデル向けなので英語のまま
+- さらに、人の入力（割り込みを含む）を Agent に渡すときは、末尾に言語の 1 行（例: `[Clodex] Write your reply and progress notes in Japanese.`）を足す。system prompt の指示は長い会話で弱まり、`/resume` した session には入っていないこともあるため、直近の指示として毎回添える。画面・履歴・送信待ちには人が打った本文だけを出す
 - 守られることは保証できない（自動翻訳はしない）。英語が残る場合は指示の文言を見直す
 - Clodex の画面の文言（Web UI・CLI・通知）もこの言語で出す（§28 v0.3 の i18n）
 

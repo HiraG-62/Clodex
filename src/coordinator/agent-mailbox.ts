@@ -11,6 +11,7 @@ interface QueueItem {
   message: AgentMessage | undefined; // 人間の入力・compact なら undefined
   inputId?: string; // 人間の入力の ID（取り消しに使う）
   images?: readonly string[]; // 人間の入力に添えた画像（実パス）
+  suffix?: string; // 配送するときだけ本文の末尾に足す（言語の 1 行。送信待ちの表示には出さない）
   resolve: (result: TurnResult) => void;
 }
 
@@ -18,6 +19,7 @@ export interface EnqueueOptions {
   message?: AgentMessage;
   inputId?: string;
   images?: readonly string[];
+  suffix?: string;
 }
 
 export class AgentMailbox {
@@ -38,9 +40,11 @@ export class AgentMailbox {
   ) {}
 
   // 失敗しても reject せず failed の TurnResult を返す（呼び出し側は待たずに投げてよい）
-  enqueue(text: string, { message, inputId, images }: EnqueueOptions = {}): Promise<TurnResult> {
+  enqueue(text: string, { message, inputId, images, suffix }: EnqueueOptions = {}): Promise<TurnResult> {
     if (this.closed) return Promise.resolve(CLOSED_RESULT);
-    return this.push({ kind: "send", text, message, ...(inputId ? { inputId } : {}), ...(images?.length ? { images } : {}) });
+    return this.push({
+      kind: "send", text, message, ...(inputId ? { inputId } : {}), ...(images?.length ? { images } : {}), ...(suffix ? { suffix } : {}),
+    });
   }
 
   // 配送待ちの人間の入力（配送中のものは含まない）
@@ -132,7 +136,7 @@ export class AgentMailbox {
         try {
           const result = item.kind === "compact" ? await this.compact()
             : item.kind === "model" || item.kind === "effort" ? await this.setting(item.kind, item.text)
-              : await this.deliver(item.text, item.images);
+              : await this.deliver(`${item.text}${item.suffix ?? ""}`, item.images);
           item.resolve(result);
         } finally {
           this.current = undefined;

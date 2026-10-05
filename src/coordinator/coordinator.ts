@@ -4,7 +4,7 @@ import {
 } from "../agents/agent-adapter.js";
 import { buildEnvelope } from "../context/context-resolver.js";
 import { t } from "../i18n/i18n.js";
-import type { Language } from "../context/language.js";
+import { languageReminder, type Language } from "../context/language.js";
 import { createMessage, type AgentMessage, type CreateMessageResult } from "../protocol/messages.js";
 import { AgentMailbox } from "./agent-mailbox.js";
 import { BudgetManager, type BudgetLimits } from "./budget-manager.js";
@@ -112,7 +112,7 @@ export class Coordinator {
 
   // @agent!: 実行中なら steer し、そうでなければ通常の送信（DESIGN.md §28 v0.3 C）
   async steerOrSend(id: AgentId, text: string): Promise<"steered" | "queued"> {
-    if (await this.options.agents[id].steer(text)) {
+    if (await this.options.agents[id].steer(`${text}${this.reminder}`)) {
       this.options.bus.publish({ kind: "human", agent: id, text, steer: true });
       return "steered";
     }
@@ -122,7 +122,15 @@ export class Coordinator {
 
   sendToAgent(id: AgentId, text: string, images: readonly string[] = []): Promise<TurnResult> {
     this.options.bus.publish({ kind: "human", agent: id, text });
-    return this.mailboxes[id].enqueue(text, { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, images });
+    return this.mailboxes[id].enqueue(text, { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, images, suffix: this.reminder });
+  }
+
+  // 人の入力の末尾に足す言語の 1 行（DESIGN.md §13 Language）。言語の指定が無ければ空
+  private get reminder(): string {
+    const { language } = this.options;
+    return language ? `
+
+${languageReminder(language)}` : "";
   }
 
   // 送った順（ID の連番順）に並べる
