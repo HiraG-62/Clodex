@@ -17,6 +17,7 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   protected proc: AgentProcess | undefined;
   private readonly handlers = new Set<AgentEventHandler>();
   private resolveTurn: ((result: TurnResult) => void) | undefined;
+  private spontaneousTurn: Promise<TurnResult> | undefined;
   private stopping: Promise<void> | undefined;
   private resolveStop: (() => void) | undefined;
 
@@ -52,12 +53,20 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   }
 
   private beginTurn(write: () => void): Promise<TurnResult> {
+    if (this.spontaneousTurn) return this.spontaneousTurn.then(() => this.beginTurn(write));
     if (this.status !== "idle") return Promise.reject(new Error(`${this.id} is ${this.status}`));
     this.status = "busy";
     this.emit({ type: "turn_started" });
     const turn = new Promise<TurnResult>((resolve) => (this.resolveTurn = resolve));
     write();
     return turn;
+  }
+
+  protected beginSpontaneousTurn(): void {
+    if (this.status !== "idle") return;
+    this.status = "busy";
+    this.spontaneousTurn = new Promise<TurnResult>((resolve) => (this.resolveTurn = resolve));
+    this.emit({ type: "turn_started" });
   }
 
   stop(): Promise<void> {
@@ -84,6 +93,7 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
     const resolve = this.resolveTurn;
     if (!resolve) return;
     this.resolveTurn = undefined;
+    this.spontaneousTurn = undefined;
     if (this.status === "busy") this.status = "idle";
     this.emit({ type: "turn", result });
     resolve(result);

@@ -44,6 +44,7 @@ interface MessageUsage {
 interface ClaudeEvent {
   type?: string;
   subtype?: string;
+  parent_tool_use_id?: string | null;
   apiKeySource?: string;
   error_status?: number;
   message?: { content?: ContentBlock[]; usage?: MessageUsage };
@@ -146,6 +147,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
       this.abort(`claude is not using subscription auth (apiKeySource: ${event.apiKeySource})`);
       return;
     }
+    if (event.subtype === "init") this.beginSpontaneousTurn();
     // compact 後の正確な大きさは次のターンまで分からない（post_tokens は system prompt を含まない）
     if (event.subtype === "compact_boundary") {
       this.lastUsage = undefined;
@@ -169,6 +171,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
   }
 
   private handleAssistant(event: ClaudeEvent): void {
+    if (event.parent_tool_use_id) return;
     if (event.message?.usage) this.lastUsage = event.message.usage;
     for (const block of event.message?.content ?? []) {
       if (block.type === "text" && block.text) this.emit({ type: "text", text: block.text });

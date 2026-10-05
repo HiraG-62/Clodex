@@ -144,6 +144,48 @@ describe("ClaudeAdapter", () => {
     await expect(adapter.send("second")).rejects.toThrow(/busy/);
   });
 
+  it("入力なしの system/init から自発ターンを開始し、result を turn として流す", async () => {
+    const { adapter, proc, events } = await setup();
+    proc.emit(init());
+    expect(adapter.status).toBe("busy");
+    proc.emit({ type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text: "続き" }] } });
+    proc.emit(result("最終応答"));
+    expect(adapter.status).toBe("idle");
+    expect(events.filter((e) => e.type === "turn_started")).toHaveLength(1);
+    expect(events).toContainEqual({ type: "turn", result: { status: "completed", text: "最終応答" } });
+  });
+
+  it("subagent の assistant は本体の text / tool と自発ターン開始に使わない", async () => {
+    const { adapter, proc, events } = await setup();
+    proc.emit({ type: "assistant", parent_tool_use_id: "toolu_agent", message: { content: [
+      { type: "text", text: "内部応答" }, { type: "tool_use", name: "Read", input: { file_path: "secret" } },
+    ] } });
+    expect(adapter.status).toBe("idle");
+    expect(events.some((e) => e.type === "turn_started" || e.type === "text" || e.type === "tool")).toBe(false);
+  });
+
+  it("自発ターン中の send と compact は完了後に送る", async () => {
+    const { adapter, proc, events } = await setup();
+    proc.emit(init());
+    const send = adapter.send("次の入力");
+    expect(proc.writtenWith("type", "user")).toHaveLength(0);
+    proc.emit(result("自発応答"));
+    await flush();
+    expect(proc.writtenWith("type", "user")[0]).toMatchObject({ message: { content: "次の入力" } });
+    proc.emit(result("入力への応答"));
+    await expect(send).resolves.toEqual({ status: "completed", text: "入力への応答" });
+    expect(events.filter((e) => e.type === "turn")).toHaveLength(2);
+
+    proc.emit(init());
+    const compact = adapter.compact();
+    expect(proc.writtenWith("type", "user")).toHaveLength(1);
+    proc.emit(result("自発応答 2"));
+    await flush();
+    expect(proc.writtenWith("type", "user")[1]).toMatchObject({ message: { content: "/compact" } });
+    proc.emit(result(""));
+    await expect(compact).resolves.toEqual({ status: "completed", text: "" });
+  });
+
   it("interrupt は control_request を送り、そのターンを interrupted で終える", async () => {
     const { adapter, proc } = await setup();
     const turn = adapter.send("long task");

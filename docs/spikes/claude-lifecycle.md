@@ -42,7 +42,8 @@ Adapter は **stream-json の長寿命プロセス** を基本とする。プロ
 - subagent が終わるたびに、Claude 本体が入力なしで新しいターンを始め、`assistant` → `result` を出した（`result` は Clodex の `context` event として記録されていた）
 - Clodex は送信したターンが無い間の `result` を捨てていたため、`turn` event が出ず、最終応答が本文として表示されなかった
 
-未確認（`spikes/claude-stream.ts` で実測する）:
+`spikes/claude-stream.ts --background` で haiku の Agent tool（`run_in_background: true`）を実測した:
 
-- subagent の `assistant` に `parent_tool_use_id` が付くか
-- 自発ターンの始まりに `system/init` 等の目印となる event が出るか
+- subagent の `assistant`（thinking / text）には Agent tool の ID が `parent_tool_use_id` として付いた。本体の `assistant` は `parent_tool_use_id: null` だった
+- 最初の本体ターンの `result` 後、入力なしで `system/init` → 本体の `assistant` → `result` が出た。`system/init` を自発ターン開始の目印にできる
+- subagent の `assistant` は最初の `result` より前にも出たため、親の本文や tool として流さない必要がある
