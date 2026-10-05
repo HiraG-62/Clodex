@@ -1803,6 +1803,31 @@ D3 の詳細（Tauri GUI。Windows）:
 - ネイティブで足すのはフォルダの選択だけ（D3 の範囲）: Web UI の「開く」は、Tauri の中（`window.__TAURI__` がある）ならフォルダ選択のダイアログで選んだパスを `/project <path>` として送る。ブラウザでは今どおりパスを入力する。Tauri の IPC は Hub の URL（127.0.0.1）からだけ許す（capability の remote の設定）
 - 通知・トレイ常駐は D3 の後に検討する
 
+
+### E — 役割の編集と画面の改善
+
+役割:
+
+- Clodex は役割の文章を作らない（書くのは人）。表示と編集の手段だけを持つ
+- `/role` で両 Agent の役割、`/role <agent>` でその Agent の役割を表示し、`/role <agent> <text>` で project の `.clodex.json` の `roles` を書き換える（他のキーは残す。ファイルが無ければ作る。書き込みは一時ファイル経由）。役割は 1 行（改行は空白にする）。反映は次に始める session から（system prompt に入るため）。書き換えたら `/new <agent>` で始め直すよう案内する
+- Web UI: 役割の本文をパネルに常に出さない。Agent の見出しに役割のアイコンを置き、押すと役割の表示と編集（textarea と保存。保存は `/role <agent> <text>` を送るだけ）を開く
+
+Agent の設定（model・effort・権限）:
+
+- 表示: Agent の見出しの下に小さなチップを 1 行で並べる（model・effort・権限）。権限が `full` のときだけ警告色。押すと設定のポップアップを開く。利用枠のゲージはその下
+- model はリストから選ぶ: Claude は CLI に一覧の API が無いので、alias の固定リスト（default・opus・sonnet・haiku）。Codex は app-server の `model/list` で取得する（起動中に 1 回取得して覚える。停止中は前回の一覧）。リストの最後に「その他（入力）」を置き、自由に入力もできる
+- 一覧は state に Agent ごとに入れる。Adapter に `listModels()` を足す
+
+作業中の表示:
+
+- 作業中のターンを、ログとは別の開閉できる「作業中」パネルにも出す（PC は右のサイドタブ、スマホは下から開くシート）。各ターンの Agent・方針・今の作業・経過時間を出し、押すとログのそのターンへ移動する。作業中の数をボタンに出す。チャットが流れても作業中のものをいつでも見られるようにする
+
+入力:
+
+- スラッシュコマンドは引数まで候補を出す。コマンドごとに引数の候補を定義する（Agent 名、権限、effort の値、model の一覧、`/resume`・`/delete`・`/pin` の会話の番号と名前、`/project` の project、`/new` の `worktree` と Agent 名、`/cancel` の送信待ちの ID）。候補の元は state
+- 入力欄が大きくなるとき: ログの一番下にいたら、入力欄が広がってもログの最後が見えるようにスクロールを合わせる。読み返している最中なら動かさない
+- 入力欄の強調表示の層は textarea と同じ大きさに固定する（textarea の外まで広がって、入力欄の中に余白が増えないように）
+
 ---
 
 # 29. Self-hosting / Dogfooding

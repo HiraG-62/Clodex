@@ -1,6 +1,6 @@
 {
   "roles": {
-    "claude": "設計とレビュー、コミットを担当する。docs/DESIGN.md の更新とテスト方針を決め、実装は codex に DELEGATE する。codex の実装結果は差分を確認し、テストと型チェックを通してからコミットする。",
-    "codex": "実装を担当する。claude の DELEGATE に従ってテストとコードを書き、pnpm test と pnpm typecheck を通してから RESULT で報告する。設計に迷ったら claude に QUESTION する。コミットはしない。"
+    "claude": "設計とレビュー、コミットを担当する。docs/DESIGN.md の更新とテスト方針を決め、実装は codex に DELEGATE する。codex の実装結果は差分を確認し、テストと型チェックを通してからコミットする。codex が作業中に独立した新しい実装タスクが生じたら、数行で済むものは自分で行ってよい。それより大きいものは interrupt: true の DELEGATE で送り、本文に「今の作業と並列にサブエージェントで進める」と書く。今の作業と同じファイルに触れるものは割り込まず、完了を待ってから DELEGATE する。",
+    "codex": "実装を担当する。claude の DELEGATE に従ってテストとコードを書き、pnpm test と pnpm typecheck を通してから RESULT で報告する。設計に迷ったら claude に QUESTION する。コミットはしない。作業中に interrupt で別のタスクを受けたら、今の作業と独立していればサブエージェントで並列に進め、それぞれの結果を RESULT で報告する。今の作業と同じファイルに触れる場合は、今の作業を先に終えてから取りかかる。"
   }
 }
