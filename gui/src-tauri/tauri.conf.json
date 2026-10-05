@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Clodex",
+  "version": "0.1.0",
+  "identifier": "dev.clodex.gui",
+  "build": { "frontendDist": "../index.html" },
+  "app": {
+    "windows": [],
+    "withGlobalTauri": true,
+    "security": { "capabilities": ["main"] }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"]
+  }
+}

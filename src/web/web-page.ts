@@ -11,6 +11,7 @@ import { collectArtifacts, displayPath } from "./client/artifacts.js";
 import { renderMarkdown } from "./client/markdown.js";
 import { applyFeedItem } from "./client/timeline.js";
 import { composeInputLine } from "./client/compose-input.js";
+import { chooseProjectPath } from "./client/project-picker.js";
 
 const STYLE = `
   :root {
@@ -332,7 +333,8 @@ const FUNCTIONS = `
   composeInputLine: ${inlineScript(composeInputLine.toString())},
   createInputAssist: ${inlineScript(createInputAssist.toString())},
   collectArtifacts: ${inlineScript(collectArtifacts.toString())},
-  displayPath: ${inlineScript(displayPath.toString())},`;
+  displayPath: ${inlineScript(displayPath.toString())},
+  chooseProjectPath: ${inlineScript(chooseProjectPath.toString())},`;
 const json = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
 
 // ホーム画面に置けるようにする（DESIGN.md §28 D: PWA）

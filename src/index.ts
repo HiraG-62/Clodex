@@ -11,6 +11,7 @@ import { loadConfig } from "./config/config.js";
 import { detectLanguage } from "./context/language.js";
 import type { CoordinatorEvent } from "./coordinator/event-bus.js";
 import { Hub } from "./hub/hub.js";
+import { clearHubLock, writeHubLock } from "./hub/hub-lock.js";
 import { openProject, type ProjectContext } from "./hub/project-context.js";
 import { selectProject } from "./hub/project-selection.js";
 import { setLanguage, t } from "./i18n/i18n.js";
@@ -158,6 +159,10 @@ const main = async (): Promise<void> => {
       save: (contentType, body) => saveUpload(current().uploadsDir, contentType, body) },
     onError: (error) => print(t("error.generic", { message: errorMessage(error) })),
   }) : undefined;
+  if (args.serve && web) {
+    const port = Number(new URL(web.url).port);
+    writeHubLock(homeDir, { pid: process.pid, port, url: web.url });
+  }
 
   if (!args.serve) {
     const context = hub.current;
@@ -180,9 +185,13 @@ const main = async (): Promise<void> => {
     shuttingDown = true;
     rl?.close();
     runner.stopAll();
-    await hub.closeAll();
-    await web?.close();
-    setTimeout(() => process.exit(0), FORCE_EXIT_DELAY_MS).unref();
+    try {
+      await hub.closeAll();
+      await web?.close();
+    } finally {
+      if (args.serve) clearHubLock(homeDir, process.pid);
+      setTimeout(() => process.exit(0), FORCE_EXIT_DELAY_MS).unref();
+    }
   };
   const report = (error: unknown) => print(t("error.generic", { message: errorMessage(error) }));
   if (rl) {
@@ -199,6 +208,10 @@ const main = async (): Promise<void> => {
       void lines.then(() => hub.current?.workspace.current.coordinator.whenIdle()).then(shutdown);
     });
     if (interactive) rl.prompt();
+  }
+  if (args.serve) {
+    process.on("SIGINT", () => void shutdown());
+    process.on("SIGTERM", () => void shutdown());
   }
 };
 

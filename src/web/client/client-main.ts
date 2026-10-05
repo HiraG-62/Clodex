@@ -11,6 +11,7 @@ import type { SlashCommand } from "../../cli/commands.js";
 import type { Suggestion, createInputAssist as CreateInputAssist } from "./input-assist.js";
 import type { collectArtifacts as CollectArtifacts, displayPath as DisplayPath } from "./artifacts.js";
 import type { MessageKey, Messages } from "../../i18n/messages.js";
+import type { chooseProjectPath as ChooseProjectPath } from "./project-picker.js";
 
 export interface ClientDeps {
   renderMarkdown: typeof RenderMarkdown;
@@ -21,11 +22,12 @@ export interface ClientDeps {
   displayPath: typeof DisplayPath;
   commands: readonly SlashCommand[];
   messages: Messages;
+  chooseProjectPath: typeof ChooseProjectPath;
   version: string;
 }
 
 export function clientMain({
-  renderMarkdown, applyFeedItem, composeInputLine, createInputAssist, collectArtifacts, displayPath, commands, messages, version,
+  renderMarkdown, applyFeedItem, composeInputLine, createInputAssist, collectArtifacts, displayPath, commands, messages, chooseProjectPath, version,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -762,10 +764,15 @@ export function clientMain({
     const value = (event.currentTarget as HTMLSelectElement).value;
     if (value) void send(`/project ${value}`).then((ok) => { if (!ok) renderState(); });
   });
-  $("#open-project").addEventListener("click", () => {
-    const path = window.prompt(t("web.top.projectPrompt"))?.trim();
+  $("#open-project").addEventListener("click", () => void (async () => {
+    const tauri = (window as Window & { __TAURI__?: { dialog?: { open(options: { directory: boolean; multiple: boolean }): Promise<string | null> } } }).__TAURI__;
+    const dialog = tauri?.dialog;
+    const path = await chooseProjectPath(
+      dialog ? () => dialog.open({ directory: true, multiple: false }) : undefined,
+      () => window.prompt(t("web.top.projectPrompt")),
+    );
     if (path) void send(`/project ${path}`);
-  });
+  })());
 
   // ---- 詳細表示 ----
   const detailButton = $("#detail");
