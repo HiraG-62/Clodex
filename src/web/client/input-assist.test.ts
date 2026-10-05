@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { SLASH_COMMANDS } from "../../cli/commands.js";
+import { slashCommands } from "../../cli/commands.js";
 import { createInputAssist } from "./input-assist.js";
 
-const { suggest, highlight } = createInputAssist(SLASH_COMMANDS, ["claude", "codex"]);
+const { suggest, highlight } = createInputAssist(slashCommands(), ["claude", "codex"], { agent: "送り先", file: "ファイル" });
 const FILES = ["src/cli/input.ts", "src/web/client/input-assist.ts", "docs/DESIGN.md", "README.md"];
 
 describe("suggest", () => {

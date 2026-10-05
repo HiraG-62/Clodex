@@ -1,34 +1,48 @@
 // スラッシュコマンドの一覧（DESIGN.md §8）。/help・サジェスト・Tab 補完で共有する
+import { t } from "../i18n/i18n.js";
+import type { MessageKey } from "../i18n/messages.js";
+
+// 画面に出す形（説明は今の言語の文言）
 export interface SlashCommand {
   name: string;
   args: string;
   description: string;
 }
 
-export const SLASH_COMMANDS: readonly SlashCommand[] = [
-  { name: "interrupt", args: "[agent]", description: "interrupt the running turn (all agents, !commands and agent-to-agent exchanges if omitted)" },
-  { name: "cancel", args: "[id]", description: "cancel a queued input that has not been delivered (the latest if id is omitted)" },
-  { name: "status", args: "", description: "show agent status and usage" },
-  { name: "primary", args: "<agent>", description: "change where plain text goes" },
-  { name: "resume", args: "[number]", description: "list past conversations, or switch to one" },
-  { name: "rename", args: "<title>", description: "rename the current conversation" },
-  { name: "delete", args: "<number>", description: "delete a past conversation (number from /resume)" },
-  { name: "pin", args: "<number>", description: "pin or unpin a conversation (number from /resume)" },
-  { name: "new", args: "[agent]", description: "start fresh sessions (a new conversation if agent is omitted)" },
-  { name: "compact", args: "[agent]", description: "summarize the conversation to reduce context (running agents if omitted)" },
-  { name: "permission", args: "[agent] <read-only|edit|full>", description: "change what agents may do without asking" },
-  { name: "model", args: "<agent> <model>", description: "change an agent's model" },
-  { name: "effort", args: "[agent] <level>", description: "change reasoning effort" },
-  { name: "verbose", args: "", description: "toggle detailed output (tools, usage, intermediate text)" },
-  { name: "help", args: "", description: "show this help" },
-  { name: "exit", args: "", description: "stop all agents and quit" },
+interface SlashCommandSpec {
+  name: string;
+  args: string;
+  description: MessageKey;
+}
+
+const SPECS: readonly SlashCommandSpec[] = [
+  { name: "interrupt", args: "[agent]", description: "cmd.interrupt" },
+  { name: "cancel", args: "[id]", description: "cmd.cancel" },
+  { name: "status", args: "", description: "cmd.status" },
+  { name: "primary", args: "<agent>", description: "cmd.primary" },
+  { name: "resume", args: "[number]", description: "cmd.resume" },
+  { name: "rename", args: "<title>", description: "cmd.rename" },
+  { name: "delete", args: "<number>", description: "cmd.delete" },
+  { name: "pin", args: "<number>", description: "cmd.pin" },
+  { name: "new", args: "[agent]", description: "cmd.new" },
+  { name: "compact", args: "[agent]", description: "cmd.compact" },
+  { name: "permission", args: "[agent] <read-only|edit|full>", description: "cmd.permission" },
+  { name: "model", args: "<agent> <model>", description: "cmd.model" },
+  { name: "effort", args: "[agent] <level>", description: "cmd.effort" },
+  { name: "verbose", args: "", description: "cmd.verbose" },
+  { name: "help", args: "", description: "cmd.help" },
+  { name: "exit", args: "", description: "cmd.exit" },
 ];
 
-export const commandUsage = ({ name, args }: SlashCommand): string => `/${name}${args ? ` ${args}` : ""}`;
+// 言語は起動時に決まるので、呼ぶたびに文言を引く
+export const slashCommands = (): SlashCommand[] => SPECS.map((spec) => ({ ...spec, description: t(spec.description) }));
+export const SLASH_COMMAND_NAMES: readonly string[] = SPECS.map(({ name }) => name);
+
+export const commandUsage = ({ name, args }: Pick<SlashCommand, "name" | "args">): string => `/${name}${args ? ` ${args}` : ""}`;
 
 // readline の completer。コマンド名の入力中だけ補完する
 export const completeCommand = (line: string): [string[], string] => {
   if (!/^\/\S*$/.test(line)) return [[], line];
-  const hits = SLASH_COMMANDS.map(({ name }) => `/${name} `).filter((candidate) => candidate.startsWith(line));
+  const hits = SLASH_COMMAND_NAMES.map((name) => `/${name} `).filter((candidate) => candidate.startsWith(line));
   return [hits, line];
 };

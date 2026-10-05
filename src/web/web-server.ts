@@ -5,7 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import type { PreviewResult } from "../project/file-preview.js";
 import type { FeedItem, WebFeed } from "./web-feed.js";
-import { PAGE_VERSION, WEB_PAGE } from "./web-page.js";
+import type { WebPage } from "./web-page.js";
 
 const HOST = "127.0.0.1";
 const COOKIE_NAME = "clodex_token";
@@ -20,6 +20,7 @@ export interface WebServerOptions {
   port: number;
   token: string;
   feed: WebFeed;
+  page: WebPage;
   onInput: (line: string) => Promise<void>;
   // @path の候補（DESIGN.md §28 v0.3 A）
   listFiles: () => Promise<string[]>;
@@ -83,13 +84,13 @@ const sendPreview = (res: ServerResponse, result: PreviewResult) => {
   res.end(result.body);
 };
 
-export const startWebServer = async ({ port, token, feed, onInput, listFiles, preview, onError }: WebServerOptions): Promise<WebServerHandle> => {
+export const startWebServer = async ({ port, token, feed, page, onInput, listFiles, preview, onError }: WebServerOptions): Promise<WebServerHandle> => {
   const streams = new Set<ServerResponse>();
 
   const handleEvents = (req: IncomingMessage, res: ServerResponse) => {
     res.writeHead(HTTP.ok, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
     // 接続（再接続を含む）のたびに画面の版、直近の履歴、最新の状態を送る
-    sendItem(res, { type: "version", version: PAGE_VERSION });
+    sendItem(res, { type: "version", version: page.version });
     for (const item of feed.recent()) sendItem(res, item);
     const state = feed.latestState();
     if (state) sendItem(res, { type: "state", state });
@@ -131,7 +132,7 @@ export const startWebServer = async ({ port, token, feed, onInput, listFiles, pr
 
     if (req.method === "GET" && url.pathname === "/") {
       res.writeHead(HTTP.ok, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-      return void res.end(WEB_PAGE);
+      return void res.end(page.html);
     }
     if (req.method === "GET" && url.pathname === "/events") return handleEvents(req, res);
     if (req.method === "GET" && url.pathname === "/api/state") return sendJson(res, feed.latestState() ?? null);

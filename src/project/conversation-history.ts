@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { AgentId } from "../agents/agent-adapter.js";
 import type { EventBus } from "../coordinator/event-bus.js";
+import { t } from "../i18n/i18n.js";
 import { writeFileAtomic } from "./atomic-write.js";
 
 export const MAX_CONVERSATIONS = 20;
@@ -109,8 +110,8 @@ export class ConversationHistory {
 
   // /delete: 今の会話以外を削除する。削除できなければ理由を返す
   remove(id: string): string | undefined {
-    if (id === this.current.id) return "cannot delete the current conversation";
-    if (!this.conversations.some((c) => c.id === id)) return "conversation not found";
+    if (id === this.current.id) return t("reject.deleteCurrent");
+    if (!this.conversations.some((c) => c.id === id)) return t("reject.notFound");
     this.save((list) => list.filter((c) => c.id !== id));
     for (const listener of this.removeListeners) listener(id);
     return undefined;

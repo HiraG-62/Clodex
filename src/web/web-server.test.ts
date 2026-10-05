@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { WebFeed, type FeedItem, type WebState } from "./web-feed.js";
-import { PAGE_VERSION } from "./web-page.js";
+import { buildWebPage } from "./web-page.js";
+
+const PAGE = buildWebPage("ja");
 import { startWebServer, type WebServerHandle } from "./web-server.js";
 
 const TOKEN = "a".repeat(64);
@@ -18,7 +20,7 @@ const setup = async (onInput?: (line: string) => Promise<void>) => {
   const inputs: string[] = [];
   const errors: unknown[] = [];
   server = await startWebServer({
-    port: 0, token: TOKEN, feed, onInput: onInput ?? (async (line) => void inputs.push(line)), onError: (e) => errors.push(e),
+    port: 0, token: TOKEN, feed, page: PAGE, onInput: onInput ?? (async (line) => void inputs.push(line)), onError: (e) => errors.push(e),
     listFiles: async () => ["README.md", "src/a.ts"],
     preview: {
       file: async (path) => (path === "a.png"
@@ -89,7 +91,7 @@ describe("startWebServer", () => {
     expect(response.headers.get("content-type")).toMatch(/text\/event-stream/);
     setTimeout(() => feed.publishOutput("new line"), 50);
     expect(await readEvents(response, 4)).toEqual([
-      { type: "version", version: PAGE_VERSION },
+      { type: "version", version: PAGE.version },
       { type: "output", seq: 1, text: "old line" },
       { type: "state", state: STATE },
       { type: "output", seq: 2, text: "new line" },

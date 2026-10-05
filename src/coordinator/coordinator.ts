@@ -3,6 +3,7 @@ import {
   AGENT_IDS, type AgentAdapter, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult,
 } from "../agents/agent-adapter.js";
 import { buildEnvelope } from "../context/context-resolver.js";
+import { t } from "../i18n/i18n.js";
 import type { Language } from "../context/language.js";
 import { createMessage, type CreateMessageResult } from "../protocol/messages.js";
 import { AgentMailbox } from "./agent-mailbox.js";
@@ -116,7 +117,7 @@ export class Coordinator {
   cancelInput(id?: string): PendingInput | undefined {
     const target = id ? this.pendingInputs().find((input) => input.id === id) : this.pendingInputs().at(-1);
     if (!target || this.mailboxes[target.agent].cancel(target.id) === undefined) return undefined;
-    this.options.bus.publish({ kind: "notice", text: `canceled input to ${target.agent}: ${preview(target.text)}` });
+    this.options.bus.publish({ kind: "notice", text: t("notice.canceled", { agent: target.agent, text: preview(target.text) }) });
     return target;
   }
 
@@ -133,7 +134,7 @@ export class Coordinator {
   ): Promise<string | undefined> {
     // 起動中や配送待ちも含めて、受け付けた作業がある Agent は止めない
     const busy = targets.filter((id) => this.options.agents[id].status === "busy" || !this.mailboxes[id].isIdle);
-    if (busy.length) return `${busy.join(", ")} is busy. Use /interrupt first.`;
+    if (busy.length) return t("reject.busy", { agents: busy.join(", ") });
     for (const id of targets) this.mailboxes[id].pause();
     try {
       await Promise.all(targets.map((id) => this.options.agents[id].stop()));
@@ -165,7 +166,7 @@ export class Coordinator {
     const processing = AGENT_IDS.flatMap((agent) => this.mailboxes[agent].current ?? []);
     this.budget.closeChains([...discarded, ...processing]);
     if (discarded.length) {
-      this.options.bus.publish({ kind: "notice", text: `discarded ${discarded.length} queued agent message(s)` });
+      this.options.bus.publish({ kind: "notice", text: t("notice.discarded", { count: discarded.length }) });
     }
   }
 

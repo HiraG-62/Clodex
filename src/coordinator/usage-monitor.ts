@@ -1,6 +1,7 @@
 // Agent ごとの利用状況を集計し、偏りを人に知らせる（DESIGN.md §14 利用枠の可視化と通知）
 // 送り先の切り替えは行わない（DESIGN.md §3.6）
 import { AGENT_IDS, type AgentId, type RateLimitWindow } from "../agents/agent-adapter.js";
+import { t } from "../i18n/i18n.js";
 import type { EventBus } from "./event-bus.js";
 
 export interface UsageAlert {
@@ -105,11 +106,11 @@ export class UsageMonitor {
       const pace = weeklyPace(weekly, this.nowSeconds());
       if (pace >= this.alert.weeklyPaceThreshold) {
         this.notifyOnce(`${agent}:weekly:${weekly.resetsAt}`,
-          `${agent} is ahead of weekly pace (+${pace}). Consider /primary ${peerOf(agent)} for the next task.`);
+          t("notice.weeklyPace", { agent, pace, peer: peerOf(agent) }));
       }
     }
     if (fiveHour && fiveHour.usedPercent >= this.alert.fiveHourThreshold) {
-      this.notifyOnce(`${agent}:fiveHour:${fiveHour.resetsAt}`, `${agent} 5h usage is ${fiveHour.usedPercent}%.`);
+      this.notifyOnce(`${agent}:fiveHour:${fiveHour.resetsAt}`, t("notice.fiveHour", { agent, percent: fiveHour.usedPercent }));
     }
   }
 

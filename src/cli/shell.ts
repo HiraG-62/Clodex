@@ -2,7 +2,8 @@
 import { AGENT_IDS, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult } from "../agents/agent-adapter.js";
 import type { UsageSnapshot } from "../coordinator/usage-monitor.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
-import { SLASH_COMMANDS, commandUsage } from "./commands.js";
+import { t } from "../i18n/i18n.js";
+import { commandUsage, slashCommands } from "./commands.js";
 import { appendFileReferences } from "./file-references.js";
 import { parseInput } from "./input.js";
 
@@ -82,12 +83,12 @@ const HELP_COLUMN = 20;
 const helpLine = (usage: string, description: string) => `${usage.padEnd(HELP_COLUMN - 1)} ${description}`;
 
 const HELP_LINES = (primary: AgentId) => [
-  helpLine("<text>", `send to the primary agent (${primary})`),
-  helpLine("@claude <text>", "send to Claude"),
-  helpLine("@codex <text>", "send to Codex"),
-  helpLine("!<command>", "run a shell command in the project root (output is not sent to agents)"),
-  ...SLASH_COMMANDS.map((command) => helpLine(commandUsage(command), command.description)),
-  helpLine("Ctrl+C", "interrupt running turns and !commands"),
+  helpLine("<text>", t("help.text", { primary })),
+  helpLine("@claude <text>", t("help.claude")),
+  helpLine("@codex <text>", t("help.codex")),
+  helpLine("!<command>", t("help.run")),
+  ...slashCommands().map((command) => helpLine(commandUsage(command), command.description)),
+  helpLine("Ctrl+C", t("help.ctrlC")),
 ];
 
 const MS_PER_SECOND = 1000;
@@ -103,15 +104,15 @@ const shortTime = (iso: string) => {
 
 const formatUsage = ({ fiveHourPercent, fiveHourResetsAt, weeklyPercent, weeklyPace, weeklyResetsAt }: UsageSnapshot): string => {
   const resets = (epochSeconds: number | undefined, format: (iso: string) => string) =>
-    epochSeconds === undefined ? "" : `resets ${format(new Date(epochSeconds * MS_PER_SECOND).toISOString())}`;
+    epochSeconds === undefined ? "" : t("shell.resets", { time: format(new Date(epochSeconds * MS_PER_SECOND).toISOString()) });
   const fiveHourReset = resets(fiveHourResetsAt, clockTime);
   const weeklyReset = resets(weeklyResetsAt, shortTime);
-  const pace = `pace ${weeklyPace! > 0 ? "+" : ""}${weeklyPace}`;
+  const pace = t("shell.pace", { pace: `${weeklyPace! > 0 ? "+" : ""}${weeklyPace}` });
   const parts = [
     ...(fiveHourPercent === undefined ? [] : [`5h ${fiveHourPercent}%${fiveHourReset ? ` (${fiveHourReset})` : ""}`]),
     ...(weeklyPercent === undefined ? [] : [`7d ${weeklyPercent}% (${[pace, weeklyReset].filter(Boolean).join(", ")})`]),
   ];
-  return `  usage: ${parts.length ? parts.join(", ") : "unknown"}`;
+  return t("shell.usage", { parts: parts.length ? parts.join(", ") : t("shell.unknown") });
 };
 
 const TOKENS_PER_K = 1000;
@@ -119,15 +120,15 @@ const PERCENT = 100;
 const kTokens = (n: number) => `${Math.round(n / TOKENS_PER_K)}k`;
 
 const formatContext = ({ contextTokens, contextWindow }: UsageSnapshot): string => {
-  if (contextTokens === undefined) return "  context: unknown";
-  if (!contextWindow) return `  context: ${kTokens(contextTokens)} tokens`;
+  if (contextTokens === undefined) return t("shell.context", { value: t("shell.unknown") });
+  if (!contextWindow) return t("shell.context", { value: t("shell.contextTokens", { tokens: kTokens(contextTokens) }) });
   const percent = Math.round((contextTokens / contextWindow) * PERCENT);
-  return `  context: ${kTokens(contextTokens)} / ${kTokens(contextWindow)} tokens (${percent}%)`;
+  return t("shell.context", { value: t("shell.contextWindow", { tokens: kTokens(contextTokens), window: kTokens(contextWindow), percent }) });
 };
 
 
 const agentsOf = (c: Conversation) => (Object.keys(c.sessions) as AgentId[]).sort().join(", ");
-const titleOf = (c: Conversation) => `"${c.title ?? "(no input)"}"`;
+const titleOf = (c: Conversation) => `"${c.title ?? t("shell.untitled")}"`;
 
 export const createShell = ({
   coordinator, primary: initialPrimary, print, toggleVerbose, history, runner, saveSettings = () => {}, isProjectFile = () => false,
@@ -137,10 +138,10 @@ export const createShell = ({
 
   const listConversations = () => {
     history.list().forEach((c, i) => {
-      const current = c.id === history.currentId ? "  (current)" : "";
+      const current = c.id === history.currentId ? t("shell.current") : "";
       print(`${i + 1}) ${shortTime(c.updatedAt)}  ${agentsOf(c)}  ${titleOf(c)}${current}`);
     });
-    print("Type /resume <number> to switch.");
+    print(t("shell.resumeHint"));
   };
 
   const startFresh = async (agent: AgentId | undefined) => {
@@ -148,25 +149,25 @@ export const createShell = ({
     if (error) return print(error);
     if (agent) {
       history.clearSession(agent);
-      return print(`${agent} starts a new session on next use`);
+      return print(t("shell.agentFresh", { agent }));
     }
     history.startNew();
-    print("new conversation (agents start fresh on next use)");
+    print(t("shell.newConversation"));
   };
 
   const resumeConversation = async (index: number) => {
     const picked = pickConversation(index);
     if (!picked) return;
-    if (picked.id === history.currentId) return print("already in this conversation");
+    if (picked.id === history.currentId) return print(t("shell.alreadyHere"));
     const error = await coordinator.switchSessions(picked.sessions);
     if (error) return print(error);
     history.switchTo(picked.id);
-    print(`resumed: ${titleOf(picked)} (${agentsOf(picked)} resume on next use)`);
+    print(t("shell.resumed", { title: titleOf(picked), agents: agentsOf(picked) }));
   };
 
   const pickConversation = (index: number) => {
     const picked = history.list()[index - 1];
-    if (!picked) print(`no conversation #${index} (see /resume)`);
+    if (!picked) print(t("shell.noConversation", { index }));
     return picked;
   };
 
@@ -188,17 +189,22 @@ export const createShell = ({
         void runner.run(command.command);
         return "continue";
       case "status":
-        print(`primary: ${primary}`);
+        print(t("shell.primary", { agent: primary }));
         for (const { id, status, sessionId, permission, model, effort, usage } of coordinator.status()) {
-          print(`${id}: ${status}, permission ${permission}, model ${model ?? "default"}, effort ${effort ?? "default"}${sessionId ? ` (session ${sessionId})` : ""}`);
+          print(t("shell.status", {
+            id, status, permission, model: model ?? t("shell.default"), effort: effort ?? t("shell.default"),
+            session: sessionId ? t("shell.session", { id: sessionId }) : "",
+          }));
           print(formatUsage(usage));
           print(formatContext(usage));
         }
-        for (const input of coordinator.pendingInputs()) print(`queued: ${input.id} -> ${input.agent}: ${input.text}`);
+        for (const input of coordinator.pendingInputs()) print(t("shell.queued", { id: input.id, agent: input.agent, text: input.text }));
         return "continue";
       case "cancel": {
         const canceled = coordinator.cancelInput(command.id);
-        print(canceled ? `canceled: ${canceled.id} -> ${canceled.agent}` : `nothing to cancel${command.id ? `: ${command.id}` : ""} (already delivered?)`);
+        print(canceled
+          ? t("shell.canceled", { id: canceled.id, agent: canceled.agent })
+          : t("shell.nothingToCancel", { id: command.id ? `: ${command.id}` : "" }));
         return "continue";
       }
       case "new":
@@ -207,7 +213,7 @@ export const createShell = ({
       case "compact":
         // 1 ターンとしてキューに積むだけ。進み具合は Event Bus 経由で表示される
         void coordinator.compact(command.agent);
-        print(`compact queued: ${command.agent ?? "running agents"}`);
+        print(t("shell.compactQueued", { target: command.agent ?? t("shell.runningAgents") }));
         return "continue";
       case "resume":
         if (command.index === undefined) listConversations();
@@ -215,23 +221,23 @@ export const createShell = ({
         return "continue";
       case "rename":
         history.rename(command.title);
-        print(`renamed: "${command.title}"`);
+        print(t("shell.renamed", { title: command.title }));
         return "continue";
       case "delete": {
         const picked = pickConversation(command.index);
         if (!picked) return "continue";
-        print(history.remove(picked.id) ?? `deleted: ${titleOf(picked)}`);
+        print(history.remove(picked.id) ?? t("shell.deleted", { title: titleOf(picked) }));
         return "continue";
       }
       case "pin": {
         const picked = pickConversation(command.index);
         const pinned = picked ? history.togglePin(picked.id) : undefined;
-        if (picked && pinned !== undefined) print(`${pinned ? "pinned" : "unpinned"}: ${titleOf(picked)}`);
+        if (picked && pinned !== undefined) print(t(pinned ? "shell.pinned" : "shell.unpinned", { title: titleOf(picked) }));
         return "continue";
       }
       case "primary":
         primary = command.agent;
-        print(`primary: ${primary}`);
+        print(t("shell.primary", { agent: primary }));
         return "continue";
       case "help":
         HELP_LINES(primary).forEach((l) => print(l));
@@ -239,22 +245,22 @@ export const createShell = ({
       case "permission":
         await coordinator.setPermission(command.level, command.agent);
         saveSettings(targets(command.agent), { permission: command.level });
-        print(`permission: ${command.agent ?? "all agents"} -> ${command.level}`);
+        print(t("shell.permission", { target: command.agent ?? t("shell.allAgents"), level: command.level }));
         return "continue";
       case "model":
         if ((await coordinator.setModel(command.model, command.agent))?.status !== "failed") {
           saveSettings([command.agent], { model: command.model });
-          print(`model: ${command.agent} -> ${command.model}`);
+          print(t("shell.model", { agent: command.agent, model: command.model }));
         }
         return "continue";
       case "effort":
         if ((await coordinator.setEffort(command.level, command.agent))?.status !== "failed") {
           saveSettings(targets(command.agent), { effort: command.level });
-          print(`effort: ${command.agent ?? "all agents"} -> ${command.level}`);
+          print(t("shell.effort", { target: command.agent ?? t("shell.allAgents"), level: command.level }));
         }
         return "continue";
       case "verbose":
-        print(`verbose: ${toggleVerbose() ? "on" : "off"}`);
+        print(t("shell.verbose", { state: t(toggleVerbose() ? "shell.on" : "shell.off") }));
         return "continue";
       case "exit":
         return "exit";
@@ -269,7 +275,7 @@ export const createShell = ({
     const busy = coordinator.status().filter((s) => s.status === "busy");
     const stoppedCommands = runner.stopAll();
     if (busy.length === 0 && stoppedCommands === 0) {
-      print("No running turn. Type /exit to quit.");
+      print(t("shell.noTurn"));
       return;
     }
     await Promise.all(busy.map(({ id }) => coordinator.interrupt(id)));

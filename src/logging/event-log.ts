@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { AgentEvent, RateLimitWindow } from "../agents/agent-adapter.js";
 import type { CoordinatorEvent, EventBus } from "../coordinator/event-bus.js";
+import { t } from "../i18n/i18n.js";
 import type { AgentMessage } from "../protocol/messages.js";
 
 const LOG_DIR = join(".clodex", "logs");
@@ -42,12 +43,12 @@ const indentContinuation = (text: string) => text.replace(/\r?\n/g, `\n${CONTINU
 // 既定表示: 誰が何をしていて、誰が誰に何を頼んだかだけを出す（DESIGN.md §17）
 const describeNormal = (event: AgentEvent): string | undefined => {
   switch (event.type) {
-    case "turn_started": return "working...";
+    case "turn_started": return t("log.working");
     case "error": return `ERROR ${event.message}`;
     case "turn": {
       const { status, text } = event.result;
-      if (status === "completed") return text || "done";
-      return status === "interrupted" ? "interrupted" : `failed: ${text}`;
+      if (status === "completed") return text || t("log.done");
+      return status === "interrupted" ? t("log.interrupted") : t("log.failed", { text });
     }
     default: return undefined;
   }

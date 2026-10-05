@@ -1,7 +1,10 @@
 // Web UI の画面（DESIGN.md §17 Web UI）。HTML 1 枚に CSS と JS を inline で持つ。
 // 画面の振る舞いは src/web/client/ に型付きで書き、関数のソースをそのまま埋め込む
 import { createHash } from "node:crypto";
-import { SLASH_COMMANDS } from "../cli/commands.js";
+import { slashCommands } from "../cli/commands.js";
+import type { Language } from "../context/language.js";
+import { MESSAGES } from "../i18n/i18n.js";
+import type { MessageKey, Messages } from "../i18n/messages.js";
 import { clientMain } from "./client/client-main.js";
 import { createInputAssist } from "./client/input-assist.js";
 import { collectArtifacts, displayPath } from "./client/artifacts.js";
@@ -247,79 +250,98 @@ const STYLE = `
   }
 `;
 
-const BODY = `
+const escapeHtml = (text: string) =>
+  text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
+
+const body = (messages: Messages) => {
+  const m = (key: MessageKey) => escapeHtml(messages[key]);
+  return `
 <div class="app">
   <header class="topbar">
     <span class="brand">Clodex</span>
     <span class="path mono" id="path"></span>
-    <button class="ghost" type="button" id="detail" aria-pressed="false" title="作業と全文を開いて表示">詳細</button>
-    <button class="ghost" type="button" id="open-artifacts">成果物</button>
-    <button class="ghost" type="button" id="open-conversations">会話</button>
-    <button class="ghost" type="button" id="open-settings">設定</button>
+    <button class="ghost" type="button" id="detail" aria-pressed="false" title="${m("web.top.detailTitle")}">${m("web.top.detail")}</button>
+    <button class="ghost" type="button" id="open-artifacts">${m("web.top.artifacts")}</button>
+    <button class="ghost" type="button" id="open-conversations">${m("web.top.conversations")}</button>
+    <button class="ghost" type="button" id="open-settings">${m("web.top.settings")}</button>
   </header>
-  <div class="conn" id="conn" hidden role="status">接続が切れています。再接続しています…</div>
+  <div class="conn" id="conn" hidden role="status">${m("web.conn.lost")}</div>
   <div class="status" id="status"></div>
   <aside class="side">
     <div id="agents" style="display:grid;gap:28px"></div>
     <section>
-      <div class="side-head"><div class="eyebrow">会話</div><button class="ghost small" type="button" id="new-conversation">新しい会話</button></div>
+      <div class="side-head"><div class="eyebrow">${m("web.side.conversations")}</div><button class="ghost small" type="button" id="new-conversation">${m("web.side.newConversation")}</button></div>
       <div id="conversations"></div>
     </section>
   </aside>
   <div class="log-wrap">
-    <main class="log" id="log" aria-label="ログ" aria-live="polite">
-      <div class="empty" id="empty"><b>まだ何もありません</b>下の入力欄から依頼すると、ここに Agent の作業と応答が並びます。</div>
+    <main class="log" id="log" aria-label="${m("web.log.label")}" aria-live="polite">
+      <div class="empty" id="empty"><b>${m("web.empty.title")}</b>${m("web.empty.body")}</div>
     </main>
-    <button class="newer" type="button" id="newer" hidden>新着 ↓</button>
+    <button class="newer" type="button" id="newer" hidden>${m("web.newer")}</button>
   </div>
   <form class="composer" id="composer">
     <div class="box">
-      <ul class="pending" id="pending" aria-label="送信待ち" hidden></ul>
-      <ul class="suggest" id="suggest" role="listbox" aria-label="候補" hidden></ul>
+      <ul class="pending" id="pending" aria-label="${m("web.pending.label")}" hidden></ul>
+      <ul class="suggest" id="suggest" role="listbox" aria-label="${m("web.suggest.label")}" hidden></ul>
       <div class="input-wrap">
         <div class="input-highlight" id="input-highlight" aria-hidden="true"></div>
-        <textarea id="input" rows="1" aria-label="メッセージ" enterkeyhint="enter" role="combobox" aria-controls="suggest" aria-expanded="false" aria-autocomplete="list"></textarea>
+        <textarea id="input" rows="1" aria-label="${m("web.input.label")}" enterkeyhint="enter" role="combobox" aria-controls="suggest" aria-expanded="false" aria-autocomplete="list"></textarea>
       </div>
       <div class="bar">
-        <div class="to" role="group" aria-label="送り先">
+        <div class="to" role="group" aria-label="${m("web.to.label")}">
           <button type="button" data-agent="claude" aria-pressed="true">Claude</button>
           <button type="button" data-agent="codex" aria-pressed="false">Codex</button>
         </div>
-        <button class="send" type="submit">送信</button>
+        <button class="send" type="submit">${m("web.send")}</button>
       </div>
     </div>
   </form>
 </div>
 <div class="sheet" id="sheet" hidden>
-  <button class="sheet-backdrop" id="sheet-backdrop" type="button" aria-label="閉じる"></button>
+  <button class="sheet-backdrop" id="sheet-backdrop" type="button" aria-label="${m("web.sheet.close")}"></button>
   <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-    <div class="sheet-head"><h2 id="sheet-title"></h2><button class="sheet-close" id="sheet-close" type="button">閉じる</button></div>
+    <div class="sheet-head"><h2 id="sheet-title"></h2><button class="sheet-close" id="sheet-close" type="button">${m("web.sheet.close")}</button></div>
     <div id="sheet-body"></div>
   </div>
 </div>
 <div class="toast" id="toast" hidden role="status"></div>
 `;
+};
 
 // 関数のソースに </script> が含まれていても script 要素が途中で閉じないようにする
 const inlineScript = (source: string) => source.replace(/<\/script/gi, "<\\/script");
 
 const PAGE_VERSION_LENGTH = 12;
-const SCRIPT_DEPS = `
+const CLIENT_SOURCE = inlineScript(clientMain.toString());
+const FUNCTIONS = `
   renderMarkdown: ${inlineScript(renderMarkdown.toString())},
   applyFeedItem: ${inlineScript(applyFeedItem.toString())},
   composeInputLine: ${inlineScript(composeInputLine.toString())},
   createInputAssist: ${inlineScript(createInputAssist.toString())},
   collectArtifacts: ${inlineScript(collectArtifacts.toString())},
-  displayPath: ${inlineScript(displayPath.toString())},
-  commands: ${JSON.stringify(SLASH_COMMANDS).replace(/</g, "\\u003c")},`;
-const CLIENT_SOURCE = inlineScript(clientMain.toString());
+  displayPath: ${inlineScript(displayPath.toString())},`;
+const json = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
 
-// 画面の中身から決まる版。Clodex を更新して起動し直すと変わり、開いている画面は再読み込みする（DESIGN.md §17）
-export const PAGE_VERSION = createHash("sha256").update(STYLE).update(BODY).update(CLIENT_SOURCE).update(SCRIPT_DEPS)
-  .digest("hex").slice(0, PAGE_VERSION_LENGTH);
+export interface WebPage {
+  html: string;
+  // 画面の中身から決まる版。Clodex を更新して起動し直すと変わり、開いている画面は再読み込みする（DESIGN.md §17）
+  version: string;
+}
 
-export const WEB_PAGE = `<!doctype html>
-<html lang="ja">
+// 言語は起動時に決まる（DESIGN.md §13 Language）
+export const buildWebPage = (language: Language): WebPage => {
+  const messages = MESSAGES[language];
+  const html = body(messages);
+  const deps = `${FUNCTIONS}
+  commands: ${json(slashCommands())},
+  messages: ${json(messages)},`;
+  const version = createHash("sha256").update(STYLE).update(html).update(CLIENT_SOURCE).update(deps)
+    .digest("hex").slice(0, PAGE_VERSION_LENGTH);
+  return {
+    version,
+    html: `<!doctype html>
+<html lang="${language}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -331,12 +353,14 @@ export const WEB_PAGE = `<!doctype html>
 <style>${STYLE}</style>
 </head>
 <body>
-${BODY}
+${html}
 <script>
-(${CLIENT_SOURCE})({${SCRIPT_DEPS}
-  version: "${PAGE_VERSION}",
+(${CLIENT_SOURCE})({${deps}
+  version: "${version}",
 });
 </script>
 </body>
 </html>
-`;
+`,
+  };
+};

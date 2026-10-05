@@ -20,7 +20,8 @@ export interface Segment {
   kind?: "command" | "agent" | "file";
 }
 
-export function createInputAssist(commands: readonly SlashCommand[], agents: readonly string[]) {
+// labels: 候補の種類の表示（画面の言語の文言）
+export function createInputAssist(commands: readonly SlashCommand[], agents: readonly string[], labels: { agent: string; file: string }) {
   const MAX_ITEMS = 8;
 
   // caret を含む空白区切りの語
@@ -47,7 +48,7 @@ export function createInputAssist(commands: readonly SlashCommand[], agents: rea
       .filter((entry): entry is { path: string; rank: number } => entry.rank !== undefined)
       .sort((a, b) => a.rank - b.rank || a.path.length - b.path.length)
       .slice(0, MAX_ITEMS)
-      .map(({ path }) => ({ label: `@${path}`, detail: "ファイル", insert: `@${path} ` }));
+      .map(({ path }) => ({ label: `@${path}`, detail: labels.file, insert: `@${path} ` }));
 
   const suggest = (text: string, caret: number, files: readonly string[]): Suggestion | undefined => {
     const { from, to, word } = tokenAt(text, caret);
@@ -61,7 +62,7 @@ export function createInputAssist(commands: readonly SlashCommand[], agents: rea
     if (!word.startsWith("@")) return undefined;
     const query = word.slice(1).toLowerCase();
     const agentItems = from === 0
-      ? agents.filter((agent) => agent.startsWith(query)).map((agent) => ({ label: `@${agent}`, detail: "送り先", insert: `@${agent} ` }))
+      ? agents.filter((agent) => agent.startsWith(query)).map((agent) => ({ label: `@${agent}`, detail: labels.agent, insert: `@${agent} ` }))
       : [];
     const items = [...agentItems, ...matchFiles(files, query)].slice(0, MAX_ITEMS);
     return items.length ? { from, to, items } : undefined;

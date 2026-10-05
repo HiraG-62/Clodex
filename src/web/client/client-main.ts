@@ -10,6 +10,7 @@ import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
 import type { SlashCommand } from "../../cli/commands.js";
 import type { Suggestion, createInputAssist as CreateInputAssist } from "./input-assist.js";
 import type { collectArtifacts as CollectArtifacts, displayPath as DisplayPath } from "./artifacts.js";
+import type { MessageKey, Messages } from "../../i18n/messages.js";
 
 export interface ClientDeps {
   renderMarkdown: typeof RenderMarkdown;
@@ -19,12 +20,16 @@ export interface ClientDeps {
   collectArtifacts: typeof CollectArtifacts;
   displayPath: typeof DisplayPath;
   commands: readonly SlashCommand[];
+  messages: Messages;
   version: string;
 }
 
 export function clientMain({
-  renderMarkdown, applyFeedItem, composeInputLine, createInputAssist, collectArtifacts, displayPath, commands, version,
+  renderMarkdown, applyFeedItem, composeInputLine, createInputAssist, collectArtifacts, displayPath, commands, messages, version,
 }: ClientDeps): void {
+  // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
+  const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
+    messages[key].replace(/\{(\w+)\}/g, (match, name: string) => (name in params ? String(params[name]) : match));
   const AGENTS: Record<AgentId, { name: string; mark: string }> = {
     claude: { name: "Claude", mark: "C" },
     codex: { name: "Codex", mark: "X" },
@@ -37,9 +42,9 @@ export function clientMain({
   };
   const THEMES = ["system", "light", "dark"] as const;
   type Theme = (typeof THEMES)[number];
-  const THEME_LABEL: Record<Theme, string> = { system: "システム", light: "ライト", dark: "ダーク" };
-  const STATUS_LABEL: Record<AgentStatus, string> = { busy: "Working", idle: "Idle", starting: "Starting", stopped: "Stopped" };
-  const TURN_LABEL: Record<"working" | TurnResult["status"], string> = { working: "Working", interrupted: "Interrupted", failed: "Failed", completed: "" };
+  const THEME_LABEL: Record<Theme, MessageKey> = { system: "web.settings.themeSystem", light: "web.settings.themeLight", dark: "web.settings.themeDark" };
+  const STATUS_LABEL: Record<AgentStatus, MessageKey> = { busy: "web.status.busy", idle: "web.status.idle", starting: "web.status.starting", stopped: "web.status.stopped" };
+  const TURN_LABEL: Record<"working" | TurnResult["status"], MessageKey | undefined> = { working: "web.status.busy", interrupted: "web.turn.interrupted", failed: "web.turn.failed", completed: undefined };
   const NEAR_BOTTOM_PX = 120;
   const TOAST_DURATION_MS = 3000;
   const TOKENS_PER_K = 1000;
@@ -52,7 +57,7 @@ export function clientMain({
   const FILES_REFRESH_MS = 30_000;
   // @path の参照として本文の末尾に足された部分（cli/file-references.ts）。編集で入力欄に戻すときは外す
   const REFERENCES_SEPARATOR = "\n\nReferenced files:\n";
-  const ARTIFACT_LABEL: Record<"changed" | "referenced" | "image", string> = { changed: "変更", referenced: "参照", image: "画像" };
+  const ARTIFACT_LABEL: Record<"changed" | "referenced" | "image", MessageKey> = { changed: "web.artifact.changed", referenced: "web.artifact.referenced", image: "web.artifact.image" };
   const THEME_KEY = "clodex-theme";
   const DETAIL_KEY = "clodex-detail";
 
@@ -104,9 +109,9 @@ export function clientMain({
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ line }),
       });
       if (response.ok) return true;
-      showToast(`送信できませんでした（${response.status}）`);
+      showToast(t("web.send.failedStatus", { status: response.status }));
     } catch {
-      showToast("送信できませんでした。接続を確認してください");
+      showToast(t("web.send.failed"));
     }
     return false;
   };
@@ -150,13 +155,13 @@ export function clientMain({
   const elapsedText = (startIso: string) => {
     const seconds = Math.max(0, Math.floor((Date.now() - new Date(startIso).getTime()) / MS_PER_SECOND));
     const minutes = Math.floor(seconds / SECONDS_PER_MINUTE);
-    return minutes ? `${minutes}分${seconds % SECONDS_PER_MINUTE}秒` : `${seconds}秒`;
+    return minutes ? t("web.elapsed.minutes", { minutes, seconds: seconds % SECONDS_PER_MINUTE }) : t("web.elapsed.seconds", { seconds });
   };
   // 今の作業: 直近の発言か tool を 1 行で（DESIGN.md §17 ログ）
   const nowLine = (item: Extract<TimelineItem, { kind: "turn" }>) => {
     const node = el("div", "now");
     const last = item.steps[item.steps.length - 1];
-    if (!last) node.append(el("span", "what muted", "作業しています"));
+    if (!last) node.append(el("span", "what muted", t("web.turn.working")));
     else if (last.kind === "say") node.append(el("span", "what", last.text.split("\n", 1)[0] ?? ""));
     else node.append(el("span", "k", toolLabel(last.name)), el("span", "what mono", last.input));
     return node;
@@ -168,7 +173,7 @@ export function clientMain({
     const head = el("div", "head");
     head.append(el("b", `c-${item.agent}`, AGENTS[item.agent].name), el("time", "mono", clock(item.at)));
     const label = TURN_LABEL[item.status];
-    if (label) head.append(el("span", `state ${item.status}`, label));
+    if (label) head.append(el("span", `state ${item.status}`, t(label)));
     if (item.status === "working") {
       const elapsed = el("span", "elapsed mono", elapsedText(item.at));
       elapsed.dataset.start = item.at;
@@ -188,12 +193,12 @@ export function clientMain({
         else li.append(el("span", "k", toolLabel(step.name)), el("span", "run", step.input));
         list.append(li);
       }
-      node.append(details(item.id, `作業 ${item.steps.length} 件`, list, "steps"));
+      node.append(details(item.id, t("web.turn.steps", { count: item.steps.length }), list, "steps"));
     }
     if (item.status === "working") node.append(nowLine(item));
     const body = el("div", "body md");
     if (item.text) body.innerHTML = renderMarkdown(item.text);
-    else if (item.status === "completed") body.append(el("span", "muted", "完了"));
+    else if (item.status === "completed") body.append(el("span", "muted", t("web.turn.completed")));
     if (body.childNodes.length) node.append(body);
     return node;
   };
@@ -223,7 +228,7 @@ export function clientMain({
       finding.append(el("span", "sev", issue.severity), el("span", "loc", issue.line ? `${issue.file}:${issue.line}` : issue.file), el("span", "desc", issue.summary));
       node.append(finding);
     }
-    if (item.envelope) node.append(details(item.id, `${AGENTS[message.to].name} に送った全文`, el("pre", "", item.envelope), "envelope"));
+    if (item.envelope) node.append(details(item.id, t("web.message.envelope", { agent: AGENTS[message.to].name }), el("pre", "", item.envelope), "envelope"));
     return node;
   };
 
@@ -232,7 +237,7 @@ export function clientMain({
       case "human": {
         const node = el("article", "entry you");
         const head = el("div", "head");
-        head.append(el("b", "", "あなた"), el("span", `c-${item.agent}`, `→ ${AGENTS[item.agent].name}`), el("time", "mono", clock(item.at)));
+        head.append(el("b", "", t("web.you")), el("span", `c-${item.agent}`, `→ ${AGENTS[item.agent].name}`), el("time", "mono", clock(item.at)));
         const body = el("div", "body md");
         body.innerHTML = renderMarkdown(item.text);
         node.append(mark("you"), head, body);
@@ -290,10 +295,10 @@ export function clientMain({
     fill.style.width = `${Math.max(0, Math.min(100, percent ?? 0))}%`;
     track.append(fill);
     if (tick !== undefined) {
-      const t = el("span", "tick");
-      t.style.left = `${Math.max(0, Math.min(100, tick))}%`;
-      t.title = "今の時点での目安";
-      track.append(t);
+      const marker = el("span", "tick");
+      marker.style.left = `${Math.max(0, Math.min(100, tick))}%`;
+      marker.title = t("web.gauge.tick");
+      track.append(marker);
     }
     node.append(track);
     return node;
@@ -311,7 +316,7 @@ export function clientMain({
     if (tick === undefined) { marker?.remove(); return; }
     if (!marker) {
       marker = el("span", "tick");
-      marker.title = "今の時点での目安";
+      marker.title = t("web.gauge.tick");
       track.append(marker);
     }
     marker.style.left = `${Math.max(0, Math.min(100, tick))}%`;
@@ -320,7 +325,7 @@ export function clientMain({
   const resetLabel = (epochSeconds: number | undefined, withDate: boolean) => {
     if (epochSeconds === undefined) return "";
     const iso = new Date(epochSeconds * MS_PER_SECOND).toISOString();
-    return ` · ${withDate ? shortDate(iso) : clock(iso)} にリセット`;
+    return t("web.gauge.reset", { time: withDate ? shortDate(iso) : clock(iso) });
   };
 
   // 利用枠とコンテキストのゲージの表示内容。作るときと更新するときで共有する
@@ -330,18 +335,18 @@ export function clientMain({
       ? "—" : `${kTokens(usage.contextTokens)}${usage.contextWindow ? ` / ${kTokens(usage.contextWindow)}` : ""}`;
     return [
       {
-        label: `5 時間${resetLabel(usage.fiveHourResetsAt, false)}`,
+        label: `${t("web.gauge.fiveHour")}${resetLabel(usage.fiveHourResetsAt, false)}`,
         value: usage.fiveHourPercent === undefined ? "—" : `${usage.fiveHourPercent}%`,
         percent: usage.fiveHourPercent, over: false, tick: undefined,
       },
       {
-        label: `週${pace === undefined ? "" : `（ペース ${pace > 0 ? "+" : ""}${pace}）`}${resetLabel(usage.weeklyResetsAt, true)}`,
+        label: `${t("web.gauge.weekly")}${pace === undefined ? "" : t("web.gauge.pace", { pace: `${pace > 0 ? "+" : ""}${pace}` })}${resetLabel(usage.weeklyResetsAt, true)}`,
         value: usage.weeklyPercent === undefined ? "—" : `${usage.weeklyPercent}%`,
         percent: usage.weeklyPercent, over: (pace ?? 0) > 0,
         tick: pace === undefined || usage.weeklyPercent === undefined ? undefined : usage.weeklyPercent - pace,
       },
       {
-        label: "コンテキスト", value: contextValue,
+        label: t("web.gauge.context"), value: contextValue,
         percent: usage.contextTokens && usage.contextWindow ? (usage.contextTokens / usage.contextWindow) * PERCENT : 0,
         over: false, tick: undefined,
       },
@@ -349,7 +354,7 @@ export function clientMain({
   };
 
   const describeSettings = (agent: AgentState) =>
-    `${agent.model ?? "default"} · effort ${agent.effort ?? "default"} · 権限 ${agent.permission}`;
+    t("web.agent.summary", { model: agent.model ?? "default", effort: agent.effort ?? "default", permission: agent.permission });
 
   // Agent パネル: 設定の要約、利用枠、操作。権限・model・effort は「設定」から開くポップアップで変える
   const agentControls = (agent: AgentState) => {
@@ -366,9 +371,9 @@ export function clientMain({
       links.append(button);
       return button;
     };
-    const interrupt = action("Interrupt", () => void send(`/interrupt ${agent.id}`), "danger", agent.status !== "busy");
-    const compact = action("Compact", () => void send(`/compact ${agent.id}`), "", agent.status === "stopped");
-    action("設定", () => openAgentSettings(agent.id));
+    const interrupt = action(t("web.agent.interrupt"), () => void send(`/interrupt ${agent.id}`), "danger", agent.status !== "busy");
+    const compact = action(t("web.agent.compact"), () => void send(`/compact ${agent.id}`), "", agent.status === "stopped");
+    action(t("web.agent.settings"), () => openAgentSettings(agent.id));
     wrap.append(links);
     controlUpdaters.set(wrap, (current) => {
       summary.textContent = describeSettings(current);
@@ -383,7 +388,7 @@ export function clientMain({
   };
 
   const stateLabel = (agent: AgentState) => {
-    const node = el("span", `state ${agent.status === "busy" ? "working" : ""}`, STATUS_LABEL[agent.status]);
+    const node = el("span", `state ${agent.status === "busy" ? "working" : ""}`, t(STATUS_LABEL[agent.status]));
     return node;
   };
 
@@ -395,7 +400,7 @@ export function clientMain({
     rows.replaceChildren(...state.agents.map((agent) => {
       const row = el("button", "status-row") as HTMLButtonElement;
       row.type = "button";
-      row.setAttribute("aria-label", `${AGENTS[agent.id].name} の操作を開く`);
+      row.setAttribute("aria-label", t("web.status.open", { agent: AGENTS[agent.id].name }));
       const figs = el("span", "figs");
       const fig = (k: string, v: string) => {
         const span = el("span", "", `${k} `);
@@ -405,7 +410,7 @@ export function clientMain({
       figs.append(el("span", `name c-${agent.id}`, AGENTS[agent.id].name));
       if (agent.usage.contextTokens !== undefined) figs.append(fig("ctx", kTokens(agent.usage.contextTokens)));
       if (agent.usage.fiveHourPercent !== undefined) figs.append(fig("5h", `${agent.usage.fiveHourPercent}%`));
-      if (agent.usage.weeklyPace !== undefined) figs.append(fig("週", `${agent.usage.weeklyPace > 0 ? "+" : ""}${agent.usage.weeklyPace}`));
+      if (agent.usage.weeklyPace !== undefined) figs.append(fig(t("web.gauge.weekly"), `${agent.usage.weeklyPace > 0 ? "+" : ""}${agent.usage.weeklyPace}`));
       if (agent.permission === "full") figs.append(el("span", "badge", "full"));
       row.append(mark(agent.id), figs, stateLabel(agent));
       row.addEventListener("click", () => openAgentSheet(agent.id));
@@ -447,9 +452,9 @@ export function clientMain({
         return button;
       };
       row.append(
-        el("span", "who", `→ ${AGENTS[queued.agent].name} · 送信待ち`),
+        el("span", "who", t("web.pending.to", { agent: AGENTS[queued.agent].name })),
         el("span", "text", original),
-        action("編集", () => void send(`/cancel ${queued.id}`).then((sent) => {
+        action(t("web.pending.edit"), () => void send(`/cancel ${queued.id}`).then((sent) => {
           if (!sent) return;
           target = queued.agent;
           input.value = original;
@@ -457,7 +462,7 @@ export function clientMain({
           onInputChanged();
           renderState();
         })),
-        action("取り消し", () => void send(`/cancel ${queued.id}`)),
+        action(t("web.pending.cancel"), () => void send(`/cancel ${queued.id}`)),
       );
       return row;
     }));
@@ -469,8 +474,8 @@ export function clientMain({
       const row = el("div", `conv-row${conversation.current ? " current" : ""}`);
       const button = el("button", `conv${conversation.current ? " current" : ""}`) as HTMLButtonElement;
       button.type = "button";
-      const meta = `${conversation.pinned ? "固定 · " : ""}${shortDate(conversation.updatedAt)} · ${Object.keys(conversation.sessions).join(", ") || "—"}${conversation.current ? " · 現在" : ""}`;
-      button.append(el("span", "t", conversation.title ?? "（入力なし）"), el("span", "m mono", meta));
+      const meta = `${conversation.pinned ? t("web.conv.pinned") : ""}${shortDate(conversation.updatedAt)} · ${Object.keys(conversation.sessions).join(", ") || "—"}${conversation.current ? t("web.conv.current") : ""}`;
+      button.append(el("span", "t", conversation.title ?? t("web.conv.untitled")), el("span", "m mono", meta));
       button.disabled = conversation.current;
       button.addEventListener("click", () => {
         void send(`/resume ${index + 1}`);
@@ -478,12 +483,12 @@ export function clientMain({
       });
       const menu = el("button", "conv-menu", "⋯") as HTMLButtonElement;
       menu.type = "button";
-      menu.setAttribute("aria-label", "会話の操作");
+      menu.setAttribute("aria-label", t("web.conv.menu"));
       menu.addEventListener("click", () => openConversationMenu(conversation, index + 1));
       row.append(button, menu);
       return row;
     });
-    if (!nodes.length) nodes.push(el("p", "muted small", "まだ会話がありません"));
+    if (!nodes.length) nodes.push(el("p", "muted small", t("web.conv.empty")));
     return nodes;
   };
 
@@ -515,13 +520,13 @@ export function clientMain({
   const openConversations = () => {
     sheetKind = "conversations";
     sheetAgent = undefined;
-    const fresh = el("button", "primary-action", "新しい会話を始める") as HTMLButtonElement;
+    const fresh = el("button", "primary-action", t("web.conv.startNew")) as HTMLButtonElement;
     fresh.type = "button";
     fresh.addEventListener("click", () => {
       void send("/new");
       closeSheet();
     });
-    openSheet("会話", [fresh, ...conversationList()]);
+    openSheet(t("web.conv.title"), [fresh, ...conversationList()]);
   };
   const sheetButton = (label: string, cls: string, run: () => void) => {
     const button = el("button", cls, label) as HTMLButtonElement;
@@ -538,12 +543,12 @@ export function clientMain({
     const rows: HTMLElement[] = artifacts.map((artifact) => {
       const row = el("button", "artifact") as HTMLButtonElement;
       row.type = "button";
-      row.append(el("span", `kind ${artifact.kind}`, ARTIFACT_LABEL[artifact.kind]),
+      row.append(el("span", `kind ${artifact.kind}`, t(ARTIFACT_LABEL[artifact.kind])),
         el("span", "path mono", displayPath(artifact.path, state?.project ?? "")));
       row.addEventListener("click", () => void openViewer(artifact.path));
       return row;
     });
-    openSheet("成果物", rows.length ? rows : [el("p", "muted small", "この会話で触れたファイルはまだありません")]);
+    openSheet(t("web.artifacts.title"), rows.length ? rows : [el("p", "muted small", t("web.artifacts.empty"))]);
   };
   const openViewer = async (path: string) => {
     sheetKind = "viewer";
@@ -557,12 +562,12 @@ export function clientMain({
         image.alt = path;
         return view.replaceChildren(image);
       }
-      view.replaceChildren(el("p", "muted small", "読み込んでいます…"));
+      view.replaceChildren(el("p", "muted small", t("web.viewer.loading")));
       try {
         const response = await fetch(fileUrl(api, path));
         const text = await response.text();
-        if (!response.ok) return view.replaceChildren(el("p", "muted small", text || `読めませんでした（${response.status}）`));
-        if (api === "diff" && !text) return view.replaceChildren(el("p", "muted small", "変更はありません（git の管理外か、まだ変更されていません）"));
+        if (!response.ok) return view.replaceChildren(el("p", "muted small", text || t("web.viewer.failedStatus", { status: response.status })));
+        if (api === "diff" && !text) return view.replaceChildren(el("p", "muted small", t("web.viewer.noDiff")));
         if (api === "file" && /\.md$/i.test(path)) {
           const doc = el("div", "md");
           doc.innerHTML = renderMarkdown(text);
@@ -575,12 +580,12 @@ export function clientMain({
         }
         view.replaceChildren(pre);
       } catch {
-        view.replaceChildren(el("p", "muted small", "読めませんでした"));
+        view.replaceChildren(el("p", "muted small", t("web.viewer.failed")));
       }
     };
     const content: HTMLElement[] = [];
     if (!isImage) {
-      content.push(choice("view", "表示", ["file", "diff"] as const, "file", (v) => (v === "file" ? "内容" : "差分"), (v) => void show(v)));
+      content.push(choice("view", t("web.viewer.view"), ["file", "diff"] as const, "file", (v) => t(v === "file" ? "web.viewer.content" : "web.viewer.diff"), (v) => void show(v)));
     }
     content.push(view);
     openSheet(displayPath(path, state?.project ?? ""), content);
@@ -591,22 +596,22 @@ export function clientMain({
   const openConversationMenu = (conversation: WebState["conversations"][number], number: number) => {
     sheetKind = "conversationMenu";
     sheetAgent = undefined;
-    const title = conversation.title ?? "（入力なし）";
+    const title = conversation.title ?? t("web.conv.untitled");
     const actions: HTMLElement[] = [];
     if (conversation.current) {
-      actions.push(sheetButton("名前を変更", "secondary-action", () => {
-        const name = window.prompt("会話の名前", conversation.title ?? "")?.trim();
+      actions.push(sheetButton(t("web.conv.rename"), "secondary-action", () => {
+        const name = window.prompt(t("web.conv.renamePrompt"), conversation.title ?? "")?.trim();
         if (name) void send(`/rename ${name}`);
         closeSheet();
       }));
     }
-    actions.push(sheetButton(conversation.pinned ? "ピン止めを外す" : "ピン止め", "secondary-action", () => {
+    actions.push(sheetButton(t(conversation.pinned ? "web.conv.unpin" : "web.conv.pin"), "secondary-action", () => {
       void send(`/pin ${number}`);
       closeSheet();
     }));
     if (!conversation.current) {
-      actions.push(sheetButton("削除", "secondary-action danger", () => {
-        if (window.confirm(`「${title}」を削除しますか？`)) void send(`/delete ${number}`);
+      actions.push(sheetButton(t("web.conv.delete"), "secondary-action danger", () => {
+        if (window.confirm(t("web.conv.deleteConfirm", { title }))) void send(`/delete ${number}`);
         closeSheet();
       }));
     }
@@ -619,16 +624,16 @@ export function clientMain({
     if (!agent) return;
     sheetAgent = id;
     sheetKind = "agentSettings";
-    const permission = choice("permission", "権限", PERMISSIONS, agent.permission, (v) => v, (v) => void send(`/permission ${id} ${v}`));
+    const permission = choice("permission", t("web.agentSettings.permission"), PERMISSIONS, agent.permission, (v) => v, (v) => void send(`/permission ${id} ${v}`));
     const model = el("div", "setting");
-    model.append(el("div", "eyebrow", "Model"));
+    model.append(el("div", "eyebrow", t("web.agentSettings.model")));
     const form = el("form", "model-form") as HTMLFormElement;
     const field = el("input") as HTMLInputElement;
     field.name = "model";
     field.autocomplete = "off";
     field.placeholder = agent.model ?? "default";
     field.setAttribute("list", `models-${id}`);
-    field.setAttribute("aria-label", `${AGENTS[id].name} の model`);
+    field.setAttribute("aria-label", t("web.agentSettings.modelLabel", { agent: AGENTS[id].name }));
     const options = el("datalist");
     options.id = `models-${id}`;
     for (const name of MODEL_SUGGESTIONS[id]) {
@@ -636,7 +641,7 @@ export function clientMain({
       option.value = name;
       options.append(option);
     }
-    const apply = el("button", "", "変更") as HTMLButtonElement;
+    const apply = el("button", "", t("web.agentSettings.apply")) as HTMLButtonElement;
     apply.type = "submit";
     form.addEventListener("submit", (e) => {
       e.preventDefault();
@@ -647,13 +652,13 @@ export function clientMain({
     });
     form.append(field, options, apply);
     model.append(form);
-    const effort = choice("effort", "Effort", EFFORTS[id], agent.effort ?? "", (v) => v, (v) => void send(`/effort ${id} ${v}`));
-    const restart = sheetButton("この Agent だけ session を始め直す", "secondary-action", () => {
+    const effort = choice("effort", t("web.agentSettings.effort"), EFFORTS[id], agent.effort ?? "", (v) => v, (v) => void send(`/effort ${id} ${v}`));
+    const restart = sheetButton(t("web.agentSettings.restart"), "secondary-action", () => {
       void send(`/new ${id}`);
       closeSheet();
     });
-    openSheet(`${AGENTS[id].name} の設定`, [
-      permission, model, effort, restart, el("p", "muted small", "会話はそのままで、この Agent の文脈だけを新しくします"),
+    openSheet(t("web.agentSettings.title", { agent: AGENTS[id].name }), [
+      permission, model, effort, restart, el("p", "muted small", t("web.agentSettings.restartNote")),
     ]);
   };
 
@@ -681,19 +686,19 @@ export function clientMain({
   const openSettings = () => {
     sheetKind = "settings";
     sheetAgent = undefined;
-    openSheet("設定", [
-      choice("theme", "テーマ", THEMES, theme, (t) => THEME_LABEL[t], (t) => {
-        theme = t;
-        storage.set(THEME_KEY, t);
-        applyTheme(t);
+    openSheet(t("web.settings.title"), [
+      choice("theme", t("web.settings.theme"), THEMES, theme, (v) => t(THEME_LABEL[v]), (v) => {
+        theme = v;
+        storage.set(THEME_KEY, v);
+        applyTheme(v);
       }),
-      choice("primary", "テキストの送り先", AGENT_IDS, target ?? state?.primary ?? "claude", (a) => AGENTS[a].name, (a) => {
+      choice("primary", t("web.settings.primary"), AGENT_IDS, target ?? state?.primary ?? "claude", (a) => AGENTS[a].name, (a) => {
         target = a;
         pendingPrimary = a;
         void send(`/primary ${a}`);
         renderState();
       }),
-      choice("detail", "作業と全文", ["closed", "open"] as const, detail ? "open" : "closed", (v) => (v === "open" ? "開いて表示" : "畳んで表示"), (v) => setDetail(v === "open")),
+      choice("detail", t("web.settings.detail"), ["closed", "open"] as const, detail ? "open" : "closed", (v) => t(v === "open" ? "web.settings.detailOpen" : "web.settings.detailClosed"), (v) => setDetail(v === "open")),
     ]);
   };
 
@@ -773,7 +778,7 @@ export function clientMain({
     void submit();
   });
   // ---- 入力の補助（候補と強調表示。DESIGN.md §28 v0.3 A） ----
-  const assist = createInputAssist(commands, AGENT_IDS);
+  const assist = createInputAssist(commands, AGENT_IDS, { agent: t("web.assist.agent"), file: t("web.assist.file") });
   const highlightLayer = $("#input-highlight");
   const suggestList = $("#suggest");
   let files: string[] = [];
@@ -877,7 +882,7 @@ export function clientMain({
     e.preventDefault();
     void submit();
   });
-  input.placeholder = coarse ? "メッセージ、または /status などのコマンド" : "メッセージ、または /status などのコマンド（Enter で送信）";
+  input.placeholder = t(coarse ? "web.input.placeholderTouch" : "web.input.placeholder");
   for (const button of document.querySelectorAll<HTMLButtonElement>(".to button")) {
     button.addEventListener("click", () => {
       target = button.dataset.agent as AgentId;

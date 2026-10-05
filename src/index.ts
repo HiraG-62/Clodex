@@ -12,6 +12,7 @@ import { completeCommand } from "./cli/commands.js";
 import { createShell } from "./cli/shell.js";
 import { loadConfig } from "./config/config.js";
 import { detectLanguage } from "./context/language.js";
+import { setLanguage, t } from "./i18n/i18n.js";
 import { buildRoleInstructions } from "./context/role-instructions.js";
 import { DEFAULT_LIMITS } from "./coordinator/budget-manager.js";
 import { Coordinator } from "./coordinator/coordinator.js";
@@ -22,6 +23,7 @@ import { resolveProjectRoot } from "./project/project-root.js";
 import { FeedStore, feedDirPath } from "./web/feed-store.js";
 import { connectConversationFeed } from "./web/conversation-feed.js";
 import { DEFAULT_RECENT_ITEMS, WebFeed } from "./web/web-feed.js";
+import { buildWebPage } from "./web/web-page.js";
 import { startWebServer } from "./web/web-server.js";
 import { connectWebFeed } from "./web/web-ui.js";
 import { loadOrCreateWebToken } from "./web/web-token.js";
@@ -42,7 +44,7 @@ const errorMessage = (error: unknown) => (error instanceof Error ? error.message
 // 保存した設定で起動したことを案内する（full が黙って引き継がれないように）
 const describeSavedSettings = (saved: SavedAgentSettings): string | undefined => {
   const parts = AGENT_IDS.flatMap((id) => Object.entries(saved[id] ?? {}).map(([key, value]) => `${id} ${key} ${value}`));
-  return parts.length ? `saved settings: ${parts.join(", ")}` : undefined;
+  return parts.length ? t("start.saved", { settings: parts.join(", ") }) : undefined;
 };
 
 const main = async (): Promise<void> => {
@@ -52,6 +54,7 @@ const main = async (): Promise<void> => {
   // 優先順位: 起動オプション > 設定ファイル > 既定値（DESIGN.md §13 Roles）
   const primary = args.primary ?? config.primary ?? DEFAULT_PRIMARY;
   const language = config.language ?? detectLanguage();
+  setLanguage(language);
 
   const bus = new EventBus();
   const statePath = conversationStatePath(homedir(), projectRoot);
@@ -119,15 +122,15 @@ const main = async (): Promise<void> => {
   let displayMode: DisplayMode = "normal";
   attachEventLog(bus, { path: logPath, print: printTerminal, mode: () => displayMode });
   // 起動時の案内は terminal 向けなので Web UI には出さない
-  printTerminal(`Clodex v0.1  project: ${projectRoot}  primary: ${primary}`);
-  printTerminal(`log: ${logPath}`);
+  printTerminal(t("start.banner", { project: projectRoot, primary }));
+  printTerminal(t("start.log", { path: logPath }));
   const savedNotice = describeSavedSettings(savedSettings);
   if (savedNotice) printTerminal(savedNotice);
   if (args.resume) {
     const resumed = AGENT_IDS.filter((id) => resumeSessionIds[id]);
-    printTerminal(`resume: ${resumed.length ? resumed.join(", ") : "no saved conversation (starting a new one)"}`);
+    printTerminal(t("start.resume", { agents: resumed.length ? resumed.join(", ") : t("start.noSaved") }));
   }
-  printTerminal("Type /help for usage.");
+  printTerminal(t("start.help"));
 
   const toggleVerbose = () => {
     displayMode = displayMode === "verbose" ? "normal" : "verbose";
@@ -141,7 +144,7 @@ const main = async (): Promise<void> => {
       try {
         settingsStore.update(agents, change);
       } catch (error) {
-        print(`settings save failed: ${errorMessage(error)}`);
+        print(t("error.settingsSave", { message: errorMessage(error) }));
       }
     },
   });
@@ -165,16 +168,17 @@ const main = async (): Promise<void> => {
       port: config.web?.port ?? DEFAULT_WEB_PORT,
       token: loadOrCreateWebToken(homedir()),
       feed,
+      page: buildWebPage(language),
       // terminal と同じ解釈を通す。/exit も受け付ける
       onInput: async (line) => {
         if ((await handleLine(line)) === "exit") void shutdown();
       },
       listFiles: () => listProjectFiles(projectRoot),
       preview: createFilePreview({ projectRoot, artifactsDir }),
-      onError: (error) => print(`error: ${errorMessage(error)}`),
+      onError: (error) => print(t("error.generic", { message: errorMessage(error) })),
     })
     : undefined;
-  if (web) printTerminal(`web: ${web.url}/?token=<~/.clodex/web-token>  (remote: tailscale serve)`);
+  if (web) printTerminal(t("start.web", { url: web.url }));
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) return;
@@ -189,7 +193,7 @@ const main = async (): Promise<void> => {
   };
 
   // コマンドの失敗（interrupt の RPC エラー等）でシェルを落とさない
-  const report = (error: unknown) => print(`error: ${errorMessage(error)}`);
+  const report = (error: unknown) => print(t("error.generic", { message: errorMessage(error) }));
 
   rl.on("SIGINT", () => void shell.handleSigint().catch(report));
   rl.on("line", (line) => {

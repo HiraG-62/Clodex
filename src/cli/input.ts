@@ -1,4 +1,5 @@
 // 1 行の人間の入力を Shell command に変換する（DESIGN.md §8）
+import { t } from "../i18n/i18n.js";
 import { AGENT_IDS, CLAUDE_EFFORT_LEVELS, COMMON_EFFORT_LEVELS, PERMISSION_LEVELS, isAgentId, type AgentId, type PermissionLevel } from "../agents/agent-adapter.js";
 
 export type ShellCommand =
@@ -30,35 +31,37 @@ const COMMAND_PATTERN = /^\/(\S+)\s*(.*)$/;
 const isPermissionLevel = (value: string): value is PermissionLevel =>
   (PERMISSION_LEVELS as readonly string[]).includes(value);
 
-const PERMISSION_USAGE = `usage: /permission [${AGENT_IDS.join("|")}] <${PERMISSION_LEVELS.join("|")}>`;
-const MODEL_USAGE = `usage: /model <${AGENT_IDS.join("|")}> <model>`;
-const EFFORT_USAGE = `usage: /effort [${AGENT_IDS.join("|")}] <level>`;
+const usage = (text: string): ShellCommand => ({ kind: "invalid", message: t("input.usage", { usage: text }) });
+const unknownAgent = (agent: string): ShellCommand => ({ kind: "invalid", message: t("input.unknownAgent", { agent }) });
+const PERMISSION_USAGE = `/permission [${AGENT_IDS.join("|")}] <${PERMISSION_LEVELS.join("|")}>`;
+const MODEL_USAGE = `/model <${AGENT_IDS.join("|")}> <model>`;
+const EFFORT_USAGE = `/effort [${AGENT_IDS.join("|")}] <level>`;
 
 const parsePermission = (arg: string): ShellCommand => {
   const [first, second, ...extra] = arg.split(/\s+/).filter(Boolean);
-  if (!first || extra.length) return { kind: "invalid", message: PERMISSION_USAGE };
+  if (!first || extra.length) return usage(PERMISSION_USAGE);
   if (!second) return isPermissionLevel(first)
-    ? { kind: "permission", level: first } : { kind: "invalid", message: PERMISSION_USAGE };
-  if (!isPermissionLevel(second)) return { kind: "invalid", message: PERMISSION_USAGE };
-  return isAgentId(first) ? { kind: "permission", agent: first, level: second } : { kind: "invalid", message: `unknown agent: ${first}` };
+    ? { kind: "permission", level: first } : usage(PERMISSION_USAGE);
+  if (!isPermissionLevel(second)) return usage(PERMISSION_USAGE);
+  return isAgentId(first) ? { kind: "permission", agent: first, level: second } : unknownAgent(first);
 };
 
 const parseModel = (arg: string): ShellCommand => {
   const [agent, model, ...extra] = arg.split(/\s+/).filter(Boolean);
-  if (!agent || !model || extra.length) return { kind: "invalid", message: MODEL_USAGE };
-  return isAgentId(agent) ? { kind: "model", agent, model } : { kind: "invalid", message: `unknown agent: ${agent}` };
+  if (!agent || !model || extra.length) return usage(MODEL_USAGE);
+  return isAgentId(agent) ? { kind: "model", agent, model } : unknownAgent(agent);
 };
 
 const parseEffort = (arg: string): ShellCommand => {
   const [first, second, ...extra] = arg.split(/\s+/).filter(Boolean);
-  if (!first || extra.length) return { kind: "invalid", message: EFFORT_USAGE };
+  if (!first || extra.length) return usage(EFFORT_USAGE);
   if (!second) {
     return (COMMON_EFFORT_LEVELS as readonly string[]).includes(first)
-      ? { kind: "effort", level: first } : { kind: "invalid", message: EFFORT_USAGE };
+      ? { kind: "effort", level: first } : usage(EFFORT_USAGE);
   }
-  if (!isAgentId(first)) return { kind: "invalid", message: `unknown agent: ${first}` };
+  if (!isAgentId(first)) return unknownAgent(first);
   if (first === "claude" && !(CLAUDE_EFFORT_LEVELS as readonly string[]).includes(second)) {
-    return { kind: "invalid", message: EFFORT_USAGE };
+    return usage(EFFORT_USAGE);
   }
   return { kind: "effort", agent: first, level: second };
 };
@@ -67,13 +70,13 @@ const parseEffort = (arg: string): ShellCommand => {
 const isConversationNumber = (arg: string) => /^[1-9]\d*$/.test(arg);
 
 const unsupported = (feature: string): ShellCommand =>
-  ({ kind: "unsupported", message: `${feature} is not supported in v0.1` });
+  ({ kind: "unsupported", message: t("input.unsupported", { feature }) });
 
 // 行頭の @agent は送り先。Agent でなければ undefined（ファイルの参照として本文に残す）
 const parseMention = (name: string, text: string): ShellCommand | undefined => {
   if (name === "all") return unsupported("@all");
   if (!isAgentId(name)) return undefined;
-  if (!text) return { kind: "invalid", message: `empty message for @${name}` };
+  if (!text) return { kind: "invalid", message: t("input.empty", { agent: name }) };
   return { kind: "send", agent: name, text };
 };
 
@@ -81,7 +84,7 @@ const parseCommand = (name: string, arg: string): ShellCommand => {
   switch (name) {
     case "interrupt":
       if (!arg) return { kind: "interrupt" };
-      return isAgentId(arg) ? { kind: "interrupt", agent: arg } : { kind: "invalid", message: `unknown agent: ${arg}` };
+      return isAgentId(arg) ? { kind: "interrupt", agent: arg } : unknownAgent(arg);
     case "permission":
       return parsePermission(arg);
     case "model":
@@ -91,39 +94,39 @@ const parseCommand = (name: string, arg: string): ShellCommand => {
     case "new":
     case "compact":
       if (!arg) return { kind: name };
-      return isAgentId(arg) ? { kind: name, agent: arg } : { kind: "invalid", message: `unknown agent: ${arg}` };
+      return isAgentId(arg) ? { kind: name, agent: arg } : unknownAgent(arg);
     case "cancel":
       if (!arg) return { kind: "cancel" };
-      return /^\S+$/.test(arg) ? { kind: "cancel", id: arg } : { kind: "invalid", message: "usage: /cancel [id]" };
+      return /^\S+$/.test(arg) ? { kind: "cancel", id: arg } : usage("/cancel [id]");
     case "resume":
       if (!arg) return { kind: "resume" };
-      return isConversationNumber(arg) ? { kind: "resume", index: Number(arg) } : { kind: "invalid", message: "usage: /resume [number]" };
+      return isConversationNumber(arg) ? { kind: "resume", index: Number(arg) } : usage("/resume [number]");
     case "rename":
-      return arg ? { kind: "rename", title: arg } : { kind: "invalid", message: "usage: /rename <title>" };
+      return arg ? { kind: "rename", title: arg } : usage("/rename <title>");
     case "delete":
     case "pin":
-      return isConversationNumber(arg) ? { kind: name, index: Number(arg) } : { kind: "invalid", message: `usage: /${name} <number>` };
+      return isConversationNumber(arg) ? { kind: name, index: Number(arg) } : usage(`/${name} <number>`);
     case "primary":
-      if (!arg) return { kind: "invalid", message: `usage: /primary <${AGENT_IDS.join("|")}>` };
-      return isAgentId(arg) ? { kind: "primary", agent: arg } : { kind: "invalid", message: `unknown agent: ${arg}` };
+      if (!arg) return usage(`/primary <${AGENT_IDS.join("|")}>`);
+      return isAgentId(arg) ? { kind: "primary", agent: arg } : unknownAgent(arg);
     case "status":
     case "help":
     case "exit":
     case "verbose":
       return { kind: name };
     default:
-      return { kind: "invalid", message: `unknown command: /${name} (see /help)` };
+      return { kind: "invalid", message: t("input.unknownCommand", { name }) };
   }
 };
 
 export const parseInput = (line: string, primary: AgentId): ShellCommand => {
   const input = line.trim();
   if (!input) return { kind: "empty" };
-  if (input.startsWith("/") && /[\r\n]/.test(line)) return { kind: "invalid", message: "slash commands must be one line" };
+  if (input.startsWith("/") && /[\r\n]/.test(line)) return { kind: "invalid", message: t("input.oneLine") };
   if (input.startsWith("!&")) return unsupported("!& command");
   if (input.startsWith("!")) {
     const command = input.slice(1).trim();
-    return command ? { kind: "run", command } : { kind: "invalid", message: "usage: !<command>" };
+    return command ? { kind: "run", command } : usage("!<command>");
   }
 
   const mention = input.match(MENTION_PATTERN);
