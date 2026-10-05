@@ -39,6 +39,7 @@ export type AgentEvent =
   | { type: "turn_started" }
   | { type: "turn"; result: TurnResult }
   | { type: "rate_limit"; fiveHour?: RateLimitWindow; weekly?: RateLimitWindow }
+  | { type: "context"; tokens: number; window?: number }
   | { type: "exit"; code: number | null }
   | { type: "error"; message: string };
 

@@ -40,8 +40,9 @@ PS C:\dev\my-project> clodex
 | `/interrupt [claude\|codex]` / Ctrl+C | 実行中のターンを interrupt |
 | `/primary <claude\|codex>` | テキストの送り先を切り替える |
 | `/resume [番号]` | 過去の会話の一覧 / 番号の会話に切り替える |
+| `/new [claude\|codex]` | 新しい session で始め直す（省略時は両方を新しい会話として） |
 | `/permission [claude\|codex] <read-only\|edit\|full>` | Agent の権限レベル（既定 `edit`。`full` は Codex の yolo 相当） |
-| `/status` | 各 Agent の状態、権限、利用枠（5 時間 / 週と週のペース） |
+| `/status` | 各 Agent の状態、権限、利用枠（5 時間 / 週と週のペース）、コンテキストの大きさ |
 | `/verbose` | tool 呼び出しや途中の発言も表示する |
 | `/help` / `/exit` | ヘルプ / 終了 |
 

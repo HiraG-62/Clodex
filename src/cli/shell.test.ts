@@ -13,7 +13,16 @@ class FakeHistory implements ConversationList {
     { id: "conv-old", startedAt: at(20), updatedAt: at(26), title: "Remember BANANA", sessions: { claude: "c-old", codex: "x-old" } },
     { id: "conv-none", startedAt: at(10), updatedAt: at(11), sessions: { codex: "x-1" } },
   ];
+  started = 0;
   list() { return this.conversations; }
+  startNew() {
+    this.started++;
+    this.currentId = "conv-fresh";
+  }
+  readonly cleared: AgentId[] = [];
+  clearSession(agent: AgentId) {
+    this.cleared.push(agent);
+  }
   switchTo(id: string) {
     this.currentId = id;
     return this.conversations.find((c) => c.id === id);
@@ -25,7 +34,10 @@ class FakeCoordinator implements ShellCoordinator {
   readonly interrupted: Array<AgentId | undefined> = [];
   readonly permissions: Array<{ level: PermissionLevel; agent: AgentId | undefined }> = [];
   states: AgentState[] = [
-    { id: "claude", status: "idle", sessionId: "s-claude", permission: "edit", usage: { fiveHourPercent: 12, weeklyPercent: 50, weeklyPace: -20 } },
+    {
+      id: "claude", status: "idle", sessionId: "s-claude", permission: "edit",
+      usage: { fiveHourPercent: 12, weeklyPercent: 50, weeklyPace: -20, contextTokens: 85400, contextWindow: 200000 },
+    },
     { id: "codex", status: "stopped", sessionId: undefined, permission: "full", usage: {} },
   ];
 
@@ -34,10 +46,12 @@ class FakeCoordinator implements ShellCoordinator {
   }
 
   readonly switched: SavedSessions[] = [];
+  readonly switchTargets: Array<readonly AgentId[] | undefined> = [];
   switchError: string | undefined;
-  async switchSessions(sessions: SavedSessions): Promise<string | undefined> {
+  async switchSessions(sessions: SavedSessions, targets?: readonly AgentId[]): Promise<string | undefined> {
     if (this.switchError) return this.switchError;
     this.switched.push(sessions);
+    this.switchTargets.push(targets);
     return undefined;
   }
 
@@ -88,8 +102,10 @@ describe("createShell", () => {
       "primary: claude",
       "claude: idle, permission edit (session s-claude)",
       "  usage: 5h 12%, 7d 50% (pace -20)",
+      "  context: 85k / 200k tokens (43%)",
       "codex: stopped, permission full",
       "  usage: unknown",
+      "  context: unknown",
     ]);
   });
 
@@ -155,6 +171,32 @@ describe("createShell", () => {
     coordinator.switchError = "claude is busy. Use /interrupt first.";
     await shell.handleLine("/resume 2");
     expect(history.currentId).toBe("conv-new");
+    expect(printed).toEqual(["claude is busy. Use /interrupt first."]);
+  });
+
+  it("/new は両 Agent を新しい会話で始め直す", async () => {
+    const { coordinator, history, printed, shell } = setup();
+    await shell.handleLine("/new");
+    expect(coordinator.switched).toEqual([{}]);
+    expect(coordinator.switchTargets).toEqual([undefined]);
+    expect(history.started).toBe(1);
+    expect(printed).toEqual(["new conversation (agents start fresh on next use)"]);
+  });
+
+  it("/new <agent> はその Agent だけを今の会話の中で始め直す", async () => {
+    const { coordinator, history, printed, shell } = setup();
+    await shell.handleLine("/new codex");
+    expect(coordinator.switchTargets).toEqual([["codex"]]);
+    expect(history.started).toBe(0);
+    expect(history.cleared).toEqual(["codex"]);
+    expect(printed).toEqual(["codex starts a new session on next use"]);
+  });
+
+  it("/new が拒否されたら会話を変えずに理由を表示する", async () => {
+    const { coordinator, history, printed, shell } = setup();
+    coordinator.switchError = "claude is busy. Use /interrupt first.";
+    await shell.handleLine("/new");
+    expect(history.started).toBe(0);
     expect(printed).toEqual(["claude is busy. Use /interrupt first."]);
   });
 

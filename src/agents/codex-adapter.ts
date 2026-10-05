@@ -49,6 +49,7 @@ interface CodexRateLimitWindow {
 
 interface CodexNotificationParams {
   item?: CodexItem;
+  tokenUsage?: { last?: { totalTokens?: number }; modelContextWindow?: number | null };
   turn?: { id?: string; status?: string; error?: { message?: string } | null };
   rateLimits?: { primary?: CodexRateLimitWindow | null; secondary?: CodexRateLimitWindow | null };
   message?: string;
@@ -193,6 +194,13 @@ export class CodexAdapter extends BaseAgentAdapter {
         return this.handleItem(params.item ?? {});
       case "account/rateLimits/updated":
         return this.emitRateLimits(params.rateLimits);
+      case "thread/tokenUsage/updated": {
+        const tokens = params.tokenUsage?.last?.totalTokens;
+        if (tokens === undefined) return;
+        const window = params.tokenUsage?.modelContextWindow;
+        this.emit({ type: "context", tokens, ...(window ? { window } : {}) });
+        return;
+      }
       case "turn/completed": {
         const status = TURN_STATUS[params.turn?.status ?? ""] ?? "failed";
         const text = this.lastAgentText || (params.turn?.error?.message ?? "");

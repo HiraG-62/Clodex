@@ -166,6 +166,18 @@ describe("ClaudeAdapter", () => {
     expect(proc.killed).toBe(true);
   });
 
+  it("ターン完了時に、最後の API 呼び出しの usage からコンテキストの大きさを流す", async () => {
+    const { adapter, proc, events } = await setup();
+    const turn = adapter.send("x");
+    proc.emit(init());
+    const usage = (input: number) => ({ input_tokens: input, cache_creation_input_tokens: 1000, cache_read_input_tokens: 20000, output_tokens: 50 });
+    proc.emit({ type: "assistant", message: { content: [{ type: "text", text: "a" }], usage: usage(10) } });
+    proc.emit({ type: "assistant", message: { content: [{ type: "text", text: "b" }], usage: usage(500) } });
+    proc.emit({ ...result("b"), modelUsage: { "claude-x": { contextWindow: 200000 } } });
+    await turn;
+    expect(events).toContainEqual({ type: "context", tokens: 21550, window: 200000 });
+  });
+
   it("rate_limit_event を % に正規化して流す", async () => {
     const { proc, events } = await setup();
     proc.emit({ type: "rate_limit_event", rate_limit_info: { unifiedWindows: {

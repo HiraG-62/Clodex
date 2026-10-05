@@ -441,6 +441,7 @@ Internal command（v0.1）:
 | `/verbose` | terminal の詳細表示を切り替える（§17） |
 | `/primary <claude\|codex>` | 通常のテキストの送り先を切り替える（§3.10） |
 | `/resume [番号]` | 番号なしで過去の会話の一覧、番号付きでその会話に切り替える（§18） |
+| `/new [claude\|codex]` | 新しい session で始め直す。省略時は両 Agent を新しい会話として、指定時はその Agent だけを今の会話の中で始め直す（§18） |
 | `/permission [claude\|codex] <read-only\|edit\|full>` | Agent（省略時は両方）の権限レベルを切り替える（§9 Permission） |
 | `/help` | 入力方法の一覧 |
 | `/exit` | 全 Agent を止めて終了 |
@@ -495,6 +496,7 @@ interface AgentAdapter {
 | `turn_started` | ターン開始（Agent が busy になった） |
 | `turn` | ターン完了（`TurnResult`） |
 | `rate_limit` | 5 時間 / 7 日の利用率（%）と reset 時刻 |
+| `context` | 今のコンテキストの大きさ（token）と上限。Claude は最後の API 呼び出しの usage と `modelUsage[].contextWindow`、Codex は `thread/tokenUsage/updated` の `last.totalTokens` と `modelContextWindow` |
 | `exit` | プロセス終了 |
 | `error` | 認証違反・プロトコルエラー等 |
 
@@ -829,7 +831,8 @@ v0.2 では、分業の流れ（設計 → 実装の委譲 → レビュー → 
 Agent Adapter の `rate_limit` event（Claude: `rate_limit_event`、Codex: `account/rateLimits/updated`）から、Agent ごとに最新の利用状況を保持する。
 
 - **週のペース超過** = 週の使用率 − 週の経過率（経過率は reset 時刻と週の長さ 7 日から計算）。正なら使いすぎ、負なら余裕あり
-- `/status` に、各 Agent の 5 時間枠の使用率と週のペース超過、現在の primary を表示する。まだ利用状況を受け取っていない Agent は `unknown`
+- `/status` に、各 Agent の 5 時間枠の使用率と週のペース超過、コンテキストの大きさ、現在の primary を表示する。まだ受け取っていない値は `unknown`
+- コンテキストの大きさは、その Agent の session が変わったとき（`session` event、`/new`、`/resume`）に unknown に戻す
 - Codex は起動時に `account/rateLimits/read` で利用状況を取得する（Claude は最初の API 呼び出しの後に届く）
 - 次の条件を初めて満たしたとき、1 回だけ通知する（同じ条件では繰り返さない。reset 後は再び通知できる）
 
@@ -1022,6 +1025,9 @@ simple event log
   - 実行中のターンがある Agent がいれば拒否する（先に `/interrupt`）
   - 両 Agent をいったん止め、次に使うときに選んだ会話の session で起動する。選んだ会話に session が無い Agent は新しい session で始める
   - 切り替え前の会話も履歴に残る
+- `/new` は両 Agent を止めて新しい会話を始める（前の会話は履歴に残る）。`/new <agent>` はその Agent だけを止め、今の会話の中で新しい session にする（その Agent の前の session は、その時点で会話から外して保存する）。作業中の Agent がいれば `/resume` と同じく拒否する
+- コンテキストの管理（自動 compact 等）は各 CLI に任せる（§3.7）
+- Claude は system prompt を session の最初に記録して resume 後も使う（`--system-prompt-snapshot` の既定）。役割（§13）を変えた後は `/new` で始め直すと確実に反映される
 - 壊れたファイルは空の履歴として扱う（起動を妨げない）
 - message の未配送分、Budget の chain、利用状況は保存しない（in-memory）
 

@@ -16,7 +16,7 @@ export interface ShellCoordinator {
   sendToAgent(agent: AgentId, text: string): Promise<TurnResult>;
   interrupt(agent?: AgentId): Promise<void>;
   setPermission(level: PermissionLevel, agent?: AgentId): Promise<void>;
-  switchSessions(sessions: SavedSessions): Promise<string | undefined>;
+  switchSessions(sessions: SavedSessions, targets?: readonly AgentId[]): Promise<string | undefined>;
   status(): AgentState[];
 }
 
@@ -24,6 +24,8 @@ export interface ConversationList {
   readonly currentId: string;
   list(): Conversation[];
   switchTo(id: string): Conversation | undefined;
+  startNew(): void;
+  clearSession(agent: AgentId): void;
 }
 
 export interface ShellOptions {
@@ -45,6 +47,7 @@ const HELP_LINES = (primary: AgentId) => [
   "/status             show agent status and usage",
   "/primary <agent>    change where plain text goes",
   "/resume [number]    list past conversations, or switch to one",
+  "/new [agent]        start fresh sessions (a new conversation if agent is omitted)",
   "/verbose            toggle detailed output (tools, usage, intermediate text)",
   "/permission [agent] <read-only|edit|full>  change what agents may do without asking",
   "/exit               stop all agents and quit",
@@ -57,6 +60,17 @@ const formatUsage = ({ fiveHourPercent, weeklyPercent, weeklyPace }: UsageSnapsh
     ...(weeklyPercent === undefined ? [] : [`7d ${weeklyPercent}% (pace ${weeklyPace! > 0 ? "+" : ""}${weeklyPace})`]),
   ];
   return `  usage: ${parts.length ? parts.join(", ") : "unknown"}`;
+};
+
+const TOKENS_PER_K = 1000;
+const PERCENT = 100;
+const kTokens = (n: number) => `${Math.round(n / TOKENS_PER_K)}k`;
+
+const formatContext = ({ contextTokens, contextWindow }: UsageSnapshot): string => {
+  if (contextTokens === undefined) return "  context: unknown";
+  if (!contextWindow) return `  context: ${kTokens(contextTokens)} tokens`;
+  const percent = Math.round((contextTokens / contextWindow) * PERCENT);
+  return `  context: ${kTokens(contextTokens)} / ${kTokens(contextWindow)} tokens (${percent}%)`;
 };
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -76,6 +90,17 @@ export const createShell = ({ coordinator, primary: initialPrimary, print, toggl
       print(`${i + 1}) ${shortTime(c.updatedAt)}  ${agentsOf(c)}  ${titleOf(c)}${current}`);
     });
     print("Type /resume <number> to switch.");
+  };
+
+  const startFresh = async (agent: AgentId | undefined) => {
+    const error = await coordinator.switchSessions({}, agent ? [agent] : undefined);
+    if (error) return print(error);
+    if (agent) {
+      history.clearSession(agent);
+      return print(`${agent} starts a new session on next use`);
+    }
+    history.startNew();
+    print("new conversation (agents start fresh on next use)");
   };
 
   const resumeConversation = async (index: number) => {
@@ -105,7 +130,11 @@ export const createShell = ({ coordinator, primary: initialPrimary, print, toggl
         for (const { id, status, sessionId, permission, usage } of coordinator.status()) {
           print(`${id}: ${status}, permission ${permission}${sessionId ? ` (session ${sessionId})` : ""}`);
           print(formatUsage(usage));
+          print(formatContext(usage));
         }
+        return "continue";
+      case "new":
+        await startFresh(command.agent);
         return "continue";
       case "resume":
         if (command.index === undefined) listConversations();

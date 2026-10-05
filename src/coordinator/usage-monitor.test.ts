@@ -83,6 +83,21 @@ describe("UsageMonitor", () => {
     expect(notices).toEqual([]);
   });
 
+  it("context event でコンテキストの大きさを保持し、session が変わったら unknown に戻す", () => {
+    const { monitor, bus } = setup();
+    bus.publish({ kind: "agent", agent: "claude", event: { type: "context", tokens: 85000, window: 200000 } });
+    expect(monitor.snapshot("claude")).toEqual({ contextTokens: 85000, contextWindow: 200000 });
+    bus.publish({ kind: "agent", agent: "claude", event: { type: "session", sessionId: "new" } });
+    expect(monitor.snapshot("claude")).toEqual({});
+  });
+
+  it("clearContext でコンテキストの大きさを unknown に戻す", () => {
+    const { monitor, bus } = setup();
+    bus.publish({ kind: "agent", agent: "codex", event: { type: "context", tokens: 1000 } });
+    monitor.clearContext("codex");
+    expect(monitor.snapshot("codex")).toEqual({});
+  });
+
   it("rate_limit 以外の event は無視する", () => {
     const { monitor, bus } = setup();
     bus.publish({ kind: "agent", agent: "claude", event: { type: "text", text: "x" } });

@@ -55,13 +55,30 @@ export class ConversationHistory {
   private conversations: Conversation[];
   private current: Conversation;
   private readonly now: () => Date;
+  private readonly createId: () => string;
 
   constructor(private readonly path: string, { resumeLatest, now = () => new Date(), createId = randomUUID }: ConversationHistoryOptions) {
     this.now = now;
+    this.createId = createId;
     this.conversations = loadConversations(path).sort(byNewest);
     const latest = this.conversations[0];
-    const startedAt = now().toISOString();
-    this.current = resumeLatest && latest ? latest : { id: createId(), startedAt, updatedAt: startedAt, sessions: {} };
+    this.current = resumeLatest && latest ? latest : this.emptyConversation();
+  }
+
+  // /new: 新しい会話を始める。前の会話は履歴に残る（session も入力も無いうちは保存しない）
+  startNew(): void {
+    this.current = this.emptyConversation();
+  }
+
+  // /new <agent>: その Agent の session を今の会話から外して保存する（再起動しても古い session に戻らない）
+  clearSession(agent: AgentId): void {
+    const { [agent]: _removed, ...rest } = this.current.sessions;
+    this.update({ sessions: rest });
+  }
+
+  private emptyConversation(): Conversation {
+    const startedAt = this.now().toISOString();
+    return { id: this.createId(), startedAt, updatedAt: startedAt, sessions: {} };
   }
 
   get currentId(): string {

@@ -14,6 +14,13 @@ export interface UsageSnapshot {
   fiveHourPercent?: number;
   weeklyPercent?: number;
   weeklyPace?: number;
+  contextTokens?: number;
+  contextWindow?: number;
+}
+
+interface ContextSize {
+  tokens: number;
+  window?: number;
 }
 
 const WEEK_SECONDS = 7 * 24 * 60 * 60;
@@ -37,6 +44,7 @@ const peerOf = (agent: AgentId): AgentId => AGENT_IDS.find((id) => id !== agent)
 
 export class UsageMonitor {
   private readonly windows = new Map<AgentId, Windows>();
+  private readonly contexts = new Map<AgentId, ContextSize>();
   // 同じ枠（reset 時刻）では 1 回だけ通知する
   private readonly notified = new Set<string>();
 
@@ -46,8 +54,15 @@ export class UsageMonitor {
     private readonly now: () => Date = () => new Date(),
   ) {
     bus.subscribe((event) => {
-      if (event.kind !== "agent" || event.event.type !== "rate_limit") return;
-      const { fiveHour, weekly } = event.event;
+      if (event.kind !== "agent") return;
+      const { agent, event: agentEvent } = event;
+      // session が変わったら前のコンテキストの大きさは当てはまらない
+      if (agentEvent.type === "session") this.contexts.delete(agent);
+      if (agentEvent.type === "context") {
+        this.contexts.set(agent, { tokens: agentEvent.tokens, ...(agentEvent.window ? { window: agentEvent.window } : {}) });
+      }
+      if (agentEvent.type !== "rate_limit") return;
+      const { fiveHour, weekly } = agentEvent;
       const current = this.windows.get(event.agent) ?? {};
       this.windows.set(event.agent, { ...current, ...(fiveHour && { fiveHour }), ...(weekly && { weekly }) });
       this.checkAlerts(event.agent);
@@ -55,6 +70,10 @@ export class UsageMonitor {
   }
 
   // reset 時刻を過ぎた枠は今の利用状況ではないので出さない
+  clearContext(agent: AgentId): void {
+    this.contexts.delete(agent);
+  }
+
   snapshot(agent: AgentId): UsageSnapshot {
     const nowSeconds = this.nowSeconds();
     const current = (w: RateLimitWindow | undefined) => (w && w.resetsAt > nowSeconds ? w : undefined);
@@ -64,7 +83,14 @@ export class UsageMonitor {
     return {
       ...(fiveHour && { fiveHourPercent: fiveHour.usedPercent }),
       ...(weekly && { weeklyPercent: weekly.usedPercent, weeklyPace: weeklyPace(weekly, nowSeconds) }),
+      ...this.contextOf(agent),
     };
+  }
+
+  private contextOf(agent: AgentId): Pick<UsageSnapshot, "contextTokens" | "contextWindow"> {
+    const context = this.contexts.get(agent);
+    if (!context) return {};
+    return { contextTokens: context.tokens, ...(context.window ? { contextWindow: context.window } : {}) };
   }
 
   private nowSeconds(): number {

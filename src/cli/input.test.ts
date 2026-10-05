@@ -18,6 +18,8 @@ describe("parseInput", () => {
     ["/permission full", { kind: "permission", level: "full" }],
     ["/primary codex", { kind: "primary", agent: "codex" }],
     ["/resume", { kind: "resume" }],
+    ["/new", { kind: "new" }],
+    ["/new codex", { kind: "new", agent: "codex" }],
     ["/resume 3", { kind: "resume", index: 3 }],
     ["/permission codex read-only", { kind: "permission", agent: "codex", level: "read-only" }],
   ])("%j", (line, expected) => {
@@ -46,6 +48,7 @@ describe("parseInput", () => {
     ["/permission", /usage/],
     ["/primary", /usage/],
     ["/resume 0", /usage/],
+    ["/new gemini", /unknown agent/],
     ["/resume x", /usage/],
     ["/primary gemini", /unknown agent/],
     ["/permission admin", /usage/],

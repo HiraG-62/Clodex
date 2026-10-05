@@ -275,6 +275,23 @@ describe("Coordinator", () => {
     started[0]!();
   });
 
+  it("switchSessions に targets を渡すと、その Agent だけを止めて新しい session にし、コンテキストを unknown に戻す", async () => {
+    const { claude, codex, coordinator } = setup();
+    claude.status = "idle";
+    codex.status = "idle";
+    codex.emit({ type: "context", tokens: 5000 });
+    await expect(coordinator.switchSessions({}, ["codex"])).resolves.toBeUndefined();
+    expect([claude.status, codex.status]).toEqual(["idle", "stopped"]);
+    expect(coordinator.status()[1]!.usage).toEqual({});
+  });
+
+  it("targets 外の Agent が作業中でも、targets が空いていれば切り替えられる", async () => {
+    const { claude, codex, coordinator } = setup();
+    claude.status = "busy";
+    codex.status = "idle";
+    await expect(coordinator.switchSessions({}, ["codex"])).resolves.toBeUndefined();
+  });
+
   it("実行中のターンがあれば switchSessions を拒否する", async () => {
     const { claude, coordinator } = setup();
     claude.status = "busy";

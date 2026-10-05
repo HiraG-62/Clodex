@@ -33,12 +33,20 @@ interface UtilizationWindow {
   resetsAt?: number;
 }
 
+interface MessageUsage {
+  input_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+  output_tokens?: number;
+}
+
 interface ClaudeEvent {
   type?: string;
   subtype?: string;
   apiKeySource?: string;
   error_status?: number;
-  message?: { content?: ContentBlock[] };
+  message?: { content?: ContentBlock[]; usage?: MessageUsage };
+  modelUsage?: Record<string, { contextWindow?: number }>;
   result?: string;
   is_error?: boolean;
   rate_limit_info?: { unifiedWindows?: { five_hour?: UtilizationWindow; seven_day?: UtilizationWindow } };
@@ -52,6 +60,8 @@ const toRateLimitWindow = (w: UtilizationWindow | undefined): RateLimitWindow | 
 export class ClaudeAdapter extends BaseAgentAdapter {
   readonly id = "claude";
   private interruptRequested = false;
+  // 最後の API 呼び出しの usage。今のコンテキストの大きさとして使う（DESIGN.md §9）
+  private lastUsage: MessageUsage | undefined;
 
   constructor(
     private readonly spawnProcess: SpawnAgentProcess = spawnAgentProcess,
@@ -120,6 +130,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
         return;
       }
       case "result":
+        this.emitContext(event);
         return this.finishTurn({ status: this.resultStatus(event), text: event.result ?? "" });
     }
   }
@@ -134,7 +145,19 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     }
   }
 
+  private emitContext(event: ClaudeEvent): void {
+    const usage = this.lastUsage;
+    this.lastUsage = undefined;
+    if (!usage) return;
+    const tokens = (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0)
+      + (usage.cache_read_input_tokens ?? 0) + (usage.output_tokens ?? 0);
+    const windows = Object.values(event.modelUsage ?? {}).map((m) => m.contextWindow ?? 0);
+    const window = windows.length ? Math.max(...windows) : 0;
+    this.emit({ type: "context", tokens, ...(window ? { window } : {}) });
+  }
+
   private handleAssistant(event: ClaudeEvent): void {
+    if (event.message?.usage) this.lastUsage = event.message.usage;
     for (const block of event.message?.content ?? []) {
       if (block.type === "text" && block.text) this.emit({ type: "text", text: block.text });
       if (block.type === "tool_use" && block.name) {

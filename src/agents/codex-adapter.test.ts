@@ -218,6 +218,15 @@ describe("CodexAdapter", () => {
     expect(events.some((e) => e.type === "error" && /requestApproval/.test(e.message))).toBe(true);
   });
 
+  it("thread/tokenUsage/updated の last.totalTokens をコンテキストの大きさとして流す", async () => {
+    const { started, proc, events } = await setup();
+    await started;
+    proc.emit({ method: "thread/tokenUsage/updated", params: { threadId: THREAD_ID, turnId: TURN_ID, tokenUsage: {
+      total: { totalTokens: 90000 }, last: { totalTokens: 30000 }, modelContextWindow: 258000,
+    } } });
+    expect(events).toContainEqual({ type: "context", tokens: 30000, window: 258000 });
+  });
+
   it("account/rateLimits/updated を正規化して流す", async () => {
     const { started, proc, events } = await setup();
     await started;

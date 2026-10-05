@@ -105,6 +105,26 @@ describe("ConversationHistory", () => {
     expect(list.find((c) => c.sessions.claude === "c-new")).toBeDefined();
   });
 
+  it("startNew で新しい会話を始め、前の会話は履歴に残る", () => {
+    const { history, session } = setup();
+    session("claude", "c-1");
+    const before = history.currentId;
+    history.startNew();
+    expect(history.currentId).not.toBe(before);
+    expect(history.currentSessions).toEqual({});
+    session("claude", "c-2");
+    expect(history.list().map((c) => c.sessions.claude)).toEqual(["c-2", "c-1"]);
+  });
+
+  it("clearSession はその Agent の session を今の会話から外して保存する", () => {
+    const { history, path, session } = setup();
+    session("claude", "c-1");
+    session("codex", "x-1");
+    history.clearSession("codex");
+    expect(history.currentSessions).toEqual({ claude: "c-1" });
+    expect(new ConversationHistory(path, { resumeLatest: true }).currentSessions).toEqual({ claude: "c-1" });
+  });
+
   it(`最大 ${MAX_CONVERSATIONS} 件まで残す`, () => {
     const path = makePath();
     for (let i = 0; i < MAX_CONVERSATIONS + 3; i++) setup(path, false, i * 10).session("claude", `c-${i}`);
