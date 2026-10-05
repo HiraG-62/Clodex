@@ -1778,6 +1778,20 @@ D1 の詳細（1 つのプロセスの中の複数の会話）:
 - **worktree**: `/new worktree` で、新しい会話用の worktree を作ってその会話の作業場所にする（`git worktree add <project の隣>/<project 名>-<会話の短い ID> -b clodex/<会話の短い ID>`）。会話の履歴に作業場所（`workDir`）とブランチを記録し、`/resume` で戻ったときもそこで Agent を起動する。worktree の削除・マージは人が git で行う
 - 同じ作業場所で別の会話の Agent が作業中のときに入力したら、`/new worktree` を勧める通知を出す（止めはしない）
 - Web UI の会話の一覧に、各会話の状態（作業中・待機中・停止中）と worktree の印を出す
+- 入力行は届いた順に処理する（会話の切り替えや worktree の作成を待ってから次の行へ）
+- Web UI は PWA の manifest（`/manifest.webmanifest`）とアイコン（`/icon.svg`）を token なしで返す（秘密を含まない）
+
+D2 の詳細（Hub として複数の project を扱う）。2 段に分ける:
+
+- **D2a: 1 つのプロセスで複数の project**
+  - 今の \`main()\` の project ごとの部分（設定・履歴・Agent の設定・Workspace・feed の保存・成果物のプレビュー・アップロード先）を **ProjectContext** として切り出す（\`hub/project-context.ts\`）。Hub は project root ごとに ProjectContext を持ち、開いた project を残す（会話と同じく、切り替えても Agent を止めない）
+  - 人が見ている project（**今の project**）は 1 つ。terminal と Web UI は今の project の今の会話を表示する
+  - \`/project\` で開いている project の一覧、\`/project <path>\` でその project を開いて今の project にする（path は resolveProjectRoot と同じ規則で解決する）。Web UI は上部に project の切り替えを出し、\`/project <path>\` を送る
+  - 開いた project の一覧は \`~/.clodex/hub.json\` に保存し、次の起動で一覧に出す（開くのは選んだとき）
+  - \`clodex serve\`: terminal の Shell を持たずに Hub と Web UI だけを動かす（\`--web\` 相当。project は Web UI から開く。起動時の project は省略可）
+  - 言語・Web の token・ポートは Hub で 1 つ。project ごとの設定（\`.clodex.json\`）は ProjectContext ごとに読む
+- **D2b: CLI から Hub へつなぐ**（D4 の TUI と一緒に行う）
+  - Hub は起動時に \`~/.clodex/hub.lock\`（pid・port）を書く。\`clodex\` は lock の Hub が生きていれば、HTTP + SSE のクライアントとしてつなぐ。いなければ今どおり同じプロセスで動く
 
 ---
 
