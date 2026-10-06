@@ -45,19 +45,10 @@ if ($Login) {
     $State = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
     $Secret = Get-Content -LiteralPath $CredentialPath -Raw | ConvertTo-SecureString
     $Credential = New-Object Management.Automation.PSCredential($AccountName, $Secret)
-    # Start-Process -Credential は呼び出し元の環境変数を引き継ぐため、clodex-agent のプロファイルに合わせ直す
-    $AgentEnv = @'
-$P = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$([Security.Principal.WindowsIdentity]::GetCurrent().User.Value)").ProfileImagePath
-$env:USERPROFILE = $P; $env:HOMEDRIVE = $P.Substring(0, 2); $env:HOMEPATH = $P.Substring(2)
-$env:APPDATA = "$P\AppData\Roaming"; $env:LOCALAPPDATA = "$P\AppData\Local"
-$env:TEMP = "$P\AppData\Local\Temp"; $env:TMP = $env:TEMP
-foreach ($D in @($env:APPDATA, $env:TEMP)) { [void][IO.Directory]::CreateDirectory($D) }
-$env:Path = "$P\.local\bin;$env:APPDATA\npm;" + [Environment]::GetEnvironmentVariable('Path', 'Machine')
-Remove-Item Env:HOME -ErrorAction SilentlyContinue
-"clodex-agent: $P"
-'@
-    $Encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($AgentEnv))
-    Start-Process powershell.exe -Credential $Credential -LoadUserProfile -WorkingDirectory $State.project -ArgumentList "-NoExit -EncodedCommand $Encoded"
+    # Start-Process -Credential は呼び出し元の環境変数を引き継ぐため、clodex-agent のプロファイルに合わせ直す。
+    # CreateProcessWithLogonW のコマンドラインは 1024 文字までなので、処理は別ファイルに置く
+    $AgentEnvPath = Join-Path $PSScriptRoot 'sandbox-agent-env.ps1'
+    Start-Process powershell.exe -Credential $Credential -LoadUserProfile -WorkingDirectory $State.project -ArgumentList "-NoExit -ExecutionPolicy Bypass -File `"$AgentEnvPath`""
     return
 }
 

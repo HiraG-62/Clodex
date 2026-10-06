@@ -59,6 +59,7 @@ spike のスクリプトもこれに合わせる:
 - #1・#7・#8・#10 は期待どおり。#8 は人のユーザーから `taskkill /T /F` で止められた
 - #9: `clodex-agent` が作ったリポジトリは、人のユーザーで `dubious ownership` になる
 - `Start-Process -Credential` は、呼び出し元（人）の環境変数を引き継ぐ（`USERPROFILE`・`APPDATA` が人のもの）。そのため Claude のインストーラーとログインが `C:\Users\<人>\.claude` に書こうとして失敗した。製品で Agent を起動するときは、`clodex-agent` の環境（プロファイルのパス、Machine の PATH）を組み立て直して渡す
+- `Start-Process -Credential`（`CreateProcessWithLogonW`）は、コマンドラインが 1024 文字を超えると「パラメーターが間違っています」で失敗する。Claude の `--append-system-prompt` のような長い引数は直接渡せないので、製品では broker（#1 (b)）が `clodex-agent` として Agent を起動する形にする
 
 setup への追加:
 
