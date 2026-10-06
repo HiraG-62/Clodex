@@ -216,7 +216,7 @@ describe("createShell", () => {
     await shell.handleLine("/cancel");
     await shell.handleLine("/cancel in9");
     expect(coordinator.canceled).toEqual([undefined, "in9"]);
-    expect(printed).toEqual(["canceled: in2 -> codex", "nothing to cancel: in9 (already delivered?)"]);
+    expect(printed).toEqual(["canceled: in2 -> codex", "nothing to cancel: in9"]);
   });
 
   it("/interrupt を Coordinator に渡し、Agent 指定なしなら実行中の command も止める", async () => {
@@ -327,7 +327,7 @@ describe("createShell", () => {
       "deleted: \"Remember BANANA\"",
       "pinned: \"(no input)\"",
       "unpinned: \"(no input)\"",
-      "no conversation #9 (see /resume)",
+      "no conversation #9",
     ]);
   });
 
@@ -348,7 +348,7 @@ describe("createShell", () => {
       '1) 10/05 20:31  claude  "今の会話"  (current)',
       '2) 10/05 20:26  claude, codex  "Remember BANANA"',
       '3) 10/05 20:11  codex  "(no input)"',
-      "Type /resume <number> to switch.",
+      "/resume <number> to switch",
     ]);
   });
 
@@ -365,7 +365,7 @@ describe("createShell", () => {
     await shell.handleLine("/resume 1");
     await shell.handleLine("/resume 9");
     expect(coordinator.switched).toEqual([]);
-    expect(printed).toEqual(["already in this conversation", "no conversation #9 (see /resume)"]);
+    expect(printed).toEqual(["already in this conversation", "no conversation #9"]);
   });
 
   it("/new は新しい会話を今の会話にし、前の会話の Agent は止めない", async () => {
@@ -373,14 +373,14 @@ describe("createShell", () => {
     await shell.handleLine("/new");
     expect(coordinator.switched).toEqual([]);
     expect(history.started).toEqual([{ worktree: false }]);
-    expect(printed).toEqual(["new conversation (agents start fresh on next use)"]);
+    expect(printed).toEqual(["new conversation"]);
   });
 
   it("/new worktree は worktree で新しい会話を始め、作れなければ理由を表示する", async () => {
     const { history, printed, shell } = setup();
     await shell.handleLine("/new worktree");
     expect(history.started).toEqual([{ worktree: true }]);
-    expect(printed).toEqual(["new conversation in worktree C:\\dev\\app-1a2b (branch clodex/1a2b)"]);
+    expect(printed).toEqual(["new conversation: worktree C:\\dev\\app-1a2b (clodex/1a2b)"]);
     history.worktreeError = "fatal: not a git repository";
     await shell.handleLine("/new worktree");
     expect(printed.at(-1)).toBe("could not create a worktree: fatal: not a git repository");
@@ -390,7 +390,7 @@ describe("createShell", () => {
     const { busy, coordinator, printed, shell } = setup();
     busy.value = true;
     await shell.handleLine("hello");
-    expect(printed).toEqual(["Another chat is working in the same directory. Consider /new worktree for parallel work."]);
+    expect(printed).toEqual(["Another chat is working in the same directory (parallel: /new worktree)"]);
     expect(coordinator.sent).toEqual([{ agent: "claude", text: "hello" }]);
   });
 
@@ -400,7 +400,7 @@ describe("createShell", () => {
     expect(coordinator.switchTargets).toEqual([["codex"]]);
     expect(history.started).toEqual([]);
     expect(history.cleared).toEqual(["codex"]);
-    expect(printed).toEqual(["codex starts a new session on next use"]);
+    expect(printed).toEqual(["codex: new session"]);
   });
 
   it("/new <agent> が拒否されたら理由を表示する", async () => {

@@ -908,8 +908,8 @@ Agent Adapter の `rate_limit` event（Claude: `rate_limit_event`、Codex: `acco
 
 | 条件 | 既定の閾値 | 通知例 |
 |---|---|---|
-| 週のペース超過が閾値以上 | +15 ポイント | `[CLODEX] claude is ahead of weekly pace (+18). Consider /primary codex for the next task.` |
-| 5 時間枠の使用率が閾値以上 | 90% | `[CLODEX] claude 5h usage is 92%.` |
+| 週のペース超過が閾値以上 | +15 ポイント | `[CLODEX] claude is ahead of weekly pace (+18). Try /primary codex` |
+| 5 時間枠の使用率が閾値以上 | 90% | `[CLODEX] claude 5h usage: 92%` |
 
 - 閾値は設定ファイルの `usageAlert` で変更できる
 - 送り先の切り替えは自動で行わない（§3.6）。人が `/primary` で切り替える

@@ -34,7 +34,7 @@ describe("formatEvent（verbose）", () => {
       type: "rate_limit", fiveHour: { usedPercent: 2, resetsAt: 0 }, weekly: { usedPercent: 49, resetsAt: 0 },
     }), "14:32:10 [CLAUDE] usage 5h 2% / 7d 49%"],
     ["human", { kind: "human", agent: "codex", text: "review this", at: AT }, "14:32:10 [YOU -> CODEX] review this"],
-    ["notice", { kind: "notice", text: "codex 5h usage is 91%.", at: AT }, "14:32:10 [CLODEX] codex 5h usage is 91%."],
+    ["notice", { kind: "notice", text: "codex 5h usage: 91%", at: AT }, "14:32:10 [CLODEX] codex 5h usage: 91%"],
   ])("%s", (_, event, expected) => {
     expect(formatEvent(event, "verbose")).toBe(expected);
   });

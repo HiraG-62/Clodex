@@ -62,14 +62,14 @@ describe("UsageMonitor", () => {
     const { notices, report } = setup();
     report("claude", { usedPercent: 40, resetsAt: weeklyResetsAt(0.2) });
     report("claude", { usedPercent: 41, resetsAt: weeklyResetsAt(0.2) });
-    expect(notices).toEqual(["claude is ahead of weekly pace (+20). Consider /primary codex for the next task."]);
+    expect(notices).toEqual(["claude is ahead of weekly pace (+20). Try /primary codex"]);
   });
 
   it("5 時間枠が閾値以上になったら 1 回だけ通知する", () => {
     const { notices, report } = setup();
     report("codex", undefined, { usedPercent: 91, resetsAt: NOW_SECONDS + 3600 });
     report("codex", undefined, { usedPercent: 95, resetsAt: NOW_SECONDS + 3600 });
-    expect(notices).toEqual(["codex 5h usage is 91%."]);
+    expect(notices).toEqual(["codex 5h usage: 91%"]);
   });
 
   it("枠が reset されたら再び通知できる", () => {
