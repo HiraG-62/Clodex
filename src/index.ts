@@ -4,6 +4,8 @@ import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { AGENT_IDS, type AgentId } from "./agents/agent-adapter.js";
+import { EMPTY_MODEL_CATALOG, fetchStartupProbe, type StartupProbe } from "./agents/startup-probe.js";
+import type { Coordinator } from "./coordinator/coordinator.js";
 import { parseCliArgs } from "./cli/args.js";
 import { createCommandRunner } from "./cli/command-runner.js";
 import { completeCommand } from "./cli/commands.js";
@@ -74,6 +76,14 @@ const main = async (): Promise<void> => {
   };
   let displayMode: DisplayMode = "normal";
   let refreshState = () => {};
+  let modelCatalog = EMPTY_MODEL_CATALOG();
+  let startupUsage: StartupProbe["usage"] | undefined;
+  const coordinators = new Set<Coordinator>();
+  const registerCoordinator = (coordinator: Coordinator) => {
+    coordinators.add(coordinator);
+    if (startupUsage) coordinator.applyStartupUsage(startupUsage);
+    return () => { coordinators.delete(coordinator); };
+  };
   const currentListeners = new Set<(event: CoordinatorEvent) => void>();
   let hub: Hub<ProjectContext>;
   const feed = new WebFeed(DEFAULT_RECENT_ITEMS, (item) => {
@@ -84,9 +94,8 @@ const main = async (): Promise<void> => {
     let context: ProjectContext;
     context = await openProject({
       projectRoot, homeDir, args, language, printTerminal, displayMode: () => displayMode,
-      isCurrent: () => hub.current === context,
+      isCurrent: () => hub.current === context, modelCatalog: () => modelCatalog, registerCoordinator,
     });
-    context.bindFeed(feed, () => hub.current === context);
     context.workspace.onEvent((runtime, event, current) => {
       if (hub.current === context && current) {
         for (const listener of currentListeners) listener(event);
@@ -96,8 +105,15 @@ const main = async (): Promise<void> => {
       }
       refreshState();
     });
+    context.bindFeed(feed, () => hub.current === context);
     return context;
   } });
+  void fetchStartupProbe(cwd).then((probe) => {
+    modelCatalog = probe.models;
+    startupUsage = probe.usage;
+    for (const coordinator of coordinators) coordinator.applyStartupUsage(probe.usage);
+    refreshState();
+  });
 
   const openInHub = async (path: string): Promise<ProjectContext> => {
     const context = await selectProject(hub, feed, path);

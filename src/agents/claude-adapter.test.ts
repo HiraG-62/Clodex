@@ -20,10 +20,6 @@ const result = (text: string, subtype = "success") => ({
 });
 
 describe("ClaudeAdapter", () => {
-  it("固定の model alias を返す", () => {
-    const adapter = new ClaudeAdapter(createFakeSpawner(() => undefined).spawn);
-    expect(adapter.listModels()).toEqual(["default", "opus", "sonnet", "haiku"]);
-  });
   it("stream-json の常駐プロセスを、API key を除いた環境と新しい session ID で起動する", async () => {
     process.env.ANTHROPIC_API_KEY = "sk-should-not-leak";
     const { adapter, spawner, events } = await setup();

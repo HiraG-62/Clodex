@@ -33,6 +33,7 @@ export class Workspace {
   private readonly runtimes = new Map<string, ConversationRuntime>();
   private readonly eventListeners: RuntimeEventListener[] = [];
   private readonly switchListeners: Array<(runtime: ConversationRuntime) => void> = [];
+  private readonly runtimeListeners: Array<(runtime: ConversationRuntime) => void> = [];
 
   constructor(private readonly options: WorkspaceOptions) {}
 
@@ -55,6 +56,10 @@ export class Workspace {
   // 今の会話が変わったとき
   onSwitch(listener: (runtime: ConversationRuntime) => void): void {
     this.switchListeners.push(listener);
+  }
+
+  onRuntime(listener: (runtime: ConversationRuntime) => void): void {
+    this.runtimeListeners.push(listener);
   }
 
   async switchTo(id: string): Promise<Conversation | undefined> {
@@ -108,6 +113,7 @@ export class Workspace {
     this.runtimes.set(conversation.id, runtime);
     this.options.history.attach(runtime.bus, conversation.id);
     runtime.bus.subscribe((event) => this.handleEvent(runtime, event));
+    for (const listener of this.runtimeListeners) listener(runtime);
     return runtime;
   }
 
@@ -123,4 +129,3 @@ export class Workspace {
     });
   }
 }
-

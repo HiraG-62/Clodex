@@ -1,6 +1,7 @@
 // 入力欄の補助（DESIGN.md §28 v0.3 A）: スラッシュコマンド・送り先・@path の候補と、強調表示の区切り。
 // ブラウザへ関数のまま埋め込むため、外部を参照しない 1 つの関数として書く（型の import のみ）
 import type { SlashCommand } from "../../cli/commands.js";
+import type { ModelOption } from "../../agents/startup-probe.js";
 
 export interface AssistItem {
   label: string;
@@ -21,7 +22,7 @@ export interface Segment {
 }
 
 export interface AssistState {
-  agents: ReadonlyArray<{ id: string; models: readonly string[] }>;
+  agents: ReadonlyArray<{ id: string; models: readonly ModelOption[] }>;
   conversations: ReadonlyArray<{ title?: string }>;
   projects?: ReadonlyArray<{ projectRoot: string }>;
   pendingInputs: ReadonlyArray<{ id: string }>;
@@ -95,7 +96,8 @@ export function createInputAssist(commands: readonly SlashCommand[], agents: rea
           break;
         case "model":
           if (index === 0) values = agentValues;
-          if (index === 1) values = simple(state.agents.find((agent) => agent.id === previous[1])?.models ?? [], labels.model);
+          if (index === 1) values = (state.agents.find((agent) => agent.id === previous[1])?.models ?? [])
+            .map((model) => ({ value: model.value, detail: model.label }));
           break;
         case "resume": case "delete": case "pin":
           if (index === 0) values = state.conversations.map((conversation, i) => ({ value: String(i + 1), detail: conversation.title ?? labels.conversation }));

@@ -121,7 +121,7 @@ const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed
       return h(Box, { key: agent.id, flexDirection: "column" },
         h(Box, { flexDirection: "row", gap: 1 },
           h(Box, { flexShrink: 0 }, h(Text, { color, bold: true }, agent.id === "claude" ? "Claude" : "Codex")),
-          h(Box, { flexShrink: 0 }, h(Text, { color: MUTED_COLOR }, `${agent.status === "busy" ? `${SPINNER_FRAMES[Math.floor(now / SPINNER_INTERVAL_MS) % SPINNER_FRAMES.length]} ` : ""}${status}${elapsed === undefined ? "" : ` · ${t("tui.elapsed", { seconds: elapsed })}`} · ${agent.model ?? "default"} · ${agent.effort ?? "default"} ·`)),
+          h(Box, { flexShrink: 0 }, h(Text, { color: MUTED_COLOR }, `${agent.status === "busy" ? `${SPINNER_FRAMES[Math.floor(now / SPINNER_INTERVAL_MS) % SPINNER_FRAMES.length]} ` : ""}${status}${elapsed === undefined ? "" : ` · ${t("tui.elapsed", { seconds: elapsed })}`} · ${agent.modelLabel ?? agent.model ?? "default"} · ${agent.effort ?? "default"} ·`)),
           h(Text, { color: agent.permission === "full" ? WARN_COLOR : MUTED_COLOR, bold: agent.permission === "full" }, agent.permission),
           usage ? h(Box, { flexShrink: 1 }, h(Text, { color: MUTED_COLOR, wrap: "truncate-end" }, `· ${usage}`)) : null,
         ),

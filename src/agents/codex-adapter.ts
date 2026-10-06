@@ -1,9 +1,10 @@
 import {
   COORDINATOR_MCP_SERVER, summarizeToolInput,
-  type AgentStartOptions, type PermissionLevel, type RateLimitWindow, type TurnResult,
+  type AgentStartOptions, type PermissionLevel, type TurnResult,
 } from "./agent-adapter.js";
 import { agentEnv, spawnAgentProcess, type SpawnAgentProcess } from "./agent-process.js";
 import { BaseAgentAdapter } from "./base-agent-adapter.js";
+import { codexRateLimitEvent, type CodexRateLimits } from "./rate-limits.js";
 
 // codex app-server の JSON-RPC プロトコル（docs/spikes/codex-lifecycle.md）
 const CODEX_COMMAND = "codex";
@@ -45,22 +46,12 @@ interface CodexItem {
   agentPath?: string;
 }
 
-interface CodexRateLimitWindow {
-  usedPercent?: number;
-  windowDurationMins?: number;
-  resetsAt?: number;
-}
-
-// プランによって primary が 5 時間とは限らない（Pro は primary が週で secondary が無い）ので、枠の長さで見分ける
-const FIVE_HOUR_WINDOW_MINS = 300;
-const WEEKLY_WINDOW_MINS = 10080;
-
 interface CodexNotificationParams {
   threadId?: string;
   item?: CodexItem;
   tokenUsage?: { last?: { totalTokens?: number }; modelContextWindow?: number | null };
   turn?: { id?: string; status?: string; error?: { message?: string } | null };
-  rateLimits?: { primary?: CodexRateLimitWindow | null; secondary?: CodexRateLimitWindow | null };
+  rateLimits?: CodexRateLimits;
   message?: string;
   error?: { message?: string };
 }
@@ -69,9 +60,6 @@ interface PendingRequest {
   resolve: (result: unknown) => void;
   reject: (error: Error) => void;
 }
-
-const toRateLimitWindow = (w: CodexRateLimitWindow | null | undefined): RateLimitWindow | undefined =>
-  w?.usedPercent === undefined || w.resetsAt === undefined ? undefined : { usedPercent: w.usedPercent, resetsAt: w.resetsAt };
 
 const TURN_STATUS: Record<string, TurnResult["status"]> = { completed: "completed", interrupted: "interrupted" };
 
@@ -84,9 +72,6 @@ export class CodexAdapter extends BaseAgentAdapter {
   // 次の turn/start で sandbox を変える。以降のターンにも引き継がれるので 1 回だけ送る
   private pendingSandbox: PermissionLevel | undefined;
   private lastAgentText = "";
-  private availableModels: string[] = [];
-
-  listModels(): readonly string[] { return this.availableModels; }
 
   constructor(private readonly spawnProcess: SpawnAgentProcess = spawnAgentProcess) {
     super();
@@ -127,7 +112,6 @@ export class CodexAdapter extends BaseAgentAdapter {
     await this.applyPermissionChangedDuringStart();
     this.emit({ type: "session", sessionId: this.sessionId });
     this.readRateLimits();
-    this.readModels();
   }
 
   // turn/steer は実行中の turn ID を前提にする（docs/spikes/steer-image-subagent.md）
@@ -214,24 +198,8 @@ export class CodexAdapter extends BaseAgentAdapter {
       .catch(() => {});
   }
 
-  private readModels(): void {
-    if (this.availableModels.length) return;
-    // generate-ts: ModelListResponse.data[].model が turn/start の model 値。
-    this.request("model/list", {})
-      .then((result) => {
-        const response = result as { data?: Array<{ model?: string }> };
-        this.availableModels = [...new Set((response.data ?? []).map((item) => item.model).filter((model): model is string => Boolean(model)))];
-        this.emit({ type: "models" });
-      })
-      .catch(() => {});
-  }
-
   private emitRateLimits(rateLimits: CodexNotificationParams["rateLimits"]): void {
-    const windows = [rateLimits?.primary, rateLimits?.secondary];
-    const byDuration = (mins: number) => toRateLimitWindow(windows.find((w) => w?.windowDurationMins === mins));
-    const fiveHour = byDuration(FIVE_HOUR_WINDOW_MINS);
-    const weekly = byDuration(WEEKLY_WINDOW_MINS);
-    this.emit({ type: "rate_limit", ...(fiveHour && { fiveHour }), ...(weekly && { weekly }) });
+    this.emit(codexRateLimitEvent(rateLimits));
   }
 
   private async verifySubscription(): Promise<void> {

@@ -32,7 +32,6 @@ const describeAgentEvent = (event: AgentEvent): string => {
     case "turn": return `turn ${event.result.status}`;
     case "rate_limit": return `usage ${[...usage("5h", event.fiveHour), ...usage("7d", event.weekly)].join(" / ")}`;
     case "compacted": return "compacted";
-    case "models": return "models updated";
     case "context": return `context ${event.tokens} tokens${event.window ? ` / ${event.window}` : ""}`;
     case "exit": return `exited (code ${event.code})`;
     case "error": return `ERROR ${event.message}`;

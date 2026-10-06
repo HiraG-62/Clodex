@@ -250,8 +250,8 @@ describe("Coordinator", () => {
     claude.status = "busy";
     claude.sessionId = "s-1";
     expect(coordinator.status()).toEqual([
-      { id: "claude", status: "busy", sessionId: "s-1", permission: "edit", model: undefined, effort: undefined, models: [], usage: {} },
-      { id: "codex", status: "stopped", sessionId: undefined, permission: "edit", model: undefined, effort: undefined, models: [], usage: {} },
+      { id: "claude", status: "busy", sessionId: "s-1", permission: "edit", model: undefined, modelLabel: "default", effort: undefined, models: [], usage: {} },
+      { id: "codex", status: "stopped", sessionId: undefined, permission: "edit", model: undefined, modelLabel: "default", effort: undefined, models: [], usage: {} },
     ]);
   });
 
@@ -259,6 +259,17 @@ describe("Coordinator", () => {
     const { claude, coordinator } = setup();
     claude.emit({ type: "rate_limit", fiveHour: { usedPercent: 12, resetsAt: Date.now() / 1000 + 3600 } });
     expect(coordinator.status()[0]!.usage).toMatchObject({ fiveHourPercent: 12 });
+  });
+
+  it("起動時の利用枠を UsageMonitor に渡し、後の Agent event を優先する", () => {
+    const { claude, events, coordinator } = setup();
+    const reset = Math.floor(Date.now() / 1000) + 3600;
+    coordinator.applyStartupUsage({ claude: { type: "rate_limit", fiveHour: { usedPercent: 95, resetsAt: reset } } });
+    expect(coordinator.status()[0]?.usage.fiveHourPercent).toBe(95);
+    expect(events).toContainEqual(expect.objectContaining({ kind: "notice" }));
+    claude.emit({ type: "rate_limit", fiveHour: { usedPercent: 20, resetsAt: reset } });
+    coordinator.applyStartupUsage({ claude: { type: "rate_limit", fiveHour: { usedPercent: 95, resetsAt: reset } } });
+    expect(coordinator.status()[0]?.usage.fiveHourPercent).toBe(20);
   });
 
   it("setPermission は指定 Agent、省略時は全 Agent の権限を変える", async () => {

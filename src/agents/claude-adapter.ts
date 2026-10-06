@@ -10,7 +10,6 @@ import { BaseAgentAdapter } from "./base-agent-adapter.js";
 
 // claude -p の stream-json プロトコル（docs/spikes/claude-lifecycle.md）
 const CLAUDE_COMMAND = "claude";
-const CLAUDE_MODELS = ["default", "opus", "sonnet", "haiku"] as const;
 const STREAM_ARGS = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"];
 const SUBSCRIPTION_API_KEY_SOURCE = "none";
 const HTTP_UNAUTHORIZED = 401;
@@ -89,7 +88,6 @@ const toRateLimitWindow = (w: UtilizationWindow | undefined): RateLimitWindow | 
     : { usedPercent: Math.round(w.utilization * RATIO_TO_PERCENT), resetsAt: w.resetsAt };
 
 export class ClaudeAdapter extends BaseAgentAdapter {
-  listModels(): readonly string[] { return CLAUDE_MODELS; }
   readonly id = "claude";
   private interruptRequested = false;
   // 最後の API 呼び出しの usage。今のコンテキストの大きさとして使う（DESIGN.md §9）

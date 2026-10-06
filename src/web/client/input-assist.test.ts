@@ -10,13 +10,14 @@ const FILES = ["src/cli/input.ts", "src/web/client/input-assist.ts", "docs/DESIG
 
 describe("suggest", () => {
   const state = {
-    agents: [{ id: "claude", models: ["default", "opus", "sonnet", "haiku"] }, { id: "codex", models: ["gpt-6-sol"] }],
+    agents: [{ id: "claude", models: ["default", "opus", "sonnet", "haiku"].map((value) => ({ value, label: value === "sonnet" ? "Sonnet 5.5" : value })) }, { id: "codex", models: [{ value: "gpt-6-sol", label: "GPT-6-Sol" }] }],
     conversations: [{ title: "Planning" }, { title: "Review" }],
     projects: [{ projectRoot: "C:\\dev\\app" }],
     pendingInputs: [{ id: "in2" }],
   };
   it("コマンドの引数を state から候補にする", () => {
     expect(suggest("/model claude so", 16, FILES, state)?.items.map((i) => i.insert)).toContain("sonnet ");
+    expect(suggest("/model claude so", 16, FILES, state)?.items[0]?.detail).toBe("Sonnet 5.5");
     expect(suggest("/model codex ", 13, FILES, state)?.items.map((i) => i.insert)).toContain("gpt-6-sol ");
     expect(suggest("/permission claude f", 20, FILES, state)?.items.map((i) => i.insert)).toContain("full ");
     expect(suggest("/resume ", 8, FILES, state)?.items.map((i) => i.insert)).toContain("1 ");

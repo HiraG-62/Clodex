@@ -15,7 +15,6 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   permission: PermissionLevel = DEFAULT_PERMISSION;
   model: string | undefined;
   effort: string | undefined;
-  listModels(): readonly string[] { return []; }
   // 起動に使った権限レベル。起動中に変更されたら起動完了時に差分を反映する
   protected launchPermission: PermissionLevel = DEFAULT_PERMISSION;
 

@@ -402,11 +402,11 @@ export function clientMain({
       chips.append(button);
       return button;
     };
-    const modelChip = chip(agent.model ?? "default");
+    const modelChip = chip(agent.modelLabel ?? agent.model ?? "default");
     const effortChip = chip(agent.effort ?? "default");
     const permissionChip = chip(agent.permission);
     const updateChips = (current: AgentState) => {
-      modelChip.textContent = current.model ?? "default";
+      modelChip.textContent = current.modelLabel ?? current.model ?? "default";
       effortChip.textContent = current.effort ?? "default";
       permissionChip.textContent = current.permission;
       permissionChip.classList.toggle("warning", current.permission === "full");
@@ -713,20 +713,23 @@ export function clientMain({
     const select = el("select") as HTMLSelectElement;
     select.name = "model-choice";
     select.setAttribute("aria-label", t("web.agentSettings.modelLabel", { agent: AGENTS[id].name }));
-    const names = [...new Set([...agent.models, ...(agent.model ? [agent.model] : [])])];
-    for (const name of names) {
-      const option = el("option", "", name) as HTMLOptionElement;
-      option.value = name;
+    const models = agent.models;
+    for (const item of models) {
+      const option = el("option", "", item.label) as HTMLOptionElement;
+      option.value = item.value;
       select.append(option);
     }
     const other = el("option", "", t("web.model.other")) as HTMLOptionElement;
     other.value = "__other__";
     select.append(other);
-    select.value = agent.model && names.includes(agent.model) ? agent.model : names[0] ?? "__other__";
+    const selectedModel = models.find((item) => item.value === agent.model)
+      ?? models.find((item) => item.resolved === agent.model && item.value !== "default")
+      ?? models.find((item) => item.resolved === agent.model);
+    select.value = selectedModel?.value ?? "__other__";
     const field = el("input") as HTMLInputElement;
     field.name = "model";
     field.autocomplete = "off";
-    field.placeholder = agent.model ?? "default";
+    field.placeholder = agent.modelLabel ?? agent.model ?? "default";
     field.setAttribute("aria-label", t("web.agentSettings.modelLabel", { agent: AGENTS[id].name }));
     field.hidden = select.value !== "__other__";
     select.addEventListener("change", () => { field.hidden = select.value !== "__other__"; if (!field.hidden) field.focus(); });
@@ -811,8 +814,30 @@ export function clientMain({
       };
       press("permission", agent.permission);
       press("effort", agent.effort);
+      const select = body.querySelector<HTMLSelectElement>('select[name="model-choice"]');
       const field = body.querySelector<HTMLInputElement>('input[name="model"]');
-      if (field) field.placeholder = agent.model ?? "default";
+      if (select) {
+        const listed = [...select.options].filter((option) => option.value !== "__other__").map((option) => option.value);
+        const incoming = agent.models.map((item) => item.value);
+        if (listed.join("\u0000") !== incoming.join("\u0000")) {
+          const previous = select.value;
+          select.replaceChildren();
+          for (const item of agent.models) {
+            const option = el("option", "", item.label) as HTMLOptionElement;
+            option.value = item.value;
+            select.append(option);
+          }
+          const other = el("option", "", t("web.model.other")) as HTMLOptionElement;
+          other.value = "__other__";
+          select.append(other);
+          const resolved = agent.models.find((item) => item.value === agent.model)
+            ?? agent.models.find((item) => item.resolved === agent.model && item.value !== "default")
+            ?? agent.models.find((item) => item.resolved === agent.model);
+          select.value = previous === "__other__" && field?.value ? "__other__" : resolved?.value ?? "__other__";
+          if (field) field.hidden = select.value !== "__other__";
+        }
+      }
+      if (field) field.placeholder = agent.modelLabel ?? agent.model ?? "default";
     }
     if (sheetKind === "settings") {
       const selected = target ?? state?.primary;

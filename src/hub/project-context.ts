@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { AGENT_IDS, type AgentId } from "../agents/agent-adapter.js";
 import { ClaudeAdapter } from "../agents/claude-adapter.js";
 import { CodexAdapter } from "../agents/codex-adapter.js";
+import type { ModelCatalog } from "../agents/startup-probe.js";
 import type { CliArgs } from "../cli/args.js";
 import { loadConfig, type ClodexConfig } from "../config/config.js";
 import type { Language } from "../context/language.js";
@@ -53,10 +54,12 @@ export interface OpenProjectOptions {
   printTerminal(line: string): void;
   displayMode(): DisplayMode;
   isCurrent(): boolean;
+  modelCatalog(): ModelCatalog;
+  registerCoordinator(coordinator: Coordinator): () => void;
 }
 
 export const openProject = async ({
-  projectRoot, homeDir, args, language, printTerminal, displayMode, isCurrent,
+  projectRoot, homeDir, args, language, printTerminal, displayMode, isCurrent, modelCatalog, registerCoordinator,
 }: OpenProjectOptions): Promise<ProjectContext> => {
   const config = loadConfig({ homeDir, projectRoot });
   const primary = args.primary ?? config.primary ?? DEFAULT_PRIMARY;
@@ -70,6 +73,7 @@ export const openProject = async ({
   const savedSettings = settingsStore.load();
   const startedAt = new Date();
   let workspace: Workspace | undefined;
+  const registered = new Map<Coordinator, () => void>();
 
   const createRuntime = async (conversation: Conversation): Promise<ConversationRuntime> => {
     const bus = new EventBus();
@@ -80,6 +84,7 @@ export const openProject = async ({
       projectRoot: workDir,
       agents: { claude: new ClaudeAdapter(), codex: new CodexAdapter() },
       bus,
+      modelCatalog,
       mcpUrlFor: (agent) => mcp.urlFor(agent),
       settings: resolveStartSettings({
         saved: settingsStore.load(), models: args.models, ...(config.permission ? { configPermission: config.permission } : {}),
@@ -97,11 +102,14 @@ export const openProject = async ({
     });
     const created = coordinator;
     return { conversationId: conversation.id, workDir, bus, coordinator: created,
-      close: async () => { await created.stop(); await mcp.close(); } };
+      close: async () => { registered.get(created)?.(); registered.delete(created); await created.stop(); await mcp.close(); } };
   };
   workspace = new Workspace({ history, projectRoot, createRuntime, createWorktree });
   await workspace.init();
   const activeWorkspace = workspace;
+  const registerRuntime = (runtime: ConversationRuntime) => {
+    if (!registered.has(runtime.coordinator)) registered.set(runtime.coordinator, registerCoordinator(runtime.coordinator));
+  };
   const feedStore = new FeedStore(feedDirPath(statePath));
   let feedSaveFailed = false;
   const saveFeedItem = (conversationId: string, item: HistoryItem) => {
@@ -117,7 +125,11 @@ export const openProject = async ({
     artifactsDir, uploadsDir, resumedSessions, savedSettings, startedAt,
     currentPreview: () => createFilePreview({ projectRoot: activeWorkspace.current.workDir, allowedDirs: [artifactsDir, uploadsDir] }),
     saveFeedItem,
-    bindFeed: (feed, current) => connectConversationFeed(history, feedStore, { replace: (items) => { if (current()) feed.replace(items); } }),
+    bindFeed: (feed, current) => {
+      connectConversationFeed(history, feedStore, { replace: (items) => { if (current()) feed.replace(items); } });
+      activeWorkspace.onRuntime(registerRuntime);
+      registerRuntime(activeWorkspace.current);
+    },
     showFeed: (feed) => feed.replace(feedStore.load(history.currentId)),
     close: () => activeWorkspace.closeAll(),
   };

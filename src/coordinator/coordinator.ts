@@ -10,6 +10,7 @@ import { AgentMailbox } from "./agent-mailbox.js";
 import { BudgetManager, type BudgetLimits } from "./budget-manager.js";
 import { DEFAULT_USAGE_ALERT, UsageMonitor, type UsageAlert, type UsageSnapshot } from "./usage-monitor.js";
 import type { EventBus } from "./event-bus.js";
+import { modelLabel, type ModelCatalog, type StartupProbe } from "../agents/startup-probe.js";
 
 // 起動時の Agent の設定（DESIGN.md §9 Agent の設定の保存）
 export interface AgentStartSettings {
@@ -42,6 +43,7 @@ export interface CoordinatorOptions {
   // 人が読む文章の言語。Task envelope に添える（DESIGN.md §13 Language）
   language?: Language;
   usageAlert?: Partial<UsageAlert>;
+  modelCatalog?: () => ModelCatalog;
   // clodex --resume: 各 Agent の最初の起動で継続する session（DESIGN.md §18）
   resumeSessionIds?: Partial<Record<AgentId, string>>;
 }
@@ -51,13 +53,17 @@ export class Coordinator {
   private readonly budget: BudgetManager;
   private readonly usage: UsageMonitor;
   private inputSeq = 0;
+  private readonly liveUsage = new Set<AgentId>();
 
   constructor(private readonly options: CoordinatorOptions) {
     const { agents, bus, projectRoot, mcpUrlFor, instructions, limits, settings } = options;
     this.budget = new BudgetManager(limits);
     this.usage = new UsageMonitor(bus, { ...DEFAULT_USAGE_ALERT, ...options.usageAlert });
     for (const id of AGENT_IDS) {
-      agents[id].onEvent((event) => bus.publish({ kind: "agent", agent: id, event }));
+      agents[id].onEvent((event) => {
+        if (event.type === "rate_limit") this.liveUsage.add(id);
+        bus.publish({ kind: "agent", agent: id, event });
+      });
       // 起動前なので値を保持するだけ（次の起動時に使われる）
       const { permission, model, effort } = settings?.[id] ?? {};
       if (permission) void agents[id].setPermission(permission);
@@ -218,12 +224,20 @@ ${languageReminder(language)}` : "";
 
   status(): Array<{
     id: AgentId; status: AgentStatus; sessionId: string | undefined; permission: PermissionLevel;
-    model: string | undefined; effort: string | undefined; models: readonly string[]; usage: UsageSnapshot;
+    model: string | undefined; modelLabel: string; effort: string | undefined; models: ModelCatalog[AgentId]; usage: UsageSnapshot;
   }> {
     return AGENT_IDS.map((id) => {
       const { status, permission, model, effort } = this.options.agents[id];
-      return { id, status, sessionId: this.mailboxes[id].sessionId, permission, model, effort, models: this.options.agents[id].listModels(), usage: this.usage.snapshot(id) };
+      const models = this.options.modelCatalog?.()[id] ?? [];
+      return { id, status, sessionId: this.mailboxes[id].sessionId, permission, model, modelLabel: modelLabel(model, models), effort, models, usage: this.usage.snapshot(id) };
     });
+  }
+
+  applyStartupUsage(usage: StartupProbe["usage"]): void {
+    for (const id of AGENT_IDS) {
+      const event = usage[id];
+      if (event && !this.liveUsage.has(id)) this.options.bus.publish({ kind: "agent", agent: id, event });
+    }
   }
 
   async stop(): Promise<void> {

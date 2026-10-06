@@ -6,6 +6,7 @@ import { t } from "../i18n/i18n.js";
 import { commandUsage, slashCommands } from "./commands.js";
 import { resolveReferences } from "./file-references.js";
 import { parseInput } from "./input.js";
+import type { ModelOption } from "../agents/startup-probe.js";
 
 export interface AgentState {
   id: AgentId;
@@ -13,8 +14,9 @@ export interface AgentState {
   sessionId: string | undefined;
   permission: PermissionLevel;
   model?: string;
+  modelLabel?: string;
   effort?: string;
-  models: readonly string[];
+  models: readonly ModelOption[];
   usage: UsageSnapshot;
 }
 
@@ -225,9 +227,9 @@ export const createShell = ({
           const { workDir, branch } = history().list().find((c) => c.id === history().currentId) ?? {};
           if (workDir && branch) print(t("shell.worktree", { workDir, branch }));
         }
-        for (const { id, status, sessionId, permission, model, effort, usage } of coordinator().status()) {
+        for (const { id, status, sessionId, permission, model, modelLabel, effort, usage } of coordinator().status()) {
           print(t("shell.status", {
-            id, status, permission, model: model ?? t("shell.default"), effort: effort ?? t("shell.default"),
+            id, status, permission, model: modelLabel ?? model ?? t("shell.default"), effort: effort ?? t("shell.default"),
             session: sessionId ? t("shell.session", { id: sessionId }) : "",
           }));
           print(formatUsage(usage));
