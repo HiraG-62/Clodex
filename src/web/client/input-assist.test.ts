@@ -9,6 +9,10 @@ const { suggest, highlight } = createInputAssist(slashCommands(), ["claude", "co
 const FILES = ["src/cli/input.ts", "src/web/client/input-assist.ts", "docs/DESIGN.md", "README.md"];
 
 describe("suggest", () => {
+  it("@all を候補と強調表示に含める", () => {
+    expect(suggest("@a", 2, [])?.items[0]?.insert).toBe("@all ");
+    expect(highlight("@all! hello", new Set())[0]).toEqual({ text: "@all!", kind: "agent" });
+  });
   const state = {
     agents: [{ id: "claude", models: ["default", "opus", "sonnet", "haiku"].map((value) => ({ value, label: value === "sonnet" ? "Sonnet 5.5" : value })) }, { id: "codex", models: [{ value: "gpt-6-sol", label: "GPT-6-Sol" }] }],
     conversations: [{ title: "Planning" }, { title: "Review" }],

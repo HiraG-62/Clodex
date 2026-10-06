@@ -34,6 +34,7 @@ export function createInputAssist(commands: readonly SlashCommand[], agents: rea
   conversation: string; project: string; worktree: string; queued: string;
 }) {
   const MAX_ITEMS = 8;
+  const recipients = [...agents, "all"];
   const PERMISSIONS = ["read-only", "edit", "full"];
   const COMMON_EFFORTS = ["low", "medium", "high", "xhigh"];
 
@@ -117,7 +118,7 @@ export function createInputAssist(commands: readonly SlashCommand[], agents: rea
     if (!word.startsWith("@")) return undefined;
     const query = word.slice(1).toLowerCase();
     const agentItems = from === 0
-      ? agents.filter((agent) => agent.startsWith(query)).map((agent) => ({ label: `@${agent}`, detail: labels.agent, insert: `@${agent} ` }))
+      ? recipients.filter((agent) => agent.startsWith(query)).map((agent) => ({ label: `@${agent}`, detail: labels.agent, insert: `@${agent} ` }))
       : [];
     const items = [...agentItems, ...matchFiles(files, query)].slice(0, MAX_ITEMS);
     return items.length ? { from, to, items } : undefined;
@@ -136,7 +137,7 @@ export function createInputAssist(commands: readonly SlashCommand[], agents: rea
       const atStart = offset === 0;
       offset += part.length;
       if (atStart && /^\/\S+$/.test(part)) push(part, "command");
-      else if (atStart && part.startsWith("@") && agents.includes(part.slice(1).replace(/!$/, ""))) push(part, "agent");
+      else if (atStart && part.startsWith("@") && recipients.includes(part.slice(1).replace(/!$/, ""))) push(part, "agent");
       else if (part.startsWith("@") && files.has(part.slice(1).replace(/[.,:;!?)\]、。」]+$/, ""))) push(part, "file");
       else push(part);
     }

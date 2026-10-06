@@ -96,12 +96,14 @@ export type ShellOutcome = "continue" | "exit";
 
 // 説明の開始位置をそろえる幅
 const HELP_COLUMN = 20;
+const ALL_MESSAGE_PREFIX = "[Sent to both claude and codex]";
 const helpLine = (usage: string, description: string) => `${usage.padEnd(HELP_COLUMN - 1)} ${description}`;
 
 const HELP_LINES = (primary: AgentId) => [
   helpLine("<text>", t("help.text", { primary })),
   helpLine("@claude <text>", t("help.claude")),
   helpLine("@codex <text>", t("help.codex")),
+  helpLine("@all <text>", t("help.all")),
   helpLine("@<agent>! <text>", t("help.steer")),
   helpLine("!<command>", t("help.run")),
   ...slashCommands().map((command) => helpLine(commandUsage(command), command.description)),
@@ -202,15 +204,18 @@ export const createShell = ({
       case "empty":
         return "continue";
       case "send":
+      case "sendAll":
         // 送信はキューに積むだけ。ターン完了は Event Bus 経由で表示される
       {
         if (busyElsewhere()) print(t("notice.sameDirBusy"));
-        const { text, images } = await resolveReferences(command.text, resolveReference);
-        if (command.steer) {
-          await coordinator().steerOrSend(command.agent, text);
-          return "continue";
+        const resolved = await resolveReferences(command.text, resolveReference);
+        const text = command.kind === "sendAll" ? `${ALL_MESSAGE_PREFIX}\n${resolved.text}` : resolved.text;
+        const recipient = coordinator();
+        for (const agent of command.kind === "sendAll" ? AGENT_IDS : [command.agent]) {
+          if (command.steer) await recipient.steerOrSend(agent, text);
+          else void recipient.sendToAgent(agent, text, resolved.images);
         }
-        void coordinator().sendToAgent(command.agent, text, images);
+        if (command.kind === "sendAll") print(t("notice.sentAll"));
         return "continue";
       }
       case "interrupt":

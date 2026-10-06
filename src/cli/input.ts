@@ -5,6 +5,7 @@ import { AGENT_IDS, CLAUDE_EFFORT_LEVELS, COMMON_EFFORT_LEVELS, PERMISSION_LEVEL
 export type ShellCommand =
   | { kind: "empty" }
   | { kind: "send"; agent: AgentId; text: string; steer?: true }
+  | { kind: "sendAll"; text: string; steer?: true }
   | { kind: "interrupt"; agent?: AgentId }
   | { kind: "status" }
   | { kind: "project"; path?: string }
@@ -83,7 +84,10 @@ const STEER_SUFFIX = "!";
 const parseMention = (mention: string, text: string): ShellCommand | undefined => {
   const steer = mention.endsWith(STEER_SUFFIX);
   const name = steer ? mention.slice(0, -STEER_SUFFIX.length) : mention;
-  if (name === "all") return unsupported("@all");
+  if (name === "all") {
+    if (!text) return { kind: "invalid", message: t("input.empty", { agent: name }) };
+    return steer ? { kind: "sendAll", text, steer: true } : { kind: "sendAll", text };
+  }
   if (!isAgentId(name)) return undefined;
   if (!text) return { kind: "invalid", message: t("input.empty", { agent: name }) };
   return steer ? { kind: "send", agent: name, text, steer: true } : { kind: "send", agent: name, text };

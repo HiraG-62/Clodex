@@ -77,7 +77,6 @@ describe("parseInput", () => {
   });
 
   it.each([
-    ["@all hello", /@all/],
     ["!& pnpm dev", /!& command/],
   ])("v0.1 未対応の入力 %j は unsupported", (line, pattern) => {
     const result = parseInput(line, "claude");
@@ -86,6 +85,8 @@ describe("parseInput", () => {
   });
 
   it.each([
+    ["@all", /empty/],
+    ["@all!", /empty/],
     ["@claude", /empty/],
     ["/interrupt gemini", /unknown agent/],
     ["/foo", /unknown command/],
@@ -113,6 +114,10 @@ describe("parseInput", () => {
 });
 
 describe("@agent! で割り込む", () => {
+  it("@all と @all! は両 Agent を対象にする", () => {
+    expect(parseInput("@all hello", "claude")).toEqual({ kind: "sendAll", text: "hello" });
+    expect(parseInput("@all! hello", "claude")).toEqual({ kind: "sendAll", text: "hello", steer: true });
+  });
   it("送り先の後ろの ! は steer の指定", () => {
     expect(parseInput("@codex! テストは不要", "claude")).toEqual({ kind: "send", agent: "codex", text: "テストは不要", steer: true });
     expect(parseInput("@claude 普通", "codex")).toEqual({ kind: "send", agent: "claude", text: "普通" });
