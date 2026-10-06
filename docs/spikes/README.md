@@ -16,6 +16,7 @@ CLI: Claude Code 2.1.289 / codex-cli 0.156.1
 | I Windows のマウス | Node 22 の raw mode は Windows でマウスの入力を捨てる。raw mode の後にコンソールモードへ `ENABLE_VIRTUAL_TERMINAL_INPUT` を足すとホイールの SGR シーケンスが届き、キー入力も Ink が同じに解釈できる | [windows-mouse.md](windows-mouse.md) |
 | J model の一覧と利用枠 | Claude は `control_request` の `initialize`（models）と `get_usage`（rate_limits）、Codex は app-server の `model/list` と `account/rateLimits/read` で、ターンを送らずに取れる | [model-list.md](model-list.md) |
 | L restricted token | WRITE_RESTRICTED では home / APPDATA の削除が通る。通常 token なら拒否するが、読み取り・shell・子プロセス起動を制限し、Everyone 許可先への書き込みは残る。実 CLI は未実行 | [sandbox-token.md](sandbox-token.md) |
+| M 専用ユーザー + WRITE_RESTRICTED | Deny なしの E: / 別 project と人の home の Win32 作成・削除を拒否。ツール・HKCU・MCP・broker 停止は成功。ただし ProgramData / Windows Temp に新規作成できる | [sandbox-hybrid.md](sandbox-hybrid.md) |
 
 ## 設計への影響
 

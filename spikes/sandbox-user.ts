@@ -26,7 +26,7 @@ const API_KEYS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY",
 const LABELS = ["stdio 起動", "書き込み境界", "読み取り境界", "ツール解決", "認証", "フル権限", "MCP", "停止", "所有者", "artifacts"];
 export const psQuote = (text: string): string => `'${text.replaceAll("'", "''")}'`;
 const encode = (script: string): string => Buffer.from(script, "utf16le").toString("base64");
-const psArgs = (script: string): string[] => ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encode(`$ProgressPreference='SilentlyContinue'; ${script}`)];
+const psArgs = (script: string): string[] => ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encode(`$ProgressPreference='SilentlyContinue'; $env:PSModulePath="$env:ProgramFiles\\WindowsPowerShell\\Modules;$PSHOME\\Modules"; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); ${script}`)];
 const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error);
 const record = (value: unknown): Record<string, unknown> => typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
 const within = (child: string, parent: string): boolean => {
@@ -218,7 +218,7 @@ function localProcess(command: string, args: string[], cwd: string): ProbeProces
   return { events, spawned, get pid() { return child.pid; }, write: data => { child.stdin.write(data); }, kill: () => { child.kill(); } };
 }
 
-async function collect(proc: ProbeProcess, input?: string, timeout = TIMEOUT_MS): Promise<{ stdout: string; stderr: string; code: number | null }> {
+export async function collect(proc: ProbeProcess, input?: string, timeout = TIMEOUT_MS): Promise<{ stdout: string; stderr: string; code: number | null }> {
   let stdout = "", stderr = "";
   const outDecoder = new StringDecoder("utf8"), errDecoder = new StringDecoder("utf8");
   proc.events.on("stdout", (data: Buffer) => { stdout += outDecoder.write(data); });
@@ -252,11 +252,14 @@ try { $code=[SandboxLogon]::Run('${ACCOUNT}',$env:COMPUTERNAME,$credential.GetNe
   };
 }
 
-async function startBroker(project: string, credential: string, tokenPath: string): Promise<{ launch: Launch; close(): Promise<void> }> {
+export async function startBroker(project: string, credential: string, tokenPath: string): Promise<{ launch: Launch; close(): Promise<void> }> {
   const bootstrapPath = join(project, `.clodex-broker-${randomUUID()}.ps1`);
   const token = randomBytes(32).toString("hex");
   const secretFile = await collect(localProcess(POWERSHELL, psArgs(`$ErrorActionPreference='Stop'; $path=${psQuote(tokenPath)}; [IO.File]::WriteAllText($path,''); $acl=[Security.AccessControl.FileSecurity]::new(); $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; $acl.SetOwner($sid); $acl.SetAccessRuleProtection($true,$false); $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'FullControl','Allow')); Set-Acl -LiteralPath $path -AclObject $acl; [IO.File]::WriteAllText($path,[Console]::ReadLine())`), project), `${token}\n`);
-  if (secretFile.code !== 0) throw new Error(`token ACL: ${secretFile.stderr}`);
+  if (secretFile.code !== 0) {
+    await unlink(tokenPath).catch(error => { if (record(error).code !== "ENOENT") throw error; });
+    throw new Error(`token ACL: ${secretFile.stderr}`);
+  }
   const server = createServer();
   const sockets = new Set<Socket>();
   let socket: Socket | undefined;
