@@ -11,7 +11,7 @@ import { createCommandRunner } from "./cli/command-runner.js";
 import { createProcessManager } from "./process/process-manager.js";
 import { completeCommand } from "./cli/commands.js";
 import { createShell, type ConversationList } from "./cli/shell.js";
-import { loadConfig } from "./config/config.js";
+import { ensureUserConfigTemplate, loadConfig } from "./config/config.js";
 import { detectLanguage } from "./context/language.js";
 import type { CoordinatorEvent } from "./coordinator/event-bus.js";
 import { Hub } from "./hub/hub.js";
@@ -55,6 +55,7 @@ const main = async (): Promise<void> => {
   const args = parseCliArgs(process.argv.slice(2));
   const homeDir = homedir();
   const cwd = process.cwd();
+  ensureUserConfigTemplate(homeDir);
   // 言語と Web のポートは Hub 全体で 1 つ。project の設定は ProjectContext が読む。
   const hubConfig = loadConfig({ homeDir, projectRoot: homeDir });
   const language = hubConfig.language ?? detectLanguage();

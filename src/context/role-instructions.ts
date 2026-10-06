@@ -37,8 +37,8 @@ const roleLines = (agent: AgentId, peer: AgentId, roles: RolesConfig | undefined
     return [`Ask the peer with ${SEND_TOOL} only when an independent view helps (review, hard bugs, uncertain design).`];
   }
   return [
-    `Your role: ${roles[agent] ?? NOT_SPECIFIED}`,
-    `Role of ${peer}: ${roles[peer] ?? NOT_SPECIFIED}`,
+    `Your role: ${roles[agent] || NOT_SPECIFIED}`,
+    `Role of ${peer}: ${roles[peer] || NOT_SPECIFIED}`,
     `When work belongs to ${peer}'s role, delegate it with ${SEND_TOOL} (DELEGATE, QUESTION or REVIEW_REQUEST) instead of doing it yourself.`,
     "Do not do the same work as the peer. Small edits (typos, formatting, trivial fixes) you may do yourself.",
   ];

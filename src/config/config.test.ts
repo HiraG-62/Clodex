@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadConfig } from "./config.js";
+import { ensureUserConfigTemplate, loadConfig } from "./config.js";
 
 const setup = (files: { user?: unknown; project?: unknown } = {}) => {
   const base = mkdtempSync(join(tmpdir(), "clodex-config-"));
@@ -25,6 +25,15 @@ describe("loadConfig", () => {
   it("ユーザーの設定を読む", () => {
     const config = { primary: "codex", roles: { claude: "設計", codex: "実装" } };
     expect(loadConfig(setup({ user: config }))).toEqual(config);
+  });
+
+  it("ひな形の空の役割は未設定にする", () => {
+    expect(loadConfig(setup({ user: { roles: { claude: "", codex: "" } } }))).toEqual({});
+  });
+
+  it("片方だけ記入した役割だけを設定する", () => {
+    expect(loadConfig(setup({ user: { roles: { claude: "設計", codex: "" } } })))
+      .toEqual({ roles: { claude: "設計" } });
   });
 
   it("UTF-8 BOM のある設定を読む", () => {
@@ -74,5 +83,29 @@ describe("loadConfig", () => {
     ["負の上限", { limits: { maxMessagesPerChain: -1 } }, /maxMessagesPerChain/],
   ])("%s はファイル名付きのエラーにする", (_, content, pattern) => {
     expect(() => loadConfig(setup({ user: content }))).toThrow(pattern);
+  });
+});
+
+describe("ensureUserConfigTemplate", () => {
+  it("無ければ 2 スペースの JSON でひな形を作る", () => {
+    const { homeDir } = setup();
+    ensureUserConfigTemplate(homeDir);
+    const content = readFileSync(join(homeDir, ".clodex", "config.json"), "utf8");
+    expect(content).toBe(`${JSON.stringify({ roles: { claude: "", codex: "" } }, null, 2)}\n`);
+    expect(loadConfig({ homeDir, projectRoot: homeDir })).toEqual({});
+  });
+
+  it("既存の設定は変更しない", () => {
+    const { homeDir } = setup({ user: '{"primary":"codex"}' });
+    ensureUserConfigTemplate(homeDir);
+    expect(readFileSync(join(homeDir, ".clodex", "config.json"), "utf8"))
+      .toBe('{"primary":"codex"}');
+  });
+
+  it("書けなくても例外を出さない", () => {
+    const { homeDir } = setup();
+    const blockedHome = join(homeDir, "blocked");
+    writeFileSync(blockedHome, "file");
+    expect(() => ensureUserConfigTemplate(blockedHome)).not.toThrow();
   });
 });

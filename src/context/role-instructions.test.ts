@@ -25,6 +25,12 @@ describe("buildRoleInstructions", () => {
     expect(text).toContain("Role of claude: 設計");
   });
 
+  it("空文字の役割は未設定として扱う", () => {
+    expect(buildRoleInstructions("claude", { claude: "", codex: "" })).not.toContain("Your role:");
+    const text = buildRoleInstructions("codex", { claude: "設計", codex: "" });
+    expect(text).toContain("Your role: not specified");
+  });
+
   it("役割の有無にかかわらず /permission を案内するよう伝える", () => {
     expect(buildRoleInstructions("claude", undefined)).toContain("/permission");
     expect(buildRoleInstructions("codex", { claude: "設計" })).toContain("/permission");

@@ -4,12 +4,13 @@ import { join } from "node:path";
 import { z } from "zod";
 import { AGENT_IDS, PERMISSION_LEVELS } from "../agents/agent-adapter.js";
 import { LANGUAGES } from "../context/language.js";
+import { writeFileAtomic } from "../project/atomic-write.js";
 
 const USER_CONFIG_PATH = join(".clodex", "config.json");
 const PROJECT_CONFIG_FILE = ".clodex.json";
 
 const nonNegativeInt = z.number().int().nonnegative();
-const role = z.string().min(1);
+const role = z.string();
 
 const configSchema = z.strictObject({
   primary: z.enum(AGENT_IDS).optional(),
@@ -45,13 +46,28 @@ const readConfigFile = (path: string): ClodexConfig => {
     const detail = parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ");
     throw new Error(`${path}: ${detail}`);
   }
-  return parsed.data;
+  const { roles, ...config } = parsed.data;
+  if (!roles) return config;
+  const configuredRoles: RolesConfig = {};
+  if (roles.claude) configuredRoles.claude = roles.claude;
+  if (roles.codex) configuredRoles.codex = roles.codex;
+  return Object.keys(configuredRoles).length ? { ...config, roles: configuredRoles } : config;
 };
 
 export interface ConfigPaths {
   homeDir: string;
   projectRoot: string;
 }
+
+export const ensureUserConfigTemplate = (homeDir: string): void => {
+  const path = join(homeDir, USER_CONFIG_PATH);
+  if (existsSync(path)) return;
+  try {
+    writeFileAtomic(path, `${JSON.stringify({ roles: { claude: "", codex: "" } }, null, 2)}\n`);
+  } catch {
+    // ひな形の保存に失敗しても、設定なしで起動する。
+  }
+};
 
 export const loadConfig = ({ homeDir, projectRoot }: ConfigPaths): ClodexConfig => ({
   ...readConfigFile(join(homeDir, USER_CONFIG_PATH)),
