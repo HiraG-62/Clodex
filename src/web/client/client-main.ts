@@ -1106,16 +1106,18 @@ export function clientMain({
 
   // ---- 接続 ----
   let notificationState: DesktopNotifyState = { live: false, working: false };
+  // 指定しないと Tauri の通知は無音になる
+  const NOTIFICATION_SOUND = "Default";
   const notify = async (notification: DesktopNotification) => {
     const plugin = (window as Window & { __TAURI__?: { notification?: {
       isPermissionGranted(): Promise<boolean>;
       requestPermission(): Promise<string>;
-      sendNotification(notification: DesktopNotification): void | Promise<void>;
+      sendNotification(notification: DesktopNotification & { sound: string }): void | Promise<void>;
     } } }).__TAURI__?.notification;
     if (!plugin || (!document.hidden && document.hasFocus())) return;
     try {
       const granted = await plugin.isPermissionGranted() || await plugin.requestPermission() === "granted";
-      if (granted && (document.hidden || !document.hasFocus())) await plugin.sendNotification(notification);
+      if (granted && (document.hidden || !document.hasFocus())) await plugin.sendNotification({ ...notification, sound: NOTIFICATION_SOUND });
     } catch { /* 通知の失敗で feed の描画を止めない */ }
   };
   const conn = $("#conn");
