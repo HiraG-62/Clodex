@@ -38,6 +38,29 @@ describe("formatMarkdown", () => {
       ]);
     expect(formatMarkdown("**太字** と `code`")[0]?.parts.map(({ style }) => style)).toEqual(["bold", "plain", "code"]);
   });
+  it("引用・表・区切り線を marked の token から分類する", () => {
+    const blocks = formatMarkdown("> 引用\n\n| 名 | 値 |\n|---|---|\n| A | 1 |\n\n---");
+    expect(blocks.map((block) => block.kind)).toEqual(["paragraph", "table", "hr"]);
+    expect(blocks[0]?.quoteDepth).toBe(1);
+    expect(blocks[1]?.table?.header[0]?.[0]?.text).toBe("名");
+  });
+
+  it("斜体・取り消し線・安全なリンクを装飾し、HTML と危険なリンクは文字にする", () => {
+    const blocks = formatMarkdown("*斜体* ~~削除~~ [安全](https://example.com) [危険](javascript:alert(1)) <b>raw</b>");
+    const parts = blocks[0]?.parts ?? [];
+    expect(parts).toContainEqual({ text: "斜体", style: "italic" });
+    expect(parts).toContainEqual({ text: "削除", style: "strikethrough" });
+    expect(parts).toContainEqual({ text: "安全", style: "link" });
+    expect(parts).toContainEqual({ text: "危険", style: "plain" });
+    expect(parts).toContainEqual({ text: "<b>", style: "plain" });
+  });
+
+  it("単独改行と入れ子、書かれた開始番号を保つ", () => {
+    expect(formatMarkdown("一行\n二行")[0]?.parts.map((part) => part.text).join("")).toBe("一行\n二行");
+    expect(formatMarkdown("3. 親\n   - 子\n4. 次")).toMatchObject([
+      { kind: "ordered", number: 3, depth: 0 }, { kind: "bullet", depth: 1 }, { kind: "ordered", number: 4, depth: 0 },
+    ]);
+  });
 });
 
 describe("formatTimelineItem", () => {
@@ -132,6 +155,33 @@ describe("ログの表示行", () => {
     expect(lines.some((line) => line.parts?.some((part) => part.text.includes("太字") && part.bold))).toBe(true);
     expect(lines.some((line) => line.parts?.some((part) => part.text.includes("code") && part.color === "#6f9a5a"))).toBe(true);
     expect(lines.some((line) => line.parts?.some((part) => part.text.includes("link") && part.underline))).toBe(true);
+  });
+  it("引用の各行に薄い縦線を出し、単独改行を行として分ける", () => {
+    const lines = cardLines({ kind: "output", title: "出力", body: "> 一行\n> 二行", color: "#80808a" }, 20);
+    const quoted = lines.filter((line) => line.text.includes("一行") || line.text.includes("二行"));
+    expect(quoted).toHaveLength(2);
+    expect(quoted.every((line) => line.parts?.[1]?.text === "│ " && line.parts[1]?.color === "#80808a")).toBe(true);
+  });
+
+  it("表を罫線と揃った列幅で描き、端末幅で各行を折り返す", () => {
+    const body = "| 名前 | 値 |\n|---|---|\n| 長い名前 | 100 |";
+    const wide = cardLines({ kind: "output", title: "出力", body, color: "#80808a" }, 40);
+    expect(wide.some((line) => line.text.includes("┌") && line.text.includes("┬"))).toBe(true);
+    expect(wide.some((line) => line.text.includes("長い名前") && line.text.includes("100"))).toBe(true);
+    const narrow = cardLines({ kind: "output", title: "出力", body, color: "#80808a" }, 12);
+    expect(narrow.length).toBeGreaterThan(wide.length);
+    expect(narrow.every((line) => textWidth(line.text) <= 12)).toBe(true);
+  });
+
+  it("区切り線・斜体・取り消し線・入れ子の字下げと開始番号を描く", () => {
+    const body = "*斜体* ~~削除~~\n\n3. 親\n   - 子\n4. 次\n\n---";
+    const lines = cardLines({ kind: "output", title: "出力", body, color: "#80808a" }, 28);
+    expect(lines.some((line) => line.parts?.some((part) => part.text === "斜体" && part.italic))).toBe(true);
+    expect(lines.some((line) => line.parts?.some((part) => part.text === "削除" && part.strikethrough))).toBe(true);
+    expect(lines.some((line) => line.text.includes("  • 子"))).toBe(true);
+    expect(lines.some((line) => line.text.includes("3. 親"))).toBe(true);
+    expect(lines.some((line) => line.text.includes("4. 次"))).toBe(true);
+    expect(lines.some((line) => line.text === `│ ${"─".repeat(26)}`)).toBe(true);
   });
   it("見出しの経過時間に渡された言語の文言を使う", () => {
     const lines = cardLines({ kind: "turn", title: "Claude · 作業中", body: "", color: "#b4793f" }, 40, "3 秒");

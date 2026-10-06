@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { runInNewContext } from "node:vm";
+import { renderMarkdown } from "./client/markdown.js";
 import { buildWebPage } from "./web-page.js";
+
+const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1] ?? "");
 
 describe("buildWebPage", () => {
   it("project の選択と新規オープンを画面上部に表示する", () => {
@@ -9,10 +13,17 @@ describe("buildWebPage", () => {
   });
   it("埋め込んだ script が構文として正しい（実行はしない）", () => {
     for (const language of ["ja", "en"] as const) {
-      const script = buildWebPage(language).html.match(/<script>([\s\S]*)<\/script>/)?.[1];
-      expect(script).toBeDefined();
-      expect(() => new Function(script!)).not.toThrow();
+      const scripts = scriptsOf(buildWebPage(language).html);
+      expect(scripts).toHaveLength(2);
+      for (const script of scripts) expect(() => new Function(script)).not.toThrow();
     }
+  });
+
+  it("UMD を読み込んだブラウザでも同じ Markdown renderer が動く", () => {
+    const [umd] = scriptsOf(buildWebPage("ja").html);
+    const rendered = runInNewContext(`${umd}\n(${renderMarkdown.toString()})("> 引用\\n\\n| A | B |\\n|---|---|\\n| 1 | 2 |")`);
+    expect(rendered).toContain("<blockquote>");
+    expect(rendered).toContain("<table>");
   });
 
   it("画面の版を埋め込み、言語ごとに版が変わる", () => {

@@ -1,6 +1,9 @@
 // Web UI の画面（DESIGN.md §17 Web UI）。HTML 1 枚に CSS と JS を inline で持つ。
 // 画面の振る舞いは src/web/client/ に型付きで書き、関数のソースをそのまま埋め込む
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { slashCommands } from "../cli/commands.js";
 import type { Language } from "../context/language.js";
 import { MESSAGES } from "../i18n/i18n.js";
@@ -142,6 +145,10 @@ const STYLE = `
   .entry.you .body { color: var(--fg); font-weight: 500; }
   .md > * { margin: 0 0 8px; } .md > *:last-child { margin-bottom: 0; }
   .md .md-h { font-weight: 600; color: var(--fg); }
+  .md blockquote { border-left: 2px solid var(--line-strong); padding-left: 12px; margin-left: 0; color: var(--muted); }
+  .md table { border-collapse: collapse; display: block; max-width: 100%; overflow-x: auto; }
+  .md th, .md td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; }
+  .md hr { border: 0; border-top: 1px solid var(--line-strong); }
   .md ul, .md ol { padding-left: 1.3em; }
   .md pre { padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; font: 12.5px/1.6 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--sunken); }
   .md pre code { padding: 0; background: none; }
@@ -360,6 +367,7 @@ const body = (messages: Messages) => {
 
 // 関数のソースに </script> が含まれていても script 要素が途中で閉じないようにする
 const inlineScript = (source: string) => source.replace(/<\/script/gi, "<\\/script");
+const MARKED_UMD = inlineScript(readFileSync(join(dirname(fileURLToPath(import.meta.resolve("marked/package.json"))), "lib", "marked.umd.js"), "utf8"));
 
 const PAGE_VERSION_LENGTH = 12;
 const CLIENT_SOURCE = inlineScript(clientMain.toString());
@@ -394,7 +402,7 @@ export const buildWebPage = (language: Language): WebPage => {
   const deps = `${FUNCTIONS}
   commands: ${json(slashCommands())},
   messages: ${json(messages)},`;
-  const version = createHash("sha256").update(STYLE).update(html).update(CLIENT_SOURCE).update(deps)
+  const version = createHash("sha256").update(STYLE).update(html).update(MARKED_UMD).update(CLIENT_SOURCE).update(deps)
     .digest("hex").slice(0, PAGE_VERSION_LENGTH);
   return {
     version,
@@ -415,6 +423,7 @@ export const buildWebPage = (language: Language): WebPage => {
 </head>
 <body>
 ${html}
+<script>${MARKED_UMD}</script>
 <script>
 (${CLIENT_SOURCE})({${deps}
   version: "${version}",

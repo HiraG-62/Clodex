@@ -2,6 +2,7 @@
 import { applyFeedItem, type TimelineItem } from "../web/client/timeline.js";
 import type { FeedItem } from "../web/web-feed.js";
 import type { MessageType } from "../protocol/messages.js";
+import { marked, type Token, type Tokens } from "marked";
 
 export interface StaticItem { item: TimelineItem; expanded: boolean; elapsedSeconds?: number; }
 export interface TerminalFeed { timeline: TimelineItem[]; completed: StaticItem[]; }
@@ -22,48 +23,71 @@ export const advanceTerminalFeed = (state: TerminalFeed, feed: FeedItem, expande
   };
 };
 
-export type InlineStyle = "plain" | "bold" | "code" | "link";
+export type InlineStyle = "plain" | "bold" | "code" | "link" | "italic" | "strikethrough";
 export interface InlinePart { text: string; style: InlineStyle; }
-export interface MarkdownBlock { kind: "heading" | "paragraph" | "bullet" | "ordered" | "code"; parts: InlinePart[]; level?: number; number?: number; language?: string; }
+export interface MarkdownBlock {
+  kind: "heading" | "paragraph" | "bullet" | "ordered" | "code" | "hr" | "table";
+  parts: InlinePart[];
+  level?: number;
+  number?: number;
+  language?: string;
+  depth?: number;
+  quoteDepth?: number;
+  table?: { header: InlinePart[][]; rows: InlinePart[][][] };
+}
 
-const inlineParts = (line: string): InlinePart[] => {
-  const parts: InlinePart[] = [];
-  const pattern = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
-  let cursor = 0;
-  for (const match of line.matchAll(pattern)) {
-    const at = match.index;
-    if (at > cursor) parts.push({ text: line.slice(cursor, at), style: "plain" });
-    const token = match[0];
-    if (token.startsWith("**") || token.startsWith("__")) parts.push({ text: token.slice(2, -2), style: "bold" });
-    else if (token.startsWith("`")) parts.push({ text: token.slice(1, -1), style: "code" });
-    else parts.push({ text: token.slice(1, token.indexOf("]")), style: "link" });
-    cursor = at + token.length;
-  }
-  if (cursor < line.length) parts.push({ text: line.slice(cursor), style: "plain" });
-  return parts;
+const safeLink = (href: string): boolean => {
+  try { return ["http:", "https:"].includes(new URL(href).protocol); }
+  catch { return false; }
 };
+
+const inlineParts = (tokens: readonly Token[], style: InlineStyle = "plain"): InlinePart[] => tokens.flatMap((token): InlinePart[] => {
+  switch (token.type) {
+    case "strong": return inlineParts(token.tokens ?? [], "bold");
+    case "em": return inlineParts(token.tokens ?? [], "italic");
+    case "del": return inlineParts(token.tokens ?? [], "strikethrough");
+    case "link": return inlineParts(token.tokens ?? [], safeLink(token.href) ? "link" : style);
+    case "codespan": return [{ text: token.text, style: "code" }];
+    case "image": return [{ text: token.text, style }];
+    case "br": return [{ text: "\n", style: "plain" }];
+    case "html": return [{ text: token.text, style }];
+    default:
+      if ("tokens" in token && Array.isArray(token.tokens)) return inlineParts(token.tokens, style);
+      return "text" in token && typeof token.text === "string" ? [{ text: token.text, style }] : [];
+  }
+});
 
 export const formatMarkdown = (text: string): MarkdownBlock[] => {
   const blocks: MarkdownBlock[] = [];
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    const fence = /^\s*```(.*)$/.exec(line);
-    if (fence) {
-      const code: string[] = [];
-      while (++i < lines.length && !/^\s*```/.test(lines[i] ?? "")) code.push(lines[i] ?? "");
-      blocks.push({ kind: "code", parts: [{ text: code.join("\n"), style: "code" }], language: fence[1]?.trim() ?? "" });
-      continue;
+  const visit = (tokens: readonly Token[], depth = 0, quoteDepth = 0) => {
+    for (const token of tokens) {
+      switch (token.type) {
+        case "space": case "def": break;
+        case "blockquote": visit(token.tokens ?? [], depth, quoteDepth + 1); break;
+        case "heading": blocks.push({ kind: "heading", level: token.depth, parts: inlineParts(token.tokens ?? []), depth, quoteDepth }); break;
+        case "paragraph": case "text": blocks.push({ kind: "paragraph", parts: inlineParts(token.tokens ?? [token]), depth, quoteDepth }); break;
+        case "html": blocks.push({ kind: "paragraph", parts: [{ text: token.text, style: "plain" }], depth, quoteDepth }); break;
+        case "code": blocks.push({ kind: "code", parts: [{ text: token.text, style: "code" }], language: token.lang, depth, quoteDepth }); break;
+        case "hr": blocks.push({ kind: "hr", parts: [], depth, quoteDepth }); break;
+        case "table": blocks.push({ kind: "table", parts: [], depth, quoteDepth, table: {
+          header: token.header.map((cell: Tokens.TableCell) => inlineParts(cell.tokens)),
+          rows: token.rows.map((row: Tokens.TableCell[]) => row.map((cell: Tokens.TableCell) => inlineParts(cell.tokens))),
+        } }); break;
+        case "list": {
+          const start = typeof token.start === "number" ? token.start : 1;
+          token.items.forEach((item: Tokens.ListItem, index: number) => {
+            const content = item.tokens.filter((child) => child.type !== "list");
+            blocks.push({ kind: token.ordered ? "ordered" : "bullet", parts: inlineParts(content),
+              ...(token.ordered ? { number: start + index } : {}), depth, quoteDepth });
+            for (const child of item.tokens) if (child.type === "list") visit([child], depth + 1, quoteDepth);
+          });
+          break;
+        }
+        default: break;
+      }
     }
-    if (!line.trim()) continue;
-    const heading = /^(#{1,6})\s+(.+)$/.exec(line);
-    if (heading) { blocks.push({ kind: "heading", level: heading[1]?.length, parts: inlineParts(heading[2] ?? "") }); continue; }
-    const bullet = /^\s*[-*+]\s+(.+)$/.exec(line);
-    if (bullet) { blocks.push({ kind: "bullet", parts: inlineParts(bullet[1] ?? "") }); continue; }
-    const ordered = /^\s*(\d+)\.\s+(.+)$/.exec(line);
-    if (ordered) { blocks.push({ kind: "ordered", number: Number(ordered[1]), parts: inlineParts(ordered[2] ?? "") }); continue; }
-    blocks.push({ kind: "paragraph", parts: inlineParts(line) });
-  }
+  };
+  visit(marked.lexer(text, { gfm: true, breaks: true }));
   return blocks;
 };
 
@@ -165,19 +189,23 @@ export const wrapText = (value: string, width: number): string[] => {
   return lines;
 };
 
-export interface TerminalSegment { text: string; color?: string; bold?: boolean; underline?: boolean; }
-export interface TerminalLine extends TerminalSegment { parts?: TerminalSegment[]; backgroundColor?: string; }
+export interface TerminalSegment { text: string; color?: string; bold?: boolean; underline?: boolean; italic?: boolean; strikethrough?: boolean; }
+export interface TerminalLine extends TerminalSegment { parts?: TerminalSegment[]; backgroundColor?: string; quoteDepth?: number; }
+const TABLE_CELL_PADDING_WIDTH = 2;
+const TABLE_BORDER_WIDTH = 1;
 const wrapSegments = (segments: TerminalSegment[], width: number): TerminalSegment[][] => {
   const lines: TerminalSegment[][] = [[]];
   let columns = 0;
   for (const segment of segments) {
     for (const char of segment.text) {
+      if (char === "\n") { lines.push([]); columns = 0; continue; }
       const size = characterWidth(char);
       if (columns + size > width && columns > 0) { lines.push([]); columns = 0; }
       const current = lines.at(-1);
       if (!current) continue;
       const last = current.at(-1);
-      if (last && last.color === segment.color && last.bold === segment.bold && last.underline === segment.underline) last.text += char;
+      if (last && last.color === segment.color && last.bold === segment.bold && last.underline === segment.underline
+        && last.italic === segment.italic && last.strikethrough === segment.strikethrough) last.text += char;
       else current.push({ ...segment, text: char });
       columns += size;
     }
@@ -187,6 +215,44 @@ const wrapSegments = (segments: TerminalSegment[], width: number): TerminalSegme
 export const cardLines = (card: TerminalCard, width: number, elapsedLabel?: string): TerminalLine[] => {
   const divider = card.kind === "message" ? "┃" : "│";
   const contentWidth = Math.max(1, width - 2);
+  const inlineSegments = (parts: InlinePart[], heading = false): TerminalSegment[] => parts.map((part) => ({
+    text: part.text, bold: heading || part.style === "bold", underline: part.style === "link",
+    italic: part.style === "italic", strikethrough: part.style === "strikethrough",
+    color: part.style === "code" ? TERMINAL_COLORS.code : undefined,
+  }));
+  const tableLines = (block: MarkdownBlock): TerminalLine[] => {
+    const table = block.table;
+    if (!table) return [];
+    const rows = [table.header, ...table.rows];
+    const widths = table.header.map((_, column) => Math.max(1, ...rows.map((row) => textWidth(row[column]?.map((part) => part.text).join("") ?? ""))));
+    const quoteWidth = textWidth("│ ".repeat(block.quoteDepth ?? 0));
+    const tableBorderWidth = (TABLE_CELL_PADDING_WIDTH + TABLE_BORDER_WIDTH) * widths.length + TABLE_BORDER_WIDTH;
+    const capacity = Math.max(widths.length, contentWidth - quoteWidth - tableBorderWidth);
+    while (widths.reduce((sum, column) => sum + column, 0) > capacity) {
+      const widest = widths.indexOf(Math.max(...widths));
+      if (widths[widest] === 1) break;
+      widths[widest]!--;
+    }
+    const border = (left: string, middle: string, right: string): TerminalLine => ({
+      text: `${left}${widths.map((column) => "─".repeat(column + TABLE_CELL_PADDING_WIDTH)).join(middle)}${right}`,
+      color: TERMINAL_COLORS.muted, quoteDepth: block.quoteDepth,
+    });
+    const row = (cells: InlinePart[][]): TerminalLine[] => {
+      const wrapped = cells.map((cell, column) => wrapSegments(inlineSegments(cell), widths[column] ?? 1));
+      const height = Math.max(...wrapped.map((lines) => lines.length));
+      return Array.from({ length: height }, (_, lineIndex) => {
+        const parts: TerminalSegment[] = [{ text: "│", color: TERMINAL_COLORS.muted }];
+        wrapped.forEach((lines, column) => {
+          const cell = lines[lineIndex] ?? [];
+          const value = cell.map((part) => part.text).join("");
+          parts.push({ text: " ", color: TERMINAL_COLORS.muted }, ...cell,
+            { text: `${" ".repeat(Math.max(0, (widths[column] ?? 1) - textWidth(value)))} │`, color: TERMINAL_COLORS.muted });
+        });
+        return { text: parts.map((part) => part.text).join(""), parts, quoteDepth: block.quoteDepth };
+      });
+    };
+    return [border("┌", "┬", "┐"), ...row(table.header), border("├", "┼", "┤"), ...table.rows.flatMap(row), border("└", "┴", "┘")];
+  };
   const content: TerminalLine[] = [
     { text: `${card.title}${elapsedLabel === undefined ? "" : ` · ${elapsedLabel}`}`, color: card.color, bold: true },
     ...(card.tag ? [{ text: card.tag, color: card.color }] : []),
@@ -195,21 +261,29 @@ export const cardLines = (card: TerminalCard, width: number, elapsedLabel?: stri
     ...(card.steps ?? []).map((step) => ({ text: `  • ${step}`, color: TERMINAL_COLORS.muted })),
     ...formatMarkdown(card.body).flatMap((block): TerminalLine[] => {
       const value = block.parts.map((part) => part.text).join("");
-      if (block.kind === "code") return [{ text: `┌ ${block.language ?? ""}`, color: TERMINAL_COLORS.code },
-        ...value.split("\n").map((line) => ({ text: `│ ${line}`, color: TERMINAL_COLORS.code })), { text: "└", color: TERMINAL_COLORS.code }];
-      const prefix = block.kind === "bullet" ? "• " : block.kind === "ordered" ? `${block.number}. ` : "";
+      if (block.kind === "table") return tableLines(block);
+      if (block.kind === "hr") return [{ text: "─".repeat(contentWidth), color: TERMINAL_COLORS.muted, quoteDepth: block.quoteDepth }];
+      if (block.kind === "code") return [{ text: `┌ ${block.language ?? ""}`, color: TERMINAL_COLORS.code, quoteDepth: block.quoteDepth },
+        ...value.split("\n").map((line) => ({ text: `│ ${line}`, color: TERMINAL_COLORS.code, quoteDepth: block.quoteDepth })),
+        { text: "└", color: TERMINAL_COLORS.code, quoteDepth: block.quoteDepth }];
+      const marker = block.kind === "bullet" ? "• " : block.kind === "ordered" ? `${block.number}. ` : "";
+      const prefix = `${"  ".repeat(block.depth ?? 0)}${marker}`;
       const parts: TerminalSegment[] = [
         ...(prefix ? [{ text: prefix, color: TERMINAL_COLORS.muted }] : []),
-        ...block.parts.map((part) => ({ text: part.text, bold: block.kind === "heading" || part.style === "bold",
-          underline: part.style === "link", color: part.style === "code" ? TERMINAL_COLORS.code : undefined })),
+        ...inlineSegments(block.parts, block.kind === "heading"),
       ];
-      return [{ text: `${prefix}${value}`, parts }];
+      return [{ text: `${prefix}${value}`, parts, quoteDepth: block.quoteDepth }];
     }),
   ];
-  const lines: TerminalLine[] = [...content.flatMap((line) => wrapSegments(line.parts ?? [line], contentWidth).map((parts) => ({
-    text: `${divider} ${parts.map((part) => part.text).join("")}`,
-    parts: [{ text: `${divider} `, color: card.color, bold: true }, ...parts],
-  }))), { text: "" }];
+  const lines: TerminalLine[] = [...content.flatMap((line) => {
+    const quotePrefix = "│ ".repeat(line.quoteDepth ?? 0);
+    const quotePart: TerminalSegment[] = quotePrefix ? [{ text: quotePrefix, color: TERMINAL_COLORS.muted }] : [];
+    return wrapSegments(line.parts ?? [line], Math.max(1, contentWidth - textWidth(quotePrefix))).map((wrapped) => {
+      const parts = [...quotePart, ...wrapped];
+      return { text: `${divider} ${parts.map((part) => part.text).join("")}`,
+        parts: [{ text: `${divider} `, color: card.color, bold: true }, ...parts] };
+    });
+  }), { text: "" }];
   const header = lines[0];
   if (header && card.headerBackgroundColor) {
     const padding = " ".repeat(Math.max(0, width - textWidth(header.text)));

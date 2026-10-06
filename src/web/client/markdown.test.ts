@@ -2,47 +2,53 @@ import { describe, expect, it } from "vitest";
 import { renderMarkdown } from "./markdown.js";
 
 describe("renderMarkdown", () => {
-  it("段落と改行", () => {
-    expect(renderMarkdown("一行目\n二行目\n\n次の段落")).toBe("<p>一行目<br>二行目</p><p>次の段落</p>");
+  it("段落内の単独改行を br にする", () => {
+    expect(renderMarkdown("一行目\n二行目\n\n次の段落")).toContain("<p>一行目<br>二行目</p>");
+    expect(renderMarkdown("一行目\n二行目\n\n次の段落")).toContain("<p>次の段落</p>");
   });
 
-  it("HTML はエスケープする（インラインコードの中も）", () => {
-    expect(renderMarkdown('<script>alert("x")</script> `<b>`'))
-      .toBe("<p>&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; <code>&lt;b&gt;</code></p>");
+  it("生の HTML は文字として表示し、コード内も安全にする", () => {
+    const html = renderMarkdown('<script>alert("x")</script>\n\n`<b>`');
+    expect(html).toContain("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;");
+    expect(html).toContain("<code>&lt;b&gt;</code>");
+    expect(html).not.toContain("<script>");
   });
 
-  it("インラインコードと太字。コードの中の ** は太字にしない", () => {
-    expect(renderMarkdown("**重要** は `a ** b` です")).toBe("<p><strong>重要</strong> は <code>a ** b</code> です</p>");
+  it("GFM の引用・表・区切り線を描く", () => {
+    const html = renderMarkdown("> 引用\n> 続き\n\n| 名前 | 値 |\n|---|---|\n| A | 1 |\n\n---");
+    expect(html).toContain("<blockquote>");
+    expect(html).toContain("引用<br>続き");
+    expect(html).toContain("<table>");
+    expect(html).toContain("<th>名前</th>");
+    expect(html).toContain("<td>A</td>");
+    expect(html).toContain("<hr>");
   });
 
-  it("コードブロック（言語指定は捨てる）", () => {
-    expect(renderMarkdown("前\n```ts\nconst a = 1 < 2;\n\n```\n後"))
-      .toBe("<p>前</p><pre><code>const a = 1 &lt; 2;\n</code></pre><p>後</p>");
+  it("http/https のリンクだけを別タブで開き、危険な URL は文字にする", () => {
+    const html = renderMarkdown("[安全](https://example.com/?a=1&b=2) [HTTP](http://example.com) [危険](javascript:alert(1))");
+    expect(html).toContain('<a href="https://example.com/?a=1&amp;b=2" target="_blank" rel="noopener noreferrer">安全</a>');
+    expect(html).toContain('<a href="http://example.com" target="_blank" rel="noopener noreferrer">HTTP</a>');
+    expect(html).toContain("危険");
+    expect(html).not.toContain("javascript:");
   });
 
-  it("閉じていないコードブロックは最後までコードとして扱う", () => {
-    expect(renderMarkdown("```\nx")).toBe("<pre><code>x</code></pre>");
+  it("太字・斜体・取り消し線を描き、コード内は解釈しない", () => {
+    expect(renderMarkdown("**太字** *斜体* ~~削除~~ `**code**`")).toContain("<strong>太字</strong> <em>斜体</em> <del>削除</del> <code>**code**</code>");
   });
 
-  it("箇条書きと番号付きリスト", () => {
-    expect(renderMarkdown("- a\n- `b`\n\n1. one\n2. two"))
-      .toBe("<ul><li>a</li><li><code>b</code></li></ul><ol><li>one</li><li>two</li></ol>");
+  it("入れ子のリストと書かれた開始番号を保つ", () => {
+    const html = renderMarkdown("3. 親\n   - 子\n4. 次");
+    expect(html).toContain('<ol start="3">');
+    expect(html).toContain("<li>親<ul>");
+    expect(html).toContain("<li>子</li>");
+    expect(html).toContain("<li>次</li>");
   });
 
-  it("番号付き項目の子リストを入れ子にして親の番号を続ける", () => {
-    expect(renderMarkdown("1. a\n  - x\n2. b"))
-      .toBe("<ol><li>a<ul><li>x</li></ul></li><li>b</li></ol>");
+  it("見出しとコードブロックを描く", () => {
+    const html = renderMarkdown("## 結果\n\n```ts\nconst a = 1 < 2;\n```");
+    expect(html).toContain('<p class="md-h">結果</p>');
+    expect(html).toContain('<pre><code class="language-ts">const a = 1 &lt; 2;');
   });
 
-  it("番号付きリストは書かれた番号から始める", () => {
-    expect(renderMarkdown("3. a\n4. b")).toBe('<ol start="3"><li>a</li><li>b</li></ol>');
-  });
-
-  it("見出しは太字の段落にする", () => {
-    expect(renderMarkdown("## 結果\n本文")).toBe('<p class="md-h">結果</p><p>本文</p>');
-  });
-
-  it("空文字は空", () => {
-    expect(renderMarkdown("")).toBe("");
-  });
+  it("空文字は空", () => expect(renderMarkdown("")).toBe(""));
 });
