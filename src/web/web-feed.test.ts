@@ -4,7 +4,7 @@ import { DEFAULT_RECENT_ITEMS, WebFeed, type FeedItem, type WebState } from "./w
 
 const AT = "2026-10-05T12:00:00.000Z";
 const textEvent = (text: string): CoordinatorEvent => ({ kind: "agent", agent: "claude", event: { type: "text", text }, at: AT });
-const STATE: WebState = { project: "C:\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], processes: [] };
+const STATE: WebState = { project: "C:\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [] };
 
 describe("WebFeed", () => {
   it("event と output に通し番号を付けて購読者に配り、直近を保持する", () => {

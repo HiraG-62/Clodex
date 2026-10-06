@@ -56,7 +56,7 @@ const setup = async () => {
   const logPath = join(projectRoot, "..", `${basename(projectRoot)}.jsonl`);
   attachEventLog(bus, { path: logPath, print: (line) => console.log(line), mode: () => "verbose" });
   let coordinator: Coordinator | undefined;
-  const mcp: McpServerHandle = await startMcpServer((from, input) => coordinator!.receiveMessage(from, input));
+  const mcp: McpServerHandle = await startMcpServer({ sendMessage: (from, input) => coordinator!.receiveMessage(from, input), askUser: (from, input) => coordinator!.askUser(from, input) });
   coordinator = new Coordinator({
     projectRoot,
     agents: { claude: new ClaudeAdapter(), codex: new CodexAdapter() },

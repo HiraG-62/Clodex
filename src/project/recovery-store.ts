@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { AGENT_IDS } from "../agents/agent-adapter.js";
+import { pendingQuestionSchema } from "../protocol/questions.js";
 import { sendMessageShape } from "../protocol/messages.js";
 import { writeFileAtomic } from "./atomic-write.js";
 import { conversationStatePath } from "./conversation-history.js";
@@ -13,6 +14,7 @@ const itemSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("message"), message: messageSchema }),
 ]);
 const conversationSchema = z.strictObject({
+  questions: z.array(pendingQuestionSchema).optional(),
   interrupted: z.array(z.enum(AGENT_IDS)),
   queue: z.strictObject({ claude: z.array(itemSchema), codex: z.array(itemSchema) }),
 });
@@ -24,8 +26,8 @@ export type RecoveryItem = z.infer<typeof itemSchema>;
 export type ConversationRecovery = z.infer<typeof conversationSchema>;
 export type RecoveryState = z.infer<typeof recoverySchema>;
 
-export const hasRecoveryWork = ({ interrupted, queue }: ConversationRecovery): boolean =>
-  interrupted.length > 0 || AGENT_IDS.some((agent) => queue[agent].length > 0);
+export const hasRecoveryWork = ({ interrupted, queue, questions }: ConversationRecovery): boolean =>
+  (questions?.length ?? 0) > 0 || interrupted.length > 0 || AGENT_IDS.some((agent) => queue[agent].length > 0);
 
 export const recoveryPath = (homeDir: string, projectRoot: string): string =>
   conversationStatePath(homeDir, projectRoot).replace(/\.json$/, ".recovery.json");

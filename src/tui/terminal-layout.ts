@@ -14,6 +14,11 @@ export const advanceTerminalFeed = (state: TerminalFeed, feed: FeedItem, expande
   if (feed.type === "output") {
     return { ...state, completed: [...state.completed, { item: { kind: "output", id: `o${feed.seq}`, text: feed.text }, expanded }] };
   }
+  if (feed.event.kind === "answer") {
+    const answer = feed.event;
+    return { ...state, completed: state.completed.map((entry) => entry.item.kind === "question" && entry.item.id === answer.id
+      ? { ...entry, item: { ...entry.item, answers: answer.answers } } : entry) };
+  }
   const next = applyFeedItem(state.timeline, feed);
   return {
     timeline: next.filter((item) => item.kind === "turn" && item.status === "working"),
@@ -94,6 +99,7 @@ export const formatMarkdown = (text: string): MarkdownBlock[] => {
 
 export interface TerminalLabels {
   you: string; working: string; completed: string; failed: string; interrupted: string;
+  question: string; answered: string;
   steps: string; message: string; notice: string; error: string; output: string;
 }
 export interface TerminalCard {
@@ -267,7 +273,7 @@ export const cardLines = (card: TerminalCard, width: number, elapsedLabel?: stri
     ...(card.plan ? [{ text: card.plan, color: TERMINAL_COLORS.muted }] : []),
     ...(card.stepsLabel ? [{ text: `${card.steps ? "▾" : "▸"} ${card.stepsLabel}`, color: TERMINAL_COLORS.muted }] : []),
     ...(card.steps ?? []).map((step) => ({ text: `  • ${step}`, color: TERMINAL_COLORS.muted })),
-    ...formatMarkdown(card.body).flatMap((block): TerminalLine[] => {
+    ...(card.kind === "question" ? card.body.split("\n").map((text): TerminalLine => ({ text })) : formatMarkdown(card.body).flatMap((block): TerminalLine[] => {
       const value = block.parts.map((part) => part.text).join("");
       if (block.kind === "table") return tableLines(block);
       if (block.kind === "hr") return [{ text: "─".repeat(contentWidth), color: TERMINAL_COLORS.muted, quoteDepth: block.quoteDepth }];
@@ -281,7 +287,7 @@ export const cardLines = (card: TerminalCard, width: number, elapsedLabel?: stri
         ...inlineSegments(block.parts, block.kind === "heading"),
       ];
       return [{ text: `${prefix}${value}`, parts, quoteDepth: block.quoteDepth }];
-    }),
+    })),
   ];
   const lines: TerminalLine[] = [...content.flatMap((line) => {
     const quotePrefix = "│ ".repeat(line.quoteDepth ?? 0);
@@ -327,6 +333,14 @@ const MESSAGE_COLORS: Record<MessageType, string> = {
 };
 
 export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, expanded: boolean): TerminalCard => {
+  if (item.kind === "question") return {
+    kind: item.kind, color: agentColor(item.agent), title: `${agentName(item.agent)} · ${item.answers ? labels.answered : labels.question}`,
+    tag: item.id,
+    body: item.questions.map((question, index) => [question.header, question.question,
+      ...(item.answers ? [item.answers[index]!.join(", ")] : question.options.map((option, optionIndex) =>
+        `${optionIndex + 1}. ${option.label}${option.description ? ` — ${option.description}` : ""}`)),
+    ].filter(Boolean).join("\n")).join("\n\n"),
+  };
   if (item.kind === "turn") return {
     kind: item.kind, color: agentColor(item.agent), title: `${agentName(item.agent)} · ${labels[item.status]}`,
     headerBackgroundColor: agentHeaderColor(item.agent),

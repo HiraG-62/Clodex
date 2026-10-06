@@ -658,3 +658,47 @@ describe("Coordinator の spec 検証", () => {
     },
   );
 });
+
+describe("人への質問", () => {
+  const questions = [{ header: "方針", question: "どちらにしますか", options: [{ label: "A" }, { label: "B" }] }];
+  it("質問を保存・通知し、回答は質問した Agent の次のターンに届ける", async () => {
+    const { coordinator, claude, events } = setup();
+    void coordinator.sendToAgent("claude", "作業");
+    await flush();
+    const result = coordinator.askUser("claude", { questions });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    expect(coordinator.pendingQuestions()).toEqual([{ id: result.id, agent: "claude", questions }]);
+    expect(events.at(-1)).toMatchObject({ kind: "question", id: result.id, agent: "claude", questions });
+    expect(coordinator.answer(result.id, [["A"]])).toBeUndefined();
+    expect(events.at(-1)).toMatchObject({ kind: "answer", id: result.id, answers: [["A"]] });
+    expect(coordinator.pendingQuestions()).toEqual([]);
+    expect(claude.sent).toEqual(["作業"]);
+    claude.completeTurn();
+    await flush();
+    expect(claude.sent[1]).toBe(`Answer to your question ${result.id}:\n- 方針: A`);
+    expect(coordinator.answer(result.id, [["B"]])).toBeTypeOf("string");
+  });
+  it("不正な質問と不明な ID・件数違い・空回答を拒否する", () => {
+    const { coordinator } = setup();
+    expect(coordinator.askUser("claude", { questions: [] }).ok).toBe(false);
+    expect(coordinator.answer("missing", [["A"]])).toBeTypeOf("string");
+    const result = coordinator.askUser("codex", { questions });
+    if (!result.ok) throw new Error(result.error);
+    for (const answers of [[], [[]], [[" "]], [["A"], ["B"]], ["A"], null]) {
+      expect(coordinator.answer(result.id, answers)).toBeTypeOf("string");
+    }
+    expect(coordinator.pendingQuestions()).toHaveLength(1);
+  });
+  it("未回答を復旧し、自由記述と複数回答を元の Agent に届ける", async () => {
+    const first = setup().coordinator;
+    const result = first.askUser("codex", { questions: [{ ...questions[0], header: undefined, multiSelect: true }] });
+    if (!result.ok) throw new Error(result.error);
+    const { coordinator, codex } = setup();
+    coordinator.restore(first.recoveryState());
+    expect(coordinator.pendingQuestions()).toEqual(first.pendingQuestions());
+    expect(coordinator.answer(result.id, [["A", "自由記述"]])).toBeUndefined();
+    await flush();
+    expect(codex.sent[0]).toBe(`Answer to your question ${result.id}:\n- どちらにしますか: A, 自由記述`);
+  });
+});

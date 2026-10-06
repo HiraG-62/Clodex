@@ -3,7 +3,7 @@ import { EventBus } from "../coordinator/event-bus.js";
 import { WebFeed, type FeedItem, type WebState } from "./web-feed.js";
 import { connectWebFeed, historyItemOf } from "./web-ui.js";
 
-const STATE: WebState = { project: "C:\\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], processes: [] };
+const STATE: WebState = { project: "C:\\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [] };
 const message = {
   id: "msg_1", from: "claude", to: "codex", type: "QUESTION", taskId: "T", body: "?", repository: "C:\\app", createdAt: "x",
 } as const;
@@ -73,4 +73,11 @@ describe("historyItemOf", () => {
     expect(historyItemOf({ kind: "message", message, at: "x" })).toMatchObject({ type: "event", seq: 0, envelope: expect.stringContaining("msg_1") });
     expect(historyItemOf({ kind: "agent", agent: "claude", event: { type: "context", tokens: 1 }, at: "x" })).toBeUndefined();
   });
+});
+
+it("question と answer を feed の履歴項目にする", () => {
+  const question = { kind: "question" as const, id: "q1", agent: "claude" as const, at: "now", questions: [{ question: "方針は", options: [{ label: "A" }, { label: "B" }] }] };
+  const answer = { kind: "answer" as const, id: "q1", agent: "claude" as const, at: "now", answers: [["A"]] };
+  expect(historyItemOf(question)).toMatchObject({ type: "event", event: question });
+  expect(historyItemOf(answer)).toMatchObject({ type: "event", event: answer });
 });

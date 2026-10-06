@@ -25,6 +25,7 @@ export interface AssistState {
   agents: ReadonlyArray<{ id: string; models: readonly ModelOption[] }>;
   conversations: ReadonlyArray<{ title?: string }>;
   projects?: ReadonlyArray<{ projectRoot: string }>;
+  questions?: ReadonlyArray<{ id: string; questions: ReadonlyArray<{ question: string }> }>;
   pendingInputs: ReadonlyArray<{ id: string }>;
   processes?: ReadonlyArray<{ id: number; command: string; status: string }>;
 }
@@ -82,6 +83,9 @@ export function createInputAssist(commands: readonly SlashCommand[], agents: rea
       const agentValues = agents.map((value) => ({ value, detail: labels.agent }));
       const simple = (items: readonly string[], detail: string) => items.map((value) => ({ value, detail }));
       switch (name) {
+        case "answer":
+          if (index === 0) values = (state.questions ?? []).map(({ id, questions }) => ({ value: id, detail: questions[0]?.question ?? "" }));
+          break;
         case "processes": case "kill":
           if (index === 0) values = (state.processes ?? [])
             .filter(({ status }) => name !== "kill" || status === "running")

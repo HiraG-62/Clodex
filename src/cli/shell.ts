@@ -1,4 +1,5 @@
 // 人間の入力を Coordinator の操作に変換する（DESIGN.md §8）。readline 等の I/O は index.ts が持つ
+import type { PendingQuestion } from "../protocol/questions.js";
 import { AGENT_IDS, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult } from "../agents/agent-adapter.js";
 import type { UsageSnapshot } from "../coordinator/usage-monitor.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
@@ -31,6 +32,8 @@ export interface ShellCoordinator {
   setEffort(level: string, agent?: AgentId): Promise<TurnResult | void>;
   switchSessions(sessions: SavedSessions, targets?: readonly AgentId[]): Promise<string | undefined>;
   pendingInputs(): PendingInput[];
+  pendingQuestions(): PendingQuestion[];
+  answer(id: string, answers: unknown): string | undefined;
   cancelInput(id?: string): PendingInput | undefined;
   status(): AgentState[];
 }
@@ -198,6 +201,20 @@ export const createShell = ({
     return picked;
   };
 
+  const answerQuestion = (id: string, text: string): void => {
+    const recipient = coordinator();
+    let answers: unknown;
+    try { answers = JSON.parse(text); }
+    catch {
+      const question = recipient.pendingQuestions().find((item) => item.id === id);
+      if (!question) return notify(t("question.missing"), "warn");
+      if (question.questions.length !== 1) return notify(t("question.invalid"), "warn");
+      answers = [[text]];
+    }
+    const error = recipient.answer(id, answers);
+    if (error) notify(error, "warn");
+  };
+
   const handleLine = async (line: string): Promise<ShellOutcome> => {
     const command = parseInput(line, primary);
     if (projects?.hasCurrent && !projects.hasCurrent() && !["project", "help", "exit", "empty"].includes(command.kind)) {
@@ -205,6 +222,9 @@ export const createShell = ({
       return "continue";
     }
     switch (command.kind) {
+      case "answer":
+        answerQuestion(command.id, command.text);
+        return "continue";
       case "empty":
         return "continue";
       case "send":

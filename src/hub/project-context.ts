@@ -88,7 +88,7 @@ export const openProject = async ({
     const bus = new EventBus();
     const workDir = conversation.workDir ?? projectRoot;
     let coordinator: Coordinator | undefined;
-    const mcp = await startMcpServer((from, input) => coordinator!.receiveMessage(from, input));
+    const mcp = await startMcpServer({ sendMessage: (from, input) => coordinator!.receiveMessage(from, input), askUser: (from, input) => coordinator!.askUser(from, input) });
     coordinator = new Coordinator({
       projectRoot: workDir,
       agents: createAgents(),

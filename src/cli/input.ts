@@ -20,6 +20,7 @@ export type ShellCommand =
   | { kind: "resume"; index?: number }
   | { kind: "new"; agent?: AgentId; worktree?: true }
   | { kind: "compact"; agent?: AgentId }
+  | { kind: "answer"; id: string; text: string }
   | { kind: "cancel"; id?: string }
   | { kind: "rename"; title: string }
   | { kind: "delete"; index: number }
@@ -94,6 +95,10 @@ const parseMention = (mention: string, text: string): ShellCommand | undefined =
 
 const parseCommand = (name: string, arg: string): ShellCommand => {
   switch (name) {
+    case "answer": {
+      const match = /^(\S+)\s+(.+)$/.exec(arg);
+      return match?.[1] && match[2] ? { kind: "answer", id: match[1], text: match[2] } : usage("/answer <id> <json>");
+    }
     case "processes":
       if (!arg) return { kind: "processes" };
       return isConversationNumber(arg) && Number.isSafeInteger(Number(arg)) ? { kind: "processes", id: Number(arg) } : usage("/processes [number]");

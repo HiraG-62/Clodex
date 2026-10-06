@@ -4,7 +4,7 @@ import { en, ja } from "../../i18n/messages.js";
 import type { FeedItem, WebState } from "../web-feed.js";
 import { updateDesktopNotify, type DesktopNotifyState } from "./desktop-notify.js";
 
-const IDLE: WebState = { project: "app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], processes: [] };
+const IDLE: WebState = { project: "app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [] };
 const state = (pending = false): FeedItem => ({ type: "state", state: { ...IDLE, pendingInputs: pending ? [{ id: "1", agent: "claude", text: "次" }] : [] } });
 const event = (value: AgentEvent, agent: "claude" | "codex" = "claude"): FeedItem => ({ type: "event", seq: 1, event: { kind: "agent", agent, event: value, at: "now" } });
 const turn = (text = "完了\n詳細", status: "completed" | "failed" | "interrupted" = "completed") => event({ type: "turn", result: { status, text } });
@@ -85,4 +85,10 @@ describe("desktop-notify", () => {
 it("toast をデスクトップ通知にする", () => {
   const result = updateDesktopNotify({ live: true, working: false }, { type: "toast", text: "切り替え", level: "info" }, ja);
   expect(result.notification).toEqual({ title: "Clodex · 通知", body: "切り替え" });
+});
+
+it("新しい質問を通知し、履歴の再生時には通知しない", () => {
+  const item: FeedItem = { type: "event", seq: 1, event: { kind: "question", id: "q1", agent: "claude", at: "now", questions: [{ question: "方針は", options: [{ label: "A" }, { label: "B" }] }] } };
+  expect(updateDesktopNotify({ live: true, working: true }, item, ja).notification).toEqual({ title: "質問", body: "方針は" });
+  expect(updateDesktopNotify({ live: false, working: false }, item, ja).notification).toBeUndefined();
 });

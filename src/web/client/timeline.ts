@@ -1,12 +1,14 @@
 // feed からログの項目を組み立てる（DESIGN.md §17 Web UI）。
 // ブラウザ側にそのまま埋め込むため、外部のものを参照しない 1 つの関数として書く（型の import のみ）
 import type { AgentId, TurnResult } from "../../agents/agent-adapter.js";
+import type { UserQuestion } from "../../protocol/questions.js";
 import type { AgentMessage } from "../../protocol/messages.js";
 import type { FeedItem, HistoryItem } from "../web-feed.js";
 
 export type TimelineStep = { kind: "say"; text: string } | { kind: "tool"; name: string; input: string; files?: string[] };
 
 export type TimelineItem =
+  | { kind: "question"; id: string; at: string; agent: AgentId; questions: UserQuestion[]; answers?: string[][] }
   | { kind: "human"; id: string; at: string; agent: AgentId; text: string; steer?: boolean }
   | {
     kind: "turn"; id: string; at: string; agent: AgentId;
@@ -34,6 +36,8 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
 
   const id = `e${item.seq}`;
   const { event } = item;
+  if (event.kind === "question") return limit([...items, { kind: "question", id: event.id, agent: event.agent, at: event.at, questions: event.questions }]);
+  if (event.kind === "answer") return items.map((entry) => entry.kind === "question" && entry.id === event.id ? { ...entry, answers: event.answers } : entry);
   if (event.kind === "human") {
     return limit([...items, { kind: "human", id, at: event.at, agent: event.agent, text: event.text, ...(event.steer ? { steer: true } : {}) }]);
   }

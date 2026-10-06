@@ -31,3 +31,11 @@ describe("recovery store", () => {
     expect(loadRecovery(home, project)).toBeUndefined();
   });
 });
+
+it("未回答だけの会話も保存する", () => {
+  const home = mkdtempSync(join(tmpdir(), "clodex-question-recovery-"));
+  const project = join(home, "project");
+  const conversation = { interrupted: [], queue: { claude: [], codex: [] }, questions: [{ id: "q1", agent: "claude" as const, questions: [{ question: "方針", options: [{ label: "A" }, { label: "B" }] }] }] };
+  saveRecovery(home, project, { current: "c1", conversations: { c1: conversation } });
+  expect(loadRecovery(home, project)?.conversations.c1).toEqual(conversation);
+});

@@ -4,6 +4,7 @@ import { advanceTerminalFeed, CardLineCache, cardLines, cursorSlices, editInput,
   parseSgrMouse, scrollAfterGrowth, scrollBy, scrollToBottom, splitMouseInput, textWidth, visibleRange, wrapText } from "./terminal-layout.js";
 
 const labels = {
+  question: "質問", answered: "回答済み",
   you: "あなた", working: "作業中", completed: "完了", failed: "失敗", interrupted: "中断",
   steps: "作業 {count} 件", message: "メッセージ", notice: "通知", error: "エラー", output: "出力",
 };
@@ -246,4 +247,16 @@ describe("SGR マウス", () => {
     expect(parseSgrMouse("\x1b[<0;10;5m")).toBe("other");
     expect(parseSgrMouse("hello")).toBeUndefined();
   });
+});
+
+it("質問を番号付きカードにし、回答で同じカードを更新する", () => {
+  const questions = [{ header: "方針", question: "選択", options: [{ label: "A", description: "説明" }, { label: "B" }] }];
+  const first = advanceTerminalFeed({ timeline: [], completed: [] }, { type: "event", seq: 1, event: { kind: "question", id: "q1", agent: "claude", questions, at: "now" } }, false);
+  const card = formatTimelineItem(first.completed[0]!.item, labels, false);
+  expect(card.color).toBe(TERMINAL_COLORS.claude);
+  expect(card.body).toContain("1. A — 説明");
+  expect(card.body).toContain("方針");
+  const answered = advanceTerminalFeed(first, { type: "event", seq: 2, event: { kind: "answer", id: "q1", agent: "claude", answers: [["A"]], at: "now" } }, false);
+  expect(answered.completed).toHaveLength(1);
+  expect(answered.completed[0]!.item).toMatchObject({ id: "q1", answers: [["A"]] });
 });

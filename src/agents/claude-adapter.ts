@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 import {
-  COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, summarizeToolInput,
+  COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, ASK_USER_TOOL, summarizeToolInput,
   type AgentStartOptions, type PermissionLevel, type RateLimitWindow, type TurnResult,
 } from "./agent-adapter.js";
 import { agentEnv, spawnAgentProcess, type SpawnAgentProcess } from "./agent-process.js";
@@ -263,5 +263,6 @@ export class ClaudeAdapter extends BaseAgentAdapter {
 
 const mcpArgs = (url: string): string[] => [
   "--mcp-config", JSON.stringify({ mcpServers: { [COORDINATOR_MCP_SERVER]: { type: "http", url } } }),
-  "--allowedTools", `mcp__${COORDINATOR_MCP_SERVER}__${SEND_MESSAGE_TOOL}`,
+  "--allowedTools", [SEND_MESSAGE_TOOL, ASK_USER_TOOL].map((tool) => `mcp__${COORDINATOR_MCP_SERVER}__${tool}`).join(","),
+  "--disallowedTools", "AskUserQuestion",
 ];

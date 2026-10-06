@@ -169,6 +169,7 @@ const main = async (): Promise<void> => {
       primary: shell.getPrimary(),
       roles: context?.config.roles ?? {},
       agents: context?.workspace.current.coordinator.status() ?? [],
+      questions: context?.workspace.current.coordinator.pendingQuestions() ?? [],
       pendingInputs: context?.workspace.current.coordinator.pendingInputs() ?? [],
       processes: processes.list().map(({ id, command, status }) => ({ id, command, status })),
       conversations: context?.history.list().map((conversation) => {

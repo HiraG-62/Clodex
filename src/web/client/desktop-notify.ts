@@ -38,6 +38,7 @@ export function updateDesktopNotify(
   if (item.type === "toast") return { state: previous, notification: { title: messages["desktop.notify.notice"], body: item.text } };
   if (!previous.live || item.type !== "event") return { state: previous };
   const event = item.event;
+  if (event.kind === "question") return { state: previous, notification: { title: messages["web.question.title"], body: event.questions[0]?.question ?? "" } };
   if (event.kind === "notice") return { state: previous, notification: { title: messages["desktop.notify.notice"], body: event.text } };
   if (event.kind !== "agent") return { state: previous };
   if (event.event.type === "turn_started") return { state: { ...previous, working: true } };

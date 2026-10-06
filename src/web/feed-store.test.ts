@@ -86,3 +86,13 @@ it("作業中の Agent の未完了ターンは中断にしない", () => {
   expect(loaded.at(-1)).toMatchObject({ event: { agent: "codex", event: { type: "turn", result: { status: "interrupted" } } } });
   expect(store.load("a", new Set(["claude", "codex"]))).toHaveLength(2);
 });
+
+it("質問と回答の event を保存して読み直す", () => {
+  const store = new FeedStore(makeDir());
+  const items: HistoryItem[] = [
+    { type: "event", seq: 1, event: { kind: "question", id: "q1", agent: "claude", at: "now", questions: [{ question: "方針は", options: [{ label: "A" }, { label: "B" }] }] } },
+    { type: "event", seq: 2, event: { kind: "answer", id: "q1", agent: "claude", at: "now", answers: [["B"]] } },
+  ];
+  for (const item of items) store.append("c1", item);
+  expect(store.load("c1")).toEqual(items);
+});

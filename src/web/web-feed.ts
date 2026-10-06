@@ -1,4 +1,5 @@
 // Web UI へ送る feed（DESIGN.md §17 Web UI）。event と output は直近を保持し、接続時に送り直す
+import type { PendingQuestion } from "../protocol/questions.js";
 import type { AgentId } from "../agents/agent-adapter.js";
 import type { AgentState } from "../cli/shell.js";
 import type { CoordinatorEvent } from "../coordinator/event-bus.js";
@@ -21,6 +22,7 @@ export interface WebState {
   conversations: Array<Conversation & { current: boolean; activity?: ConversationActivity }>;
   // 配送待ちの人間の入力（取り消し・編集の対象）
   pendingInputs: PendingInput[];
+  questions: PendingQuestion[];
   processes: Array<{ id: number; command: string; status: "running" | "exited" | "stopped" }>;
 }
 

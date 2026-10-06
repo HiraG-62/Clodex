@@ -115,7 +115,7 @@ describe("applyFeedItem", () => {
       agent("claude", { type: "rate_limit" }),
       agent("claude", { type: "context", tokens: 1 }),
       agent("claude", { type: "exit", code: 0 }),
-      { type: "state", state: { project: "C:\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], processes: [] } },
+      { type: "state", state: { project: "C:\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [] } },
     ])).toEqual([]);
   });
 
@@ -146,4 +146,15 @@ it("前の履歴を足して再構築するとページをまたぐターンが�
   expect(result).toHaveLength(1);
   expect(result[0]).toMatchObject({ id: "e1", status: "completed", text: "完了" });
   expect(rebuildTimeline([], applyFeedItem)).toEqual([]);
+});
+
+it("質問と回答を同じカードにまとめ、他のカードを変更しない", () => {
+  const questions = [{ question: "選択", options: [{ label: "A" }, { label: "B" }] }];
+  const first = run([output("ログ"), { type: "event", seq: 20, event: { kind: "question", id: "q1", agent: "codex", questions, at: AT } }]);
+  expect(first[1]).toEqual({ kind: "question", id: "q1", agent: "codex", questions, at: AT });
+  const answered = applyFeedItem(first, { type: "event", seq: 21, event: { kind: "answer", id: "q1", agent: "codex", answers: [["A"]], at: AT } });
+  expect(answered).toHaveLength(2);
+  expect(answered[1]).toMatchObject({ id: "q1", answers: [["A"]] });
+  expect(answered[0]).toBe(first[0]);
+  expect(applyFeedItem([], { type: "event", seq: 21, event: { kind: "answer", id: "missing", agent: "codex", answers: [["A"]], at: AT } })).toEqual([]);
 });

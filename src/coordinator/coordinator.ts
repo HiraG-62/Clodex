@@ -1,4 +1,6 @@
 // Agent 間の routing と lifecycle を決定論的に行う（DESIGN.md §3.9, §12）
+import { randomUUID } from "node:crypto";
+import { askUserSchema, answersSchema, type AskUserResult, type PendingQuestion } from "../protocol/questions.js";
 import {
   AGENT_IDS, type AgentAdapter, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult,
 } from "../agents/agent-adapter.js";
@@ -28,6 +30,8 @@ export interface PendingInput {
   text: string;
 }
 
+const QUESTION_ID_PREFIX = "q_";
+const QUESTION_HEADER_LENGTH = 80;
 const INPUT_ID_PREFIX = "in";
 const PREVIEW_LENGTH = 40;
 export const RECOVERY_CONTINUE = "[Clodex] Clodex restarted and your previous turn was interrupted. Continue the task you were working on.";
@@ -56,6 +60,7 @@ export class Coordinator {
   private readonly budget: BudgetManager;
   private readonly usage: UsageMonitor;
   private inputSeq = 0;
+  private readonly questions = new Map<string, PendingQuestion>();
   private readonly liveUsage = new Set<AgentId>();
   private readonly recoveryListeners = new Set<() => void>();
   private stoppingRecovery: ConversationRecovery | undefined;
@@ -73,12 +78,14 @@ export class Coordinator {
   recoveryState(): ConversationRecovery {
     if (this.stoppingRecovery) return this.stoppingRecovery;
     return {
+      questions: this.pendingQuestions(),
       interrupted: AGENT_IDS.filter((id) => this.mailboxes[id].activeSending || this.options.agents[id].status === "busy"),
       queue: { claude: this.mailboxes.claude.recoveryQueue, codex: this.mailboxes.codex.recoveryQueue },
     };
   }
 
   restore(state: ConversationRecovery): void {
+    for (const question of state.questions ?? []) this.questions.set(question.id, question);
     for (const id of AGENT_IDS) this.mailboxes[id].pause();
     for (const id of state.interrupted) {
       if (this.mailboxes[id].sessionId) void this.mailboxes[id].enqueue(RECOVERY_CONTINUE, { suffix: this.reminder });
@@ -131,6 +138,34 @@ export class Coordinator {
       );
     };
     this.mailboxes = { claude: createMailbox("claude"), codex: createMailbox("codex") };
+  }
+
+  askUser(agent: AgentId, input: unknown): AskUserResult {
+    const parsed = askUserSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: parsed.error.message };
+    const id = `${QUESTION_ID_PREFIX}${randomUUID()}`;
+    const question: PendingQuestion = { id, agent, questions: parsed.data.questions };
+    this.questions.set(id, question);
+    this.options.bus.publish({ kind: "question", ...question });
+    this.notifyRecoveryChange();
+    return { ok: true, id };
+  }
+
+  pendingQuestions(): PendingQuestion[] { return [...this.questions.values()]; }
+
+  answer(id: string, input: unknown): string | undefined {
+    const question = this.questions.get(id);
+    if (!question) return t("question.missing");
+    const parsed = answersSchema.safeParse(input);
+    if (!parsed.success || parsed.data.length !== question.questions.length) return t("question.invalid");
+    const answers = parsed.data;
+    const text = `Answer to your question ${id}:\n` + question.questions.map((item, index) =>
+      `- ${item.header ?? item.question.slice(0, QUESTION_HEADER_LENGTH)}: ${answers[index]!.join(", ")}`).join("\n");
+    this.questions.delete(id);
+    this.options.bus.publish({ kind: "answer", id, agent: question.agent, answers });
+    void this.mailboxes[question.agent].enqueue(text, { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, suffix: this.reminder });
+    this.notifyRecoveryChange();
+    return undefined;
   }
 
   // MCP の send_message から呼ばれる。検証・記録・配送を行い、受理結果を送信元へ返す

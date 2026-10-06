@@ -75,3 +75,9 @@ describe("highlight", () => {
     expect(highlight(text, files).map((s) => s.text).join("")).toBe(text);
   });
 });
+
+it("/answer の最初の引数に未回答の質問 ID を補完する", () => {
+  const state = { agents: [], conversations: [], pendingInputs: [], questions: [{ id: "q1", questions: [{ question: "方針は" }] }] };
+  expect(suggest("/answer q", 9, [], state)?.items).toEqual([{ label: "q1", detail: "方針は", insert: "q1 " }]);
+  expect(suggest("/answer q1 ", 11, [], state)).toBeUndefined();
+});

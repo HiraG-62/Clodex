@@ -6,7 +6,7 @@ import { EventBus } from "../coordinator/event-bus.js";
 import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentId } from "../agents/agent-adapter.js";
 import type { CreateMessageResult } from "../protocol/messages.js";
 import { startMcpServer, type McpServerHandle } from "./server.js";
@@ -34,16 +34,16 @@ const accepted: CreateMessageResult = {
 describe("startMcpServer", () => {
   it("send_message を公開し、URL の agentId を送信元として handler に渡す", async () => {
     const calls: Array<{ from: AgentId; input: unknown }> = [];
-    server = await startMcpServer((from, input) => {
+    server = await startMcpServer({ askUser: () => ({ ok: true, id: "q1" }), sendMessage: (from, input) => {
       calls.push({ from, input });
       return accepted;
-    });
+    } });
     expect(server.urlFor("claude")).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp\/[0-9a-f]{32}$/);
     expect(server.urlFor("claude")).not.toBe(server.urlFor("codex"));
 
     const client = await connect(server.urlFor("claude"));
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name)).toEqual(["send_message"]);
+    expect(tools.map((t) => t.name)).toEqual(["send_message", "ask_user"]);
 
     const result = await client.callTool({
       name: "send_message", arguments: { to: "codex", type: "QUESTION", taskId: "T-1", body: "?" },
@@ -55,7 +55,7 @@ describe("startMcpServer", () => {
   });
 
   it("handler が拒否したらエラー文を tool エラーとして返す", async () => {
-    server = await startMcpServer(() => ({ ok: false, error: "replyTo: required for RESULT" }));
+    server = await startMcpServer({ askUser: () => ({ ok: true, id: "q1" }), sendMessage: () => ({ ok: false, error: "replyTo: required for RESULT" }) });
     const client = await connect(server.urlFor("codex"));
     const result = await client.callTool({
       name: "send_message", arguments: { to: "claude", type: "RESULT", taskId: "T-1", body: "x" },
@@ -67,10 +67,10 @@ describe("startMcpServer", () => {
 
   it("Codex の URL からの送信は codex として扱う（URL で送信元が決まる）", async () => {
     const froms: AgentId[] = [];
-    server = await startMcpServer((from) => {
+    server = await startMcpServer({ askUser: () => ({ ok: true, id: "q1" }), sendMessage: (from) => {
       froms.push(from);
       return accepted;
-    });
+    } });
     const client = await connect(server.urlFor("codex"));
     await client.callTool({ name: "send_message", arguments: { to: "claude", type: "QUESTION", taskId: "T-1", body: "?" } });
     expect(froms).toEqual(["codex"]);
@@ -78,7 +78,7 @@ describe("startMcpServer", () => {
   });
 
   it("token が違う、または token の後ろに path を足した URL は 404", async () => {
-    server = await startMcpServer(() => accepted);
+    server = await startMcpServer({ sendMessage: () => accepted, askUser: () => ({ ok: true, id: "q1" }) });
     const port = new URL(server.urlFor("claude")).port;
     const post = (path: string) => fetch(`http://127.0.0.1:${port}${path}`, {
       method: "POST",
@@ -97,7 +97,7 @@ it("spec を公開・配送し、存在しない設計書は tool エラーに�
     projectRoot, bus: new EventBus(), mcpUrlFor: () => "http://localhost/mcp",
     agents: { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") },
   });
-  server = await startMcpServer((from, input) => coordinator.receiveMessage(from, input));
+  server = await startMcpServer({ sendMessage: (from, input) => coordinator.receiveMessage(from, input), askUser: (from, input) => coordinator.askUser(from, input) });
   const client = await connect(server.urlFor("claude"));
   try {
     const listed = await client.listTools();
@@ -112,4 +112,33 @@ it("spec を公開・配送し、存在しない設計書は tool エラーに�
   } finally {
     await client.close();
   }
+});
+
+it("ask_user は URL の Agent を使い、回答を待たずに ID を返す", async () => {
+  const askUser = vi.fn(() => ({ ok: true as const, id: "q1" }));
+  server = await startMcpServer({ sendMessage: () => accepted, askUser });
+  for (const agent of ["claude", "codex"] as const) {
+    const client = await connect(server.urlFor(agent));
+    const questions = [{ question: "方針は", options: [{ label: "A" }, { label: "B" }] }];
+    try {
+      const result = await client.callTool({ name: "ask_user", arguments: { questions, from: "偽装" } });
+      expect(result.isError).toBeFalsy();
+      expect(JSON.stringify(result.content)).toContain("Question q1 is shown to the human. End your turn now; the answer will arrive as a new message.");
+      expect(askUser).toHaveBeenLastCalledWith(agent, { questions });
+      for (const invalid of [[], Array(5).fill(questions[0]), [{ question: "", options: questions[0]!.options }], [{ question: "方針", options: [{ label: "A" }] }], [{ question: "方針", options: Array(7).fill({ label: "A" }) }]]) {
+        expect((await client.callTool({ name: "ask_user", arguments: { questions: invalid } })).isError).toBe(true);
+      }
+    } finally { await client.close(); }
+  }
+  expect(askUser).toHaveBeenCalledTimes(2);
+});
+
+it("ask_user handler の拒否を tool エラーにする", async () => {
+  server = await startMcpServer({ sendMessage: () => accepted, askUser: () => ({ ok: false, error: "invalid question" }) });
+  const client = await connect(server.urlFor("claude"));
+  try {
+    const result = await client.callTool({ name: "ask_user", arguments: { questions: [{ question: "方針", options: [{ label: "A" }, { label: "B" }] }] } });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("invalid question");
+  } finally { await client.close(); }
 });

@@ -132,3 +132,9 @@ describe("/new worktree", () => {
     expect(parseInput("/new codex", "claude")).toEqual({ kind: "new", agent: "codex" });
   });
 });
+
+it("/answer の ID と回答本文を分離する", () => {
+  expect(parseInput('/answer q1 [["A", "B"]]', "claude")).toEqual({ kind: "answer", id: "q1", text: '[["A", "B"]]' });
+  expect(parseInput("/answer q1 自由な回答", "claude")).toEqual({ kind: "answer", id: "q1", text: "自由な回答" });
+  for (const line of ["/answer", "/answer q1"]) expect(parseInput(line, "claude").kind).toBe("invalid");
+});

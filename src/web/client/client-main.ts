@@ -102,7 +102,9 @@ export function clientMain({
   let historyHasMore = true;
   let historyLoading = false;
   let historyGeneration = 0;
+  const questionDrafts = new Map<string, { selected: Set<number>[]; other: string[] }>();
   const resetHistory = () => {
+    questionDrafts.clear();
     history = [];
     items = [];
     historyHasMore = true;
@@ -280,6 +282,80 @@ export function clientMain({
     return node;
   };
 
+  const renderQuestion = (item: Extract<TimelineItem, { kind: "question" }>): HTMLElement => {
+    const node = el("article", `entry question ${item.agent}`);
+    const head = el("div", "head");
+    head.append(el("b", `c-${item.agent}`, AGENTS[item.agent].name), el("span", "kind", t(item.answers ? "web.question.answered" : "web.question.title")), el("time", "mono", clock(item.at)));
+    node.append(mark(item.agent), head);
+    const draft = questionDrafts.get(item.id) ?? { selected: item.questions.map(() => new Set<number>()), other: item.questions.map(() => "") };
+    if (!item.answers) questionDrafts.set(item.id, draft);
+    else questionDrafts.delete(item.id);
+    const submit = el("button", "question-submit", t(item.answers ? "web.question.answered" : "web.question.answer")) as HTMLButtonElement;
+    submit.type = "button";
+    const answers = () => item.questions.map((question, index) => [
+      ...question.options.filter((_option, optionIndex) => draft.selected[index]!.has(optionIndex)).map((option) => option.label),
+      ...(draft.other[index]?.trim() ? [draft.other[index]!.trim()] : []),
+    ]);
+    let submitting = false;
+    const refreshSubmit = () => { submit.disabled = submitting || Boolean(item.answers) || answers().some((answer) => !answer.length); };
+    for (const [index, question] of item.questions.entries()) {
+      const field = el("div", "question-field");
+      if (question.header) field.append(el("span", "kind", question.header));
+      field.append(el("p", "question-text", question.question));
+      const options = el("div", "question-options");
+      const other = el("input", "question-other") as HTMLInputElement;
+      other.type = "text";
+      other.placeholder = t("web.question.other");
+      other.setAttribute("aria-label", t("web.question.other"));
+      other.disabled = Boolean(item.answers);
+      other.value = item.answers ? (item.answers[index] ?? []).filter((answer) => !question.options.some((option) => option.label === answer)).join(", ") : draft.other[index] ?? "";
+      const buttons: HTMLButtonElement[] = [];
+      const refreshOptions = () => {
+        buttons.forEach((button, optionIndex) => {
+          const selected = item.answers ? item.answers[index]?.includes(question.options[optionIndex]!.label) : draft.selected[index]!.has(optionIndex);
+          button.classList.toggle("selected", Boolean(selected));
+          button.setAttribute("aria-pressed", String(Boolean(selected)));
+        });
+        refreshSubmit();
+      };
+      question.options.forEach((option, optionIndex) => {
+        const button = el("button", "question-option") as HTMLButtonElement;
+        button.type = "button";
+        button.disabled = Boolean(item.answers);
+        button.append(el("span", "", option.label));
+        if (option.description) button.append(el("small", "muted", option.description));
+        button.addEventListener("click", () => {
+          const selected = draft.selected[index]!;
+          const wasSelected = selected.has(optionIndex);
+          if (!question.multiSelect) { selected.clear(); draft.other[index] = ""; other.value = ""; }
+          if (wasSelected) selected.delete(optionIndex); else selected.add(optionIndex);
+          refreshOptions();
+        });
+        buttons.push(button);
+        options.append(button);
+      });
+      other.addEventListener("input", () => {
+        draft.other[index] = other.value;
+        if (!question.multiSelect && other.value.trim()) draft.selected[index]!.clear();
+        refreshOptions();
+      });
+      refreshOptions();
+      field.append(options, other);
+      if (item.answers) field.append(el("p", "question-answered", (item.answers[index] ?? []).join(", ")));
+      node.append(field);
+    }
+    submit.addEventListener("click", async () => {
+      submitting = true;
+      refreshSubmit();
+      await send(`/answer ${item.id} ${JSON.stringify(answers())}`);
+      submitting = false;
+      refreshSubmit();
+    });
+    refreshSubmit();
+    node.append(submit);
+    return node;
+  };
+
   const renderItem = (item: TimelineItem): HTMLElement => {
     switch (item.kind) {
       case "human": {
@@ -293,6 +369,7 @@ export function clientMain({
         appendImagePreviews(node, item.text);
         return node;
       }
+      case "question": return renderQuestion(item);
       case "turn": return renderTurn(item);
       case "message": return renderMessage(item);
       case "notice": return el("div", "notice", item.text);
@@ -309,6 +386,16 @@ export function clientMain({
 
   const workingPanel = $("#working-panel");
   const workingToggle = $("#working-toggle");
+  const questionToggle = $("#question-toggle");
+  const renderQuestionCount = () => {
+    const count = state?.questions.length ?? 0;
+    questionToggle.hidden = count === 0;
+    questionToggle.textContent = `${t("web.question.title")} ${count}`;
+  };
+  questionToggle.addEventListener("click", () => {
+    const oldest = state?.questions[0];
+    if (oldest) rendered.get(oldest.id)?.node.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
   const renderWorking = () => {
     const active = items.filter((item): item is Extract<TimelineItem, { kind: "turn" }> => item.kind === "turn" && item.status === "working");
     $("#working-count").textContent = String(active.length);
@@ -500,6 +587,7 @@ export function clientMain({
   };
 
   const renderState = () => {
+    renderQuestionCount();
     if (!state) return;
     $("#path").textContent = state.project || t("web.top.noProject");
     const projects = $("#projects") as HTMLSelectElement;

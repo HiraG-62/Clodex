@@ -49,6 +49,11 @@ class FakeHistory implements ConversationList {
 }
 
 class FakeCoordinator implements ShellCoordinator {
+  questions = [{ id: "q1", agent: "claude" as const, questions: [{ question: "方針", options: [{ label: "A" }, { label: "B" }] }] }];
+  answers: Array<{ id: string; value: unknown }> = [];
+  answerError: string | undefined;
+  pendingQuestions() { return this.questions; }
+  answer(id: string, value: unknown) { this.answers.push({ id, value }); return this.answerError; }
   readonly sent: Array<{ agent: AgentId; text: string }> = [];
   readonly interrupted: Array<AgentId | undefined> = [];
   readonly permissions: Array<{ level: PermissionLevel; agent: AgentId | undefined }> = [];
@@ -521,4 +526,24 @@ it.each(["/new", "/new worktree", "/resume 2", "/rename 名前", "/delete 1", "/
   await shell.handleLine(command);
   expect(notified).toHaveLength(1);
   expect(printed).toEqual([]);
+});
+
+it("/answer は JSON の回答と 1 問への自由記述を渡す", async () => {
+  const { shell, coordinator, notified } = setup();
+  await shell.handleLine('/answer q1 [["A"]]');
+  await shell.handleLine("/answer q1 自由な回答");
+  expect(coordinator.answers).toEqual([{ id: "q1", value: [["A"]] }, { id: "q1", value: [["自由な回答"]] }]);
+  expect(notified).toEqual([]);
+});
+
+it("/answer は複数問への自由記述と不明な ID を拒否し、検証エラーを通知する", async () => {
+  const { shell, coordinator, notified } = setup();
+  coordinator.questions[0]!.questions.push(coordinator.questions[0]!.questions[0]!);
+  await shell.handleLine("/answer q1 自由記述");
+  await shell.handleLine("/answer missing 自由記述");
+  expect(coordinator.answers).toEqual([]);
+  expect(notified).toHaveLength(2);
+  coordinator.answerError = "Invalid answers";
+  await shell.handleLine('/answer q1 {"invalid":true}');
+  expect(notified.at(-1)).toBe("Invalid answers");
 });

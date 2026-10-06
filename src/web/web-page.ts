@@ -273,7 +273,17 @@ const STYLE = `
   .sheet-close { border: 0; background: none; color: var(--muted); font-size: 13px; padding: 8px 0 8px 12px; }
   .primary-action { width: 100%; margin: 8px 0 12px; border: 0; border-radius: 8px; padding: 10px; font-weight: 600; background: var(--invert-bg); color: var(--invert-fg); }
   .setting { margin-bottom: 4px; }
-  .working-tab { position: fixed; right: 0; top: 42%; z-index: 12; writing-mode: vertical-rl; border: 1px solid var(--line-strong);
+  .question-field { display: grid; gap: 8px; margin: 12px 0; }
+  .question-text { margin: 0; white-space: pre-wrap; }
+  .question-options { display: grid; gap: 6px; }
+  .question-option { display: grid; gap: 4px; text-align: left; white-space: pre-wrap; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg); }
+  .question-option.selected { border-color: currentColor; background: var(--bg); }
+  .question-other { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg); }
+  .question-submit { padding: 8px 16px; border: 0; border-radius: 6px; background: var(--invert-bg); color: var(--invert-fg); }
+  .question-submit:disabled { opacity: .5; }
+  .question-answered { margin: 0; white-space: pre-wrap; }
+  .working-tabs { position: fixed; right: 0; top: 42%; z-index: 12; display: flex; gap: 6px; }
+  .working-tab { writing-mode: vertical-rl; border: 1px solid var(--line-strong);
     border-radius: 8px 0 0 8px; background: var(--panel); color: var(--fg-2); padding: 12px 7px; font-size: 12px; box-shadow: 0 3px 14px rgba(0,0,0,.08); }
   .working-panel { position: fixed; right: 0; top: 12%; bottom: 10%; width: min(340px, 92vw); z-index: 13;
     border: 1px solid var(--line); border-radius: 12px 0 0 12px; background: var(--panel); box-shadow: -6px 0 30px rgba(0,0,0,.14);
@@ -306,7 +316,8 @@ const STYLE = `
   @media (max-width: 899px), (pointer: coarse) {
     .topbar { flex-wrap: wrap; gap: 6px; }
     .topbar .path { display: none; }
-    .working-tab { top: auto; bottom: calc(96px + env(safe-area-inset-bottom)); right: 12px; writing-mode: horizontal-tb;
+    .working-tabs { top: auto; bottom: calc(96px + env(safe-area-inset-bottom)); right: 12px; }
+    .working-tab { writing-mode: horizontal-tb;
       border-radius: 999px; padding: 5px 12px; }
     .working-panel { top: auto; bottom: 0; left: 0; width: 100%; max-height: 65vh; border-radius: 14px 14px 0 0; }
   }
@@ -365,7 +376,8 @@ const body = (messages: Messages) => {
     </div>
   </form>
 </div>
-<button class="working-tab" id="working-toggle" type="button" aria-expanded="false">${m("web.working.title")} <span id="working-count">0</span></button>
+<div class="working-tabs"><button class="working-tab" id="question-toggle" type="button" hidden></button>
+<button class="working-tab" id="working-toggle" type="button" aria-expanded="false">${m("web.working.title")} <span id="working-count">0</span></button></div>
 <aside class="working-panel" id="working-panel" hidden aria-label="${m("web.working.title")}">
   <div class="working-panel-head"><span>${m("web.working.title")}</span><button id="working-close" type="button" aria-label="${m("web.working.close")}">×</button></div>
   <div class="working-list" id="working-list"></div>

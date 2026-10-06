@@ -36,7 +36,7 @@ export const DISABLE_MOUSE_TRACKING = "\x1b[?1006l\x1b[?1000l";
 export const TUI_RENDER_OPTIONS = { exitOnCtrlC: false, alternateScreen: true } as const;
 const { line: LINE_COLOR, muted: MUTED_COLOR, warn: WARN_COLOR,
   claude: CLAUDE_COLOR, codex: CODEX_COLOR } = TERMINAL_COLORS;
-const EMPTY_STATE: WebState = { project: "", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], processes: [] };
+const EMPTY_STATE: WebState = { project: "", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [] };
 const EMPTY_FEED: TerminalFeed = { timeline: [], completed: [] };
 
 const runWindowsConsoleMode = (): Promise<void> => new Promise((resolve, reject) => {
@@ -101,6 +101,7 @@ const makeAssist = () => createInputAssist(slashCommands(), ["claude", "codex"],
 });
 
 const labels = (): TerminalLabels => ({
+  question: t("web.question.title"), answered: t("web.question.answered"),
   you: t("tui.you"), working: t("web.turn.working"), completed: t("web.turn.completed"),
   failed: t("web.turn.failed"), interrupted: t("web.turn.interrupted"),
   steps: t("web.turn.steps"), message: t("tui.message"), notice: t("tui.notice"),
