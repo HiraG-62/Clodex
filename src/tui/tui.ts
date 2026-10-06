@@ -6,7 +6,7 @@ import { Box, Text, render, useApp, useInput, useStdout } from "ink";
 import { slashCommands } from "../cli/commands.js";
 import { t } from "../i18n/i18n.js";
 import { createInputAssist } from "../web/client/input-assist.js";
-import type { WebState } from "../web/web-feed.js";
+import type { HistoryItem, WebState } from "../web/web-feed.js";
 import type { FeedClient } from "./feed-client.js";
 import { advanceTerminalFeed, CardLineCache, cursorSlices, editInput, inputFrame, splitMouseInput, TERMINAL_COLORS,
   scrollAfterGrowth, scrollBy, scrollToBottom, textWidth, visibleRange, WHEEL_LINES, wrapText,
@@ -14,6 +14,7 @@ import { advanceTerminalFeed, CardLineCache, cursorSlices, editInput, inputFrame
 
 const h = React.createElement;
 const MAX_SUGGESTIONS = 5;
+const TOAST_DURATION_MS = 4000;
 const SPINNER_INTERVAL_MS = 250;
 const SPINNER_FRAMES = ["◐", "◓", "◑", "◒"] as const;
 const MOUSE_FRAGMENT_TIMEOUT_MS = 20;
@@ -144,6 +145,12 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
   const [buffer, setBuffer] = useState<InputBuffer>({ text: "", cursor: 0 });
   const [selected, setSelected] = useState(0);
   const [expanded, setExpanded] = useState(false);
+  const history = useRef<HistoryItem[]>([]);
+  const historyGeneration = useRef(0);
+  const historyLoading = useRef(false);
+  const historyHasMore = useRef(true);
+  const historyPrepended = useRef(false);
+  const [historyRequest, requestHistory] = useState(0);
   const [scroll, setScroll] = useState<ScrollState>(scrollToBottom);
   const cache = useRef(new CardLineCache());
   const previousLineCount = useRef(0);
@@ -168,12 +175,28 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
   useEffect(() => {
     let closed = false;
     let unsubscribe: (() => void) | undefined;
+    let toastTimer: ReturnType<typeof setTimeout> | undefined;
     void client.connect((item) => {
       if (closed) return;
-      if (item.type === "state") setState(item.state);
-      else setFeed((old) => advanceTerminalFeed(old, item, false));
+      if (item.type === "toast") {
+        clearTimeout(toastTimer);
+        setNotice(item.text);
+        toastTimer = setTimeout(() => setNotice(""), TOAST_DURATION_MS);
+      } else if (item.type === "state") setState(item.state);
+      else if (item.type === "reset" || item.type === "version") {
+        history.current = [];
+        historyGeneration.current++;
+        historyLoading.current = false;
+        historyHasMore.current = true;
+        historyPrepended.current = false;
+        setFeed(EMPTY_FEED);
+        setScroll(scrollToBottom());
+      } else {
+        history.current.push(item);
+        setFeed((old) => advanceTerminalFeed(old, item, false));
+      }
     }).then((stop) => { if (closed) stop(); else unsubscribe = stop; }).catch((error: unknown) => setNotice(String(error)));
-    return () => { closed = true; unsubscribe?.(); };
+    return () => { closed = true; historyGeneration.current++; clearTimeout(toastTimer); unsubscribe?.(); };
   }, [client]);
   useEffect(() => {
     let active = true;
@@ -198,6 +221,7 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
     const onWheel = (direction: "up" | "down") => {
       const { total, height } = scrollBounds.current;
       setScroll((old) => scrollBy(old, direction === "up" ? WHEEL_LINES : -WHEEL_LINES, total, height));
+      if (direction === "up") requestHistory((old) => old + 1);
     };
     mouseInput?.on("wheel", onWheel);
     return () => { mouseInput?.off("wheel", onWheel); };
@@ -205,8 +229,31 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
   useEffect(() => {
     const previous = previousLineCount.current;
     previousLineCount.current = logLines.length;
+    if (historyPrepended.current) {
+      // offset は末尾からの距離なので、先頭への追加では変えない。
+      historyPrepended.current = false;
+      return;
+    }
     setScroll((old) => scrollAfterGrowth(old, previous, logLines.length, logHeight));
-  }, [logLines.length, logHeight]);
+  }, [feed, logLines.length, logHeight]);
+  useEffect(() => {
+    const oldest = history.current[0];
+    if (!historyRequest || !oldest || historyLoading.current || !historyHasMore.current) return;
+    if (visibleRange(logLines.length, logHeight, scroll.offset).start !== 0) return;
+    const generation = historyGeneration.current;
+    historyLoading.current = true;
+    void client.history(oldest.seq).then((page) => {
+      if (generation !== historyGeneration.current) return;
+      historyHasMore.current = page.hasMore;
+      history.current = [...page.items, ...history.current];
+      historyPrepended.current = true;
+      setFeed(history.current.reduce((old, item) => advanceTerminalFeed(old, item, false), EMPTY_FEED));
+    }).catch(() => {
+      if (generation === historyGeneration.current) setNotice(t("web.history.failed"));
+    }).finally(() => {
+      if (generation === historyGeneration.current) historyLoading.current = false;
+    });
+  }, [historyRequest]);
   const range = visibleRange(logLines.length, logHeight, scroll.offset);
   const shown = logLines.slice(range.start, range.end);
   if (scroll.unseen && shown.length) {
@@ -221,7 +268,11 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
   useInput((keyText, key) => {
     if (key.ctrl && keyText === "d") { exit(); return; }
     if (key.ctrl && keyText === "o") { setExpanded((old) => !old); return; }
-    if (key.pageUp || key.pageDown) { setScroll((old) => scrollBy(old, (key.pageUp ? 1 : -1) * Math.max(1, logHeight - 1), logLines.length, logHeight)); return; }
+    if (key.pageUp || key.pageDown) {
+      setScroll((old) => scrollBy(old, (key.pageUp ? 1 : -1) * Math.max(1, logHeight - 1), logLines.length, logHeight));
+      if (key.pageUp) requestHistory((old) => old + 1);
+      return;
+    }
     if (key.ctrl && key.end) { setScroll(scrollToBottom()); return; }
     if (key.ctrl && keyText === "c") {
       if (state.agents.some((agent) => agent.status === "busy")) send("/interrupt");

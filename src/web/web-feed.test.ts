@@ -75,3 +75,45 @@ describe("WebFeed", () => {
     expect(received).toHaveLength(1);
   });
 });
+
+it("toast は購読者だけに届き履歴にも保存にも入らない", () => {
+  const recorded: FeedItem[] = [];
+  const received: FeedItem[] = [];
+  const feed = new WebFeed(DEFAULT_RECENT_ITEMS, (item) => recorded.push(item));
+  feed.subscribe((item) => received.push(item));
+  feed.publishToast("切り替え", "info");
+  feed.publishToast("注意", "warn");
+  expect(received).toEqual([{ type: "toast", text: "切り替え", level: "info" }, { type: "toast", text: "注意", level: "warn" }]);
+  expect(feed.recent()).toEqual([]);
+  expect(recorded).toEqual([]);
+});
+
+it("初回と replace は直近 200 件だけを配り、前の履歴も保持する", () => {
+  const feed = new WebFeed();
+  for (let i = 1; i <= 1001; i++) feed.publishOutput(String(i));
+  expect(feed.recent()).toHaveLength(200);
+  expect(feed.recent()[0]?.seq).toBe(802);
+  expect(feed.before(802).items).toHaveLength(200);
+  const received: FeedItem[] = [];
+  feed.subscribe((item) => received.push(item));
+  feed.replace(Array.from({ length: 500 }, (_, seq) => ({ type: "output", seq, text: String(seq) })));
+  expect(received).toHaveLength(201);
+  expect(received[0]).toEqual({ type: "reset" });
+  expect(received.slice(1)).toEqual(feed.recent());
+  const previous = feed.before(feed.recent()[0]!.seq);
+  expect(previous.items).toHaveLength(200);
+  expect(previous.hasMore).toBe(true);
+  expect(feed.before(previous.items[0]!.seq).items).toHaveLength(100);
+  expect(feed.before(previous.items[0]!.seq).hasMore).toBe(false);
+});
+
+it("before は境界を含めず limit を 1〜200 に収める", () => {
+  const feed = new WebFeed();
+  for (let i = 1; i <= 500; i++) feed.publishOutput(String(i));
+  expect(feed.before(4, 2)).toEqual({ items: [{ type: "output", seq: 2, text: "2" }, { type: "output", seq: 3, text: "3" }], hasMore: true });
+  expect(feed.before(1)).toEqual({ items: [], hasMore: false });
+  expect(feed.before(2, 0)).toEqual({ items: [{ type: "output", seq: 1, text: "1" }], hasMore: false });
+  expect(feed.before(500, -1).items).toHaveLength(1);
+  expect(feed.before(500, 999).items).toHaveLength(200);
+  expect(feed.before(500, Number.NaN).items).toHaveLength(200);
+});

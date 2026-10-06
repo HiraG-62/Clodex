@@ -49,3 +49,25 @@ describe("createRemoteFeedClient", () => {
     close();
   });
 });
+
+it("local の history は指定 seq より前の履歴を返す", async () => {
+  const feed = new WebFeed();
+  for (let i = 1; i <= 500; i++) feed.publishOutput(String(i));
+  const client = createLocalFeedClient(feed, async () => {}, async () => []);
+  const page = await client.history(301);
+  expect(page.items).toHaveLength(200);
+  expect(page.items[0]?.seq).toBe(101);
+  expect(page.items.at(-1)?.seq).toBe(300);
+  expect(page.hasMore).toBe(true);
+});
+
+it("remote の history は認証付きで前の履歴を取得する", async () => {
+  const page = { items: [{ type: "output", seq: 1, text: "過去" }], hasMore: false };
+  const fetchMock = vi.fn(async (_url: URL, _init: RequestInit) => new Response(JSON.stringify(page)));
+  vi.stubGlobal("fetch", fetchMock);
+  const client = createRemoteFeedClient({ pid: 1, port: 4319, url: "http://127.0.0.1:4319" }, "secret");
+  expect(await client.history(201)).toEqual(page);
+  const [url, init] = fetchMock.mock.calls[0]!;
+  expect(String(url)).toBe("http://127.0.0.1:4319/api/history?before=201");
+  expect(init.headers).toEqual({ cookie: "clodex_token=secret" });
+});

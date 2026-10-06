@@ -15,7 +15,7 @@ const fakeClient = () => {
   let listener: (item: FeedItem) => void = () => {};
   const client: FeedClient = {
     connect: async (onItem) => { listener = onItem; return () => {}; },
-    send: async () => {}, files: async () => [],
+    send: async () => {}, files: async () => [], history: async () => ({ items: [], hasMore: false }),
   };
   return { client, emit: (item: FeedItem) => listener(item) };
 };
@@ -238,4 +238,58 @@ describe("代替画面とマウス", () => {
     await withMouseTracking((value) => writes.push(value), async (mouse) => { mouse.start(); mouse.stop(); mouse.start(); });
     expect(writes).toEqual([ENABLE_MOUSE_TRACKING, DISABLE_MOUSE_TRACKING]);
   });
+});
+
+it("reset と version で前の会話のログを消す", async () => {
+  const { client, emit } = fakeClient();
+  const app = render(React.createElement(TuiApp, { client }));
+  await tick();
+  for (const boundary of [{ type: "reset" }, { type: "version", version: "v" }] as const) {
+    emit({ type: "output", seq: 1, text: "前の会話のログ" });
+    await tick();
+    expect(app.lastFrame()).toContain("前の会話のログ");
+    emit(boundary);
+    await tick();
+    expect(app.lastFrame()).not.toContain("前の会話のログ");
+  }
+});
+
+it("上端で履歴を読み、reset 後に届いた前の会話の履歴を捨てる", async () => {
+  const { client, emit } = fakeClient();
+  let finish: ((page: Awaited<ReturnType<FeedClient["history"]>>) => void) | undefined;
+  const history = vi.fn(() => new Promise<Awaited<ReturnType<FeedClient["history"]>>>((resolve) => { finish = resolve; }));
+  client.history = history;
+  const app = render(React.createElement(TuiApp, { client }));
+  await tick();
+  emit({ type: "output", seq: 201, text: "現在のログ" });
+  await tick();
+  app.stdin.write("\x1b[5~");
+  await tick();
+  expect(history).toHaveBeenCalledWith(201);
+  app.stdin.write("\x1b[5~");
+  await tick();
+  expect(history).toHaveBeenCalledTimes(1);
+  emit({ type: "reset" });
+  finish?.({ items: [{ type: "output", seq: 1, text: "古い応答" }], hasMore: false });
+  await tick();
+  expect(app.lastFrame()).not.toContain("古い応答");
+});
+
+it("履歴追加後も表示中の行を保ち、hasMore が false なら再取得しない", async () => {
+  const { client, emit } = fakeClient();
+  const history = vi.fn(async () => ({ items: [{ type: "output" as const, seq: 1, text: "過去のログ" }], hasMore: false }));
+  client.history = history;
+  const app = render(React.createElement(TuiApp, { client }));
+  await tick();
+  for (let seq = 201; seq <= 212; seq++) emit({ type: "output", seq, text: `現在の行 ${seq}` });
+  await tick();
+  app.stdin.write("\x1b[5~");
+  await tick();
+  expect(history).toHaveBeenCalledWith(201);
+  expect(app.lastFrame()).toContain("現在の行 201");
+  expect(app.lastFrame()).not.toContain("過去のログ");
+  app.stdin.write("\x1b[5~");
+  await tick();
+  expect(app.lastFrame()).toContain("過去のログ");
+  expect(history).toHaveBeenCalledTimes(1);
 });

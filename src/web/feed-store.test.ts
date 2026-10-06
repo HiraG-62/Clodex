@@ -75,3 +75,14 @@ describe("FeedStore", () => {
     expect(() => new FeedStore(makeDir()).prune([])).not.toThrow();
   });
 });
+
+it("作業中の Agent の未完了ターンは中断にしない", () => {
+  const store = new FeedStore(makeDir());
+  for (const agent of ["claude", "codex"] as const) store.append("a", {
+    type: "event", seq: 1, event: { kind: "agent", agent, at: "2026-10-05T12:00:00Z", event: { type: "turn_started" } },
+  });
+  const loaded = store.load("a", new Set(["claude"]));
+  expect(loaded).toHaveLength(3);
+  expect(loaded.at(-1)).toMatchObject({ event: { agent: "codex", event: { type: "turn", result: { status: "interrupted" } } } });
+  expect(store.load("a", new Set(["claude", "codex"]))).toHaveLength(2);
+});

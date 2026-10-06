@@ -154,6 +154,8 @@ const setup = () => {
     output(id: number) { return id === 1 ? ["line one", "line two"] : undefined; },
   };
   const printed: string[] = [];
+  const notified: string[] = [];
+  const levels: Array<"info" | "warn" | undefined> = [];
   let verbose = false;
   const history = new FakeHistory();
   const busy = { value: false };
@@ -165,7 +167,7 @@ const setup = () => {
     open: async (path: string) => ({ projectRoot: path, primary: "codex" as AgentId }),
   };
   const shell = createShell({
-    coordinator: () => coordinator, primary: "claude", busyElsewhere: () => busy.value, print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history, runner,
+    coordinator: () => coordinator, primary: "claude", notify: (text, level) => { notified.push(text); levels.push(level); }, busyElsewhere: () => busy.value, print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history, runner,
     saveSettings: (agents, change) => saved.push({ agents, change }),
     resolveReference: async (path) => {
       references.push(path);
@@ -175,7 +177,7 @@ const setup = () => {
     roles: () => roles,
     saveRole: (agent, value) => { roles[agent] = value; return value; },
   });
-  return { coordinator, printed, shell, history, runner, saved, busy, projects, roles, background, references };
+  return { coordinator, printed, notified, levels, shell, history, runner, saved, busy, projects, roles, background, references };
 };
 
 describe("createShell", () => {
@@ -358,27 +360,28 @@ describe("createShell", () => {
   });
 
   it("/rename は今の会話の名前を変える", async () => {
-    const { history, printed, shell } = setup();
+    const { history, printed, notified, shell } = setup();
     await shell.handleLine("/rename 設計の相談 その2");
     expect(history.renamed).toEqual(["設計の相談 その2"]);
-    expect(printed).toEqual(["renamed: \"設計の相談 その2\""]);
+    expect(notified).toEqual(["renamed: \"設計の相談 その2\""]);
+    expect(printed).toEqual([]);
   });
 
   it("/delete と /pin は /resume の番号で会話を指定する", async () => {
-    const { history, printed, shell } = setup();
+    const { history, printed, notified, shell } = setup();
     await shell.handleLine("/delete 1");
     await shell.handleLine("/delete 2");
     await shell.handleLine("/pin 3");
     await shell.handleLine("/pin 3");
     await shell.handleLine("/pin 9");
     expect(history.removed).toEqual(["conv-old"]);
-    expect(printed).toEqual([
+    expect(notified).toEqual([
       "cannot delete the current conversation",
       "deleted: \"Remember BANANA\"",
       "pinned: \"(no input)\"",
       "unpinned: \"(no input)\"",
-      "no conversation #9",
     ]);
+    expect(printed).toEqual(["no conversation #9"]);
   });
 
   it("/primary は通常のテキストの送り先を切り替える", async () => {
@@ -403,11 +406,12 @@ describe("createShell", () => {
   });
 
   it("/resume <番号> は会話を切り替え、前の会話の Agent は止めない", async () => {
-    const { coordinator, history, printed, shell } = setup();
+    const { coordinator, history, printed, notified, shell } = setup();
     await shell.handleLine("/resume 2");
     expect(coordinator.switched).toEqual([]);
     expect(history.currentId).toBe("conv-old");
-    expect(printed).toEqual(['switched to: "Remember BANANA"']);
+    expect(notified).toEqual(['switched to: "Remember BANANA"']);
+    expect(printed).toEqual([]);
   });
 
   it("/resume で今の会話や存在しない番号を選んだら何もしない", async () => {
@@ -419,29 +423,32 @@ describe("createShell", () => {
   });
 
   it("/new は新しい会話を今の会話にし、前の会話の Agent は止めない", async () => {
-    const { coordinator, history, printed, shell } = setup();
+    const { coordinator, history, printed, notified, shell } = setup();
     await shell.handleLine("/new");
     expect(coordinator.switched).toEqual([]);
     expect(history.started).toEqual([{ worktree: false }]);
-    expect(printed).toEqual(["new conversation"]);
+    expect(notified).toEqual(["new conversation"]);
+    expect(printed).toEqual([]);
   });
 
   it("/new worktree は worktree で新しい会話を始め、作れなければ理由を表示する", async () => {
-    const { history, printed, shell } = setup();
+    const { history, printed, notified, shell } = setup();
     await shell.handleLine("/new worktree");
     expect(history.started).toEqual([{ worktree: true }]);
-    expect(printed).toEqual(["new conversation: worktree C:\\dev\\app-1a2b (clodex/1a2b)"]);
+    expect(notified).toEqual(["new conversation: worktree C:\\dev\\app-1a2b (clodex/1a2b)"]);
     history.worktreeError = "fatal: not a git repository";
     await shell.handleLine("/new worktree");
-    expect(printed.at(-1)).toBe("could not create a worktree: fatal: not a git repository");
+    expect(notified.at(-1)).toBe("could not create a worktree: fatal: not a git repository");
   });
 
   it("同じ作業場所で別の会話が作業中なら、送る前に worktree を勧める", async () => {
-    const { busy, coordinator, printed, shell } = setup();
+    const { busy, coordinator, printed, notified, levels, shell } = setup();
     busy.value = true;
     await shell.handleLine("hello");
-    expect(printed).toEqual(["Another chat is working in the same directory (parallel: /new worktree)"]);
+    expect(notified).toEqual(["Another chat is working in the same directory (parallel: /new worktree)"]);
     expect(coordinator.sent).toEqual([{ agent: "claude", text: "hello" }]);
+    expect(printed).toEqual([]);
+    expect(levels).toEqual(["warn"]);
   });
 
   it("/new <agent> はその Agent だけを今の会話の中で始め直す", async () => {
@@ -507,4 +514,11 @@ describe("createShell", () => {
     expect(coordinator.interrupted).toEqual([]);
     expect(printed.join("\n")).toMatch(/\/exit/);
   });
+});
+
+it.each(["/new", "/new worktree", "/resume 2", "/rename 名前", "/delete 1", "/delete 2", "/pin 2", "/project C:/dev/two"])("%s の操作結果はログに入れない", async (command) => {
+  const { shell, printed, notified } = setup();
+  await shell.handleLine(command);
+  expect(notified).toHaveLength(1);
+  expect(printed).toEqual([]);
 });

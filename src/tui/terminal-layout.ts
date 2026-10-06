@@ -9,7 +9,7 @@ export interface StaticItem { item: TimelineItem; expanded: boolean; elapsedSeco
 export interface TerminalFeed { timeline: TimelineItem[]; completed: StaticItem[]; }
 
 export const advanceTerminalFeed = (state: TerminalFeed, feed: FeedItem, expanded: boolean): TerminalFeed => {
-  if (feed.type === "state" || feed.type === "version") return state;
+  if (feed.type === "state" || feed.type === "version" || feed.type === "toast") return state;
   if (feed.type === "reset") return { timeline: [], completed: state.completed };
   if (feed.type === "output") {
     return { ...state, completed: [...state.completed, { item: { kind: "output", id: `o${feed.seq}`, text: feed.text }, expanded }] };

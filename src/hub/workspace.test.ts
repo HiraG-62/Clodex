@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { Coordinator } from "../coordinator/coordinator.js";
 import { EventBus, type CoordinatorEvent } from "../coordinator/event-bus.js";
@@ -34,10 +34,11 @@ const setup = (worktree: WorktreeResult = { ok: true, worktree: { workDir: "C:\\
     created.push(runtime);
     return runtime;
   };
-  const workspace = new Workspace({ history, projectRoot: ROOT, createRuntime, createWorktree: async () => worktree });
+  const notify = vi.fn();
+  const workspace = new Workspace({ notify, history, projectRoot: ROOT, createRuntime, createWorktree: async () => worktree });
   const seen: Array<{ conversationId: string; event: CoordinatorEvent; current: boolean }> = [];
   workspace.onEvent((runtime, event, current) => seen.push({ conversationId: runtime.conversationId, event, current }));
-  return { history, workspace, created, seen };
+  return { history, workspace, created, seen, notify };
 };
 
 describe("Workspace", () => {
@@ -74,15 +75,16 @@ describe("Workspace", () => {
   });
 
   it("今の会話でない会話のターンが終わったら、今の会話に通知する", async () => {
-    const { workspace, created, seen } = setup();
+    const { workspace, created, seen, notify } = setup();
     await workspace.init();
     void workspace.current.coordinator.sendToAgent("codex", "裏で進める作業");
     await flush();
     await workspace.startNew();
     created[0]!.bus.publish({ kind: "agent", agent: "codex", event: { type: "turn", result: { status: "completed", text: "ok" } } });
-    const notice = seen.find((s) => s.event.kind === "notice");
-    expect(notice).toMatchObject({ conversationId: created[1]!.conversationId, current: true });
-    expect(notice?.event.kind === "notice" && notice.event.text).toContain("裏で進める作業");
+    expect(seen.some((s) => s.event.kind === "notice")).toBe(false);
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining("裏で進める作業"), "info");
+    created[0]!.bus.publish({ kind: "agent", agent: "codex", event: { type: "turn", result: { status: "failed", text: "" } } });
+    expect(notify).toHaveBeenLastCalledWith(expect.any(String), "warn");
     // 裏の会話の event も current: false として届く
     expect(seen.some((s) => s.conversationId === created[0]!.conversationId && !s.current)).toBe(true);
   });

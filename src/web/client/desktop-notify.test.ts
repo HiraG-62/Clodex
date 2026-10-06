@@ -81,3 +81,8 @@ describe("desktop-notify", () => {
     expect(updateDesktopNotify(current, state(), en).notification).toEqual({ title: "Clodex · Work finished", body: `Codex: ${"a".repeat(159)}…` });
   });
 });
+
+it("toast をデスクトップ通知にする", () => {
+  const result = updateDesktopNotify({ live: true, working: false }, { type: "toast", text: "切り替え", level: "info" }, ja);
+  expect(result.notification).toEqual({ title: "Clodex · 通知", body: "切り替え" });
+});

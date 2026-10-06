@@ -12,7 +12,7 @@ import { clientMain } from "./client/client-main.js";
 import { createInputAssist } from "./client/input-assist.js";
 import { collectArtifacts, displayPath, findImagePaths } from "./client/artifacts.js";
 import { renderMarkdown } from "./client/markdown.js";
-import { applyFeedItem } from "./client/timeline.js";
+import { applyFeedItem, rebuildTimeline } from "./client/timeline.js";
 import { composeInputLine } from "./client/compose-input.js";
 import { isShellInput } from "./client/shell-input.js";
 import { chooseProjectPath } from "./client/project-picker.js";
@@ -257,8 +257,11 @@ const STYLE = `
   .send { margin-left: auto; border: 0; border-radius: 6px; padding: 8px 16px; font-weight: 600; font-size: 13px; background: var(--invert-bg); color: var(--invert-fg); }
 
   .conn { padding: 6px 16px; font-size: 12.5px; background: var(--warn); color: var(--invert-fg); text-align: center; }
-  .toast { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%); max-width: calc(100% - 32px);
-    padding: 8px 14px; border-radius: 8px; background: var(--invert-bg); color: var(--invert-fg); font-size: 13px; z-index: 30; }
+  .toast { position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top)); transform: translateX(-50%);
+    display: grid; gap: 8px; max-width: calc(100% - 32px); z-index: 30; }
+  .toast-item { padding: 8px 14px; border: 0; border-radius: 8px; background: var(--invert-bg); color: var(--invert-fg); font-size: 13px; cursor: pointer; }
+  .toast-item.warn { background: var(--warn); }
+  @media (min-width: 800px) { .toast { left: auto; right: 16px; transform: none; max-width: 420px; } }
 
   .sheet { position: fixed; inset: 0; z-index: 20; display: grid; align-items: end; }
   .sheet-backdrop { position: absolute; inset: 0; background: var(--scrim); border: 0; }
@@ -374,7 +377,7 @@ const body = (messages: Messages) => {
     <div id="sheet-body"></div>
   </div>
 </div>
-<div class="toast" id="toast" hidden role="status"></div>
+<div class="toast" id="toast" role="status"></div>
 `;
 };
 
@@ -388,6 +391,7 @@ const FUNCTIONS = `
   isShellInput: ${inlineScript(isShellInput.toString())},
   renderMarkdown: ${inlineScript(renderMarkdown.toString())},
   applyFeedItem: ${inlineScript(applyFeedItem.toString())},
+  rebuildTimeline: ${inlineScript(rebuildTimeline.toString())},
   composeInputLine: ${inlineScript(composeInputLine.toString())},
   createInputAssist: ${inlineScript(createInputAssist.toString())},
   collectArtifacts: ${inlineScript(collectArtifacts.toString())},

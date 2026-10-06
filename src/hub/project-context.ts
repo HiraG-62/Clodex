@@ -53,6 +53,7 @@ export interface OpenProjectOptions {
   homeDir: string;
   args: CliArgs;
   language: Language;
+  notify(text: string, level: "info" | "warn"): void;
   printTerminal(line: string): void;
   displayMode(): DisplayMode;
   isCurrent(): boolean;
@@ -62,7 +63,7 @@ export interface OpenProjectOptions {
 }
 
 export const openProject = async ({
-  projectRoot, homeDir, args, language, printTerminal, displayMode, isCurrent, modelCatalog, registerCoordinator, createAgents = () => ({ claude: new ClaudeAdapter(), codex: new CodexAdapter() }),
+  projectRoot, homeDir, args, language, printTerminal, notify, displayMode, isCurrent, modelCatalog, registerCoordinator, createAgents = () => ({ claude: new ClaudeAdapter(), codex: new CodexAdapter() }),
 }: OpenProjectOptions): Promise<ProjectContext> => {
   const config = loadConfig({ homeDir, projectRoot });
   const primary = args.primary ?? config.primary ?? DEFAULT_PRIMARY;
@@ -112,9 +113,13 @@ export const openProject = async ({
     return { conversationId: conversation.id, workDir, bus, coordinator: created,
       close: async () => { registered.get(created)?.(); registered.delete(created); await created.stop(); await mcp.close(); } };
   };
-  workspace = new Workspace({ history, projectRoot, createRuntime, createWorktree });
+  workspace = new Workspace({ notify, history, projectRoot, createRuntime, createWorktree });
   await workspace.init();
   const activeWorkspace = workspace;
+  const working = (id: string): ReadonlySet<AgentId> => new Set(
+    activeWorkspace.allRuntimes().find((runtime) => runtime.conversationId === id)?.coordinator.status()
+      .filter((agent) => agent.status === "busy" || agent.status === "starting").map((agent) => agent.id) ?? [],
+  );
   const save = () => saveRecovery(homeDir, projectRoot, { current: history.currentId, conversations: activeWorkspace.recoveryConversations() });
   activeWorkspace.onRecoveryChange(save);
   history.onSwitch(save);
@@ -145,11 +150,11 @@ export const openProject = async ({
       save();
     },
     bindFeed: (feed, current) => {
-      connectConversationFeed(history, feedStore, { replace: (items) => { if (current()) feed.replace(items); } });
+      connectConversationFeed(history, feedStore, { replace: (items) => { if (current()) feed.replace(items); } }, working);
       activeWorkspace.onRuntime(registerRuntime);
       for (const runtime of activeWorkspace.allRuntimes()) registerRuntime(runtime);
     },
-    showFeed: (feed) => feed.replace(feedStore.load(history.currentId)),
+    showFeed: (feed) => feed.replace(feedStore.load(history.currentId, working(history.currentId))),
     close: () => activeWorkspace.closeAll(),
   };
 };

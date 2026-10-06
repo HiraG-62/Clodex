@@ -4,9 +4,9 @@
 import type { AgentId, AgentStatus, TurnResult } from "../../agents/agent-adapter.js";
 import type { AgentState } from "../../cli/shell.js";
 import type { isShellInput as IsShellInput } from "./shell-input.js";
-import type { FeedItem, WebState } from "../web-feed.js";
+import type { FeedItem, HistoryItem, HistoryPage, WebState } from "../web-feed.js";
 import type { renderMarkdown as RenderMarkdown } from "./markdown.js";
-import type { TimelineItem, applyFeedItem as ApplyFeedItem } from "./timeline.js";
+import type { TimelineItem, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline } from "./timeline.js";
 import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
 import type { SlashCommand } from "../../cli/commands.js";
 import type { Suggestion, createInputAssist as CreateInputAssist } from "./input-assist.js";
@@ -19,6 +19,7 @@ export interface ClientDeps {
   isShellInput: typeof IsShellInput;
   renderMarkdown: typeof RenderMarkdown;
   applyFeedItem: typeof ApplyFeedItem;
+  rebuildTimeline: typeof RebuildTimeline;
   composeInputLine: typeof ComposeInputLine;
   createInputAssist: typeof CreateInputAssist;
   collectArtifacts: typeof CollectArtifacts;
@@ -32,7 +33,7 @@ export interface ClientDeps {
 }
 
 export function clientMain({
-  renderMarkdown, applyFeedItem, composeInputLine, createInputAssist, collectArtifacts, findImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
+  renderMarkdown, applyFeedItem, rebuildTimeline, composeInputLine, createInputAssist, collectArtifacts, findImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -53,7 +54,9 @@ export function clientMain({
   const STATUS_LABEL: Record<AgentStatus, MessageKey> = { busy: "web.status.busy", idle: "web.status.idle", starting: "web.status.starting", stopped: "web.status.stopped" };
   const TURN_LABEL: Record<"working" | TurnResult["status"], MessageKey | undefined> = { working: "web.status.busy", interrupted: "web.turn.interrupted", failed: "web.turn.failed", completed: undefined };
   const NEAR_BOTTOM_PX = 120;
-  const TOAST_DURATION_MS = 3000;
+  const HISTORY_THRESHOLD_PX = 200;
+  const TOAST_DURATION_MS = 4000;
+  const MAX_TOASTS = 3;
   const TOKENS_PER_K = 1000;
   const MS_PER_SECOND = 1000;
   const SECONDS_PER_MINUTE = 60;
@@ -95,6 +98,17 @@ export function clientMain({
 
   // ---- 状態 ----
   let items: TimelineItem[] = [];
+  let history: HistoryItem[] = [];
+  let historyHasMore = true;
+  let historyLoading = false;
+  let historyGeneration = 0;
+  const resetHistory = () => {
+    history = [];
+    items = [];
+    historyHasMore = true;
+    historyLoading = false;
+    historyGeneration++;
+  };
   let state: WebState | undefined;
   let detail = storage.get(DETAIL_KEY) === "1";
   let target: AgentId | undefined; // undefined なら primary に送る
@@ -130,13 +144,13 @@ export function clientMain({
   applyTheme(theme);
 
   // ---- トースト ----
-  let toastTimer: number | undefined;
-  const showToast = (text: string) => {
-    const toast = $("#toast");
-    toast.textContent = text;
-    toast.hidden = false;
-    window.clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(() => { toast.hidden = true; }, TOAST_DURATION_MS);
+  const showToast = (text: string, level: "info" | "warn" = "info") => {
+    const container = $("#toast");
+    const toast = el("button", `toast-item ${level}`, text);
+    container.append(toast);
+    const timer = window.setTimeout(() => toast.remove(), TOAST_DURATION_MS);
+    toast.addEventListener("click", () => { window.clearTimeout(timer); toast.remove(); });
+    while (container.children.length > MAX_TOASTS) container.firstElementChild?.remove();
   };
 
   // ---- ログの描画 ----
@@ -1102,7 +1116,35 @@ export function clientMain({
     for (const node of log.querySelectorAll<HTMLElement>(".elapsed[data-start]")) node.textContent = elapsedText(node.dataset.start ?? "");
     for (const node of workingPanel.querySelectorAll<HTMLElement>(".elapsed[data-start]")) node.textContent = elapsedText(node.dataset.start ?? "");
   }, MS_PER_SECOND);
-  log.addEventListener("scroll", () => { if (nearBottom()) newer.hidden = true; });
+  const loadHistory = async () => {
+    const oldest = history[0];
+    if (!oldest || historyLoading || !historyHasMore) return;
+    const generation = historyGeneration;
+    historyLoading = true;
+    try {
+      const response = await fetch(`/api/history?before=${oldest.seq}`);
+      if (!response.ok) throw new Error(String(response.status));
+      const page = await response.json() as HistoryPage;
+      if (generation !== historyGeneration) return;
+      historyHasMore = page.hasMore;
+      const previousHeight = log.scrollHeight;
+      const previousTop = log.scrollTop;
+      const wasNewerHidden = newer.hidden;
+      history = [...page.items, ...history];
+      items = rebuildTimeline(history, applyFeedItem);
+      renderLog();
+      log.scrollTop = previousTop + log.scrollHeight - previousHeight;
+      newer.hidden = wasNewerHidden;
+    } catch {
+      if (generation === historyGeneration) showToast(t("web.history.failed"), "warn");
+    } finally {
+      if (generation === historyGeneration) historyLoading = false;
+    }
+  };
+  log.addEventListener("scroll", () => {
+    if (nearBottom()) newer.hidden = true;
+    if (log.scrollTop <= HISTORY_THRESHOLD_PX) void loadHistory();
+  });
 
   // ---- 接続 ----
   let notificationState: DesktopNotifyState = { live: false, working: false };
@@ -1126,7 +1168,7 @@ export function clientMain({
     events.onopen = () => {
       notificationState = { live: false, working: false };
       // 接続（再接続を含む）のたびに履歴が送り直されるので作り直す
-      items = [];
+      resetHistory();
       opened.clear();
       conn.hidden = true;
       renderLog();
@@ -1138,6 +1180,9 @@ export function clientMain({
       if (update.notification) void notify(update.notification);
       // Clodex が更新されて起動し直したら、古い画面のまま使わない
       if (item.type === "version") {
+        resetHistory();
+        opened.clear();
+        renderLog();
         if (item.version !== version) location.reload();
         return;
       }
@@ -1155,7 +1200,9 @@ export function clientMain({
         renderState();
         return;
       }
-      if (item.type === "reset") opened.clear();
+      if (item.type === "toast") { showToast(item.text, item.level); return; }
+      if (item.type === "reset") { resetHistory(); opened.clear(); }
+      else history.push(item);
       items = applyFeedItem(items, item);
       renderLog();
     };

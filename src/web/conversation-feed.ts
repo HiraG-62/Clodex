@@ -1,4 +1,5 @@
 // 会話切り替え時の feed の読み込みと古い会話の整理
+import type { AgentId } from "../agents/agent-adapter.js";
 import type { HistoryItem } from "./web-feed.js";
 
 interface HistorySource {
@@ -10,17 +11,17 @@ interface HistorySource {
 
 interface FeedSource {
   prune(keepIds: readonly string[]): void;
-  load(conversationId: string): HistoryItem[];
+  load(conversationId: string, working: ReadonlySet<AgentId>): HistoryItem[];
 }
 
 interface FeedTarget {
   replace(items: readonly HistoryItem[]): void;
 }
 
-export const connectConversationFeed = (history: HistorySource, store: FeedSource, feed: FeedTarget): void => {
+export const connectConversationFeed = (history: HistorySource, store: FeedSource, feed: FeedTarget, working: (id: string) => ReadonlySet<AgentId> = () => new Set()): void => {
   const load = (id: string) => {
     store.prune([id, ...history.list().map((conversation) => conversation.id)]);
-    feed.replace(store.load(id));
+    feed.replace(store.load(id, working(id)));
   };
   load(history.currentId);
   history.onSwitch(load);

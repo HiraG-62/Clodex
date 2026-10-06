@@ -35,6 +35,7 @@ export function updateDesktopNotify(
         : firstLine(result.text) || messages["web.turn.completed"];
     return { state: { live: true, working: false }, notification: { title: messages["desktop.notify.finished"], body: `${names[agent]}: ${text}` } };
   }
+  if (item.type === "toast") return { state: previous, notification: { title: messages["desktop.notify.notice"], body: item.text } };
   if (!previous.live || item.type !== "event") return { state: previous };
   const event = item.event;
   if (event.kind === "notice") return { state: previous, notification: { title: messages["desktop.notify.notice"], body: event.text } };

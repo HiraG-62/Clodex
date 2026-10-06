@@ -205,3 +205,15 @@ describe("startWebServer", () => {
     expect((await fetch(`${base}/unknown`, { headers: { cookie: COOKIE } })).status).toBe(404);
   });
 });
+
+it("履歴を認証付きで分割取得し、不正な before は 400", async () => {
+  const { base, feed } = await setup();
+  for (let i = 1; i <= 5; i++) feed.publishOutput(String(i));
+  const response = await fetch(`${base}/api/history?before=5&limit=2`, { headers: { cookie: COOKIE } });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ items: [{ type: "output", seq: 3, text: "3" }, { type: "output", seq: 4, text: "4" }], hasMore: true });
+  for (const query of ["", "?before=", "?before=invalid", "?before=Infinity"]) {
+    expect((await fetch(`${base}/api/history${query}`, { headers: { cookie: COOKIE } })).status).toBe(400);
+  }
+  expect((await fetch(`${base}/api/history?before=5`)).status).toBe(401);
+});

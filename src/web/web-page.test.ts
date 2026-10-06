@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { runInNewContext } from "node:vm";
 import { readFileSync } from "node:fs";
+import { applyFeedItem, rebuildTimeline } from "./client/timeline.js";
 import { renderMarkdown } from "./client/markdown.js";
 import { buildWebPage, ICON_SVG, MANIFEST } from "./web-page.js";
 import type { updateDesktopNotify } from "./client/desktop-notify.js";
@@ -104,4 +105,11 @@ describe("buildWebPage", () => {
     expect(desktopCss).toMatch(/\.sheet-panel\s*\{[^}]*border-radius:\s*14px;[^}]*max-height:\s*85vh;/);
     expect(desktopCss).toMatch(/\.sheet-panel\.wide\s*\{[^}]*max-width:\s*960px;/);
   });
+});
+
+it("履歴の再構築をブラウザで呼べる関数として埋め込む", () => {
+  const script = scriptsOf(buildWebPage("ja").html)[1]!;
+  const source = script.slice(script.lastIndexOf("rebuildTimeline:"), script.lastIndexOf("composeInputLine:"));
+  const rebuild = runInNewContext(`({${source}}).rebuildTimeline`) as typeof rebuildTimeline;
+  expect(rebuild([{ type: "output", seq: 1, text: "過去" }], applyFeedItem)).toEqual([{ kind: "output", id: "o1", text: "過去" }]);
 });

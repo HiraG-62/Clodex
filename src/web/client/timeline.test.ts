@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "../../agents/agent-adapter.js";
 import type { FeedItem } from "../web-feed.js";
-import { applyFeedItem, type TimelineItem } from "./timeline.js";
+import { rebuildTimeline, applyFeedItem, type TimelineItem } from "./timeline.js";
 
 const AT = "2026-10-05T12:00:00.000Z";
 let seq = 0;
@@ -132,4 +132,18 @@ describe("applyFeedItem の割り込み", () => {
     const item: FeedItem = { type: "event", seq: 900, event: { kind: "human", agent: "codex", text: "fix", steer: true, at: AT } };
     expect(applyFeedItem([], item)).toMatchObject([{ kind: "human", text: "fix", steer: true }]);
   });
+});
+
+it("toast は timeline を変更しない", () => {
+  const items = applyFeedItem([], { type: "output", seq: 1, text: "ログ" });
+  expect(applyFeedItem(items, { type: "toast", text: "通知", level: "info" })).toBe(items);
+});
+
+it("前の履歴を足して再構築するとページをまたぐターンが一つにまとまる", () => {
+  const start = { type: "event", seq: 1, event: { kind: "agent", agent: "claude", at: "now", event: { type: "turn_started" } } } as const;
+  const end = { type: "event", seq: 2, event: { kind: "agent", agent: "claude", at: "now", event: { type: "turn", result: { status: "completed", text: "完了" } } } } as const;
+  const result = rebuildTimeline([start, end], applyFeedItem);
+  expect(result).toHaveLength(1);
+  expect(result[0]).toMatchObject({ id: "e1", status: "completed", text: "完了" });
+  expect(rebuildTimeline([], applyFeedItem)).toEqual([]);
 });

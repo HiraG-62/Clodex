@@ -2,7 +2,7 @@
 // ブラウザ側にそのまま埋め込むため、外部のものを参照しない 1 つの関数として書く（型の import のみ）
 import type { AgentId, TurnResult } from "../../agents/agent-adapter.js";
 import type { AgentMessage } from "../../protocol/messages.js";
-import type { FeedItem } from "../web-feed.js";
+import type { FeedItem, HistoryItem } from "../web-feed.js";
 
 export type TimelineStep = { kind: "say"; text: string } | { kind: "tool"; name: string; input: string; files?: string[] };
 
@@ -24,7 +24,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   const limit = (list: TimelineItem[]) => (list.length > MAX_ITEMS ? list.slice(list.length - MAX_ITEMS) : list);
   type Turn = Extract<TimelineItem, { kind: "turn" }>;
 
-  if (item.type === "state" || item.type === "version") return items;
+  if (item.type === "state" || item.type === "version" || item.type === "toast") return items;
   if (item.type === "reset") return [];
   if (item.type === "output") {
     const last = items[items.length - 1];
@@ -84,4 +84,8 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
     default:
       return items;
   }
+}
+
+export function rebuildTimeline(history: readonly HistoryItem[], apply: typeof applyFeedItem): TimelineItem[] {
+  return history.reduce<TimelineItem[]>(apply, []);
 }

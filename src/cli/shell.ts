@@ -70,6 +70,7 @@ export interface ShellOptions {
   busyElsewhere?: () => boolean;
   primary: AgentId;
   print: (line: string) => void;
+  notify: (text: string, level?: "info" | "warn") => void;
   // terminal の詳細表示を切り替え、切り替え後の状態を返す
   toggleVerbose: () => boolean;
   history: ConversationList | (() => ConversationList);
@@ -153,7 +154,7 @@ const agentsOf = (c: Conversation) => (Object.keys(c.sessions) as AgentId[]).sor
 const titleOf = (c: Conversation) => `"${c.title ?? t("shell.untitled")}"`;
 
 export const createShell = ({
-  coordinator, primary: initialPrimary, print, toggleVerbose, history: historySource, runner, saveSettings = () => {}, resolveReference = async () => undefined,
+  coordinator, primary: initialPrimary, print, notify, toggleVerbose, history: historySource, runner, saveSettings = () => {}, resolveReference = async () => undefined,
   busyElsewhere = () => false, processes,
   projects,
   roles = () => ({}), saveRole = (_agent, text) => text,
@@ -178,9 +179,9 @@ export const createShell = ({
       return print(t("shell.agentFresh", { agent }));
     }
     const error = await history().startNew({ worktree });
-    if (error) return print(t("shell.worktreeFailed", { error }));
+    if (error) return notify(t("shell.worktreeFailed", { error }), "warn");
     const { workDir, branch } = history().list().find((c) => c.id === history().currentId) ?? {};
-    print(workDir && branch ? t("shell.newWorktree", { workDir, branch }) : t("shell.newConversation"));
+    notify(workDir && branch ? t("shell.newWorktree", { workDir, branch }) : t("shell.newConversation"));
   };
 
   const resumeConversation = async (index: number) => {
@@ -188,7 +189,7 @@ export const createShell = ({
     if (!picked) return;
     if (picked.id === history().currentId) return print(t("shell.alreadyHere"));
     await history().switchTo(picked.id);
-    print(t("shell.resumed", { title: titleOf(picked) }));
+    notify(t("shell.resumed", { title: titleOf(picked) }));
   };
 
   const pickConversation = (index: number) => {
@@ -210,7 +211,7 @@ export const createShell = ({
       case "sendAll":
         // 送信はキューに積むだけ。ターン完了は Event Bus 経由で表示される
       {
-        if (busyElsewhere()) print(t("notice.sameDirBusy"));
+        if (busyElsewhere()) notify(t("notice.sameDirBusy"), "warn");
         const resolved = await resolveReferences(command.text, resolveReference);
         const text = command.kind === "sendAll" ? `${ALL_MESSAGE_PREFIX}\n${resolved.text}` : resolved.text;
         const recipient = coordinator();
@@ -273,7 +274,7 @@ export const createShell = ({
           if (!projects) return "continue";
           const opened = await projects.open(command.path);
           primary = opened.primary;
-          print(t("shell.projectOpened", { project: opened.projectRoot }));
+          notify(t("shell.projectOpened", { project: opened.projectRoot }));
           return "continue";
         }
         if (!projects?.list().length) print(t("shell.noProjects"));
@@ -313,18 +314,18 @@ export const createShell = ({
         return "continue";
       case "rename":
         history().rename(command.title);
-        print(t("shell.renamed", { title: command.title }));
+        notify(t("shell.renamed", { title: command.title }));
         return "continue";
       case "delete": {
         const picked = pickConversation(command.index);
         if (!picked) return "continue";
-        print(history().remove(picked.id) ?? t("shell.deleted", { title: titleOf(picked) }));
+        notify(history().remove(picked.id) ?? t("shell.deleted", { title: titleOf(picked) }));
         return "continue";
       }
       case "pin": {
         const picked = pickConversation(command.index);
         const pinned = picked ? history().togglePin(picked.id) : undefined;
-        if (picked && pinned !== undefined) print(t(pinned ? "shell.pinned" : "shell.unpinned", { title: titleOf(picked) }));
+        if (picked && pinned !== undefined) notify(t(pinned ? "shell.pinned" : "shell.unpinned", { title: titleOf(picked) }));
         return "continue";
       }
       case "primary":

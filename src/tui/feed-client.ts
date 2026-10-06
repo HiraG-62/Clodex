@@ -1,11 +1,12 @@
 // TUI はこの interface だけを使い、Hub の所在を意識しない。
 import type { HubLock } from "../hub/hub-lock.js";
-import type { FeedItem, WebFeed } from "../web/web-feed.js";
+import type { FeedItem, HistoryPage, WebFeed } from "../web/web-feed.js";
 
 export interface FeedClient {
   connect(onItem: (item: FeedItem) => void): Promise<() => void>;
   send(line: string): Promise<void>;
   files(): Promise<string[]>;
+  history(before: number): Promise<HistoryPage>;
 }
 
 export const createLocalFeedClient = (
@@ -18,6 +19,7 @@ export const createLocalFeedClient = (
     return feed.subscribe(onItem);
   },
   send, files,
+  history: async (before) => feed.before(before),
 });
 
 export const createRemoteFeedClient = (lock: HubLock, token: string): FeedClient => {
@@ -55,6 +57,7 @@ export const createRemoteFeedClient = (lock: HubLock, token: string): FeedClient
       return () => controller.abort();
     },
     send: async (line) => { await request("/api/input", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ line }) }); },
+    history: async (before) => await (await request(`/api/history?before=${before}`)).json() as HistoryPage,
     files: async () => await (await request("/api/files")).json() as string[],
   };
 };

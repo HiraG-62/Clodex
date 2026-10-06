@@ -35,7 +35,7 @@ const parseLine = (line: string): HistoryItem | undefined => {
 
 const toLines = (items: HistoryItem[]) => items.map((item) => `${JSON.stringify(item)}\n`).join("");
 
-const interruptUnfinished = (items: HistoryItem[]): HistoryItem[] => {
+const interruptUnfinished = (items: HistoryItem[], working: ReadonlySet<AgentId>): HistoryItem[] => {
   const open = new Map<AgentId, { at: string }>();
   for (const item of items) {
     if (item.type !== "event" || item.event.kind !== "agent") continue;
@@ -43,7 +43,7 @@ const interruptUnfinished = (items: HistoryItem[]): HistoryItem[] => {
     if (event.type === "turn") open.delete(agent);
     if (event.type === "turn_started" || event.type === "text" || event.type === "tool") open.set(agent, { at });
   }
-  return [...items, ...[...open].map(([agent, { at }]): HistoryItem => ({
+  return [...items, ...[...open].filter(([agent]) => !working.has(agent)).map(([agent, { at }]): HistoryItem => ({
     type: "event", seq: 0, event: { kind: "agent", agent, at, event: { type: "turn", result: { status: "interrupted", text: "" } } },
   }))];
 };
@@ -57,14 +57,14 @@ export class FeedStore {
   }
 
   // 読めなくても起動や会話の切り替えは妨げない（空の feed として扱う）
-  load(conversationId: string): HistoryItem[] {
+  load(conversationId: string, working: ReadonlySet<AgentId> = new Set()): HistoryItem[] {
     const path = this.pathOf(conversationId);
     try {
       if (!existsSync(path)) return [];
       const lines = readFileSync(path, "utf8").split("\n").filter((line) => line.trim());
       const items = lines.map(parseLine).filter((item) => item !== undefined).slice(-this.limit);
       if (lines.length > this.limit * COMPACT_FACTOR) writeFileSync(path, toLines(items));
-      return interruptUnfinished(items).slice(-this.limit);
+      return interruptUnfinished(items, working).slice(-this.limit);
     } catch {
       return [];
     }

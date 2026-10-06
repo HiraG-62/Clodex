@@ -5,6 +5,8 @@ import type { CoordinatorEvent } from "../coordinator/event-bus.js";
 import type { Conversation } from "../project/conversation-history.js";
 
 export const DEFAULT_RECENT_ITEMS = 1000;
+export const INITIAL_HISTORY_ITEMS = 200;
+export const HISTORY_PAGE_ITEMS = 200;
 
 import type { PendingInput } from "../cli/shell.js";
 import type { ConversationActivity } from "../hub/workspace.js";
@@ -26,11 +28,13 @@ export type FeedItem =
   | { type: "event"; seq: number; event: CoordinatorEvent; envelope?: string }
   | { type: "output"; seq: number; text: string }
   | { type: "state"; state: WebState }
+  | { type: "toast"; text: string; level: "info" | "warn" }
   | { type: "reset" }
   // 接続のたびに最初に送る。画面の版が違えば再読み込みする
   | { type: "version"; version: string };
 
 export type HistoryItem = Extract<FeedItem, { type: "event" | "output" }>;
+export interface HistoryPage { items: HistoryItem[]; hasMore: boolean; }
 export type FeedHandler = (item: FeedItem) => void;
 
 export class WebFeed {
@@ -58,6 +62,10 @@ export class WebFeed {
     this.remember(item);
   }
 
+  publishToast(text: string, level: "info" | "warn" = "info"): void {
+    this.deliver({ type: "toast", text, level });
+  }
+
   publishState(state: WebState): void {
     this.state = state;
     this.deliver({ type: "state", state });
@@ -67,11 +75,18 @@ export class WebFeed {
   replace(items: readonly HistoryItem[]): void {
     this.items.splice(0);
     this.deliver({ type: "reset" });
-    for (const item of items.slice(-this.limit)) this.remember({ ...item, seq: ++this.seq });
+    this.items.push(...items.slice(-this.limit).map((item) => ({ ...item, seq: ++this.seq })));
+    for (const item of this.recent()) this.deliver(item);
   }
 
   recent(): HistoryItem[] {
-    return [...this.items];
+    return this.items.slice(-INITIAL_HISTORY_ITEMS);
+  }
+
+  before(seq: number, limit = HISTORY_PAGE_ITEMS): HistoryPage {
+    const size = Number.isNaN(limit) ? HISTORY_PAGE_ITEMS : Math.max(1, Math.min(HISTORY_PAGE_ITEMS, Math.floor(limit)));
+    const older = this.items.filter((item) => item.seq < seq);
+    return { items: older.slice(-size), hasMore: older.length > size };
   }
 
   latestState(): WebState | undefined {

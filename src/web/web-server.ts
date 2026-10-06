@@ -162,6 +162,12 @@ export const startWebServer = async ({ port, token, feed, page, onInput, listFil
     if (req.method === "GET" && url.pathname === "/events") return handleEvents(req, res);
     if (req.method === "GET" && url.pathname === "/api/state") return sendJson(res, feed.latestState() ?? null);
     if (req.method === "GET" && url.pathname === "/api/files") return sendJson(res, await listFiles());
+    if (req.method === "GET" && url.pathname === "/api/history") {
+      const before = url.searchParams.get("before");
+      if (!before?.trim() || !Number.isFinite(Number(before))) return void res.writeHead(HTTP.badRequest).end();
+      const limit = url.searchParams.get("limit");
+      return sendJson(res, feed.before(Number(before), limit === null ? undefined : Number(limit)));
+    }
     const previewPath = url.searchParams.get("path");
     if (req.method === "GET" && url.pathname === "/api/file" && previewPath) return sendPreview(res, await preview.file(previewPath));
     if (req.method === "GET" && url.pathname === "/api/diff" && previewPath) return sendPreview(res, await preview.diff(previewPath));

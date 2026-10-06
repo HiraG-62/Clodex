@@ -92,10 +92,11 @@ const main = async (): Promise<void> => {
     const context = hub.current;
     if (context) context.saveFeedItem(context.history.currentId, item);
   });
+  const notify = (text: string, level: "info" | "warn" = "info") => { feed.publishToast(text, level); printTerminal(text); };
   hub = new Hub({ homeDir, cwd, openProject: async (projectRoot) => {
     let context: ProjectContext;
     context = await openProject({
-      projectRoot, homeDir, args, language, printTerminal, displayMode: () => displayMode,
+      projectRoot, homeDir, args, language, printTerminal, notify, displayMode: () => displayMode,
       isCurrent: () => hub.current === context, modelCatalog: () => modelCatalog, registerCoordinator,
     });
     context.workspace.onEvent((runtime, event, current) => {
@@ -142,7 +143,7 @@ const main = async (): Promise<void> => {
     coordinator: () => current().workspace.current.coordinator,
     history: () => conversationsOf(current()),
     primary: hub.current?.primary ?? DEFAULT_PRIMARY,
-    print, toggleVerbose, runner, processes,
+    print, notify, toggleVerbose, runner, processes,
     projects: { list: () => hub.list(), open: openInHub, hasCurrent: () => hub.current !== undefined },
     roles: () => current().config.roles ?? {},
     saveRole: (agent, text) => {

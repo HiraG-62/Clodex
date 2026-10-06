@@ -24,6 +24,7 @@ export type ConversationActivity = "busy" | "idle" | "stopped";
 export type RuntimeEventListener = (runtime: ConversationRuntime, event: CoordinatorEvent, current: boolean) => void;
 
 export interface WorkspaceOptions {
+  notify(text: string, level: "info" | "warn"): void;
   history: ConversationHistory;
   projectRoot: string;
   createRuntime: (conversation: Conversation) => Promise<ConversationRuntime>;
@@ -148,11 +149,11 @@ export class Workspace {
     const current = this.runtimes.get(this.options.history.currentId) === runtime;
     for (const listener of this.eventListeners) listener(runtime, event, current);
     if (current || event.kind !== "agent" || event.event.type !== "turn") return;
-    // 裏で動いている会話のターンが終わったら、今の会話に知らせる
+    // 裏で動いている会話のターンが終わったら、toast で知らせる
     const title = this.options.history.list().find((c) => c.id === runtime.conversationId)?.title ?? runtime.conversationId;
-    this.current.bus.publish({
-      kind: "notice",
-      text: t("notice.background", { title: title.slice(0, NOTICE_TITLE_LENGTH), agent: event.agent, status: event.event.result.status }),
-    });
+    this.options.notify(
+      t("notice.background", { title: title.slice(0, NOTICE_TITLE_LENGTH), agent: event.agent, status: event.event.result.status }),
+      event.event.result.status === "completed" ? "info" : "warn",
+    );
   }
 }

@@ -44,6 +44,7 @@ export const en = {
   "web.sheet.close": "Close",
   "web.send.failedStatus": "Could not send ({status})",
   "web.send.failed": "Could not send",
+  "web.history.failed": "History unavailable",
   // Web UI: ログ
   "web.you": "You",
   "web.steer": "Steer",
@@ -306,6 +307,7 @@ export const ja: Messages = {
   "web.sheet.close": "閉じる",
   "web.send.failedStatus": "送信できませんでした（{status}）",
   "web.send.failed": "送信できませんでした",
+  "web.history.failed": "履歴の読み込み失敗",
   "web.you": "あなた",
   "web.steer": "割り込み",
   "web.elapsed.minutes": "{minutes}分{seconds}秒",
