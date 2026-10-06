@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TimelineItem } from "../web/client/timeline.js";
 import { advanceTerminalFeed, CardLineCache, cardLines, cursorSlices, editInput, formatMarkdown, formatTimelineItem,
-  parseSgrMouse, scrollAfterGrowth, scrollBy, scrollToBottom, visibleRange, wrapText } from "./terminal-layout.js";
+  parseSgrMouse, scrollAfterGrowth, scrollBy, scrollToBottom, textWidth, visibleRange, wrapText } from "./terminal-layout.js";
 
 const labels = {
   you: "あなた", working: "作業中", completed: "完了", failed: "失敗", interrupted: "中断",
@@ -83,6 +83,42 @@ describe("editInput", () => {
 });
 
 describe("ログの表示行", () => {
+  it("人とターンの見出し 1 行だけを発言者の背景色で幅いっぱいに埋める", () => {
+    const human: TimelineItem = { kind: "human", id: "h", at: "2026-01-01T00:00:00Z", agent: "claude", text: "本文" };
+    const turn: TimelineItem = { kind: "turn", id: "t", at: "2026-01-01T00:00:00Z", agent: "codex",
+      status: "completed", steps: [], text: "本文" };
+    const humanLines = cardLines(formatTimelineItem(human, labels, false), 20);
+    const turnLines = cardLines(formatTimelineItem(turn, labels, false), 20);
+    expect(humanLines[0]?.backgroundColor).toBe("#323234");
+    expect(turnLines[0]?.backgroundColor).toBe("#272e39");
+    expect(textWidth(humanLines[0]?.text ?? "")).toBe(20);
+    expect(textWidth(turnLines[0]?.text ?? "")).toBe(20);
+    expect(humanLines.slice(1).every((line) => line.backgroundColor === undefined)).toBe(true);
+    expect(turnLines.slice(1).every((line) => line.backgroundColor === undefined)).toBe(true);
+  });
+  it("全角を含む見出しは表示幅で埋め、折り返した 2 行目には背景を付けない", () => {
+    const lines = cardLines({ kind: "human", title: "日本語長い見出し", body: "本文", color: "#80808a",
+      headerBackgroundColor: "#323234" }, 8);
+    expect(textWidth(lines[0]?.text ?? "")).toBe(8);
+    expect(lines[0]?.backgroundColor).toBe("#323234");
+    expect(lines[1]?.backgroundColor).toBeUndefined();
+  });
+  it("message は種類の色ではなく送信元の背景色を使う", () => {
+    const message: TimelineItem = { kind: "message", id: "m", at: "2026-01-01T00:00:00Z", message: {
+      id: "x", from: "claude", to: "codex", type: "RESULT", taskId: "T-1", body: "本文", repository: "r", createdAt: "2026-01-01T00:00:00Z",
+    } };
+    const card = formatTimelineItem(message, labels, false);
+    expect(card.color).toBe("#4b6fa5");
+    expect(cardLines(card, 30)[0]?.backgroundColor).toBe("#3c3025");
+  });
+  it("通知・エラー・コマンド出力の見出しには背景を付けない", () => {
+    const items: TimelineItem[] = [
+      { kind: "notice", id: "n", at: "2026-01-01T00:00:00Z", text: "通知" },
+      { kind: "error", id: "e", at: "2026-01-01T00:00:00Z", agent: "claude", text: "エラー" },
+      { kind: "output", id: "o", text: "結果" },
+    ];
+    for (const item of items) expect(cardLines(formatTimelineItem(item, labels, false), 20)[0]?.backgroundColor).toBeUndefined();
+  });
   it("全角を 2 桁として折り返し、幅が変わると再計算する", () => {
     expect(wrapText("A日本B", 3)).toEqual(["A日", "本B"]);
     const item: TimelineItem = { kind: "output", id: "o", text: "日本語" };

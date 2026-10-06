@@ -81,11 +81,13 @@ export interface TerminalCard {
   stepsLabel?: string;
   steps?: string[];
   at?: string;
+  headerBackgroundColor?: string;
 }
 
 export const TERMINAL_COLORS = {
   line: "#d4d4d8", muted: "#80808a", warn: "#b7791f", claude: "#b4793f",
   codex: "#4b6fa5", code: "#6f9a5a", error: "#d14343", review: "#8159a8",
+  humanHeader: "#323234", claudeHeader: "#3c3025", codexHeader: "#272e39",
 } as const;
 
 export const WHEEL_LINES = 3;
@@ -150,7 +152,7 @@ export const wrapText = (value: string, width: number): string[] => {
 };
 
 export interface TerminalSegment { text: string; color?: string; bold?: boolean; underline?: boolean; }
-export interface TerminalLine extends TerminalSegment { parts?: TerminalSegment[]; }
+export interface TerminalLine extends TerminalSegment { parts?: TerminalSegment[]; backgroundColor?: string; }
 const wrapSegments = (segments: TerminalSegment[], width: number): TerminalSegment[][] => {
   const lines: TerminalSegment[][] = [[]];
   let columns = 0;
@@ -190,10 +192,17 @@ export const cardLines = (card: TerminalCard, width: number, elapsedLabel?: stri
       return [{ text: `${prefix}${value}`, parts }];
     }),
   ];
-  return [...content.flatMap((line) => wrapSegments(line.parts ?? [line], contentWidth).map((parts) => ({
+  const lines: TerminalLine[] = [...content.flatMap((line) => wrapSegments(line.parts ?? [line], contentWidth).map((parts) => ({
     text: `${divider} ${parts.map((part) => part.text).join("")}`,
     parts: [{ text: `${divider} `, color: card.color, bold: true }, ...parts],
   }))), { text: "" }];
+  const header = lines[0];
+  if (header && card.headerBackgroundColor) {
+    const padding = " ".repeat(Math.max(0, width - textWidth(header.text)));
+    lines[0] = { ...header, text: `${header.text}${padding}`,
+      parts: [...(header.parts ?? []), { text: padding }], backgroundColor: card.headerBackgroundColor };
+  }
+  return lines;
 };
 
 export class CardLineCache {
@@ -215,6 +224,7 @@ export class CardLineCache {
 
 const agentName = (id: string): string => id === "claude" ? "Claude" : id === "codex" ? "Codex" : id;
 const agentColor = (id: string): string => id === "claude" ? TERMINAL_COLORS.claude : TERMINAL_COLORS.codex;
+const agentHeaderColor = (id: string): string => id === "claude" ? TERMINAL_COLORS.claudeHeader : TERMINAL_COLORS.codexHeader;
 const MESSAGE_COLORS: Record<MessageType, string> = {
   QUESTION: TERMINAL_COLORS.warn, REVIEW_REQUEST: TERMINAL_COLORS.review, DELEGATE: TERMINAL_COLORS.claude,
   RESULT: TERMINAL_COLORS.codex, ISSUE: TERMINAL_COLORS.error, ACK: TERMINAL_COLORS.muted,
@@ -223,6 +233,7 @@ const MESSAGE_COLORS: Record<MessageType, string> = {
 export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, expanded: boolean): TerminalCard => {
   if (item.kind === "turn") return {
     kind: item.kind, color: agentColor(item.agent), title: `${agentName(item.agent)} · ${labels[item.status]}`,
+    headerBackgroundColor: agentHeaderColor(item.agent),
     body: item.text, at: item.at, ...(item.plan ? { plan: item.plan } : {}),
     ...(item.steps.length ? {
       stepsLabel: labels.steps.replace("{count}", String(item.steps.length)),
@@ -231,10 +242,12 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
   };
   if (item.kind === "message") return {
     kind: item.kind, color: MESSAGE_COLORS[item.message.type],
+    headerBackgroundColor: agentHeaderColor(item.message.from),
     title: `${agentName(item.message.from)} → ${agentName(item.message.to)}`,
     tag: `${item.message.type} · ${item.message.taskId}`, body: item.message.body,
   };
-  if (item.kind === "human") return { kind: item.kind, color: TERMINAL_COLORS.muted, title: `${labels.you} → ${agentName(item.agent)}`, body: item.text };
+  if (item.kind === "human") return { kind: item.kind, color: TERMINAL_COLORS.muted,
+    headerBackgroundColor: TERMINAL_COLORS.humanHeader, title: `${labels.you} → ${agentName(item.agent)}`, body: item.text };
   if (item.kind === "error") return { kind: item.kind, color: TERMINAL_COLORS.error, title: `${labels.error} · ${agentName(item.agent)}`, body: item.text };
   if (item.kind === "notice") return { kind: item.kind, color: TERMINAL_COLORS.warn, title: labels.notice, body: item.text };
   return { kind: item.kind, color: TERMINAL_COLORS.muted, title: labels.output, body: item.text };

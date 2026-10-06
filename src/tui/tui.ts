@@ -178,7 +178,8 @@ export const TuiApp = ({ client, onExit }: { client: FeedClient; onExit?: () => 
   const project = `${state.project || "Clodex"}${branch ? ` · ${t("tui.branch", { branch })}` : ""}`;
   return h(Box, { flexDirection: "column" },
     h(Box, { height: logHeight, flexDirection: "column", overflow: "hidden" },
-      ...shown.map((line, i) => h(Text, { key: i, wrap: "truncate-end", color: line.color, bold: line.bold, underline: line.underline },
+      ...shown.map((line, i) => h(Text, { key: i, wrap: "truncate-end", color: line.color,
+        backgroundColor: line.backgroundColor, bold: line.bold, underline: line.underline },
         ...(line.parts ?? [{ text: line.text }]).map((part, j) => h(Text, { key: j, color: part.color, bold: part.bold, underline: part.underline }, part.text)))),
     ),
     choices.length ? h(Box, { borderStyle: "round", borderColor: LINE_COLOR, flexDirection: "column", paddingX: 1 },
