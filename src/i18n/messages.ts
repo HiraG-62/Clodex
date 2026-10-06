@@ -51,6 +51,7 @@ export const en = {
   "web.turn.completed": "Done",
   "web.turn.interrupted": "Interrupted",
   "web.turn.failed": "Failed",
+  "web.message.spec": "Spec",
   "web.message.envelope": "Full text sent to {agent}",
   // Web UI: Agent
   "web.status.busy": "Working",
@@ -299,6 +300,7 @@ export const ja: Messages = {
   "web.turn.completed": "完了",
   "web.turn.interrupted": "中断",
   "web.turn.failed": "失敗",
+  "web.message.spec": "設計書",
   "web.message.envelope": "{agent} に送った全文",
   "web.status.busy": "作業中",
   "web.status.idle": "待機中",

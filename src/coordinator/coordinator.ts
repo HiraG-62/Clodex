@@ -2,6 +2,7 @@
 import {
   AGENT_IDS, type AgentAdapter, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult,
 } from "../agents/agent-adapter.js";
+import { isSpecFile } from "../project/spec-file.js";
 import { buildEnvelope } from "../context/context-resolver.js";
 import { t } from "../i18n/i18n.js";
 import { languageReminder, type Language } from "../context/language.js";
@@ -97,6 +98,9 @@ export class Coordinator {
     });
     if (!result.ok) return result;
     const { message } = result;
+    if (message.spec !== undefined && !isSpecFile(projectRoot, message.spec)) {
+      return { ok: false, error: "spec: must be a relative path to an existing regular file inside the project root" };
+    }
 
     // 送信元が処理中の message を親として chain を決める（DESIGN.md §14）
     const budgetError = this.budget.admit(message, this.mailboxes[from].current);

@@ -78,3 +78,12 @@ describe("buildEnvelope の言語", () => {
     expect(buildEnvelope(base)).not.toContain("Japanese");
   });
 });
+
+it("spec は Commit と Files の間、指示は本文と返信方法の間に入る", () => {
+  const instruction = "Read the spec before you start and follow it. If the spec conflicts with the code or is unclear, ask with a QUESTION instead of guessing.";
+  const text = buildEnvelope({ ...base, spec: "docs/specs/T.md" });
+  expect(text).toContain("Commit: a82f39c\nSpec: docs/specs/T.md\nFiles:");
+  expect(text).toContain(`${base.body}\n\n${instruction}\nReply with`);
+  expect(buildEnvelope(base)).not.toContain("Spec:");
+  expect(buildEnvelope(base)).not.toContain(instruction);
+});

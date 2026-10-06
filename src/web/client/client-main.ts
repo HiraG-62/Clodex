@@ -238,9 +238,16 @@ export function clientMain({
     text.innerHTML = renderMarkdown(message.body);
     node.append(route, text);
     appendImagePreviews(node, message.body);
-    if (message.files?.length) {
+    if (message.spec || message.files?.length) {
       const refs = el("div", "refs");
-      for (const file of message.files) {
+      if (message.spec) {
+        const spec = message.spec;
+        const ref = el("button", "ref spec", `${t("web.message.spec")}: ${spec}`) as HTMLButtonElement;
+        ref.type = "button";
+        ref.addEventListener("click", () => void openViewer(spec));
+        refs.append(ref);
+      }
+      for (const file of message.files ?? []) {
         const ref = el("button", "ref", file) as HTMLButtonElement;
         ref.type = "button";
         ref.addEventListener("click", () => void openViewer(file));

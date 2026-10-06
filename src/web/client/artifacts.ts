@@ -33,6 +33,7 @@ export function collectArtifacts(items: readonly TimelineItem[]): Artifact[] {
       images(item.text, item.at);
     }
     if (item.kind === "message") {
+      if (item.message.spec) add(item.message.spec, "referenced", item.at);
       for (const file of item.message.files ?? []) add(file, "referenced", item.at);
       images(item.message.body, item.at);
     }

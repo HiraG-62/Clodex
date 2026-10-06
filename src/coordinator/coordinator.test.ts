@@ -1,3 +1,6 @@
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { Coordinator } from "./coordinator.js";
@@ -8,7 +11,7 @@ const NOW = "2026-10-05T07:00:00.000Z";
 const PROJECT_ROOT = "C:\\dev\\app";
 const mcpUrlFor = (agent: string) => `http://127.0.0.1:5000/mcp/token-${agent}`;
 
-const setup = () => {
+const setup = (projectRoot = PROJECT_ROOT) => {
   let seq = 0;
   const claude = new FakeAgentAdapter("claude");
   const codex = new FakeAgentAdapter("codex");
@@ -16,7 +19,7 @@ const setup = () => {
   const events: CoordinatorEvent[] = [];
   bus.subscribe((e) => events.push(e));
   const coordinator = new Coordinator({
-    projectRoot: PROJECT_ROOT,
+    projectRoot,
     agents: { claude, codex },
     bus,
     mcpUrlFor,
@@ -560,4 +563,30 @@ describe("Coordinator の役割の反映", () => {
     await flush();
     expect(codex.starts[1]).toMatchObject({ instructions: "new" });
   });
+});
+
+describe("Coordinator の spec 検証", () => {
+  const root = mkdtempSync(join(tmpdir(), "clodex-spec-"));
+  const project = join(root, "project");
+  mkdirSync(project);
+  writeFileSync(join(project, "design.md"), "設計");
+  writeFileSync(join(root, "outside.md"), "外部");
+  symlinkSync(root, join(project, "outside"), "junction");
+
+  it("存在する通常ファイルを受理して配送する", async () => {
+    const { coordinator, codex } = setup(project);
+    expect(coordinator.receiveMessage("claude", { ...reviewRequest, spec: "design.md" })).toMatchObject({ ok: true });
+    await flush();
+    expect(codex.sent[0]).toContain("Spec: design.md");
+  });
+  it.each(["missing.md", ".", "../outside.md", "..\\outside.md", "outside/outside.md", join(project, "design.md")])(
+    "%s は記録・配送せず拒否する", async (spec) => {
+      const { coordinator, codex, events } = setup(project);
+      expect(coordinator.receiveMessage("claude", { ...reviewRequest, spec }))
+        .toMatchObject({ ok: false, error: expect.stringContaining("spec") });
+      await flush();
+      expect(events.filter((e) => e.kind === "message")).toEqual([]);
+      expect(codex.sent).toEqual([]);
+    },
+  );
 });

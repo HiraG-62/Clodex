@@ -57,3 +57,8 @@ describe("displayPath", () => {
     expect(displayPath("src/a.ts", "C:\\dev\\app")).toBe("src/a.ts");
   });
 });
+
+it("spec を参照として集める", () => {
+  expect(collectArtifacts([{ kind: "message", id: "m", at: "1", message: { ...message([], "依頼"), spec: "docs/specs/T.md" } }]))
+    .toEqual([{ path: "docs/specs/T.md", kind: "referenced", at: "1" }]);
+});

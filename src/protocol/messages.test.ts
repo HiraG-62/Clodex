@@ -74,3 +74,17 @@ describe("createMessage", () => {
     expect(Number.isNaN(Date.parse(result.message.createdAt))).toBe(false);
   });
 });
+
+describe("spec の schema", () => {
+  it.each(["DELEGATE", "REVIEW_REQUEST"])("%s で spec を保持する", (type) => {
+    expect(createMessage({ ...reviewRequest, type, spec: "docs/specs/T.md" }, context))
+      .toMatchObject({ ok: true, message: { spec: "docs/specs/T.md" } });
+  });
+  it.each(["QUESTION", "RESULT", "ISSUE", "ACK"])("%s の spec を拒否する", (type) => {
+    expect(createMessage({ ...reviewRequest, type, replyTo: "msg_x", spec: "docs/specs/T.md" }, context))
+      .toMatchObject({ ok: false, error: expect.stringContaining("spec") });
+  });
+  it("空の spec を拒否する", () => {
+    expect(createMessage({ ...reviewRequest, spec: "" }, context)).toMatchObject({ ok: false });
+  });
+});

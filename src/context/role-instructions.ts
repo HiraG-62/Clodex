@@ -25,6 +25,10 @@ const SUBAGENT_NOTE =
   "Use your built-in sub-agents for work that can run in parallel independently, and for work that is better done " +
   "without your current context (reviews, investigations).";
 
+const SPEC_NOTE =
+  "For DELEGATE / REVIEW_REQUEST, write the design document first (default: docs/specs/<taskId>.md) and set spec to its path. " +
+  "Keep body to a summary. Use body alone only for simple requests that can be fully explained in a few lines.";
+
 const PLAN_NOTE = "When you receive a request, state in one or two sentences what you will do before you start working.";
 
 const roleLines = (agent: AgentId, peer: AgentId, roles: RolesConfig | undefined): string[] => {
@@ -53,7 +57,7 @@ export const buildRoleInstructions = (
 ): string => {
   const peer = peerOf(agent);
   return [
-    header(agent, peer), ...roleLines(agent, peer, roles), PERMISSION_NOTE, PLAN_NOTE, INTERRUPT_NOTE, SUBAGENT_NOTE,
+    header(agent, peer), ...roleLines(agent, peer, roles), PERMISSION_NOTE, PLAN_NOTE, SPEC_NOTE, INTERRUPT_NOTE, SUBAGENT_NOTE,
     ...(artifactsDir ? [artifactsNote(artifactsDir)] : []),
     ...(language ? [languageDirective(language)] : []),
   ].join("\n");

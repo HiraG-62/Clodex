@@ -58,3 +58,14 @@ describe("buildRoleInstructions の割り込みと subagent", () => {
     expect(text).toMatch(/sub-agents/);
   });
 });
+
+it("役割あり・なしで設計書を先に書いて spec に指定する方針を伝える", () => {
+  for (const roles of [undefined, { claude: "設計", codex: "実装" }]) {
+    const text = buildRoleInstructions("codex", roles);
+    expect(text).toContain("DELEGATE / REVIEW_REQUEST");
+    expect(text).toContain("docs/specs/<taskId>.md");
+    expect(text).toContain("spec");
+    expect(text).toMatch(/body.*summary/);
+    expect(text).toContain("a few lines");
+  }
+});

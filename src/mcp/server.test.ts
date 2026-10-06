@@ -1,3 +1,9 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Coordinator } from "../coordinator/coordinator.js";
+import { EventBus } from "../coordinator/event-bus.js";
+import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it } from "vitest";
@@ -82,4 +88,28 @@ describe("startMcpServer", () => {
     expect((await post("/mcp/wrong-token/claude")).status).toBe(404);
     expect((await post(`${new URL(server.urlFor("codex")).pathname}/claude`)).status).toBe(404);
   });
+});
+
+it("spec を公開・配送し、存在しない設計書は tool エラーにする", async () => {
+  const projectRoot = mkdtempSync(join(tmpdir(), "clodex-mcp-spec-"));
+  writeFileSync(join(projectRoot, "design.md"), "設計");
+  const coordinator = new Coordinator({
+    projectRoot, bus: new EventBus(), mcpUrlFor: () => "http://localhost/mcp",
+    agents: { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") },
+  });
+  server = await startMcpServer((from, input) => coordinator.receiveMessage(from, input));
+  const client = await connect(server.urlFor("claude"));
+  try {
+    const listed = await client.listTools();
+    expect(listed.tools[0]?.inputSchema.properties).toHaveProperty("spec");
+    for (const [spec, rejected] of [["design.md", false], ["missing.md", true]] as const) {
+      const result = await client.callTool({
+        name: "send_message", arguments: { to: "codex", type: "DELEGATE", taskId: "T", body: "実装", spec },
+      });
+      expect(Boolean(result.isError)).toBe(rejected);
+      if (rejected) expect(JSON.stringify(result.content)).toContain("spec:");
+    }
+  } finally {
+    await client.close();
+  }
 });

@@ -2,7 +2,9 @@
 // 読めるのは project root と artifacts ディレクトリの中の通常ファイルだけ（実パスで確かめる）
 import { execFile } from "node:child_process";
 import { readFile, realpath, stat } from "node:fs/promises";
-import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, extname, join, relative, resolve } from "node:path";
+
+import { inside } from "./path-scope.js";
 
 const ARTIFACTS_DIR = join(".clodex", "artifacts");
 const UPLOADS_DIR = join(".clodex", "uploads");
@@ -37,11 +39,6 @@ export const uploadsDirPath = (homeDir: string, conversationStatePath: string): 
   join(homeDir, UPLOADS_DIR, basename(conversationStatePath, extname(conversationStatePath)));
 
 const notFound = (path: string): PreviewResult => ({ ok: false, status: HTTP.notFound, message: `not found: ${path}` });
-
-const inside = (root: string, path: string) => {
-  const rel = relative(root, path);
-  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
-};
 
 export const createFilePreview = ({
   projectRoot, allowedDirs, maxTextBytes = DEFAULT_MAX_TEXT_BYTES, maxImageBytes = DEFAULT_MAX_IMAGE_BYTES,
