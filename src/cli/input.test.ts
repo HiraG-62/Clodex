@@ -76,12 +76,14 @@ describe("parseInput", () => {
     expect(parseInput("@claude first\nsecond", "claude")).toEqual({ kind: "send", agent: "claude", text: "first\nsecond" });
   });
 
-  it.each([
-    ["!& pnpm dev", /!& command/],
-  ])("v0.1 未対応の入力 %j は unsupported", (line, pattern) => {
-    const result = parseInput(line, "claude");
-    expect(result.kind).toBe("unsupported");
-    if (result.kind === "unsupported") expect(result.message).toMatch(pattern);
+  it("background process の操作を解釈する", () => {
+    expect(parseInput("!& pnpm dev", "claude")).toEqual({ kind: "background", command: "pnpm dev" });
+    expect(parseInput("/processes", "claude")).toEqual({ kind: "processes" });
+    expect(parseInput("/processes 2", "claude")).toEqual({ kind: "processes", id: 2 });
+    expect(parseInput("/kill 1", "claude")).toEqual({ kind: "kill", id: 1 });
+    for (const line of ["!&", "/kill", "/kill 0", "/kill 1 2", "/processes x"]) {
+      expect(parseInput(line, "claude").kind).toBe("invalid");
+    }
   });
 
   it.each([

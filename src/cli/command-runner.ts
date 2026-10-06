@@ -55,58 +55,91 @@ const lineSplitter = (print: (line: string) => void) => {
   };
 };
 
-export const createCommandRunner = ({
-  cwd, print, spawnShell = defaultSpawnShell, killTree = killProcessTree, now = Date.now,
-}: CommandRunnerOptions) => {
+export interface CommandCompletion {
+  code: number | null;
+  stopped: boolean;
+  error?: string;
+}
+
+export const createCommandExecutor = ({
+  spawnShell = defaultSpawnShell, killTree = killProcessTree,
+}: Pick<CommandRunnerOptions, "spawnShell" | "killTree">) => {
   let shellIndex = 0;
-  const running = new Map<CommandProcess, { stopped: boolean; failed: boolean }>();
-
-  const elapsed = (startedAt: number) => `${((now() - startedAt) / MS_PER_SECOND).toFixed(1)}s`;
-
-  const start = (command: string, startedAt: number, resolve: () => void, index = shellIndex) => {
-    const child = spawnShell(SHELLS[index]!, [...SHELL_ARGS, `${UTF8_PREFIX}${command}${EXIT_CODE_SUFFIX}`], typeof cwd === "function" ? cwd() : cwd);
-    const entry = { stopped: false, failed: false };
-    running.set(child, entry);
-    const out = lineSplitter(print);
-    const err = lineSplitter(print);
-    child.stdout.on("data", out.write);
-    child.stderr.on("data", err.write);
-    child.on("error", (error) => {
-      // 起動の失敗では error の後に close も来る。close は無視する
-      entry.failed = true;
-      running.delete(child);
-      // 同時に実行した command が同じシェルで失敗しても、次のシェルを飛ばさない
-      if (error.code === "ENOENT" && index < SHELLS.length - 1) {
-        shellIndex = Math.max(shellIndex, index + 1);
-        return start(command, startedAt, resolve, index + 1);
+  return (command: string, cwd: string, print: (line: string) => void, complete: (result: CommandCompletion) => void) => {
+    let child: CommandProcess | undefined;
+    let stopped = false;
+    let finished = false;
+    const finish = (result: CommandCompletion) => {
+      if (finished) return;
+      finished = true;
+      complete(result);
+    };
+    const start = (index: number) => {
+      let failed = false;
+      const onError = (error: NodeJS.ErrnoException) => {
+        // 起動の失敗では error の後に close も来る。close は無視する
+        failed = true;
+        // 同時に実行した command が同じシェルで失敗しても、次のシェルを飛ばさない
+        if (!stopped && error.code === "ENOENT" && index < SHELLS.length - 1) {
+          shellIndex = Math.max(shellIndex, index + 1);
+          start(index + 1);
+          return;
+        }
+        finish({ code: null, stopped, error: error.message });
+      };
+      try {
+        child = spawnShell(SHELLS[index]!, [...SHELL_ARGS, `${UTF8_PREFIX}${command}${EXIT_CODE_SUFFIX}`], cwd);
+      } catch (error) {
+        onError(error instanceof Error ? error : new Error(String(error)));
+        return;
       }
-      print(`error: ${error.message}`);
-      resolve();
-    });
-    child.on("close", (code) => {
-      if (entry.failed) return;
-      running.delete(child);
-      out.end();
-      err.end();
-      print(entry.stopped ? `stopped (${elapsed(startedAt)})` : `exit ${code} (${elapsed(startedAt)})`);
-      resolve();
-    });
+      const out = lineSplitter(print);
+      const err = lineSplitter(print);
+      child.stdout.on("data", out.write);
+      child.stderr.on("data", err.write);
+      child.on("error", onError);
+      child.on("close", (code) => {
+        if (failed) return;
+        out.end();
+        err.end();
+        finish({ code, stopped });
+      });
+    };
+    start(shellIndex);
+    return {
+      get running() { return !finished; },
+      stop: () => {
+        if (finished || stopped) return false;
+        stopped = true;
+        if (child?.pid !== undefined) killTree(child.pid);
+        return true;
+      },
+    };
   };
+};
+
+export const createCommandRunner = ({ cwd, print, now = Date.now, ...options }: CommandRunnerOptions) => {
+  const execute = createCommandExecutor(options);
+  const running = new Set<ReturnType<typeof execute>>();
 
   // 終了（または起動の失敗）で resolve する。reject しない
   const run = (command: string): Promise<void> => {
     print(`$ ${command}`);
-    return new Promise((resolve) => start(command, now(), resolve));
+    const startedAt = now();
+    return new Promise((resolve) => {
+      const handle = execute(command, typeof cwd === "function" ? cwd() : cwd, print, ({ code, stopped, error }) => {
+        for (const entry of running) if (!entry.running) running.delete(entry);
+        const elapsed = `${((now() - startedAt) / MS_PER_SECOND).toFixed(1)}s`;
+        print(error ? `error: ${error}` : stopped ? `stopped (${elapsed})` : `exit ${code} (${elapsed})`);
+        resolve();
+      });
+      if (handle.running) running.add(handle);
+    });
   };
 
   const stopAll = (): number => {
     let stopped = 0;
-    for (const [child, entry] of running) {
-      if (entry.stopped || child.pid === undefined) continue;
-      entry.stopped = true;
-      killTree(child.pid);
-      stopped++;
-    }
+    for (const entry of running) if (entry.stop()) stopped++;
     return stopped;
   };
 

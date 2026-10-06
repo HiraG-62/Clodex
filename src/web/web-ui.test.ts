@@ -3,7 +3,7 @@ import { EventBus } from "../coordinator/event-bus.js";
 import { WebFeed, type FeedItem, type WebState } from "./web-feed.js";
 import { connectWebFeed, historyItemOf } from "./web-ui.js";
 
-const STATE: WebState = { project: "C:\\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [] };
+const STATE: WebState = { project: "C:\\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], processes: [] };
 const message = {
   id: "msg_1", from: "claude", to: "codex", type: "QUESTION", taskId: "T", body: "?", repository: "C:\\app", createdAt: "x",
 } as const;

@@ -26,6 +26,7 @@ export interface AssistState {
   conversations: ReadonlyArray<{ title?: string }>;
   projects?: ReadonlyArray<{ projectRoot: string }>;
   pendingInputs: ReadonlyArray<{ id: string }>;
+  processes?: ReadonlyArray<{ id: number; command: string; status: string }>;
 }
 
 // labels: 候補の種類の表示（画面の言語の文言）
@@ -81,6 +82,11 @@ export function createInputAssist(commands: readonly SlashCommand[], agents: rea
       const agentValues = agents.map((value) => ({ value, detail: labels.agent }));
       const simple = (items: readonly string[], detail: string) => items.map((value) => ({ value, detail }));
       switch (name) {
+        case "processes": case "kill":
+          if (index === 0) values = (state.processes ?? [])
+            .filter(({ status }) => name !== "kill" || status === "running")
+            .map(({ id, command }) => ({ value: String(id), detail: command }));
+          break;
         case "role": case "primary": case "interrupt": case "compact":
           if (index === 0) values = agentValues;
           break;

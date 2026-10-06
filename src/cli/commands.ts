@@ -16,6 +16,8 @@ interface SlashCommandSpec {
 }
 
 const SPECS: readonly SlashCommandSpec[] = [
+  { name: "processes", args: "[number]", description: "cmd.processes" },
+  { name: "kill", args: "<number>", description: "cmd.kill" },
   { name: "interrupt", args: "[agent]", description: "cmd.interrupt" },
   { name: "cancel", args: "[id]", description: "cmd.cancel" },
   { name: "status", args: "", description: "cmd.status" },

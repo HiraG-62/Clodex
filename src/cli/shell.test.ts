@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentId, AgentStatus, PermissionLevel, TurnResult } from "../agents/agent-adapter.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
 import { createShell, type AgentState, type ConversationList, type PendingInput, type ShellCoordinator } from "./shell.js";
+import type { ManagedProcess } from "../process/process-manager.js";
 
 // ローカル時刻 10/05 20:26 の ISO 文字列（タイムゾーンに依存しないテストにする）
 const at = (minute: number) => new Date(2026, 9, 5, 20, minute).toISOString();
@@ -143,12 +144,22 @@ class FakeRunner {
 const setup = () => {
   const coordinator = new FakeCoordinator();
   const runner = new FakeRunner();
+  const background = {
+    starts: [] as string[], stops: 0, killed: [] as number[],
+    entries: [] as ManagedProcess[],
+    start(command: string) { this.starts.push(command); return this.starts.length; },
+    stopAll() { this.stops++; },
+    kill(id: number) { this.killed.push(id); return id === 1; },
+    list() { return this.entries; },
+    output(id: number) { return id === 1 ? ["line one", "line two"] : undefined; },
+  };
   const printed: string[] = [];
   let verbose = false;
   const history = new FakeHistory();
   const busy = { value: false };
   const saved: Array<{ agents: readonly AgentId[]; change: object }> = [];
   const roles: Partial<Record<AgentId, string>> = { claude: "設計" };
+  const references: string[] = [];
   const projects = {
     list: () => [{ projectRoot: "C:\\dev\\one", open: true, current: true }, { projectRoot: "C:\\dev\\two", open: false, current: false }],
     open: async (path: string) => ({ projectRoot: path, primary: "codex" as AgentId }),
@@ -156,22 +167,48 @@ const setup = () => {
   const shell = createShell({
     coordinator: () => coordinator, primary: "claude", busyElsewhere: () => busy.value, print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history, runner,
     saveSettings: (agents, change) => saved.push({ agents, change }),
-    resolveReference: async (path) => ({ "src/a.ts": "C:/p/src/a.ts", "shot.png": "C:/up/shot.png" } as Record<string, string>)[path],
-    projects,
+    resolveReference: async (path) => {
+      references.push(path);
+      return ({ "src/a.ts": "C:/p/src/a.ts", "shot.png": "C:/up/shot.png" } as Record<string, string>)[path];
+    },
+    projects, processes: background,
     roles: () => roles,
     saveRole: (agent, value) => { roles[agent] = value; return value; },
   });
-  return { coordinator, printed, shell, history, runner, saved, busy, projects, roles };
+  return { coordinator, printed, shell, history, runner, saved, busy, projects, roles, background, references };
 };
 
 describe("createShell", () => {
+  it("background は Ctrl+C と /interrupt で止めず /exit で止める", async () => {
+    const { shell, background } = setup();
+    await shell.handleLine("!& pnpm dev");
+    expect(background.starts).toEqual(["pnpm dev"]);
+    await shell.handleSigint();
+    await shell.handleLine("/interrupt");
+    expect(background.stops).toBe(0);
+    await shell.handleLine("/exit");
+    expect(background.stops).toBe(1);
+  });
+  it("process の一覧・出力を表示し番号で停止する", async () => {
+    const { shell, background, printed } = setup();
+    await shell.handleLine("/processes");
+    expect(printed.at(-1)).toBe("No background processes");
+    background.entries = [{ id: 1, command: "pnpm test", status: "exited", exitCode: 1, startedAt: 0, endedAt: 3200 }];
+    await shell.handleLine("/processes");
+    expect(printed.at(-1)).toBe("#1 exit 1 3.2s  pnpm test");
+    await shell.handleLine("/processes 1");
+    expect(printed.slice(-2)).toEqual(["line one", "line two"]);
+    await shell.handleLine("/kill 1");
+    expect(background.killed).toEqual([1]);
+  });
   it("@all は両 Agent に接頭行と画像を送り notice を出す", async () => {
-    const { shell, coordinator, printed } = setup();
+    const { shell, coordinator, printed, references } = setup();
     await shell.handleLine("@all hello @shot.png");
     expect(coordinator.sent.map(({ agent }) => agent)).toEqual(["claude", "codex"]);
     expect(coordinator.sent.every(({ text }) => text.startsWith("[Sent to both claude and codex]\n"))).toBe(true);
     expect(coordinator.images).toEqual([["C:/up/shot.png"], ["C:/up/shot.png"]]);
     expect(printed).toContain("@all: sent to claude and codex");
+    expect(references).toEqual(["shot.png"]);
   });
   it("@all! は両 Agent に割り込む", async () => {
     const { shell, coordinator } = setup();

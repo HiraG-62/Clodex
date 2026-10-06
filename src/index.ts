@@ -8,6 +8,7 @@ import { EMPTY_MODEL_CATALOG, fetchStartupProbe, type StartupProbe } from "./age
 import type { Coordinator } from "./coordinator/coordinator.js";
 import { parseCliArgs } from "./cli/args.js";
 import { createCommandRunner } from "./cli/command-runner.js";
+import { createProcessManager } from "./process/process-manager.js";
 import { completeCommand } from "./cli/commands.js";
 import { createShell, type ConversationList } from "./cli/shell.js";
 import { loadConfig } from "./config/config.js";
@@ -133,11 +134,12 @@ const main = async (): Promise<void> => {
     return context;
   };
   const runner = createCommandRunner({ cwd: () => hub.current?.workspace.current.workDir ?? cwd, print });
+  const processes = createProcessManager({ cwd: () => hub.current?.workspace.current.workDir ?? cwd, print, onChange: () => refreshState() });
   const shell = createShell({
     coordinator: () => current().workspace.current.coordinator,
     history: () => conversationsOf(current()),
     primary: hub.current?.primary ?? DEFAULT_PRIMARY,
-    print, toggleVerbose, runner,
+    print, toggleVerbose, runner, processes,
     projects: { list: () => hub.list(), open: openInHub, hasCurrent: () => hub.current !== undefined },
     roles: () => current().config.roles ?? {},
     saveRole: (agent, text) => {
@@ -164,6 +166,7 @@ const main = async (): Promise<void> => {
       roles: context?.config.roles ?? {},
       agents: context?.workspace.current.coordinator.status() ?? [],
       pendingInputs: context?.workspace.current.coordinator.pendingInputs() ?? [],
+      processes: processes.list().map(({ id, command, status }) => ({ id, command, status })),
       conversations: context?.history.list().map((conversation) => {
         const activity = context.workspace.activity(conversation.id);
         return { ...conversation, current: conversation.id === context.history.currentId, ...(activity ? { activity } : {}) };
@@ -217,6 +220,7 @@ const main = async (): Promise<void> => {
     shuttingDown = true;
     rl?.close();
     runner.stopAll();
+    processes.stopAll();
     try {
       await hub.closeAll();
       await web?.close();

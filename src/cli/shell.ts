@@ -7,6 +7,7 @@ import { commandUsage, slashCommands } from "./commands.js";
 import { resolveReferences } from "./file-references.js";
 import { parseInput } from "./input.js";
 import type { ModelOption } from "../agents/startup-probe.js";
+import type { ProcessManager } from "../process/process-manager.js";
 
 export interface AgentState {
   id: AgentId;
@@ -73,6 +74,7 @@ export interface ShellOptions {
   toggleVerbose: () => boolean;
   history: ConversationList | (() => ConversationList);
   runner: CommandRunner;
+  processes: ProcessManager;
   // 人が切り替えた設定を保存する（DESIGN.md §9 Agent の設定の保存）
   saveSettings?: (agents: readonly AgentId[], change: SettingsChange) => void;
   // @path の参照先が読んでよいファイルなら実パス（DESIGN.md §28 v0.3 A・C）
@@ -106,6 +108,7 @@ const HELP_LINES = (primary: AgentId) => [
   helpLine("@all <text>", t("help.all")),
   helpLine("@<agent>! <text>", t("help.steer")),
   helpLine("!<command>", t("help.run")),
+  helpLine("!& <command>", t("help.background")),
   ...slashCommands().map((command) => helpLine(commandUsage(command), command.description)),
   helpLine("Ctrl+C", t("help.ctrlC")),
 ];
@@ -151,7 +154,7 @@ const titleOf = (c: Conversation) => `"${c.title ?? t("shell.untitled")}"`;
 
 export const createShell = ({
   coordinator, primary: initialPrimary, print, toggleVerbose, history: historySource, runner, saveSettings = () => {}, resolveReference = async () => undefined,
-  busyElsewhere = () => false,
+  busyElsewhere = () => false, processes,
   projects,
   roles = () => ({}), saveRole = (_agent, text) => text,
 }: ShellOptions) => {
@@ -226,6 +229,29 @@ export const createShell = ({
         // 終了を待たずに次の入力を受け付ける。出力は runner が表示する
         void runner.run(command.command);
         return "continue";
+      case "background":
+        processes.start(command.command);
+        return "continue";
+      case "kill":
+        if (!processes.kill(command.id)) print(t("shell.processNotRunning", { id: command.id }));
+        return "continue";
+      case "processes": {
+        if (command.id !== undefined) {
+          const lines = processes.output(command.id);
+          if (!lines) print(t("shell.noProcess", { id: command.id }));
+          else if (!lines.length) print(t("shell.noProcessOutput"));
+          else lines.forEach(print);
+          return "continue";
+        }
+        const entries = processes.list();
+        if (!entries.length) print(t("shell.noProcesses"));
+        for (const entry of entries) {
+          const elapsed = (((entry.endedAt ?? Date.now()) - entry.startedAt) / MS_PER_SECOND).toFixed(1);
+          const status = entry.status === "exited" ? `exit ${entry.exitCode ?? "null"}` : entry.status;
+          print(`#${entry.id} ${status} ${elapsed}s  ${entry.command}`);
+        }
+        return "continue";
+      }
       case "status":
         print(t("shell.primary", { agent: primary }));
         {
@@ -329,8 +355,8 @@ export const createShell = ({
         print(t("shell.verbose", { state: t(toggleVerbose() ? "shell.on" : "shell.off") }));
         return "continue";
       case "exit":
+        processes.stopAll();
         return "exit";
-      case "unsupported":
       case "invalid":
         print(command.message);
         return "continue";

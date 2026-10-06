@@ -25,7 +25,9 @@ export type ShellCommand =
   | { kind: "delete"; index: number }
   | { kind: "pin"; index: number }
   | { kind: "run"; command: string }
-  | { kind: "unsupported"; message: string }
+  | { kind: "background"; command: string }
+  | { kind: "processes"; id?: number }
+  | { kind: "kill"; id: number }
   | { kind: "invalid"; message: string };
 
 const MENTION_PATTERN = /^@(\S+)\s*([\s\S]*)$/;
@@ -74,9 +76,6 @@ const NEW_WORKTREE_ARG = "worktree";
 
 const isConversationNumber = (arg: string) => /^[1-9]\d*$/.test(arg);
 
-const unsupported = (feature: string): ShellCommand =>
-  ({ kind: "unsupported", message: t("input.unsupported", { feature }) });
-
 // 行頭の @agent は送り先。Agent でなければ undefined（ファイルの参照として本文に残す）
 // @agent! は実行中のターンへの割り込み（DESIGN.md §28 v0.3 C）
 const STEER_SUFFIX = "!";
@@ -95,6 +94,11 @@ const parseMention = (mention: string, text: string): ShellCommand | undefined =
 
 const parseCommand = (name: string, arg: string): ShellCommand => {
   switch (name) {
+    case "processes":
+      if (!arg) return { kind: "processes" };
+      return isConversationNumber(arg) && Number.isSafeInteger(Number(arg)) ? { kind: "processes", id: Number(arg) } : usage("/processes [number]");
+    case "kill":
+      return isConversationNumber(arg) && Number.isSafeInteger(Number(arg)) ? { kind: "kill", id: Number(arg) } : usage("/kill <number>");
     case "role": {
       if (!arg) return { kind: "role" };
       const [agent, ...words] = arg.split(/\s+/);
@@ -149,7 +153,10 @@ export const parseInput = (line: string, primary: AgentId): ShellCommand => {
   const input = line.trim();
   if (!input) return { kind: "empty" };
   if (input.startsWith("/") && /[\r\n]/.test(line)) return { kind: "invalid", message: t("input.oneLine") };
-  if (input.startsWith("!&")) return unsupported("!& command");
+  if (input.startsWith("!&")) {
+    const command = input.slice(2).trim();
+    return command ? { kind: "background", command } : usage("!& <command>");
+  }
   if (input.startsWith("!")) {
     const command = input.slice(1).trim();
     return command ? { kind: "run", command } : usage("!<command>");

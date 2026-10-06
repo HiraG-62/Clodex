@@ -19,6 +19,7 @@ export interface WebState {
   conversations: Array<Conversation & { current: boolean; activity?: ConversationActivity }>;
   // 配送待ちの人間の入力（取り消し・編集の対象）
   pendingInputs: PendingInput[];
+  processes: Array<{ id: number; command: string; status: "running" | "exited" | "stopped" }>;
 }
 
 export type FeedItem =
