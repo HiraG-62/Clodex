@@ -4,7 +4,25 @@ import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { createInterface } from "node:readline";
 import { once } from "node:events";
-import { brokerSource, directHelper, parseOptions, psQuote, validateTargets, formatTable, cliScript } from "./sandbox-user.js";
+import { brokerSource, directHelper, parseOptions, psQuote, validateTargets, formatTable, cliScript, assessDriveDeny } from "./sandbox-user.js";
+
+describe("Deny 継承の計測結果", () => {
+  const project = "E:\\sandbox", other = "E:\\other";
+  const denied = (directory: string) => ({ directory, created: false, deleted: false, error: "System.UnauthorizedAccessException" });
+  const observations = [{ directory: project, created: true, deleted: true }, denied(other), denied("E:\\")];
+  it("project の Allow と別 project・ルートの Deny がそろったときだけ成功", () => {
+    expect(assessDriveDeny(project, other, ["E:\\"], observations).status).toBe("成功");
+    expect(assessDriveDeny(project, other, ["E:\\"], [...observations.slice(0, 2), { directory: "E:\\", created: true, deleted: true }]).status).toBe("失敗");
+    expect(assessDriveDeny(project, other, ["E:\\"], [denied(project), ...observations.slice(1)]).status).toBe("失敗");
+  });
+  it("存在しないパスのエラーを Deny の成功と扱わない", () => {
+    expect(assessDriveDeny(project, other, ["E:\\"], [observations[0]!, { ...denied(other), error: "System.IO.DirectoryNotFoundException" }, denied("E:\\")]).status).toBe("失敗");
+  });
+  it("Deny の未設定や別ドライブは未計測", () => {
+    expect(assessDriveDeny(project, other, [], observations).status).toBe("未計測");
+    expect(assessDriveDeny(project, "C:\\other", ["E:\\"], observations).status).toBe("未計測");
+  });
+});
 
 describe("sandbox-user spike の入力境界", () => {
   it("CLI は明示指定がない限り実行しない", () => {

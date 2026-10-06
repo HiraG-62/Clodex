@@ -64,6 +64,25 @@ export function formatTable(rows: Row[]): string {
   return ["| # | 項目 | 結果 | 詳細 |", "|---|---|---|---|", ...rows.map(r => `| ${r.number} | ${cell(r.name)} | ${cell(r.status)} | ${cell(r.detail)} |`)].join("\n");
 }
 
+interface WriteObservation { directory: string; created: boolean; deleted: boolean; error?: string }
+export function assessDriveDeny(project: string, otherProject: string, deniedDrives: string[], observations: WriteObservation[]): { status: string; detail: string } {
+  const key = (path: string) => win32.resolve(path).toLowerCase();
+  const roots = new Set(deniedDrives.map(key));
+  if (!roots.has(key(win32.parse(project).root)) || !roots.has(key(win32.parse(otherProject).root))) {
+    return { status: "未計測", detail: "許可 project と別 project の両方に Deny 対象ドライブの指定が必要" };
+  }
+  const byPath = new Map(observations.map(value => [key(value.directory), value]));
+  const allowed = byPath.get(key(project));
+  if (!allowed?.created || !allowed.deleted) return { status: "失敗", detail: "許可 project の作成・削除に失敗" };
+  for (const path of [otherProject, ...deniedDrives]) {
+    const result = byPath.get(key(path));
+    if (!result || result.created || result.error !== "System.UnauthorizedAccessException") {
+      return { status: "失敗", detail: `書き込みのアクセス拒否を確認できず: ${path}` };
+    }
+  }
+  return { status: "成功", detail: "許可 project は作成・削除可能、別 project と対象ルートはアクセス拒否" };
+}
+
 export function cliScript(command: string, args: readonly string[], cwd: string): string {
   return `$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); ${API_KEYS.map(key => `[Environment]::SetEnvironmentVariable('${key}',$null,'Process')`).join("; ")}; Set-Location -LiteralPath ${psQuote(cwd)}; & ${psQuote(command)} ${args.map(psQuote).join(" ")}; exit $LASTEXITCODE`;
 }
@@ -356,7 +375,7 @@ function asAgentSpawn(launch: Launch): SpawnAgentProcess {
 const psPrelude = "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);";
 const writeProbe = (directory: string, leaf: string, keep = false): string => `${psPrelude}
 $path=Join-Path ${psQuote(directory)} ${psQuote(leaf)}; $created=$false; $result=@{path=$path;created=$false;deleted=$false};
-try { $s=[IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write); $created=$true; $s.Dispose(); $result.created=$true } catch { $result.error=$_.Exception.GetType().FullName; $result.reason=$_.Exception.Message }
+try { $s=[IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write); $created=$true; $s.Dispose(); $result.created=$true } catch { $result.error=$_.Exception.GetBaseException().GetType().FullName; $result.reason=$_.Exception.Message }
 finally { if($created -and ${keep ? "$false" : "$true"}) { try { [IO.File]::Delete($path); $result.deleted=$true } catch { $result.cleanup=$_.Exception.Message } } }; $result | ConvertTo-Json -Compress`;
 const readProbe = (path: string): string => `${psPrelude}
 $path=${psQuote(path)}; $result=@{path=$path};
@@ -437,10 +456,23 @@ async function main(): Promise<void> {
       try { add(number, "計測済み", await action()); } catch (error) { add(number, "失敗", errorText(error)); }
     };
     await measure(2, async () => {
-      const acl = await host(`${psPrelude} Get-PSDrive -PSProvider FileSystem | ForEach-Object { & icacls.exe $_.Root }`);
+      const deniedDrives = Array.isArray(state.deniedDrives) ? state.deniedDrives.filter((path): path is string => typeof path === "string") : [];
+      if (deniedDrives.some(path => !/^[a-z]:\\$/i.test(path))) throw new Error("state のドライブ記録が不正");
+      const acl = await host(`${psPrelude} Get-PSDrive -PSProvider FileSystem | ForEach-Object { & icacls.exe $_.Root }; & icacls.exe ${psQuote(options.project)}; & icacls.exe ${psQuote(options.otherProject)}`);
       logs.push(`ドライブ ACL:\n\n\`\`\`text\n${acl.stdout}\n${acl.stderr}\n\`\`\``);
       const results: string[] = [];
-      for (const path of [options.project, options.otherProject, "E:\\", humanHome, "C:\\Windows\\Temp", "C:\\ProgramData"]) results.push(await target(writeProbe(path, `.clodex-spike-${runId}`)));
+      const observations: WriteObservation[] = [];
+      const paths = new Set([options.project, options.otherProject, "E:\\", humanHome, "C:\\Windows\\Temp", "C:\\ProgramData", ...deniedDrives]);
+      for (const path of paths) {
+        const output = await target(writeProbe(path, `.clodex-spike-${runId}`));
+        results.push(output);
+        const result = record(JSON.parse(output));
+        observations.push({ directory: path, created: result.created === true, deleted: result.deleted === true, error: typeof result.error === "string" ? result.error : undefined });
+      }
+      const assessment = assessDriveDeny(options.project, options.otherProject, deniedDrives, observations);
+      results.push(`Deny 継承: ${assessment.status} — ${assessment.detail}`);
+      logs.push(`書き込み境界:\n${results.join("\n")}`);
+      if (assessment.status === "失敗") throw new Error(results.join("\n"));
       return results.join("\n");
     });
     await measure(3, async () => {

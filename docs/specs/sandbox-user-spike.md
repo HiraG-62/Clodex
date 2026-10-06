@@ -29,7 +29,7 @@ spike のスクリプトもこれに合わせる:
    - パスワードは人のユーザーの DPAPI（CurrentUser）で暗号化して `~/.clodex/agent-credential` に保存する
    - 引数で渡した project のディレクトリに `clodex-agent` の Modify を付ける（継承あり）
    - 元に戻す `-Uninstall`（ユーザーの削除、付けた ACL の除去）
-   - ドライブの ACL は変更しない（結果を見て決めるので、計測だけにとどめる）
+   - システムドライブ以外の固定ドライブのルートに `clodex-agent` の Deny を付ける（下の「段階 2 の途中結果と追加の変更」）
 2. `spikes/sandbox-user.ts`（人のユーザーで、管理者権限なしに実行する）。下の計測項目を順に実行し、表の形で結果を出力する
 3. ここまでで RESULT を送る（実 CLI はまだ動かさない）
 
@@ -49,6 +49,21 @@ spike のスクリプトもこれに合わせる:
 | 8 | 停止 | 人のユーザー（管理者でない）から、`clodex-agent` のプロセスツリーを `taskkill /T /F` で止められるか。止められない場合、#1 の helper / broker 経由なら止められるか |
 | 9 | 作成物の所有者 | `clodex-agent` が project に作ったファイルを、人のユーザーで編集・削除できるか。人のユーザーで `git status` / `git commit` が `dubious ownership` にならないか。`clodex-agent` で `git commit` できるか |
 | 10 | artifacts | `~/.clodex/artifacts/<project>` だけに `clodex-agent` の書き込みを付けた場合、そこに書けて、`~/.clodex` のほか（`web-token` 等）は読めないこと |
+
+## 段階 2 の途中結果（2026-10-07、実 CLI なし）と追加の変更
+
+結果:
+
+- #2: `E:\` と `E:\dev\Clodex` に `clodex-agent` が書き込めた。システムドライブ以外のドライブは、既定で `Authenticated Users` に Modify（継承あり）が付いているため。`C:\Windows\Temp`・`C:\ProgramData` にも書けるが、これは Windows の通常の挙動
+- #4: 人のプロファイルの中にある CLI（`~/.local/bin/claude.exe`、`%LOCALAPPDATA%\Programs\OpenAI\Codex`、`%APPDATA%\npm\pnpm`）は、インストール先に RX を付けても使えない。Node は `realpath` で親フォルダを順に `lstat` するので、`C:\Users\<人>\AppData` で EPERM になる。人のプロファイルに穴を開けるより、CLI は `clodex-agent` 側に別途インストールする（`claude` の公式インストーラー、`npm i -g @openai/codex pnpm`）
+- #1・#7・#8・#10 は期待どおり。#8 は人のユーザーから `taskkill /T /F` で止められた
+- #9: `clodex-agent` が作ったリポジトリは、人のユーザーで `dubious ownership` になる
+
+setup への追加:
+
+- システムドライブ以外の固定ドライブ（`Get-Volume` 等で列挙）のルートに、`clodex-agent` の **Deny**（書き込み・削除。継承あり）を付ける。project には明示の Allow（Modify）が付いているので、継承された Deny より優先される。`-Uninstall` で外す。付けたドライブは state に記録する
+- 継承の反映でドライブ全体を走査するため時間がかかる場合がある。開始時にその旨を表示する
+- spike の #2 に、Deny の付いたドライブ上で「別の project」「ドライブのルート」には書けず、許可した project には書けることの確認を足す
 
 ## 記録
 

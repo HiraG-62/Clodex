@@ -6,8 +6,55 @@ import { psQuote } from "./sandbox-user.js";
 
 const setupPath = fileURLToPath(new URL("./sandbox-user-setup.ps1", import.meta.url));
 const run = (script: string) => spawnSync("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(`$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); ${script}`, "utf16le").toString("base64")], { encoding: "utf8", windowsHide: true });
+const loadFunctions = `$tokens=$null; $errors=$null; $ast=[Management.Automation.Language.Parser]::ParseFile(${psQuote(setupPath)},[ref]$tokens,[ref]$errors); foreach($fn in $ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst]},$false)) { . ([ScriptBlock]::Create($fn.Extent.Text)) };`;
 
 describe.skipIf(process.platform !== "win32")("setup の副作用なし検証", () => {
+  it("Deny 対象はシステムドライブを除く固定ドライブだけ", () => {
+    const result = run(`${loadFunctions}
+$volumes=@(@{DriveType='Fixed';DriveLetter='C'},@{DriveType='Fixed';DriveLetter='E'},@{DriveType='Fixed';DriveLetter='e'},@{DriveType='Removable';DriveLetter='F'},@{DriveType='Fixed';DriveLetter=$null},@{DriveType='Network';DriveLetter='G'});
+@(Get-DenyDriveRoots $volumes 'c:') | ConvertTo-Json -Compress`);
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toBe("E:\\");
+  });
+
+  it("Deny は書き込み・削除のみで、読み取り・実行・同期を妨げない", () => {
+    const result = run(`${loadFunctions}
+$rule=New-DriveDenyRule ([Security.Principal.SecurityIdentifier]::new('S-1-5-21-1-2-3-1001'));
+@{rights=[int]$rule.FileSystemRights;inheritance=[string]$rule.InheritanceFlags;propagation=[string]$rule.PropagationFlags;type=[string]$rule.AccessControlType} | ConvertTo-Json -Compress`);
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ rights: 65878, inheritance: "ContainerInherit, ObjectInherit", propagation: "None", type: "Deny" });
+  });
+
+  it("Deny は変更前に記録し、再実行で重複せず、解除時に別の ACE を残す", () => {
+    const result = run(`${loadFunctions}
+$sid='S-1-5-21-1-2-3-1001'; $root='E:\\'; $StatePath='unused';
+$state=[pscustomobject]@{agentSid=$sid;complete=$true};
+$acl=[Security.AccessControl.DirectorySecurity]::new(); $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid),'ReadAndExecute','Allow'));
+$script:writes=0; $script:saved=$null;
+function Write-Host { param($Object) }; function Assert-NoReparsePoint { param($Path) }; function Test-Path { param($LiteralPath) return $true };
+function Get-Acl { param($LiteralPath) return $acl };
+function Set-PrivateFile { param($Path,$Content) $script:saved=$Content | ConvertFrom-Json };
+function Set-Acl { param($LiteralPath,$AclObject) if($script:saved.deniedDrives -notcontains $LiteralPath) { throw 'not-recorded' }; $script:writes++ };
+Update-DriveDeny $state @($root); Update-DriveDeny $state @($root);
+$afterInstall=$script:writes; Remove-DriveDenyRules $state;
+$rules=@($acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier]));
+@{installWrites=$afterInstall;totalWrites=$script:writes;remaining=@($rules | ForEach-Object {[string]$_.AccessControlType});drives=$state.deniedDrives;complete=$state.complete} | ConvertTo-Json -Compress`);
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ installWrites: 1, totalWrites: 2, remaining: ["Allow"], drives: ["E:\\"], complete: true });
+  });
+
+  it("Deny 反映に失敗しても対象ドライブの記録を残す", () => {
+    const result = run(`${loadFunctions}
+$state=[pscustomobject]@{agentSid='S-1-5-21-1-2-3-1001';complete=$true}; $StatePath='unused'; $script:saved=$null;
+function Write-Host { param($Object) }; function Assert-NoReparsePoint { param($Path) }; function Test-Path { param($LiteralPath) return $true };
+function Get-Acl { param($LiteralPath) return [Security.AccessControl.DirectorySecurity]::new() };
+function Set-PrivateFile { param($Path,$Content) $script:saved=$Content | ConvertFrom-Json };
+function Set-Acl { param($LiteralPath,$AclObject) throw 'simulated-denial' };
+try { Update-DriveDeny $state @('E:\\') } catch { if($_.Exception.Message -ne 'simulated-denial') { throw } };
+@{complete=$script:saved.complete;drives=$script:saved.deniedDrives} | ConvertTo-Json -Compress`);
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ complete: false, drives: ["E:\\"] });
+  });
   it("UTF-8 BOM 付きで PowerShell 5.1 の構文解析が通る", () => {
     expect([...readFileSync(setupPath).subarray(0, 3)]).toEqual([239, 187, 191]);
     const result = run(`$tokens=$null; $errors=$null; [void][Management.Automation.Language.Parser]::ParseFile(${psQuote(setupPath)},[ref]$tokens,[ref]$errors); if($errors.Count) { throw ($errors | Out-String) }`);
