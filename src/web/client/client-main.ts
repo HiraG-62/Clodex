@@ -754,7 +754,7 @@ export function clientMain({
     openSheet(t("web.agentSettings.title", { agent: AGENTS[id].name }), [
       el("div", "eyebrow", t("web.role.title", { agent: AGENTS[id].name })),
       roleField, saveRole, el("p", "muted small", t("web.role.restart", { agent: id })),
-      permission, model, effort, restart, el("p", "muted small", t("web.agentSettings.restartNote")),
+      permission, model, effort, restart,
     ]);
   };
 

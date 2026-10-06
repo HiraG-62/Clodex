@@ -331,7 +331,7 @@ const body = (messages: Messages) => {
   </aside>
   <div class="log-wrap">
     <main class="log" id="log" aria-label="${m("web.log.label")}" aria-live="polite">
-      <div class="empty" id="empty"><b>${m("web.empty.title")}</b>${m("web.empty.body")}</div>
+      <div class="empty" id="empty"><b>${m("web.empty.title")}</b></div>
     </main>
     <button class="newer" type="button" id="newer" hidden>${m("web.newer")}</button>
   </div>

@@ -43,7 +43,7 @@ describe("TuiApp", () => {
     emit({ type: "event", seq: 2, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "text", text: "方針を確認" } } });
     app.stdin.write("/");
     await tick();
-    expect(app.lastFrame()).toContain("Claude · 作業しています");
+    expect(app.lastFrame()).toContain("Claude · 作業中");
     expect(app.lastFrame()).toContain("方針を確認");
     expect(app.lastFrame()).toContain("/status");
   });
