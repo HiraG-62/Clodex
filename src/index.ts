@@ -107,6 +107,7 @@ const main = async (): Promise<void> => {
       refreshState();
     });
     context.bindFeed(feed, () => hub.current === context);
+    await context.restore();
     return context;
   } });
   void fetchStartupProbe(cwd).then((probe) => {
@@ -124,6 +125,7 @@ const main = async (): Promise<void> => {
   const initial = args.project
     ? resolveProjectRoot({ explicitProject: args.project, cwd })
     : args.serve ? hub.lastProject : resolveProjectRoot({ cwd });
+  for (const project of hub.recoveryProjects().filter((project) => project !== initial)) await openInHub(project);
   if (initial) await openInHub(initial);
 
   const print = (line: string) => { feed.publishOutput(line); printTerminal(line); };

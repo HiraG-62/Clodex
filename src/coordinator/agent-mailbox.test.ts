@@ -13,6 +13,21 @@ const setup = () => {
 };
 
 describe("AgentMailbox", () => {
+  it("復旧用一覧には未配送の入力と message を元の順に含める", () => {
+    const { mailbox } = setup();
+    void mailbox.enqueue("busy");
+    const formal = { id: "msg_recover", from: "claude", to: "codex", type: "QUESTION", taskId: "T", body: "?",
+      repository: "C:\\dev\\app", createdAt: "2026-10-05T07:00:00.000Z" } as const;
+    void mailbox.enqueue("envelope", { message: formal });
+    void mailbox.enqueue("next", { inputId: "in1", images: ["shot.png"], suffix: "\nlang" });
+    expect(mailbox.recoveryQueue).toEqual([
+      { kind: "message", message: formal },
+      { kind: "input", text: "next", images: ["shot.png"] },
+    ]);
+    expect(mailbox.activeSending).toBe(true);
+    mailbox.close();
+    expect(mailbox.recoveryQueue).toEqual([]);
+  });
   it("stopped の Agent は起動してから送る", async () => {
     const { agent, mailbox } = setup();
     const result = mailbox.enqueue("hello");

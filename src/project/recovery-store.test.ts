@@ -1,0 +1,33 @@
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { loadRecovery, recoveryPath, saveRecovery } from "./recovery-store.js";
+
+describe("recovery store", () => {
+  const setup = () => {
+    const home = mkdtempSync(join(tmpdir(), "clodex-recovery-"));
+    const project = join(home, "project");
+    return { home, project, path: recoveryPath(home, project) };
+  };
+
+  it("配送待ちと作業中の会話だけを保存し、読み直す", () => {
+    const { home, project, path } = setup();
+    const data = { current: "c1", conversations: {
+      c1: { interrupted: ["claude" as const], queue: { claude: [{ kind: "input" as const, text: "次", images: ["shot.png"] }], codex: [] } },
+      c2: { interrupted: [], queue: { claude: [], codex: [] } },
+    } };
+    saveRecovery(home, project, data);
+    expect(loadRecovery(home, project)).toEqual({ current: "c1", conversations: { c1: data.conversations.c1 } });
+    expect(JSON.parse(readFileSync(path, "utf8")).conversations).not.toHaveProperty("c2");
+  });
+
+  it("壊れたファイルは空として扱う", () => {
+    const { home, project, path } = setup();
+    saveRecovery(home, project, { current: "c1", conversations: {} });
+    writeFileSync(path, JSON.stringify({ current: "c1", conversations: { c1: { interrupted: ["nobody"], queue: {} } } }));
+    expect(loadRecovery(home, project)).toBeUndefined();
+    writeFileSync(path, "not JSON");
+    expect(loadRecovery(home, project)).toBeUndefined();
+  });
+});

@@ -1,6 +1,6 @@
 // project ごとの設定・会話・Agent・保存をまとめる（DESIGN.md §28 D2a）
 import { mkdirSync } from "node:fs";
-import { AGENT_IDS, type AgentId } from "../agents/agent-adapter.js";
+import type { AgentAdapter, AgentId } from "../agents/agent-adapter.js";
 import { ClaudeAdapter } from "../agents/claude-adapter.js";
 import { CodexAdapter } from "../agents/codex-adapter.js";
 import type { ModelCatalog } from "../agents/startup-probe.js";
@@ -16,6 +16,7 @@ import { attachEventLog, defaultLogPath, type DisplayMode } from "../logging/eve
 import { startMcpServer } from "../mcp/server.js";
 import { AgentSettingsStore, agentSettingsPath, resolveStartSettings, type SavedAgentSettings } from "../project/agent-settings.js";
 import { ConversationHistory, conversationStatePath, type Conversation, type SavedSessions } from "../project/conversation-history.js";
+import { hasRecoveryWork, loadRecovery, saveRecovery } from "../project/recovery-store.js";
 import { artifactsDirPath, createFilePreview, uploadsDirPath } from "../project/file-preview.js";
 import { createWorktree } from "../project/worktree.js";
 import { connectConversationFeed } from "../web/conversation-feed.js";
@@ -43,6 +44,7 @@ export interface ProjectContext {
   saveFeedItem(conversationId: string, item: HistoryItem): void;
   bindFeed(feed: WebFeed, isCurrent: () => boolean): void;
   showFeed(feed: WebFeed): void;
+  restore(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -56,18 +58,24 @@ export interface OpenProjectOptions {
   isCurrent(): boolean;
   modelCatalog(): ModelCatalog;
   registerCoordinator(coordinator: Coordinator): () => void;
+  createAgents?: () => Record<AgentId, AgentAdapter>;
 }
 
 export const openProject = async ({
-  projectRoot, homeDir, args, language, printTerminal, displayMode, isCurrent, modelCatalog, registerCoordinator,
+  projectRoot, homeDir, args, language, printTerminal, displayMode, isCurrent, modelCatalog, registerCoordinator, createAgents = () => ({ claude: new ClaudeAdapter(), codex: new CodexAdapter() }),
 }: OpenProjectOptions): Promise<ProjectContext> => {
   const config = loadConfig({ homeDir, projectRoot });
   const primary = args.primary ?? config.primary ?? DEFAULT_PRIMARY;
   const statePath = conversationStatePath(homeDir, projectRoot);
+  const recovery = loadRecovery(homeDir, projectRoot);
+  const hasWork = recovery !== undefined && Object.values(recovery.conversations).some(hasRecoveryWork);
   const artifactsDir = artifactsDirPath(homeDir, statePath);
   mkdirSync(artifactsDir, { recursive: true });
   const uploadsDir = uploadsDirPath(homeDir, statePath);
-  const history = new ConversationHistory(statePath, { resumeLatest: args.resume });
+  const history = new ConversationHistory(statePath, {
+    resumeLatest: args.resume && !hasWork && !args.serve,
+    ...((hasWork || args.serve) && recovery ? { resumeId: recovery.current } : {}),
+  });
   const resumedSessions = history.currentSessions;
   const settingsStore = new AgentSettingsStore(agentSettingsPath(statePath));
   const savedSettings = settingsStore.load();
@@ -82,7 +90,7 @@ export const openProject = async ({
     const mcp = await startMcpServer((from, input) => coordinator!.receiveMessage(from, input));
     coordinator = new Coordinator({
       projectRoot: workDir,
-      agents: { claude: new ClaudeAdapter(), codex: new CodexAdapter() },
+      agents: createAgents(),
       bus,
       modelCatalog,
       mcpUrlFor: (agent) => mcp.urlFor(agent),
@@ -107,6 +115,11 @@ export const openProject = async ({
   workspace = new Workspace({ history, projectRoot, createRuntime, createWorktree });
   await workspace.init();
   const activeWorkspace = workspace;
+  const save = () => saveRecovery(homeDir, projectRoot, { current: history.currentId, conversations: activeWorkspace.recoveryConversations() });
+  activeWorkspace.onRecoveryChange(save);
+  history.onSwitch(save);
+  history.onRemove(save);
+  let restored = false;
   const registerRuntime = (runtime: ConversationRuntime) => {
     if (!registered.has(runtime.coordinator)) registered.set(runtime.coordinator, registerCoordinator(runtime.coordinator));
   };
@@ -125,10 +138,16 @@ export const openProject = async ({
     artifactsDir, uploadsDir, resumedSessions, savedSettings, startedAt,
     currentPreview: () => createFilePreview({ projectRoot: activeWorkspace.current.workDir, allowedDirs: [artifactsDir, uploadsDir] }),
     saveFeedItem,
+    restore: async () => {
+      if (restored) return;
+      restored = true;
+      if (recovery) await activeWorkspace.restore(recovery);
+      save();
+    },
     bindFeed: (feed, current) => {
       connectConversationFeed(history, feedStore, { replace: (items) => { if (current()) feed.replace(items); } });
       activeWorkspace.onRuntime(registerRuntime);
-      registerRuntime(activeWorkspace.current);
+      for (const runtime of activeWorkspace.allRuntimes()) registerRuntime(runtime);
     },
     showFeed: (feed) => feed.replace(feedStore.load(history.currentId)),
     close: () => activeWorkspace.closeAll(),

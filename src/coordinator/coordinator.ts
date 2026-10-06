@@ -12,6 +12,7 @@ import { BudgetManager, type BudgetLimits } from "./budget-manager.js";
 import { DEFAULT_USAGE_ALERT, UsageMonitor, type UsageAlert, type UsageSnapshot } from "./usage-monitor.js";
 import type { EventBus } from "./event-bus.js";
 import { modelLabel, type ModelCatalog, type StartupProbe } from "../agents/startup-probe.js";
+import type { ConversationRecovery } from "../project/recovery-store.js";
 
 // 起動時の Agent の設定（DESIGN.md §9 Agent の設定の保存）
 export interface AgentStartSettings {
@@ -29,6 +30,7 @@ export interface PendingInput {
 
 const INPUT_ID_PREFIX = "in";
 const PREVIEW_LENGTH = 40;
+export const RECOVERY_CONTINUE = "[Clodex] Clodex restarted and your previous turn was interrupted. Continue the task you were working on.";
 const preview = (text: string) => (text.length > PREVIEW_LENGTH ? `${text.slice(0, PREVIEW_LENGTH)}…` : text);
 
 export interface CoordinatorOptions {
@@ -55,6 +57,46 @@ export class Coordinator {
   private readonly usage: UsageMonitor;
   private inputSeq = 0;
   private readonly liveUsage = new Set<AgentId>();
+  private readonly recoveryListeners = new Set<() => void>();
+  private stoppingRecovery: ConversationRecovery | undefined;
+
+  onRecoveryChange(listener: () => void): () => void {
+    this.recoveryListeners.add(listener);
+    return () => this.recoveryListeners.delete(listener);
+  }
+
+  private notifyRecoveryChange(): void {
+    if (this.stoppingRecovery) return;
+    for (const listener of this.recoveryListeners) listener();
+  }
+
+  recoveryState(): ConversationRecovery {
+    if (this.stoppingRecovery) return this.stoppingRecovery;
+    return {
+      interrupted: AGENT_IDS.filter((id) => this.mailboxes[id].activeSending || this.options.agents[id].status === "busy"),
+      queue: { claude: this.mailboxes.claude.recoveryQueue, codex: this.mailboxes.codex.recoveryQueue },
+    };
+  }
+
+  restore(state: ConversationRecovery): void {
+    for (const id of AGENT_IDS) this.mailboxes[id].pause();
+    for (const id of state.interrupted) {
+      if (this.mailboxes[id].sessionId) void this.mailboxes[id].enqueue(RECOVERY_CONTINUE, { suffix: this.reminder });
+    }
+    for (const id of AGENT_IDS) {
+      for (const item of state.queue[id]) {
+        if (item.kind === "input") {
+          void this.mailboxes[id].enqueue(item.text, { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, images: item.images, suffix: this.reminder });
+        } else {
+          this.budget.restore(item.message);
+          void this.mailboxes[id].enqueue(buildEnvelope(item.message, this.options.language), { message: item.message });
+        }
+      }
+    }
+    const queued = AGENT_IDS.reduce((total, id) => total + state.queue[id].length, 0);
+    this.options.bus.publish({ kind: "notice", text: t("notice.recovered", { interrupted: state.interrupted.length, queued }) });
+    for (const id of AGENT_IDS) this.mailboxes[id].resume();
+  }
 
   constructor(private readonly options: CoordinatorOptions) {
     const { agents, bus, projectRoot, mcpUrlFor, instructions, limits, settings } = options;
@@ -85,6 +127,7 @@ export class Coordinator {
           };
         },
         (message) => bus.publish({ kind: "agent", agent: id, event: { type: "error", message } }),
+        () => this.notifyRecoveryChange(),
       );
     };
     this.mailboxes = { claude: createMailbox("claude"), codex: createMailbox("codex") };
@@ -245,6 +288,7 @@ ${languageReminder(language)}` : "";
   }
 
   async stop(): Promise<void> {
+    this.stoppingRecovery = this.recoveryState();
     for (const id of AGENT_IDS) this.mailboxes[id].close();
     await Promise.all(AGENT_IDS.map((id) => this.options.agents[id].stop()));
   }

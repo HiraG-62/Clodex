@@ -97,6 +97,17 @@ describe("ConversationHistory", () => {
     expect(resumed.history.list()[0]).toMatchObject({ title: "hello", sessions: { claude: "c-1", codex: "x-1" } });
   });
 
+  it("指定された前回の会話を選び、履歴に無ければ新しい会話にする", () => {
+    const first = setup();
+    first.session("claude", "old");
+    const oldId = first.history.currentId;
+    const newer = setup(first.path, false, 10);
+    newer.session("claude", "new");
+    expect(new ConversationHistory(first.path, { resumeLatest: false, resumeId: oldId }).currentId).toBe(oldId);
+    expect(new ConversationHistory(first.path, { resumeLatest: false, resumeId: "missing" }).currentId).not.toBe(oldId);
+    expect(new ConversationHistory(first.path, { resumeLatest: false }).currentId).not.toBe(oldId);
+  });
+
   it("resumeLatest でも保存が無ければ新しい会話", () => {
     const { history } = setup(makePath(), true);
     expect(history.currentSessions).toEqual({});

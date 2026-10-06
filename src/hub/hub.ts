@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import { writeFileAtomic } from "../project/atomic-write.js";
 import { resolveProjectRoot } from "../project/project-root.js";
+import { hasRecoveryWork, loadRecovery } from "../project/recovery-store.js";
 
 const HUB_PATH = join(".clodex", "hub.json");
 const savedSchema = z.object({ projects: z.array(z.string()), lastProject: z.string().optional() });
@@ -40,6 +41,13 @@ export class Hub<T extends HubProject> {
 
   get lastProject(): string | undefined {
     return this.latestProject;
+  }
+
+  recoveryProjects(): string[] {
+    return this.saved.filter((projectRoot) => {
+      const state = loadRecovery(this.options.homeDir, projectRoot);
+      return state && Object.values(state.conversations).some(hasRecoveryWork);
+    });
   }
 
   get current(): T | undefined {

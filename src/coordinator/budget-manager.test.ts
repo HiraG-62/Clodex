@@ -21,6 +21,14 @@ const msg = (from: AgentId, type: MessageType, extra: Partial<AgentMessage> = {}
 const LIMITS = { maxMessagesPerChain: 4, maxReviewRoundsPerChain: 2, maxDelegationsPerChain: 2, maxDelegationDepth: 2 };
 
 describe("BudgetManager", () => {
+  it("復元した message を新しい chain の根にして、そのターンからの送信を受理する", () => {
+    const budget = new BudgetManager({ maxMessagesPerChain: 2, maxReviewRoundsPerChain: 1, maxDelegationsPerChain: 2, maxDelegationDepth: 2 });
+    const parent = msg("claude", "REVIEW_REQUEST");
+    budget.restore(parent);
+    const child = msg("codex", "RESULT");
+    expect(budget.admit(child, parent)).toBeUndefined();
+    expect(budget.admit(msg("codex", "RESULT"), parent)).toMatch(/maxMessagesPerChain/);
+  });
   it("既定値は §14（v0.2）のとおり", () => {
     expect(DEFAULT_LIMITS).toEqual({
       maxMessagesPerChain: 8, maxReviewRoundsPerChain: 3, maxDelegationsPerChain: 4, maxDelegationDepth: 2,

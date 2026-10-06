@@ -2,6 +2,7 @@
 // 人が見ている会話（今の会話）は 1 つ。会話を切り替えても、前の会話の Agent は止めない
 import { randomUUID } from "node:crypto";
 import type { Coordinator } from "../coordinator/coordinator.js";
+import type { RecoveryState, ConversationRecovery } from "../project/recovery-store.js";
 import type { CoordinatorEvent, EventBus } from "../coordinator/event-bus.js";
 import { t } from "../i18n/i18n.js";
 import type { Conversation, ConversationHistory } from "../project/conversation-history.js";
@@ -34,6 +35,7 @@ export class Workspace {
   private readonly eventListeners: RuntimeEventListener[] = [];
   private readonly switchListeners: Array<(runtime: ConversationRuntime) => void> = [];
   private readonly runtimeListeners: Array<(runtime: ConversationRuntime) => void> = [];
+  private readonly recoveryListeners: Array<() => void> = [];
 
   constructor(private readonly options: WorkspaceOptions) {}
 
@@ -60,6 +62,28 @@ export class Workspace {
 
   onRuntime(listener: (runtime: ConversationRuntime) => void): void {
     this.runtimeListeners.push(listener);
+  }
+
+  onRecoveryChange(listener: () => void): void {
+    this.recoveryListeners.push(listener);
+  }
+
+  allRuntimes(): ConversationRuntime[] { return [...this.runtimes.values()]; }
+
+  recoveryConversations(): Record<string, ConversationRecovery> {
+    const valid = new Set([...this.options.history.list().map(({ id }) => id), this.options.history.currentId]);
+    return Object.fromEntries([...this.runtimes.entries()].filter(([id]) => valid.has(id))
+      .map(([id, runtime]) => [id, runtime.coordinator.recoveryState()]));
+  }
+
+  async restore(state: RecoveryState): Promise<void> {
+    const valid = new Map(this.options.history.list().map((conversation) => [conversation.id, conversation]));
+    for (const [id, recovery] of Object.entries(state.conversations)) {
+      const conversation = valid.get(id);
+      if (!conversation) continue;
+      const runtime = await this.ensure(conversation);
+      runtime.coordinator.restore(recovery);
+    }
   }
 
   async switchTo(id: string): Promise<Conversation | undefined> {
@@ -113,6 +137,9 @@ export class Workspace {
     this.runtimes.set(conversation.id, runtime);
     this.options.history.attach(runtime.bus, conversation.id);
     runtime.bus.subscribe((event) => this.handleEvent(runtime, event));
+    runtime.coordinator.onRecoveryChange(() => {
+      for (const listener of this.recoveryListeners) listener();
+    });
     for (const listener of this.runtimeListeners) listener(runtime);
     return runtime;
   }

@@ -1,6 +1,7 @@
 // Agent ごとの FIFO キュー。人間の入力と formal message を直列に送る（DESIGN.md §12 配送ルール）
 import type { AgentAdapter, AgentStartOptions, TurnResult } from "../agents/agent-adapter.js";
 import type { AgentMessage } from "../protocol/messages.js";
+import type { RecoveryItem } from "../project/recovery-store.js";
 
 const CLOSED_RESULT: TurnResult = { status: "failed", text: "mailbox is closed" };
 const CANCELED_RESULT: TurnResult = { status: "interrupted", text: "canceled before delivery" };
@@ -32,12 +33,14 @@ export class AgentMailbox {
   private idleWaiters: Array<() => void> = [];
   // 配送中のターンが処理している message。Budget の chain 追跡に使う（DESIGN.md §14）
   current: AgentMessage | undefined;
+  private activeSend = false;
 
   constructor(
     private readonly agent: AgentAdapter,
     // 起動のたびに呼ぶ（役割の変更などを次の起動に反映する。DESIGN.md §28 E）
     private readonly startOptions: () => AgentStartOptions,
     private readonly onError: (message: string) => void,
+    private readonly onChange: () => void = () => {},
   ) {}
 
   // 失敗しても reject せず failed の TurnResult を返す（呼び出し側は待たずに投げてよい）
@@ -53,12 +56,23 @@ export class AgentMailbox {
     return this.queue.flatMap((item) => (item.inputId ? [{ id: item.inputId, text: item.text }] : []));
   }
 
+  get recoveryQueue(): RecoveryItem[] {
+    return this.queue.flatMap((item): RecoveryItem[] => {
+      if (item.message) return [{ kind: "message", message: item.message }];
+      if (item.inputId) return [{ kind: "input", text: item.text, ...(item.images ? { images: [...item.images] } : {}) }];
+      return [];
+    });
+  }
+
+  get activeSending(): boolean { return this.activeSend; }
+
   // 配送待ちの人間の入力を取り消し、本文を返す。配送済み・無いなら undefined
   cancel(inputId: string): string | undefined {
     const index = this.queue.findIndex((item) => item.inputId === inputId);
     const [item] = index < 0 ? [] : this.queue.splice(index, 1);
     if (!item) return undefined;
     item.resolve(CANCELED_RESULT);
+    this.onChange();
     this.resolveIdleIfDone();
     return item.text;
   }
@@ -68,6 +82,7 @@ export class AgentMailbox {
     const discarded = this.queue.filter((item) => item.message);
     this.queue.splice(0, this.queue.length, ...this.queue.filter((item) => !item.message));
     for (const item of discarded) item.resolve(CANCELED_RESULT);
+    if (discarded.length) this.onChange();
     this.resolveIdleIfDone();
     return discarded.flatMap((item) => (item.message ? [item.message] : []));
   }
@@ -94,6 +109,7 @@ export class AgentMailbox {
 
   private push(item: Omit<QueueItem, "resolve">): Promise<TurnResult> {
     const result = new Promise<TurnResult>((resolve) => this.queue.push({ ...item, resolve }));
+    this.onChange();
     void this.drain();
     return result;
   }
@@ -133,7 +149,9 @@ export class AgentMailbox {
     this.draining = true;
     try {
       for (let item = this.queue.shift(); item; item = this.paused ? undefined : this.queue.shift()) {
+        this.activeSend = item.kind === "send";
         this.current = item.message;
+        this.onChange();
         try {
           const result = item.kind === "compact" ? await this.compact()
             : item.kind === "model" || item.kind === "effort" ? await this.setting(item.kind, item.text)
@@ -141,6 +159,8 @@ export class AgentMailbox {
           item.resolve(result);
         } finally {
           this.current = undefined;
+          this.activeSend = false;
+          this.onChange();
         }
       }
     } finally {

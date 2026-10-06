@@ -58,6 +58,7 @@ const arrange = (conversations: Conversation[]): Conversation[] => {
 
 export interface ConversationHistoryOptions {
   resumeLatest: boolean;
+  resumeId?: string;
   now?: () => Date;
   createId?: () => string;
 }
@@ -70,12 +71,14 @@ export class ConversationHistory {
   private readonly switchListeners: Array<(id: string) => void> = [];
   private readonly removeListeners: Array<(id: string) => void> = [];
 
-  constructor(private readonly path: string, { resumeLatest, now = () => new Date(), createId = randomUUID }: ConversationHistoryOptions) {
+  constructor(private readonly path: string, { resumeLatest, resumeId, now = () => new Date(), createId = randomUUID }: ConversationHistoryOptions) {
     this.now = now;
     this.createId = createId;
     this.conversations = arrange(loadConversations(path));
     const latest = this.conversations[0];
-    this.currentConversation = resumeLatest && latest ? latest : this.emptyConversation();
+    this.currentConversation = resumeId !== undefined
+      ? this.conversations.find((c) => c.id === resumeId) ?? this.emptyConversation()
+      : resumeLatest && latest ? latest : this.emptyConversation();
   }
 
   // /new: 新しい会話を始める。前の会話は履歴に残る（session も入力も作業場所も無いうちは保存しない）

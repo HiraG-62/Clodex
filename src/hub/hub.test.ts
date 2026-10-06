@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Hub } from "./hub.js";
+import { saveRecovery } from "../project/recovery-store.js";
 
 const setup = () => {
   const homeDir = mkdtempSync(join(tmpdir(), "clodex-hub-"));
@@ -15,6 +16,16 @@ const setup = () => {
 };
 
 describe("Hub", () => {
+  it("保存済み project のうち復旧する作業があるものだけ列挙する", async () => {
+    const { homeDir, hub } = setup();
+    await hub.open("one");
+    await hub.open("two");
+    const [one, two] = hub.list().map(({ projectRoot }) => projectRoot);
+    saveRecovery(homeDir, one!, { current: "c1", conversations: { c1: { interrupted: ["claude"], queue: { claude: [], codex: [] } } } });
+    saveRecovery(homeDir, two!, { current: "c2", conversations: {} });
+    const next = new Hub({ homeDir, cwd: homeDir, openProject: async (projectRoot) => ({ projectRoot, close: async () => {} }) });
+    expect(next.recoveryProjects()).toEqual([one]);
+  });
   it("project を開いて切り替えても既存の context を保持する", async () => {
     const { homeDir, hub, opened } = setup();
     const first = await hub.open("one");

@@ -47,6 +47,16 @@ export class BudgetManager {
 
   constructor(private readonly limits: BudgetLimits = DEFAULT_LIMITS) {}
 
+  restore(message: AgentMessage): void {
+    if (message.type === "ACK") return;
+    this.meta.set(message.id, { chainId: message.id, depth: 1 });
+    this.chains.set(message.id, {
+      messages: 1,
+      reviewRounds: message.type === "REVIEW_REQUEST" ? 1 : 0,
+      delegations: DELEGATION_TYPES.has(message.type) ? 1 : 0,
+    });
+  }
+
   // parent: 送信元 Agent が処理中の message（人間の入力によるターンなら undefined）
   // 上限内なら記録して undefined、超えるならエラー文を返す（記録しない）
   admit(message: AgentMessage, parent: AgentMessage | undefined): string | undefined {
