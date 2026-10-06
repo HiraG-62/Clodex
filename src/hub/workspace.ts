@@ -32,6 +32,7 @@ export interface WorkspaceOptions {
 }
 
 export class Workspace {
+  private readonly detach = new Map<string, () => void>();
   private readonly runtimes = new Map<string, ConversationRuntime>();
   private readonly eventListeners: RuntimeEventListener[] = [];
   private readonly switchListeners: Array<(runtime: ConversationRuntime) => void> = [];
@@ -127,6 +128,20 @@ export class Workspace {
     await Promise.all([...this.runtimes.values()].map((runtime) => runtime.close()));
   }
 
+  async restart(): Promise<void> {
+    const ids = [...this.runtimes.keys()];
+    for (const detach of this.detach.values()) detach();
+    this.detach.clear();
+    this.runtimes.clear();
+    const conversations = [...this.options.history.list(), this.options.history.current];
+    for (const id of ids) {
+      const conversation = conversations.find((item) => item.id === id);
+      if (conversation) await this.ensure(conversation);
+    }
+    this.notifySwitch(this.current);
+    await Promise.all(this.allRuntimes().map((runtime) => runtime.coordinator.start()));
+  }
+
   private notifySwitch(runtime: ConversationRuntime): void {
     for (const listener of this.switchListeners) listener(runtime);
   }
@@ -136,11 +151,12 @@ export class Workspace {
     if (existing) return existing;
     const runtime = await this.options.createRuntime(conversation);
     this.runtimes.set(conversation.id, runtime);
-    this.options.history.attach(runtime.bus, conversation.id);
-    runtime.bus.subscribe((event) => this.handleEvent(runtime, event));
-    runtime.coordinator.onRecoveryChange(() => {
+    const historyDetach = this.options.history.attach(runtime.bus, conversation.id);
+    const eventDetach = runtime.bus.subscribe((event) => this.handleEvent(runtime, event));
+    const recoveryDetach = runtime.coordinator.onRecoveryChange(() => {
       for (const listener of this.recoveryListeners) listener();
     });
+    this.detach.set(conversation.id, () => { historyDetach(); eventDetach(); recoveryDetach(); });
     for (const listener of this.runtimeListeners) listener(runtime);
     return runtime;
   }

@@ -1,4 +1,8 @@
 // project ごとの設定・会話・Agent・保存をまとめる（DESIGN.md §28 D2a）
+import { SandboxController, type SandboxPlatform } from "../sandbox/controller.js";
+import { WindowsSandboxPlatform } from "../sandbox/windows-platform.js";
+import { spawnAgentProcess, type SpawnAgentProcess } from "../agents/agent-process.js";
+import { fetchStartupProbe, type StartupProbe } from "../agents/startup-probe.js";
 import { mkdirSync } from "node:fs";
 import type { AgentAdapter, AgentId } from "../agents/agent-adapter.js";
 import { ClaudeAdapter } from "../agents/claude-adapter.js";
@@ -28,6 +32,8 @@ const DEFAULT_PRIMARY: AgentId = "claude";
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export interface ProjectContext {
+  readonly sandbox: SandboxController;
+  probe(): Promise<void>;
   projectRoot: string;
   config: ClodexConfig;
   primary: AgentId;
@@ -63,10 +69,12 @@ export interface OpenProjectOptions {
   modelCatalog(): ModelCatalog;
   registerCoordinator(coordinator: Coordinator): () => void;
   createAgents?: () => Record<AgentId, AgentAdapter>;
+  sandboxPlatform?: SandboxPlatform;
+  startupProbe?: (cwd: string, spawn: SpawnAgentProcess) => Promise<StartupProbe>;
 }
 
 export const openProject = async ({
-  projectRoot, homeDir, args, language, printTerminal, notify, displayMode, isCurrent, modelCatalog, registerCoordinator, createAgents = () => ({ claude: new ClaudeAdapter(), codex: new CodexAdapter() }),
+  projectRoot, homeDir, args, language, printTerminal, notify, displayMode, isCurrent, modelCatalog, registerCoordinator, createAgents, sandboxPlatform, startupProbe,
 }: OpenProjectOptions): Promise<ProjectContext> => {
   const config = loadConfig({ homeDir, projectRoot });
   const primary = args.primary ?? config.primary ?? DEFAULT_PRIMARY;
@@ -89,20 +97,42 @@ export const openProject = async ({
   const startedAt = new Date();
   let workspace: Workspace | undefined;
   const registered = new Map<Coordinator, () => void>();
+  let catalog = modelCatalog();
+  let generation = 0;
+  const spawn: SpawnAgentProcess = (command, parameters, options) =>
+    (sandbox.enabled ? sandbox.platform.spawn : spawnAgentProcess)(command, parameters, options);
+  const probe = async () => {
+    const current = generation;
+    const fetch = startupProbe ?? (createAgents ? undefined : fetchStartupProbe);
+    if (!fetch) return;
+    const result = await fetch(projectRoot, spawn);
+    if (current !== generation) return;
+    catalog = result.models;
+    for (const runtime of workspace?.allRuntimes() ?? []) runtime.coordinator.applyStartupUsage(result.usage);
+  };
+  const sandbox = new SandboxController(sandboxPlatform ?? new WindowsSandboxPlatform(homeDir, projectRoot, (text) => notify(text, "warn")), {
+    paths: () => ({ projects: [projectRoot, ...history.list().flatMap((conversation) => conversation.workDir ? [conversation.workDir] : [])], artifacts: artifactsDir }),
+    stop: async () => { generation++; await workspace?.closeAll(); },
+    save: (enabled) => { settingsStore.setSandbox(enabled); history.clearAllSessions(); saveRecovery(homeDir, projectRoot, { current: history.currentId, conversations: {} }); },
+    restart: async () => { await workspace?.restart(); await probe(); },
+  });
+  if (savedSettings.sandbox ?? config.sandbox ?? false) await sandbox.initialize();
 
   const createRuntime = async (conversation: Conversation): Promise<ConversationRuntime> => {
     const bus = new EventBus();
     const workDir = conversation.workDir ?? projectRoot;
+    await sandbox.allowWorktree(workDir);
     let coordinator: Coordinator | undefined;
     const mcp = await startMcpServer({ sendMessage: (from, input) => coordinator!.receiveMessage(from, input), askUser: (from, input) => coordinator!.askUser(from, input) });
     coordinator = new Coordinator({
       projectRoot: workDir,
-      agents: createAgents(),
+      agents: createAgents?.() ?? { claude: new ClaudeAdapter(spawn), codex: new CodexAdapter(spawn) },
+      permissionLocked: () => sandbox.enabled,
       bus,
-      modelCatalog,
+      modelCatalog: () => catalog,
       mcpUrlFor: (agent) => mcp.urlFor(agent),
       settings: resolveStartSettings({
-        saved: settingsStore.load(), models: args.models, ...(config.permission ? { configPermission: config.permission } : {}),
+        saved: sandbox.enabled ? { ...settingsStore.load(), claude: { ...settingsStore.load().claude, permission: "full" }, codex: { ...settingsStore.load().codex, permission: "full" } } : settingsStore.load(), models: args.models, ...(config.permission ? { configPermission: config.permission } : {}),
       }),
       instructions: (id) => buildRoleInstructions(id, config.roles, { language, artifactsDir }),
       limits,
@@ -151,6 +181,7 @@ export const openProject = async ({
     for (const runtime of activeWorkspace.allRuntimes()) runtime.coordinator.setLimits(limits);
   };
   return {
+    sandbox, probe,
     get limits() { return { ...limits }; },
     setLimit: (name, value) => applyLimits({ ...overrides, [LIMIT_KEYS[name]]: value }),
     resetLimits: () => applyLimits({}),
@@ -170,6 +201,6 @@ export const openProject = async ({
       for (const runtime of activeWorkspace.allRuntimes()) registerRuntime(runtime);
     },
     showFeed: (feed) => feed.replace(feedStore.load(history.currentId, working(history.currentId))),
-    close: () => activeWorkspace.closeAll(),
+    close: async () => { generation++; await activeWorkspace.closeAll(); await sandbox.platform.close(); },
   };
 };

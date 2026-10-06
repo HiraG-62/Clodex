@@ -2,9 +2,10 @@
 // Hub の入口。project ごとの初期化は ProjectContext に任せる（DESIGN.md §28 D2a）
 import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
+import { resetSandboxSettings } from "./sandbox/reset-settings.js";
 import { createInterface } from "node:readline";
 import { AGENT_IDS, type AgentId } from "./agents/agent-adapter.js";
-import { EMPTY_MODEL_CATALOG, fetchStartupProbe, type StartupProbe } from "./agents/startup-probe.js";
+import { EMPTY_MODEL_CATALOG } from "./agents/startup-probe.js";
 import type { Coordinator } from "./coordinator/coordinator.js";
 import { parseCliArgs } from "./cli/args.js";
 import { createCommandRunner } from "./cli/command-runner.js";
@@ -79,12 +80,10 @@ const main = async (): Promise<void> => {
   };
   let displayMode: DisplayMode = "normal";
   let refreshState = () => {};
-  let modelCatalog = EMPTY_MODEL_CATALOG();
-  let startupUsage: StartupProbe["usage"] | undefined;
+  const modelCatalog = EMPTY_MODEL_CATALOG();
   const coordinators = new Set<Coordinator>();
   const registerCoordinator = (coordinator: Coordinator) => {
     coordinators.add(coordinator);
-    if (startupUsage) coordinator.applyStartupUsage(startupUsage);
     return () => { coordinators.delete(coordinator); };
   };
   const currentListeners = new Set<(event: CoordinatorEvent) => void>();
@@ -111,14 +110,10 @@ const main = async (): Promise<void> => {
     });
     context.bindFeed(feed, () => hub.current === context);
     await context.restore();
+    void context.probe().then(() => refreshState()).catch((error: unknown) => notify(errorMessage(error), "warn"));
     return context;
   } });
-  void fetchStartupProbe(cwd).then((probe) => {
-    modelCatalog = probe.models;
-    startupUsage = probe.usage;
-    for (const coordinator of coordinators) coordinator.applyStartupUsage(probe.usage);
-    refreshState();
-  });
+
 
   const openInHub = async (path: string): Promise<ProjectContext> => {
     const context = await selectProject(hub, feed, path);
@@ -155,6 +150,21 @@ const main = async (): Promise<void> => {
     },
     busyElsewhere: () => current().workspace.busyElsewhereInSameDir(),
     resolveReference: (path) => current().currentPreview().locate(path),
+    sandbox: {
+      enabled: () => current().sandbox.enabled,
+      ready: () => current().sandbox.ready(),
+      set: (enabled) => current().sandbox.setEnabled(enabled),
+      uninstall: async () => {
+        const selected = current();
+        for (const context of hub.allProjects()) {
+          if (context === selected) continue;
+          if (context.sandbox.enabled) await context.sandbox.setEnabled(false);
+          await context.sandbox.platform.close();
+        }
+        await selected.sandbox.uninstall();
+        resetSandboxSettings(homeDir);
+      },
+    },
     limits: { get: () => current().limits, set: (name, value) => current().setLimit(name, value), reset: () => current().resetLimits() },
     saveSettings: (agents, change) => {
       try { current().settingsStore.update(agents, change); }

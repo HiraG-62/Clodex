@@ -38,6 +38,7 @@ export const RECOVERY_CONTINUE = "[Clodex] Clodex restarted and your previous tu
 const preview = (text: string) => (text.length > PREVIEW_LENGTH ? `${text.slice(0, PREVIEW_LENGTH)}…` : text);
 
 export interface CoordinatorOptions {
+  permissionLocked?: () => boolean;
   projectRoot: string;
   agents: Record<AgentId, AgentAdapter>;
   bus: EventBus;
@@ -294,6 +295,7 @@ ${languageReminder(language)}` : "";
   }
 
   async setPermission(level: PermissionLevel, id?: AgentId): Promise<void> {
+    if (this.options.permissionLocked?.()) throw new Error(t("sandbox.permission"));
     const targets = id ? [id] : AGENT_IDS;
     await Promise.all(targets.map((target) => this.options.agents[target].setPermission(level)));
   }
@@ -324,6 +326,10 @@ ${languageReminder(language)}` : "";
       const event = usage[id];
       if (event && !this.liveUsage.has(id)) this.options.bus.publish({ kind: "agent", agent: id, event });
     }
+  }
+
+  async start(): Promise<void> {
+    await Promise.all(AGENT_IDS.map((id) => this.mailboxes[id].ensureRunning()));
   }
 
   async stop(): Promise<void> {

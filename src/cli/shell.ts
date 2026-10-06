@@ -90,6 +90,7 @@ export interface ShellOptions {
     hasCurrent?(): boolean;
   };
   roles?: () => Partial<Record<AgentId, string>>;
+  sandbox?: { enabled(): boolean; ready(): Promise<boolean>; set(enabled: boolean): Promise<void>; uninstall(): Promise<void> };
   limits?: {
     get(): BudgetLimits;
     set(name: LimitName, value: number): void;
@@ -166,7 +167,7 @@ export const createShell = ({
   coordinator, primary: initialPrimary, print, notify, toggleVerbose, history: historySource, runner, saveSettings = () => {}, resolveReference = async () => undefined,
   busyElsewhere = () => false, processes,
   projects,
-  limits: projectLimits, roles = () => ({}), saveRole = (_agent, text) => text,
+  sandbox, limits: projectLimits, roles = () => ({}), saveRole = (_agent, text) => text,
 }: ShellOptions) => {
   let primary = initialPrimary;
   const history = typeof historySource === "function" ? historySource : () => historySource;
@@ -361,6 +362,12 @@ export const createShell = ({
       case "help":
         HELP_LINES(primary).forEach((l) => print(l));
         return "continue";
+      case "sandbox":
+        if (!sandbox) throw new Error(t("sandbox.incomplete"));
+        if (command.action === "uninstall") await sandbox.uninstall();
+        else if (command.action) await sandbox.set(command.action === "on");
+        print(`sandbox: ${sandbox.enabled() ? "on" : "off"} · ${t(await sandbox.ready() ? "sandbox.ready" : "sandbox.incomplete")}`);
+        return "continue";
       case "limits": {
         if (command.reset) {
           projectLimits?.reset();
@@ -378,6 +385,7 @@ export const createShell = ({
         return "continue";
       }
       case "permission":
+        if (sandbox?.enabled()) { print(t("sandbox.permission")); return "continue"; }
         await coordinator().setPermission(command.level, command.agent);
         saveSettings(targets(command.agent), { permission: command.level });
         print(t("shell.permission", { target: command.agent ?? t("shell.allAgents"), level: command.level }));

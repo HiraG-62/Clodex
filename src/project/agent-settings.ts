@@ -19,7 +19,7 @@ const savedLimits = z.unknown().transform((value): Partial<BudgetLimits> => {
   }
   return limits;
 });
-const savedSchema = z.strictObject({ claude: settingsSchema.optional(), codex: settingsSchema.optional(), limits: savedLimits.optional() });
+const savedSchema = z.strictObject({ sandbox: z.boolean().optional(), claude: settingsSchema.optional(), codex: settingsSchema.optional(), limits: savedLimits.optional() });
 
 export type AgentSettings = z.infer<typeof settingsSchema>;
 export type SavedAgentSettings = z.infer<typeof savedSchema>;
@@ -39,6 +39,10 @@ export class AgentSettingsStore {
     } catch {
       return {};
     }
+  }
+
+  setSandbox(sandbox: boolean): void {
+    writeFileAtomic(this.path, `${JSON.stringify({ ...this.load(), sandbox }, null, 2)}\n`);
   }
 
   setLimits(limits: Partial<BudgetLimits>): void {

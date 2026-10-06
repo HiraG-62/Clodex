@@ -173,7 +173,10 @@ const setup = () => {
     open: async (path: string) => ({ projectRoot: path, primary: "codex" as AgentId }),
   };
   let limits = { ...DEFAULT_LIMITS };
+  let sandboxEnabled = false;
+  const sandbox = { enabled: () => sandboxEnabled, ready: async () => true, set: async (enabled: boolean) => { sandboxEnabled = enabled; }, uninstall: async () => { sandboxEnabled = false; } };
   const shell = createShell({
+    sandbox,
     coordinator: () => coordinator, primary: "claude", notify: (text, level) => { notified.push(text); levels.push(level); }, busyElsewhere: () => busy.value, print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history, runner,
     limits: { get: () => limits, set: (name, value) => { limits[LIMIT_KEYS[name]] = value; }, reset: () => { limits = { ...DEFAULT_LIMITS }; } },
     saveSettings: (agents, change) => saved.push({ agents, change }),
@@ -189,6 +192,19 @@ const setup = () => {
 };
 
 describe("createShell", () => {
+  it("sandbox の状態を表示し、on の間は permission の変更と保存を拒否する", async () => {
+    const { shell, coordinator, saved, printed } = setup();
+    await shell.handleLine("/sandbox on");
+    expect(printed.at(-1)).toContain("sandbox: on");
+    await shell.handleLine("/permission read-only");
+    expect(coordinator.permissions).toHaveLength(0);
+    expect(saved).toHaveLength(0);
+    await shell.handleLine("/sandbox uninstall");
+    expect(printed.at(-1)).toContain("sandbox: off");
+    await shell.handleLine("/permission read-only");
+    expect(coordinator.permissions).toHaveLength(1);
+    expect(saved).toHaveLength(1);
+  });
   it("background は Ctrl+C と /interrupt で止めず /exit で止める", async () => {
     const { shell, background } = setup();
     await shell.handleLine("!& pnpm dev");

@@ -13,6 +13,7 @@ const nonNegativeInt = z.number().int().nonnegative();
 const role = z.string();
 
 const configSchema = z.strictObject({
+  sandbox: z.boolean().optional(),
   primary: z.enum(AGENT_IDS).optional(),
   language: z.enum(LANGUAGES).optional(),
   permission: z.enum(PERMISSION_LEVELS).optional(),

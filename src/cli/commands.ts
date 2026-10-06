@@ -34,6 +34,7 @@ const SPECS: readonly SlashCommandSpec[] = [
   { name: "pin", args: "<number>", description: "cmd.pin" },
   { name: "new", args: "[worktree|agent]", description: "cmd.new" },
   { name: "compact", args: "[agent]", description: "cmd.compact" },
+  { name: "sandbox", args: "[on|off|uninstall]", argumentValues: ["on", "off", "uninstall"], description: "cmd.sandbox" },
   { name: "permission", args: "[agent] <read-only|edit|full>", description: "cmd.permission" },
   { name: "model", args: "<agent> <model>", description: "cmd.model" },
   { name: "effort", args: "[agent] <level>", description: "cmd.effort" },

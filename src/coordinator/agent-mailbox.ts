@@ -214,7 +214,7 @@ export class AgentMailbox {
       : (this.agent.sessionId ?? this.startOptions().resumeSessionId);
   }
 
-  private async ensureRunning(): Promise<void> {
+  async ensureRunning(): Promise<void> {
     if (this.agent.status !== "stopped") return;
     const resumeSessionId = this.sessionId;
     const { resumeSessionId: _initial, ...options } = this.startOptions();

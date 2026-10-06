@@ -54,6 +54,8 @@ export class Hub<T extends HubProject> {
     return this.selected ? this.contexts.get(this.selected) : undefined;
   }
 
+  allProjects(): T[] { return [...this.contexts.values()]; }
+
   list(): Array<{ projectRoot: string; open: boolean; current: boolean }> {
     return this.saved.map((projectRoot) => ({ projectRoot, open: this.contexts.has(projectRoot), current: projectRoot === this.selected }));
   }

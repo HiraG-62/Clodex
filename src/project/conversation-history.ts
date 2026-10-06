@@ -134,6 +134,11 @@ export class ConversationHistory {
     this.update({ sessions: rest });
   }
 
+  clearAllSessions(): void {
+    this.currentConversation = { ...this.currentConversation, title: this.currentConversation.title ?? t("shell.untitled"), sessions: {} };
+    this.save((list) => list.map((conversation) => ({ ...conversation, title: conversation.title ?? t("shell.untitled"), sessions: {} })));
+  }
+
   private emptyConversation(): Conversation {
     const startedAt = this.now().toISOString();
     return { id: this.createId(), startedAt, updatedAt: startedAt, sessions: {} };

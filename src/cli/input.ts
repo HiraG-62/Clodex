@@ -4,6 +4,7 @@ import { t } from "../i18n/i18n.js";
 import { AGENT_IDS, CLAUDE_EFFORT_LEVELS, COMMON_EFFORT_LEVELS, PERMISSION_LEVELS, isAgentId, type AgentId, type PermissionLevel } from "../agents/agent-adapter.js";
 
 export type ShellCommand =
+  | { kind: "sandbox"; action?: "on" | "off" | "uninstall" }
   | { kind: "limits"; name?: LimitName; value?: number; reset?: true }
   | { kind: "empty" }
   | { kind: "send"; agent: AgentId; text: string; steer?: true }
@@ -97,6 +98,9 @@ const parseMention = (mention: string, text: string): ShellCommand | undefined =
 
 const parseCommand = (name: string, arg: string): ShellCommand => {
   switch (name) {
+    case "sandbox":
+      if (!arg) return { kind: "sandbox" };
+      return arg === "on" || arg === "off" || arg === "uninstall" ? { kind: "sandbox", action: arg } : usage("/sandbox [on|off|uninstall]");
     case "limits": {
       if (!arg) return { kind: "limits" };
       if (arg === "reset") return { kind: "limits", reset: true };
