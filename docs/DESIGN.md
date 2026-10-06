@@ -2,7 +2,7 @@
 
 > Claude Code × Codex  
 > Small Core / Long-Term Architecture  
-> Status: Initial Design / v0.1-first
+> Status: v0.3 実装済み
 
 ## 1. このプロジェクトは何か
 
