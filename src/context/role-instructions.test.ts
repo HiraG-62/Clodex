@@ -69,3 +69,7 @@ it("役割あり・なしで設計書を先に書いて spec に指定する方�
     expect(text).toContain("a few lines");
   }
 });
+
+it("send_message の body の書式を伝える", () => {
+  expect(buildRoleInstructions("codex", undefined)).toContain("Write body in Markdown");
+});

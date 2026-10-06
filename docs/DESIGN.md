@@ -795,9 +795,10 @@ refresh token の race condition をレビュー
 Read the spec before you start and follow it. If the spec conflicts with the code or is unclear, ask with a QUESTION instead of guessing.
 Reply with the send_message tool of the "clodex" MCP server (not a shell command): to="claude", type="RESULT", taskId="AUTH-142", replyTo="msg_1a2b3c4d".
 Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.
+Write body in Markdown: a one-line summary first, then bullet points. Do not write one long paragraph.
 ```
 
-- 依頼系（`QUESTION` / `REVIEW_REQUEST` / `DELEGATE`）には返信方法を指示する
+- 依頼系（`QUESTION` / `REVIEW_REQUEST` / `DELEGATE`）には返信方法を指示する。返信の body の書式（Markdown で 1 行の要約 → 箇条書き。長い 1 段落にしない）も添え、Agent ごとに書き方がばらつかないようにする
 - 末尾に、人が読む文章の言語（下記 Language）を 1 行で添える。長い会話でも依頼のたびに思い出させる
 - `RESULT` / `ISSUE` には返信を求めない（返信の連鎖を作らない）
 - 会話履歴は含めない。Agent B は必要に応じて Repository を読む
@@ -866,7 +867,7 @@ AGENTS.md → Codex
 - `permission` は起動時の権限レベル（§9 Permission）。両 Agent に同じレベルを使う
 - UTF-8（BOM の有無は問わない。Windows PowerShell 5.1 は BOM 付きで書く）
 - 優先順位: 起動オプション > project の設定 > ユーザーの設定 > 既定値（primary: `claude`、roles: なし）
-- Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」「権限は人が `/permission` で変えるので、拒否されたらそう伝えること」「依頼を受けたら、作業に入る前に何をするかを 1〜2 文で書くこと」「依頼（`DELEGATE` / `REVIEW_REQUEST`）は基本的に設計書を書いて `spec` で渡し、body だけにするのは数行で済む簡単な依頼に限ること（上の Spec）」「人が読む文章の言語（下記 Language）」を伝える
+- Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」「権限は人が `/permission` で変えるので、拒否されたらそう伝えること」「依頼を受けたら、作業に入る前に何をするかを 1〜2 文で書くこと」「`send_message` の body は Markdown で 1 行の要約 → 箇条書きで書くこと」「依頼（`DELEGATE` / `REVIEW_REQUEST`）は基本的に設計書を書いて `spec` で渡し、body だけにするのは数行で済む簡単な依頼に限ること（上の Spec）」「人が読む文章の言語（下記 Language）」を伝える
 - 役割が無い Agent には、相手の Agent がいることだけを伝える
 - 役割の本文は Agent の native configuration（CLAUDE.md / AGENTS.md）と結合しない。追加の指示として渡すだけ
 

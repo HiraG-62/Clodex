@@ -9,6 +9,9 @@ const REQUEST_TYPES = new Set<MessageType>(["QUESTION", "REVIEW_REQUEST", "DELEG
 const SPEC_INSTRUCTION =
   "Read the spec before you start and follow it. If the spec conflicts with the code or is unclear, ask with a QUESTION instead of guessing.";
 
+// Agent ごとに body の書き方がばらつかないよう、返信の書式を揃える（DESIGN.md §13）
+export const BODY_FORMAT = "Write body in Markdown: a one-line summary first, then bullet points. Do not write one long paragraph.";
+
 const formatIssue = ({ file, line, severity, summary }: Issue): string =>
   `- [${severity}] ${file}${line === undefined ? "" : `:${line}`} ${summary}`;
 
@@ -18,6 +21,7 @@ const replyInstruction = (m: AgentMessage): string[] =>
       // 他の連携手段（skill や CLI）と取り違えないよう、MCP tool であることを明示する
       `Reply with the ${SEND_MESSAGE_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server (not a shell command): to="${m.from}", type="RESULT", taskId="${m.taskId}", replyTo="${m.id}".`,
       "Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.",
+      BODY_FORMAT,
     ]
     : ["No reply is required."];
 

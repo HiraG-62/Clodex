@@ -30,6 +30,7 @@ describe("buildEnvelope", () => {
       "",
       'Reply with the send_message tool of the "clodex" MCP server (not a shell command): to="claude", type="RESULT", taskId="AUTH-142", replyTo="msg_1a2b3c4d".',
       "Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.",
+      "Write body in Markdown: a one-line summary first, then bullet points. Do not write one long paragraph.",
     ].join("\n"));
   });
 

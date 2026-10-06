@@ -1,6 +1,7 @@
 // Agent の起動時に system prompt へ追加する定型文と役割（DESIGN.md §13 Roles）
 import { AGENT_IDS, COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, type AgentId } from "../agents/agent-adapter.js";
 import type { RolesConfig } from "../config/config.js";
+import { BODY_FORMAT } from "./context-resolver.js";
 import { languageDirective, type Language } from "./language.js";
 
 const NOT_SPECIFIED = "not specified";
@@ -57,7 +58,7 @@ export const buildRoleInstructions = (
 ): string => {
   const peer = peerOf(agent);
   return [
-    header(agent, peer), ...roleLines(agent, peer, roles), PERMISSION_NOTE, PLAN_NOTE, SPEC_NOTE, INTERRUPT_NOTE, SUBAGENT_NOTE,
+    header(agent, peer), ...roleLines(agent, peer, roles), PERMISSION_NOTE, PLAN_NOTE, SPEC_NOTE, BODY_FORMAT, INTERRUPT_NOTE, SUBAGENT_NOTE,
     ...(artifactsDir ? [artifactsNote(artifactsDir)] : []),
     ...(language ? [languageDirective(language)] : []),
   ].join("\n");
