@@ -13,6 +13,7 @@ CLI: Claude Code 2.1.289 / codex-cli 0.156.1
 | G 手動 compact | Claude は `/compact` の送信、Codex は `thread/compact/start` で compact できる。どちらも 1 ターンとして動く | [compact.md](compact.md) |
 | H `!command` | PowerShell は既定だと日本語が CP932 で化ける。UTF-8 指定を先頭に足せば pwsh / 5.1 とも正常。停止は `taskkill /T /F` | [shell-command.md](shell-command.md) |
 | E Authentication | Claude は `ANTHROPIC_API_KEY` があると黙って API key 課金に切り替わる。Codex app-server は ChatGPT 認証のまま | [authentication.md](authentication.md) |
+| I Windows のマウス | Node 22 の raw mode は Windows でマウスの入力を捨てる。raw mode の後にコンソールモードへ `ENABLE_VIRTUAL_TERMINAL_INPUT` を足すとホイールの SGR シーケンスが届き、キー入力も Ink が同じに解釈できる | [windows-mouse.md](windows-mouse.md) |
 
 ## 設計への影響
 
