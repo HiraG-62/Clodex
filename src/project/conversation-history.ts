@@ -52,7 +52,7 @@ const isWorthSaving = (c: Conversation) => Boolean(c.title || c.workDir || c.ses
 const byNewest = (a: Conversation, b: Conversation) => b.updatedAt.localeCompare(a.updatedAt);
 // ピン止めした会話は先頭に並べ、最大件数の枠に数えない
 const arrange = (conversations: Conversation[]): Conversation[] => {
-  const saved = conversations.filter(isWorthSaving).sort(byNewest);
+  const saved = conversations.sort(byNewest);
   return [...saved.filter((c) => c.pinned), ...saved.filter((c) => !c.pinned).slice(0, MAX_CONVERSATIONS)];
 };
 
@@ -135,8 +135,8 @@ export class ConversationHistory {
   }
 
   clearAllSessions(): void {
-    this.currentConversation = { ...this.currentConversation, title: this.currentConversation.title ?? t("shell.untitled"), sessions: {} };
-    this.save((list) => list.map((conversation) => ({ ...conversation, title: conversation.title ?? t("shell.untitled"), sessions: {} })));
+    this.currentConversation = { ...this.currentConversation, sessions: {} };
+    this.save((list) => list.map((conversation) => ({ ...conversation, sessions: {} })));
   }
 
   private emptyConversation(): Conversation {
@@ -203,8 +203,10 @@ export class ConversationHistory {
 
   // 他のプロセスの会話を消さないよう、書く直前に読み直して今の会話を重ねる
   private save(edit: (conversations: Conversation[]) => Conversation[]): void {
-    const others = loadConversations(this.path).filter((c) => c.id !== this.currentConversation.id);
-    this.conversations = arrange(edit([this.currentConversation, ...others]));
+    const saved = loadConversations(this.path);
+    const others = saved.filter((c) => c.id !== this.currentConversation.id);
+    const current = isWorthSaving(this.currentConversation) || saved.some((c) => c.id === this.currentConversation.id) ? [this.currentConversation] : [];
+    this.conversations = arrange(edit([...current, ...others]));
     writeFileAtomic(this.path, `${JSON.stringify({ conversations: this.conversations }, null, 2)}\n`);
   }
 }

@@ -114,7 +114,6 @@ const main = async (): Promise<void> => {
     return context;
   } });
 
-
   const openInHub = async (path: string): Promise<ProjectContext> => {
     const context = await selectProject(hub, feed, path);
     refreshState();

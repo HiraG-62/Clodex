@@ -1,3 +1,4 @@
+import { safeGitArgs } from "./safe-git.js";
 // 成果物のプレビュー用にファイルと差分を返す（DESIGN.md §28 v0.3 B）。
 // 読めるのは project root と artifacts ディレクトリの中の通常ファイルだけ（実パスで確かめる）
 import { execFile } from "node:child_process";
@@ -76,7 +77,7 @@ export const createFilePreview = ({
     const root = await realpath(projectRoot).catch(() => projectRoot);
     if (!real || !inside(root, real)) return notFound(path);
     const output = await new Promise<string>((done) => {
-      execFile("git", ["diff", "HEAD", "--", relative(root, real)], { cwd: root, maxBuffer: GIT_MAX_BUFFER, windowsHide: true },
+      execFile("git", safeGitArgs(["diff", "HEAD", "--", relative(root, real)]), { cwd: root, maxBuffer: GIT_MAX_BUFFER, windowsHide: true },
         (error, stdout) => done(error ? "" : stdout));
     });
     return { ok: true, contentType: TEXT_CONTENT_TYPE, body: Buffer.from(output, "utf8") };

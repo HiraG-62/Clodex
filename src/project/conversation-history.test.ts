@@ -219,6 +219,16 @@ describe("ConversationHistory のリネーム・削除・ピン止め", () => {
 });
 
 describe("ConversationHistory の複数の会話（DESIGN.md §28 D1）", () => {
+  it("session を消しても無題の会話を残し、次の入力からタイトルを付ける", () => {
+    const { history, session, human, path } = setup();
+    session("claude", "saved");
+    const before = history.current;
+    history.clearAllSessions();
+    expect(history.current).toEqual({ ...before, sessions: {} });
+    expect(new ConversationHistory(path, { resumeLatest: true }).current).toEqual({ ...before, sessions: {} });
+    human("次の入力");
+    expect(history.current.title).toBe("次の入力");
+  });
   it("attach に会話 ID を渡すと、今の会話でなくてもその会話に session と名前を記録する", () => {
     const { history, path } = setup();
     const bus = new EventBus();

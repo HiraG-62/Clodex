@@ -2,11 +2,22 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type Socket } from "node:net";
 import { createInterface } from "node:readline";
 import { StringDecoder } from "node:string_decoder";
+import { z } from "zod";
 import type { AgentProcess, SpawnAgentProcess } from "../agents/agent-process.js";
 
 const CONNECT_TIMEOUT = 30_000;
 const HEARTBEAT_MS = 10_000;
 const MAX_FRAME = 16 * 1024 * 1024;
+const LINE_FEED = 10;
+const childId = z.number().int().positive();
+const frameSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("hello"), token: z.string() }),
+  z.object({ type: z.literal("pong") }),
+  z.object({ type: z.literal("spawn"), id: childId }),
+  z.object({ type: z.literal("error"), id: childId, message: z.string() }),
+  z.object({ type: z.literal("stdout"), id: childId, data: z.string() }),
+  z.object({ type: z.literal("exit"), id: childId, code: z.number().int().nullable() }),
+]);
 export class BrokerExitError extends Error {
   constructor(command: string, readonly code: number | null) { super(`broker 実行失敗: ${command} (${code})`); }
 }
@@ -68,24 +79,25 @@ export async function connectBroker(launcher: BrokerLauncher): Promise<BrokerCon
         candidate.on("error", () => {});
         candidate.on("close", () => { candidates.delete(candidate); if (candidate === socket) finishChildren(); });
         let received = 0;
-        candidate.on("data", (data: Buffer) => { received += data.length; if (received > MAX_FRAME) candidate.destroy(); if (data.includes(10)) received = 0; });
+        candidate.on("data", (data: Buffer) => { received += data.length; if (received > MAX_FRAME) candidate.destroy(); if (data.includes(LINE_FEED)) received = 0; });
         createInterface({ input: candidate }).on("error", () => candidate.destroy()).on("line", (line) => {
-          let message: Record<string, unknown>;
+          let message: z.infer<typeof frameSchema>;
           try {
-            const raw: unknown = JSON.parse(line);
-            if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("frame");
-            message = raw as Record<string, unknown>;
+            message = frameSchema.parse(JSON.parse(line));
           } catch { candidate.destroy(); return; }
           if (candidate !== socket) {
-            const supplied = Buffer.from(typeof message.token === "string" ? message.token : "");
+            const supplied = Buffer.from(message.type === "hello" ? message.token : "");
             if (socket || message.type !== "hello" || supplied.length !== token.length || !timingSafeEqual(supplied, Buffer.from(token))) { candidate.destroy(); return; }
             socket = candidate;
+            server.close();
+            for (const other of candidates) if (other !== candidate) other.destroy();
             clearTimeout(timer);
             send({ type: "welcome", token });
             resolve();
             return;
           }
-          const child = children.get(Number(message.id));
+          if (!("id" in message)) return;
+          const child = children.get(message.id);
           if (!child) return;
           if (message.type === "spawn") child.resolve();
           if (message.type === "error") child.reject(new Error(String(message.message)));

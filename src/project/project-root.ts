@@ -1,3 +1,4 @@
+import { safeGitArgs } from "./safe-git.js";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 
@@ -14,7 +15,7 @@ export const resolveProjectRoot = ({ explicitProject, cwd }: ProjectRootOptions)
 
 const findGitToplevel = (cwd: string): string | undefined => {
   try {
-    const out = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+    const out = execFileSync("git", safeGitArgs(["rev-parse", "--show-toplevel"]), {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],

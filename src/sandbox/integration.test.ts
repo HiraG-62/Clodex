@@ -18,7 +18,9 @@ it("/sandbox の引数を検証する", () => {
 it("ドライブ全体・home 全体・その祖先へ Modify を付けない", () => {
   for (const path of ["E:\\", "C:\\Users", "C:\\Users\\human", "relative"]) expect(() => validateSandboxPath(path, "C:\\Users\\human")).toThrow();
   expect(() => validateSandboxPath("E:\\dev\\project", "C:\\Users\\human")).not.toThrow();
-  expect(() => validateSandboxPath("C:\\Users\\human\\.clodex\\artifacts\\project", "C:\\Users\\human")).not.toThrow();
+  for (const path of ["C:\\Users\\human\\.clodex", "C:\\Users\\human\\.clodex\\artifacts\\project", "C:\\Users\\human\\AppData\\Local\\project"]) expect(() => validateSandboxPath(path, "C:\\Users\\human")).toThrow();
+  expect(() => validateSandboxPath("C:\\Users\\human\\.clodex\\artifacts\\project", "C:\\Users\\human", true)).not.toThrow();
+  expect(() => validateSandboxPath("C:\\Users\\human\\.clodex\\state", "C:\\Users\\human", true)).toThrow();
 });
 
 it("全会話を新規 session にし、履歴を残して permission と保存設定を復帰する", async () => {
@@ -66,5 +68,32 @@ it("全会話を新規 session にし、履歴を残して permission と保存�
     expect(context.workspace.current.coordinator.status().map((agent) => agent.permission)).toEqual(["read-only", "edit"]);
     expect(probe).toHaveBeenCalledTimes(2);
     expect(platform.release).toHaveBeenCalledTimes(1);
+    context.history.startNew({workDir:join(homeDir,"deleted-worktree"),branch:"deleted"});
+    await context.workspace.switchTo(context.history.currentId);
+    await context.sandbox.setEnabled(true);
+    await context.sandbox.setEnabled(false);
+    expect(context.settingsStore.load().sandbox).toBe(false);
+    expect(context.workspace.current.coordinator.status().every(agent => agent.status === "stopped")).toBe(true);
   } finally { await context.close(); }
+});
+
+it("保存済み on の初期化失敗でも project を開き、off に復帰できる", async () => {
+  const homeDir=mkdtempSync(join(tmpdir(),"clodex-sandbox-failed-"));
+  const projectRoot=join(homeDir,"project");mkdirSync(projectRoot);
+  writeFileSync(join(projectRoot,".clodex.json"),JSON.stringify({sandbox:true}));
+  const notify=vi.fn();
+  const platform:SandboxPlatform={inspect:async()=>false,connect:vi.fn(),grant:vi.fn(),release:vi.fn(),close:vi.fn(),spawn:vi.fn()};
+  const agents={claude:new FakeAgentAdapter("claude"),codex:new FakeAgentAdapter("codex")};
+  const context=await openProject({projectRoot,homeDir,args:{models:{},resume:false,web:false,serve:false},language:"en",
+    printTerminal:()=>{},notify,displayMode:()=>"normal",isCurrent:()=>true,modelCatalog:EMPTY_MODEL_CATALOG,
+    registerCoordinator:()=>()=>{},sandboxPlatform:platform,createAgents:()=>agents});
+  try{
+    expect(notify).toHaveBeenCalled();
+    expect(context.workspace.current.coordinator.status()).toHaveLength(2);
+    await expect(context.workspace.current.coordinator.start()).rejects.toThrow();
+    expect(agents.claude.starts).toHaveLength(0);
+    await context.sandbox.setEnabled(false);
+    expect(context.sandbox.enabled).toBe(false);
+    expect(agents.claude.starts).toHaveLength(1);
+  }finally{await context.close();}
 });

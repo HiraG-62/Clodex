@@ -39,3 +39,75 @@ broker は `%ProgramData%\Clodex-Sandbox-<human SID>\<runtime ID>` に置く。�
 5. `/sandbox uninstall`。旧 spike の `D:\` / `E:\` の走査は時間がかかる。完了後、専用ユーザー・資格情報・追加 ACL・追加 safe.directory の除去と、保存済み project の off を確認する。人が元から持つ safe.directory は残る。
 
 実 CLI のターンを使う E2E は、この確認後に別途了承を得て実施する。
+
+## レビュー対応中のプロセス保護の計測
+
+`spikes/sandbox-process-access.ts` で、制限された Agent から helper・broker・起動元に対するハンドル取得だけを計測した。コード注入や偽装そのものは実行していない。以下は途中結果であり、安全性の確認は未完了。
+
+| 操作 | 修正前 | 現在の試験用 DACL |
+|---|---|---|
+| OpenProcess: CREATE_THREAD・VM_WRITE・DUP_HANDLE | 成功 | Access denied |
+| OpenProcess: VM_READ・WRITE_DAC・QUERY_LIMITED_INFORMATION | 成功 | Access denied |
+| OpenThread: SUSPEND_RESUME・SET_CONTEXT | 成功 | Access denied |
+| OpenThread: IMPERSONATE・DIRECT_IMPERSONATION | 未計測 | 成功・未解決 |
+
+- agent の SID への許可を外し、人・SYSTEM と Authenticated Users の ACE を使用。Authenticated Users は restricting SID に含まれない。OWNER RIGHTS の ACE で所有者に暗黙に付く WRITE_DAC も抑えた。
+- プロセスの DACL から問い合わせ権限も外した。その前の構成では、問い合わせ用ハンドル経由で OpenProcessToken の DUPLICATE・IMPERSONATE が成功した。
+- default DACL から Authenticated Users を完全に外す構成や、スレッドの偽装権限のビットを全オブジェクトに対して拒否する構成は、Node の初期化が停止した。権利のビットの意味はオブジェクトの種類によって異なる。
+- WRITE_RESTRICTED を外した token の比較実験は、読み取りの範囲も変わるため設計確認中。現在の試験用 DACL は製品の保護が完成したものとして扱わない。
+
+### 通常 restricted token の比較実験
+
+承認後、`CreateRestrictedToken` の flags を `0` に変更。restricting SID は agent・logon・Everyone・Users のまま。Agent の default DACL は agent・logon・SYSTEM、broker 側は Authenticated Users・人・SYSTEM の Full Control と OWNER RIGHTS の ReadControl とした。broker 側に agent・logon・Everyone・Users の Allow は付けない。
+
+同一 run `9d285c41-32e1-458d-ade8-041c0c93a1d1` の結果。生ログは `C:\Users\Horry\.clodex\sandbox-process-access-9d285c41-32e1-458d-ade8-041c0c93a1d1.json`。
+
+| 計測 | 結果 |
+|---|---|
+| helper・broker・bootstrap の OpenProcess | ALL_ACCESS・QUERY_INFORMATION・QUERY_LIMITED_INFORMATION・DUP_HANDLE・VM_WRITE・CREATE_THREAD を個別に試し、すべて error 5 |
+| 同プロセス群の OpenThread | 列挙できた全スレッドの IMPERSONATE・DIRECT_IMPERSONATION・SET_CONTEXT が error 5 |
+| OpenProcessToken / DuplicateTokenEx | 前提の process QUERY ハンドル取得で拒否。後段 API 自体には未到達 |
+| NtImpersonateThread | 前提の source thread DIRECT_IMPERSONATION ハンドル取得で拒否。API 自体には未到達 |
+| PowerShell 5.1 / 7 | 5.1.26100.9444 / 7.6.6、起動成功 |
+| Node の子プロセス | 起動・stdout 取得成功 |
+| HKCU | 一時キーの作成・読み取り・削除成功 |
+| Claude / Codex | 2.1.291 / 0.160.1、版表示成功。ターン未実行 |
+| git init / commit | 成功。agent の呼び出しに計測用 repo の safe.directory を指定。人の設定は未変更 |
+| HTTPS / localhost MCP initialize | HTTP 200 / initialize 応答取得成功 |
+| E:・Program Files・agent profile の一覧 | 成功 |
+| 人の profile の一覧 | EPERM |
+| pnpm install --ignore-scripts | hard link 作成で os error 5 |
+| pnpm install --ignore-scripts --package-import-method=copy | 成功、is-number 7.0.0 をインストール |
+
+pnpm 12.9.1 の失敗対象は、`E:\dev\clodex-hybrid-test\.pnpm-store\v11\files\72\392bccd8964c88ec8aa3d815746a2b6a4466d9c7ca8f428d7d0f3e2bb11674ef494ca335c8b255eee5825c087a77bb45a5d60025f318b78a64e19beccd23c7` から計測用 repo の `node_modules\.pnpm\is-number@7.0.0\node_modules\is-number\LICENSE` への import。同じ source に対する Node の readFileSync・copyFileSync は成功、linkSync は EPERM。拒否を返したファイル操作は特定したが、カーネル内部でどの照合が失敗したかは未特定。copy 方式を製品設定にするか QUESTION で確認中。
+
+最初の pnpm 起動失敗は `.cjs` 固定の resolver による MODULE_NOT_FOUND だった。実機の pnpm は `.mjs` なので、両形式の解決と回帰テストを追加した。git の最初の commit 失敗は safe.directory 指定不足で、上表は指定後の結果。
+
+旧実験の「broker default DACL から Authenticated Users を外すと Node の初期化が停止する」現象は、拒否対象オブジェクトをまだ特定できていない。今回の Authenticated Users を許可する構成では再現していない。原因解明済みとは扱わない。
+
+`pnpm test`: 728 passed / 5 skipped、`pnpm typecheck` 成功。レビュー指摘全体の対応は継続中。
+
+### 採用構成での最終確認
+
+通常 restricted token を採用。run `708fda3d-5b21-44b8-be12-7124a84bf7e6` で上記のプロセス・スレッドのハンドル取得拒否、PowerShell・HKCU・Node 子プロセス・git commit・CLI の版・HTTPS・MCP を再確認した。
+
+pnpm の copy は Agent の環境変数だけに設定し、project の設定ファイルは変更しない。指定された `npm_config_package_import_method=copy` に加え、pnpm 11 以降向けの `pnpm_config_package_import_method=copy` を設定する。pnpm 12.9.1 は前者だけでは設定値が undefined、後者を加えると copy になり、引数に copy を付けない `pnpm install --ignore-scripts` が成功した。[pnpm の移行資料](https://github.com/pnpm/pnpm.io/blob/main/docs/migration.md)。hard link 拒否のカーネル内部の原因は未特定。
+
+`spikes/sandbox-git-protection.ts` では、人が作った計測用 repo と worktree に製品の ACL を適用した。
+
+| 操作 | 結果 |
+|---|---|
+| `.git/config` / `config.worktree` の書き込み | EPERM |
+| `.git/hooks/pre-commit` の作成 | EPERM |
+| worktree の `.git` ファイルの書き込み | EPERM |
+| `.git` の rename | EPERM |
+| 保護中の git commit | 成功 |
+| 解除後の config 内容 | 元と一致 |
+
+git の保護対象には agent の書き込み・削除に加え ACL 変更・所有権変更の Deny を設定する。OWNER RIGHTS の ReadControl で、所有者に暗黙に付く WRITE_DAC を抑える。人による解除と継承の更新ができるよう、人の Full Control も同時に明示する。これらの ACE を付与前後の journal に含め、解除時に元へ戻す。試験途中の OWNER RIGHTS だけの構成で人による解除が失敗した fixture は、管理者操作を使わず計測用ファイル・ディレクトリを復元済み。全計測 journal の lease は 0 件、計測 helper の残存なし。
+
+`spikes/sandbox-acl-links.ts` では、project 内に junction と directory symlink をそれぞれ作り、外側の人の Temp にあるディレクトリ・子ディレクトリ・ファイルの SDDL を比較した。どちらもリンク先の変更なし。fixture の ACL は復元し、リンクを削除した。
+
+残りの回帰確認はユニットテストで実施。初期化失敗時の起動禁止と off 復帰、削除済み worktree のスキップと lease 解除、off 失敗時の sandbox 再起動、prepare 後の停止失敗の後片付け、会話タイトル保持、認証後の待受終了、git の fsmonitor・hook・外部 diff の無効化を含む。
+
+broker の配置先は `%ProgramData%\Clodex-Sandbox-<human SID>\<content hash>`。コード・Node・環境設定・ログインスクリプトのハッシュで再利用し、親ディレクトリは作成時に保護した DACL を指定する。agent の bootstrap は native helper に置き換え、接続 token は人が開いた stdin から渡す。

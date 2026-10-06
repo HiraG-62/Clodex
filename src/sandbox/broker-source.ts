@@ -5,7 +5,11 @@ const {createInterface}=require('node:readline');
 const {timingSafeEqual}=require('node:crypto');
 const {existsSync}=require('node:fs');
 const {join,isAbsolute}=require('node:path');
-const [port,token,sid]=process.argv.slice(2);
+const [port,sid]=process.argv.slice(2);
+const input=createInterface({input:process.stdin});
+input.once('line',token=>{input.close();process.stdin.destroy();
+const IDLE_TIMEOUT_MS=30000;
+const INFINITE_WAIT='4294967295';
 const helper=join(__dirname,'token-helper.exe');
 const children=new Map();
 const socket=connect(Number(port),'127.0.0.1');
@@ -13,14 +17,19 @@ const send=message=>{if(!socket.destroyed)socket.write(JSON.stringify(message)+'
 let authenticated=false,closing=false;
 const kill=child=>{try{child.kill()}catch{}};
 const cleanup=()=>{if(closing)return;closing=true;for(const child of children.values())kill(child);socket.destroy();};
-socket.setTimeout(30000,cleanup);
+socket.setTimeout(IDLE_TIMEOUT_MS,cleanup);
 socket.on('connect',()=>send({type:'hello',token}));
 socket.on('error',cleanup);socket.on('end',cleanup);socket.on('close',()=>{cleanup();process.exit(0)});
 process.on('SIGTERM',cleanup);process.on('SIGINT',cleanup);
 function resolveCommand(command,args){
   if(command==='claude')return [join(process.env.USERPROFILE,'.local','bin','claude.exe'),args];
   if(command==='codex')return [process.execPath,[join(process.env.APPDATA,'npm','node_modules','@openai','codex','bin','codex.js'),...args]];
-  if(command==='pnpm')return [process.execPath,[join(process.env.APPDATA,'npm','node_modules','pnpm','bin','pnpm.cjs'),...args]];
+  if(command==='pnpm'){
+    const directory=join(process.env.APPDATA,'npm','node_modules','pnpm','bin');
+    const script=['pnpm.cjs','pnpm.mjs'].map(name=>join(directory,name)).find(existsSync);
+    if(!script)throw new Error('pnpm の実行ファイルなし');
+    return [process.execPath,[script,...args]];
+  }
   if(command==='node')return [process.execPath,args];
   if(command==='__inspect')return [helper,['--inspect']];
   if(isAbsolute(command)&&existsSync(command)&&command.toLowerCase().endsWith('.exe'))return [command,args];
@@ -47,7 +56,7 @@ createInterface({input:socket}).on('error',cleanup).on('line',line=>{
     const [command,args]=resolveCommand(m.command,m.args);
     const env={...process.env};
     if(m.agent==='claude'||m.agent==='codex')env.CLODEX_AGENT=m.agent;
-    const child=spawn(helper,[sid,m.cwd,'4294967295',command,...args],{cwd:m.cwd,env,windowsHide:true,stdio:['pipe','pipe','pipe']});
+    const child=spawn(helper,[sid,m.cwd,INFINITE_WAIT,command,...args],{cwd:m.cwd,env,windowsHide:true,stdio:['pipe','pipe','pipe']});
     children.set(m.id,child);child.stdin.on('error',()=>{});
     child.on('spawn',()=>send({type:'spawn',id:m.id}));
     child.stdout.on('data',data=>send({type:'stdout',id:m.id,data:data.toString('base64')}));
@@ -55,5 +64,6 @@ createInterface({input:socket}).on('error',cleanup).on('line',line=>{
     child.on('error',error=>send({type:'error',id:m.id,message:error.message}));
     child.on('close',code=>{children.delete(m.id);send({type:'exit',id:m.id,code})});
   }catch(error){send({type:'error',id:m.id,message:error.message});send({type:'exit',id:m.id,code:null})}
+});
 });
 `;

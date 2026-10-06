@@ -39,6 +39,7 @@ const preview = (text: string) => (text.length > PREVIEW_LENGTH ? `${text.slice(
 
 export interface CoordinatorOptions {
   permissionLocked?: () => boolean;
+  canStart?: () => boolean;
   projectRoot: string;
   agents: Record<AgentId, AgentAdapter>;
   bus: EventBus;
@@ -136,6 +137,7 @@ export class Coordinator {
         },
         (message) => bus.publish({ kind: "agent", agent: id, event: { type: "error", message } }),
         () => this.notifyRecoveryChange(),
+        () => { if (this.options.canStart?.() === false) throw new Error(t("sandbox.incomplete")); },
       );
     };
     this.mailboxes = { claude: createMailbox("claude"), codex: createMailbox("codex") };

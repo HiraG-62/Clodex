@@ -41,6 +41,7 @@ export class AgentMailbox {
     private readonly startOptions: () => AgentStartOptions,
     private readonly onError: (message: string) => void,
     private readonly onChange: () => void = () => {},
+    private readonly assertStart: () => void = () => {},
   ) {}
 
   // 失敗しても reject せず failed の TurnResult を返す（呼び出し側は待たずに投げてよい）
@@ -216,6 +217,7 @@ export class AgentMailbox {
 
   async ensureRunning(): Promise<void> {
     if (this.agent.status !== "stopped") return;
+    this.assertStart();
     const resumeSessionId = this.sessionId;
     const { resumeSessionId: _initial, ...options } = this.startOptions();
     await this.agent.start({ ...options, ...(resumeSessionId ? { resumeSessionId } : {}) });

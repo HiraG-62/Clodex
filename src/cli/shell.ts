@@ -366,7 +366,7 @@ export const createShell = ({
         if (!sandbox) throw new Error(t("sandbox.incomplete"));
         if (command.action === "uninstall") await sandbox.uninstall();
         else if (command.action) await sandbox.set(command.action === "on");
-        print(`sandbox: ${sandbox.enabled() ? "on" : "off"} · ${t(await sandbox.ready() ? "sandbox.ready" : "sandbox.incomplete")}`);
+        print(t("sandbox.status", { state: sandbox.enabled() ? "on" : "off", setup: t(await sandbox.ready() ? "sandbox.ready" : "sandbox.incomplete") }));
         return "continue";
       case "limits": {
         if (command.reset) {

@@ -13,6 +13,14 @@ const setup = () => {
 };
 
 describe("AgentMailbox", () => {
+  it("起動禁止でも session を参照でき、配送時には起動を拒否する", async () => {
+    const agent = new FakeAgentAdapter("codex");
+    const mailbox = new AgentMailbox(agent, () => ({ ...START_OPTIONS, resumeSessionId: "saved" }), vi.fn(), undefined,
+      () => { throw new Error("セットアップ未完了"); });
+    expect(mailbox.sessionId).toBe("saved");
+    await expect(mailbox.enqueue("hello")).resolves.toMatchObject({ status: "failed", text: "セットアップ未完了" });
+    expect(agent.starts).toEqual([]);
+  });
   it("復旧用一覧には未配送の入力と message を元の順に含める", () => {
     const { mailbox } = setup();
     void mailbox.enqueue("busy");

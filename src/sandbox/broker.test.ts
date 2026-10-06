@@ -6,7 +6,9 @@ import { connectBroker } from "./broker.js";
 it("認証後に stdio を中継し、UTF-8 分割・改行・kill・close を扱う", async () => {
   const messages: Array<Record<string, unknown>> = [];
   const cleanup = vi.fn(async () => {});
+  let brokerPort = 0;
   const broker = await connectBroker({ launch: async (port, token) => {
+    brokerPort = port;
     const denied = connect(port, "127.0.0.1");
     denied.on("error", () => {});
     denied.end(`${JSON.stringify({ type: "hello", token: "wrong" })}\n`);
@@ -28,6 +30,11 @@ it("認証後に stdio を中継し、UTF-8 分割・改行・kill・close を�
     return cleanup;
   } });
   try {
+    await new Promise<void>((resolve, reject) => {
+      const extra = connect(brokerPort, "127.0.0.1");
+      extra.once("error", () => resolve());
+      extra.once("connect", () => { extra.destroy(); reject(new Error("認証後も listen が継続")); });
+    });
     const child = broker.spawn("claude", ["--version"], { cwd: "project", env: { OPENAI_API_KEY: "secret", USERPROFILE: "human", CLODEX_AGENT: "claude" } });
     const lines: string[] = [];
     child.onLine((line) => lines.push(line));

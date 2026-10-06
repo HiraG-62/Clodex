@@ -1,3 +1,4 @@
+import { safeGitArgs } from "./safe-git.js";
 // project のファイルの一覧（DESIGN.md §28 v0.3 A の @path の候補）
 import { execFile } from "node:child_process";
 
@@ -9,7 +10,7 @@ const GIT_MAX_BUFFER = 64 * 1024 * 1024;
 export const listProjectFiles = (root: string): Promise<string[]> =>
   new Promise((done) => {
     execFile(
-      "git", ["ls-files", "--cached", "--others", "--exclude-standard"],
+      "git", safeGitArgs(["ls-files", "--cached", "--others", "--exclude-standard"]),
       { cwd: root, maxBuffer: GIT_MAX_BUFFER, windowsHide: true },
       (error, stdout) => {
         if (error) return done([]);

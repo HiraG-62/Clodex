@@ -1,5 +1,6 @@
 // project ごとの設定・会話・Agent・保存をまとめる（DESIGN.md §28 D2a）
 import { SandboxController, type SandboxPlatform } from "../sandbox/controller.js";
+import { t } from "../i18n/i18n.js";
 import { WindowsSandboxPlatform } from "../sandbox/windows-platform.js";
 import { spawnAgentProcess, type SpawnAgentProcess } from "../agents/agent-process.js";
 import { fetchStartupProbe, type StartupProbe } from "../agents/startup-probe.js";
@@ -100,8 +101,9 @@ export const openProject = async ({
   let catalog = modelCatalog();
   let generation = 0;
   const spawn: SpawnAgentProcess = (command, parameters, options) =>
-    (sandbox.enabled ? sandbox.platform.spawn : spawnAgentProcess)(command, parameters, options);
+    { if (!sandbox.usable) throw new Error(t("sandbox.incomplete")); return (sandbox.enabled ? sandbox.platform.spawn : spawnAgentProcess)(command, parameters, options); };
   const probe = async () => {
+    if (!sandbox.usable) return;
     const current = generation;
     const fetch = startupProbe ?? (createAgents ? undefined : fetchStartupProbe);
     if (!fetch) return;
@@ -111,6 +113,7 @@ export const openProject = async ({
     for (const runtime of workspace?.allRuntimes() ?? []) runtime.coordinator.applyStartupUsage(result.usage);
   };
   const sandbox = new SandboxController(sandboxPlatform ?? new WindowsSandboxPlatform(homeDir, projectRoot, (text) => notify(text, "warn")), {
+    notify: (text) => notify(text, "warn"),
     paths: () => ({ projects: [projectRoot, ...history.list().flatMap((conversation) => conversation.workDir ? [conversation.workDir] : [])], artifacts: artifactsDir }),
     stop: async () => { generation++; await workspace?.closeAll(); },
     save: (enabled) => { settingsStore.setSandbox(enabled); history.clearAllSessions(); saveRecovery(homeDir, projectRoot, { current: history.currentId, conversations: {} }); },
@@ -128,6 +131,7 @@ export const openProject = async ({
       projectRoot: workDir,
       agents: createAgents?.() ?? { claude: new ClaudeAdapter(spawn), codex: new CodexAdapter(spawn) },
       permissionLocked: () => sandbox.enabled,
+      canStart: () => sandbox.usable,
       bus,
       modelCatalog: () => catalog,
       mcpUrlFor: (agent) => mcp.urlFor(agent),

@@ -1,6 +1,7 @@
 // 1 つの project の会話ごとに Coordinator を持ち、複数の会話を並列に動かす（DESIGN.md §28 D1）。
 // 人が見ている会話（今の会話）は 1 つ。会話を切り替えても、前の会話の Agent は止めない
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import type { Coordinator } from "../coordinator/coordinator.js";
 import type { RecoveryState, ConversationRecovery } from "../project/recovery-store.js";
 import type { CoordinatorEvent, EventBus } from "../coordinator/event-bus.js";
@@ -139,7 +140,7 @@ export class Workspace {
       if (conversation) await this.ensure(conversation);
     }
     this.notifySwitch(this.current);
-    await Promise.all(this.allRuntimes().map((runtime) => runtime.coordinator.start()));
+    await Promise.all(this.allRuntimes().filter(runtime => existsSync(runtime.workDir)).map((runtime) => runtime.coordinator.start()));
   }
 
   private notifySwitch(runtime: ConversationRuntime): void {
