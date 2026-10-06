@@ -1,10 +1,13 @@
 import React from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { PassThrough } from "node:stream";
+import { render as renderInk } from "ink";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "ink-testing-library";
 import { setLanguage, t } from "../i18n/i18n.js";
 import type { FeedItem } from "../web/web-feed.js";
 import type { FeedClient } from "./feed-client.js";
-import { DISABLE_MOUSE_TRACKING, ENABLE_MOUSE_TRACKING, TUI_RENDER_OPTIONS, TuiApp, withMouseTracking } from "./tui.js";
+import { DISABLE_MOUSE_TRACKING, ENABLE_MOUSE_TRACKING, TUI_RENDER_OPTIONS, TuiApp,
+  enableVirtualTerminalInput, withMouseTracking } from "./tui.js";
 
 afterEach(cleanup);
 
@@ -95,6 +98,61 @@ describe("TuiApp", () => {
     app.stdin.write("a");
     await tick();
     expect(app.lastFrame()).not.toContain("メッセージ");
+  });
+
+  it("Windows の Backspace と Ctrl+End を Ink の入力として扱う", async () => {
+    setLanguage("ja");
+    const { client, emit } = fakeClient();
+    const app = render(React.createElement(TuiApp, { client }));
+    await tick();
+    app.stdin.write("ab\x7f");
+    await tick();
+    expect(app.lastFrame()).toContain("a");
+    expect(app.lastFrame()).not.toContain("ab");
+    for (let seq = 1; seq <= 30; seq++) emit({ type: "output", seq, text: `ログ ${seq}` });
+    await tick();
+    app.stdin.write("\x1b[5~");
+    await tick();
+    expect(app.lastFrame()).not.toContain("ログ 30");
+    app.stdin.write("\x1b[1;5F");
+    await tick();
+    expect(app.lastFrame()).toContain("ログ 30");
+  });
+
+  it("VT 入力の設定に失敗したら notice を 1 行出す", async () => {
+    setLanguage("ja");
+    const { client } = fakeClient();
+    const enableWindowsInput = vi.fn().mockRejectedValue(new Error("失敗"));
+    const app = render(React.createElement(TuiApp, { client, enableWindowsInput }));
+    await tick();
+    expect(enableWindowsInput).toHaveBeenCalledTimes(1);
+    expect(app.lastFrame()).toContain(t("tui.mouseUnavailable"));
+  });
+});
+
+describe("Windows の VT 入力", () => {
+  it("win32 だけで実行関数を呼ぶ", async () => {
+    const run = vi.fn().mockResolvedValue(undefined);
+    await enableVirtualTerminalInput("linux", run);
+    expect(run).not.toHaveBeenCalled();
+    await enableVirtualTerminalInput("win32", run);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+  it("Ink の raw mode が有効になってから VT 入力を設定する", async () => {
+    const events: string[] = [];
+    const stdin = Object.assign(new PassThrough(), { isTTY: true,
+      setRawMode: (enabled: boolean) => { events.push(enabled ? "raw" : "restore"); } });
+    const stdout = Object.assign(new PassThrough(), { isTTY: true, columns: 80, rows: 24 });
+    stdout.on("data", () => {});
+    const { client } = fakeClient();
+    const instance = renderInk(React.createElement(TuiApp, { client,
+      enableWindowsInput: async () => { events.push("vt"); } }),
+      { stdin, stdout, stderr: new PassThrough(), interactive: true, patchConsole: false, exitOnCtrlC: false });
+    await tick();
+    expect(events.indexOf("raw")).toBeGreaterThanOrEqual(0);
+    expect(events.indexOf("vt")).toBeGreaterThan(events.indexOf("raw"));
+    instance.unmount();
+    await instance.waitUntilExit();
   });
 });
 

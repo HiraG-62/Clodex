@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { spawn } from "node:child_process";
 import { Box, Text, render, useApp, useInput, useStdout } from "ink";
 import { slashCommands } from "../cli/commands.js";
 import { t } from "../i18n/i18n.js";
@@ -13,6 +14,18 @@ const h = React.createElement;
 const MAX_SUGGESTIONS = 5;
 const SPINNER_INTERVAL_MS = 250;
 const SPINNER_FRAMES = ["◐", "◓", "◑", "◒"] as const;
+const ENABLE_VIRTUAL_TERMINAL_INPUT = 0x200;
+const POWERSHELL_VT_SCRIPT = `
+Add-Type -Namespace W -Name K -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern System.IntPtr GetStdHandle(int n);
+[DllImport("kernel32.dll")] public static extern bool GetConsoleMode(System.IntPtr h, out uint m);
+[DllImport("kernel32.dll")] public static extern bool SetConsoleMode(System.IntPtr h, uint m);
+'@
+$h = [W.K]::GetStdHandle(-10)
+$m = 0
+if (-not [W.K]::GetConsoleMode($h, [ref]$m)) { exit 1 }
+if (-not [W.K]::SetConsoleMode($h, $m -bor 0x${ENABLE_VIRTUAL_TERMINAL_INPUT.toString(16)})) { exit 1 }
+`;
 export const ENABLE_MOUSE_TRACKING = "\x1b[?1000h\x1b[?1006h";
 export const DISABLE_MOUSE_TRACKING = "\x1b[?1006l\x1b[?1000l";
 export const TUI_RENDER_OPTIONS = { exitOnCtrlC: false, alternateScreen: true } as const;
@@ -20,6 +33,19 @@ const { line: LINE_COLOR, muted: MUTED_COLOR, warn: WARN_COLOR,
   claude: CLAUDE_COLOR, codex: CODEX_COLOR } = TERMINAL_COLORS;
 const EMPTY_STATE: WebState = { project: "", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [] };
 const EMPTY_FEED: TerminalFeed = { timeline: [], completed: [] };
+
+const runWindowsConsoleMode = (): Promise<void> => new Promise((resolve, reject) => {
+  const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", POWERSHELL_VT_SCRIPT],
+    { stdio: ["inherit", "ignore", "ignore"], windowsHide: true });
+  child.once("error", reject);
+  child.once("close", (code) => { if (code === 0) resolve(); else reject(new Error(`SetConsoleMode: ${code}`)); });
+});
+
+export const enableVirtualTerminalInput = async (platform: string = process.platform,
+  run: () => Promise<void> = runWindowsConsoleMode): Promise<void> => {
+  if (platform !== "win32") return;
+  await run();
+};
 
 const makeAssist = () => createInputAssist(slashCommands(), ["claude", "codex"], {
   agent: t("web.assist.agent"), file: t("web.assist.file"), permission: t("web.assist.permission"),
@@ -59,7 +85,9 @@ const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed
   );
 };
 
-export const TuiApp = ({ client, onExit }: { client: FeedClient; onExit?: () => void }) => {
+export const TuiApp = ({ client, onExit, enableWindowsInput }: {
+  client: FeedClient; onExit?: () => void; enableWindowsInput?: () => Promise<void>;
+}) => {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const terminal = stdout as NodeJS.WriteStream;
@@ -173,6 +201,12 @@ export const TuiApp = ({ client, onExit }: { client: FeedClient; onExit?: () => 
     if (!key.ctrl && !key.meta && keyText) { edit({ kind: "insert", text: keyText }); setSelected(0); }
   });
 
+  useEffect(() => {
+    let active = true;
+    void enableWindowsInput?.().catch(() => { if (active) setNotice(t("tui.mouseUnavailable")); });
+    return () => { active = false; };
+  }, [enableWindowsInput]);
+
   const cursor = cursorSlices(buffer);
   const branch = state.conversations.find((conversation) => conversation.current)?.branch;
   const project = `${state.project || "Clodex"}${branch ? ` · ${t("tui.branch", { branch })}` : ""}`;
@@ -203,7 +237,8 @@ export const withMouseTracking = async (write: (value: string) => void, run: (st
 export const startTui = async (client: FeedClient): Promise<void> => {
   const write = (value: string) => { if (process.stdout.isTTY) process.stdout.write(value); };
   let stopMouse = () => {};
-  const instance = render(h(TuiApp, { client, onExit: () => stopMouse() }), TUI_RENDER_OPTIONS);
+  const instance = render(h(TuiApp, { client, onExit: () => stopMouse(),
+    enableWindowsInput: () => enableVirtualTerminalInput() }), TUI_RENDER_OPTIONS);
   await withMouseTracking(write, async (stop) => {
     stopMouse = stop;
     const onSignal = () => { stop(); instance.unmount(); };
