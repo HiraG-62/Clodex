@@ -85,8 +85,8 @@ const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed
   );
 };
 
-export const TuiApp = ({ client, onExit, enableWindowsInput }: {
-  client: FeedClient; onExit?: () => void; enableWindowsInput?: () => Promise<void>;
+export const TuiApp = ({ client, onExit, startMouse }: {
+  client: FeedClient; onExit?: () => void; startMouse?: () => Promise<void>;
 }) => {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -203,9 +203,9 @@ export const TuiApp = ({ client, onExit, enableWindowsInput }: {
 
   useEffect(() => {
     let active = true;
-    void enableWindowsInput?.().catch(() => { if (active) setNotice(t("tui.mouseUnavailable")); });
+    void startMouse?.().catch(() => { if (active) setNotice(t("tui.mouseUnavailable")); });
     return () => { active = false; };
-  }, [enableWindowsInput]);
+  }, [startMouse]);
 
   const cursor = cursorSlices(buffer);
   const branch = state.conversations.find((conversation) => conversation.current)?.branch;
@@ -227,21 +227,22 @@ export const TuiApp = ({ client, onExit, enableWindowsInput }: {
   );
 };
 
-export const withMouseTracking = async (write: (value: string) => void, run: (stop: () => void) => Promise<void>): Promise<void> => {
-  write(ENABLE_MOUSE_TRACKING);
-  let stopped = false;
-  const stop = () => { if (!stopped) { stopped = true; write(DISABLE_MOUSE_TRACKING); } };
-  try { await run(stop); } finally { stop(); }
+export interface MouseTracking { start: () => void; stop: () => void; }
+
+/** マウスの報告は start で有効にする。Windows の ConPTY は VT 入力モードの後に出した設定しか端末へ渡さないため、起動直後には出さない */
+export const withMouseTracking = async (write: (value: string) => void, run: (mouse: MouseTracking) => Promise<void>): Promise<void> => {
+  let state: "off" | "on" | "stopped" = "off";
+  const start = () => { if (state === "off") { state = "on"; write(ENABLE_MOUSE_TRACKING); } };
+  const stop = () => { if (state === "on") write(DISABLE_MOUSE_TRACKING); state = "stopped"; };
+  try { await run({ start, stop }); } finally { stop(); }
 };
 
 export const startTui = async (client: FeedClient): Promise<void> => {
   const write = (value: string) => { if (process.stdout.isTTY) process.stdout.write(value); };
-  let stopMouse = () => {};
-  const instance = render(h(TuiApp, { client, onExit: () => stopMouse(),
-    enableWindowsInput: () => enableVirtualTerminalInput() }), TUI_RENDER_OPTIONS);
-  await withMouseTracking(write, async (stop) => {
-    stopMouse = stop;
-    const onSignal = () => { stop(); instance.unmount(); };
+  await withMouseTracking(write, async (mouse) => {
+    const startMouse = async () => { await enableVirtualTerminalInput(); mouse.start(); };
+    const instance = render(h(TuiApp, { client, onExit: mouse.stop, startMouse }), TUI_RENDER_OPTIONS);
+    const onSignal = () => { mouse.stop(); instance.unmount(); };
     process.once("SIGINT", onSignal);
     process.once("SIGTERM", onSignal);
     try { await instance.waitUntilExit(); }

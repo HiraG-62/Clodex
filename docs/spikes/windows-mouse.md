@@ -32,3 +32,26 @@ TUI は代替画面でマウスの報告（`ESC[?1000h` + SGR `ESC[?1006h`）を
 
 - TUI は Ink が raw mode に入った後に、標準入力のコンソールモードへ `ENABLE_VIRTUAL_TERMINAL_INPUT` を足す（DESIGN.md D4）
 - libuv の `setRawMode` はモードを設定し直すので、raw mode を入れ直すと 0x200 は外れる。足すのは raw mode に入った後
+
+## 追試: 実際の TUI でホイールが効かなかった（2026-10-06）
+
+VT 入力モードを足しても、実際の TUI ではホイールが効かなかった。原因は 2 つ。
+
+### 1. ConPTY は VT 入力モードの前に出したマウスの設定を端末へ渡さない
+
+`spikes/mouse-mode-passthrough.ts` で、ConPTY が端末向けに出すモードの設定を見た。
+
+| 子の動き | 端末へ出たモード |
+|---|---|
+| `?1000h` / `?1006h` を出す（VT 入力モードなし） | `?9001h ?1004h ?25l ?25h`（マウスの設定は出ない） |
+| VT 入力モードを足してから `?1000h` / `?1006h` を出す（`spikes/mouse-order-child.mjs`） | `… ?1000h ?1006h` |
+
+TUI は起動直後にマウスの設定を出し、VT 入力モードは後から非同期で足していたため、Windows Terminal はマウスの報告を始めなかった（ホイールもクリックも届かない）。
+
+→ マウスの設定は VT 入力モードを足し終えてから出す。
+
+### 2. Ink 8 は SGR マウスのシーケンスを useInput に渡さない
+
+`spikes/tui-mouse.ts`（実際の `startTui` を ConPTY で動かす）と `spikes/ink-mouse-drop.ts` で確かめた。stdin にはホイールのシーケンスが届いているが、`useInput` は呼ばれない。Ink 8 の `components/App.js` は、完全な CSI のうちキー名の無いもの（フォーカス・カーソル位置の応答・マウスなど）を `useInput` に渡す前に捨てる。
+
+→ stdin と Ink の間に中継の stream を置き、SGR マウスのシーケンスだけを抜き出して TUI に渡す。残りを Ink に渡す。

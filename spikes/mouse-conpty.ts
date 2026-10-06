@@ -4,7 +4,7 @@ import pty from "node-pty";
 // 引数: 子のスクリプト（既定は spikes/mouse-child.mjs）と、入力を送り始めるまでの待ち時間（ms）
 const childScript = process.argv[2] ?? "spikes/mouse-child.mjs";
 const waitMs = Number(process.argv[3] ?? 1500);
-const child = pty.spawn(process.execPath, [childScript], { cols: 80, rows: 24, cwd: process.cwd() });
+const child = pty.spawn(process.execPath, [childScript, ...process.argv.slice(4)], { cols: 80, rows: 24, cwd: process.cwd() });
 let out = "";
 child.onData((d) => { out += d; });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

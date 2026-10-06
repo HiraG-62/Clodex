@@ -119,13 +119,13 @@ describe("TuiApp", () => {
     expect(app.lastFrame()).toContain("ログ 30");
   });
 
-  it("VT 入力の設定に失敗したら notice を 1 行出す", async () => {
+  it("マウスの開始（VT 入力の設定）に失敗したら notice を 1 行出す", async () => {
     setLanguage("ja");
     const { client } = fakeClient();
-    const enableWindowsInput = vi.fn().mockRejectedValue(new Error("失敗"));
-    const app = render(React.createElement(TuiApp, { client, enableWindowsInput }));
+    const startMouse = vi.fn().mockRejectedValue(new Error("失敗"));
+    const app = render(React.createElement(TuiApp, { client, startMouse }));
     await tick();
-    expect(enableWindowsInput).toHaveBeenCalledTimes(1);
+    expect(startMouse).toHaveBeenCalledTimes(1);
     expect(app.lastFrame()).toContain(t("tui.mouseUnavailable"));
   });
 });
@@ -138,7 +138,7 @@ describe("Windows の VT 入力", () => {
     await enableVirtualTerminalInput("win32", run);
     expect(run).toHaveBeenCalledTimes(1);
   });
-  it("Ink の raw mode が有効になってから VT 入力を設定する", async () => {
+  it("Ink の raw mode が有効になってからマウスを開始する（VT 入力の設定を含む）", async () => {
     const events: string[] = [];
     const stdin = Object.assign(new PassThrough(), { isTTY: true,
       setRawMode: (enabled: boolean) => { events.push(enabled ? "raw" : "restore"); } });
@@ -146,7 +146,7 @@ describe("Windows の VT 入力", () => {
     stdout.on("data", () => {});
     const { client } = fakeClient();
     const instance = renderInk(React.createElement(TuiApp, { client,
-      enableWindowsInput: async () => { events.push("vt"); } }),
+      startMouse: async () => { events.push("vt"); } }),
       { stdin, stdout, stderr: new PassThrough(), interactive: true, patchConsole: false, exitOnCtrlC: false });
     await tick();
     expect(events.indexOf("raw")).toBeGreaterThanOrEqual(0);
@@ -167,18 +167,23 @@ describe("代替画面とマウス", () => {
   it("Ink に代替画面を使わせ、マウスの開始と終了を逆順の対として出す", async () => {
     const writes: string[] = [];
     expect(TUI_RENDER_OPTIONS.alternateScreen).toBe(true);
-    await withMouseTracking((value) => writes.push(value), async () => {});
+    await withMouseTracking((value) => writes.push(value), async (mouse) => { mouse.start(); });
     expect(writes).toEqual(["\x1b[?1000h\x1b[?1006h", "\x1b[?1006l\x1b[?1000l"]);
     expect(writes).toEqual([ENABLE_MOUSE_TRACKING, DISABLE_MOUSE_TRACKING]);
   });
+  it("start するまでマウスを有効にしない（ConPTY は VT 入力の後でないとマウスの設定を端末へ渡さない）", async () => {
+    const writes: string[] = [];
+    await withMouseTracking((value) => writes.push(value), async () => {});
+    expect(writes).toEqual([]);
+  });
   it("実行中の例外でも終了シーケンスを出す", async () => {
     const writes: string[] = [];
-    await expect(withMouseTracking((value) => writes.push(value), async () => { throw new Error("失敗"); })).rejects.toThrow("失敗");
+    await expect(withMouseTracking((value) => writes.push(value), async (mouse) => { mouse.start(); throw new Error("失敗"); })).rejects.toThrow("失敗");
     expect(writes.at(-1)).toBe(DISABLE_MOUSE_TRACKING);
   });
-  it("シグナルと通常終了の両方が来てもマウスを一度だけ解除する", async () => {
+  it("シグナルと通常終了の両方が来てもマウスを一度だけ解除し、解除後の start は無視する", async () => {
     const writes: string[] = [];
-    await withMouseTracking((value) => writes.push(value), async (stop) => { stop(); });
+    await withMouseTracking((value) => writes.push(value), async (mouse) => { mouse.start(); mouse.stop(); mouse.start(); });
     expect(writes).toEqual([ENABLE_MOUSE_TRACKING, DISABLE_MOUSE_TRACKING]);
   });
 });
