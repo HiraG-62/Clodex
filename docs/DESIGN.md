@@ -780,7 +780,7 @@ MCP message を受け取った後、
 - 送信元への tool 応答は受理結果（message ID）だけを返す。返信は送信元の現在のターンが終わった後、新しいターンとして届く
 - 起動や送信に失敗したら Event Bus に `error` を出し、そのメッセージは破棄する（v0.1 は再送しない）。`/compact` の失敗も同じ扱いで、mailbox は次の項目へ進む
 - `/new`・`/resume` で Agent を止める間は、その Agent の mailbox の配送を止める。止めている間に届いた項目は捨てず、切り替え後の session に配送する
-- Coordinator の停止時は、先に全 mailbox を閉じて未配送分を破棄してから Agent を止める（停止中に Agent を再起動しない）
+- Coordinator の停止時は、先に全 mailbox を閉じてから Agent を止める（停止中に Agent を再起動しない）。未配送分と作業中だったことは、閉じる前の状態として保存してあり、次の起動で戻す（§18 Hub の再起動からの復旧）
 
 ---
 
@@ -1185,7 +1185,7 @@ simple event log
   - `title`: その会話で最初の人間の入力（先頭 60 文字）
   - session も title も無い会話は保存しない。ピン止めした会話を先頭に、それ以外を新しい順に最大 20 件残す（ピン止めは枠に数えない）
   - `/rename` で名前を変えた会話は、以後の入力で名前を上書きしない。`/delete` した会話は feed も消す
-- 起動時は新しい会話として始める。`clodex --resume` は最新の会話を続ける（各 Agent の最初の起動で、その会話の session を resume する）
+- 起動時は新しい会話として始める。`clodex --resume` は最新の会話を続ける（各 Agent の最初の起動で、その会話の session を resume する）。前回の終了時に戻す作業があったとき、または `clodex serve` で起動したときは、前回の今の会話に戻る（下記の復旧）
 - `/resume` は過去の会話を新しい順に番号付きで表示する。`/resume <番号>` でその会話に切り替える
   - 実行中のターンがある Agent がいれば拒否する（先に `/interrupt`）
   - 両 Agent をいったん止め、次に使うときに選んだ会話の session で起動する。選んだ会話に session が無い Agent は新しい session で始める
@@ -1195,7 +1195,7 @@ simple event log
 - Claude は system prompt を session の最初に記録して resume 後も使う（`--system-prompt-snapshot` の既定）。役割（§13）を変えた後は `/new` で始め直すと確実に反映される
 - 壊れたファイルは空の履歴として扱う（起動を妨げない）
 - 書き込みのたびにファイルを読み直して今の会話を反映し（同じ project で複数の `clodex` を起動しても互いの会話を消さない）、一時ファイルに書いてから置き換える（書き込み途中で落ちても壊さない）
-- message の未配送分、Budget の chain、利用状況は保存しない（in-memory）
+- Budget の chain と利用状況は保存しない（in-memory）。未配送分は下記の復旧のために保存する
 
 Web UI の feed（§17）:
 
@@ -1204,6 +1204,34 @@ Web UI の feed（§17）:
 - 読み込み時に 2,000 行を超えていたら直近 1,000 件だけに書き直す（ファイルが増え続けないように）
 - 会話の履歴（最大 20 件）から外れた会話の feed は、会話の切り替え時に削除する
 - 壊れた行は読み飛ばす。読めないファイルは空の feed として扱い、保存に失敗しても作業は続ける
+
+## Hub の再起動からの復旧（Phase 2）
+
+GUI の入れ直しや `/exit`、異常終了で Hub が止まっても、受け付けた作業を失わないようにする。
+
+保存（project ごと。会話の履歴と同じ名前の `.recovery.json`。例: `E--dev-Clodex-1a2b3c4d.recovery.json`）:
+
+```text
+{ current: 今の会話の id,
+  conversations: { <会話 id>: { interrupted: [作業中だった Agent], queue: { claude: [...], codex: [...] } } } }
+```
+
+- `queue` は配送待ちのうち、人間の入力（本文・画像のパス）と formal message（message そのもの）だけ。`/compact`・model・effort の待ちは戻さない（設定は §9 で保存済み）
+- `interrupted` は、ターンを実行中だった Agent。そのターンが処理していたものは配送済みなので `queue` には入らない
+- 配送待ちが変わるたび・ターンが始まる・終わるたびに書き直す（異常終了でも直前の状態が残る）。戻す作業が 1 つも無い会話は書かない
+- Hub の停止（`/exit`・GUI の終了）では、mailbox を閉じる前の状態のまま残す（閉じたことで空にしない）。Ctrl+D は配送が終わるのを待つので、戻すものは残らない
+
+起動時の復旧:
+
+- Hub は起動時に、開いたことのある project（`hub.json`）の `.recovery.json` を見て、戻す作業がある project を開く
+- 戻す作業がある会話は runtime を作り（active にする）、次の順で mailbox に積む
+  1. `interrupted` の Agent に、続きを頼む 1 行（Agent 向けなので英語: `[Clodex] Clodex restarted and your previous turn was interrupted. Continue the task you were working on.`）。その Agent に session が無ければ積まない
+  2. `queue` を元の順に。人間の入力は新しい ID を振る（`/cancel` できる）。formal message は同じ message のまま、Budget の新しい chain として配送する（chain は保存していない）
+- 戻した会話には `notice` を出す（例: `[CLODEX] 前回の終了から復旧: 中断 1 件、配送待ち 2 件`）。feed に `human` / `message` の event を出し直さない（前回の分が残っている）
+- 今の会話は、戻す作業があったとき、または `clodex serve` のときは前回の `current` に戻す（履歴に無ければ新しい会話）。それ以外は今どおり新しい会話
+- 履歴から消えた会話（`/delete` 済みなど）の分は捨てる
+- 読めない・壊れたファイルは戻すものなしとして扱う（起動を妨げない）
+- background process（§15）と実行中だった `!command` は戻さない
 
 将来的には SQLite。
 
