@@ -15,6 +15,7 @@ CLI: Claude Code 2.1.289 / codex-cli 0.156.1
 | E Authentication | Claude は `ANTHROPIC_API_KEY` があると黙って API key 課金に切り替わる。Codex app-server は ChatGPT 認証のまま | [authentication.md](authentication.md) |
 | I Windows のマウス | Node 22 の raw mode は Windows でマウスの入力を捨てる。raw mode の後にコンソールモードへ `ENABLE_VIRTUAL_TERMINAL_INPUT` を足すとホイールの SGR シーケンスが届き、キー入力も Ink が同じに解釈できる | [windows-mouse.md](windows-mouse.md) |
 | J model の一覧と利用枠 | Claude は `control_request` の `initialize`（models）と `get_usage`（rate_limits）、Codex は app-server の `model/list` と `account/rateLimits/read` で、ターンを送らずに取れる | [model-list.md](model-list.md) |
+| L write-restricted token | synthetic + logon + Everyone で起動成功。ただし home / APPDATA の既存ファイル削除と Everyone 許可先への書き込みが通り、境界要件は未達。実 CLI は未実行 | [sandbox-token.md](sandbox-token.md) |
 
 ## 設計への影響
 
