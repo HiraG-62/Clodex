@@ -2,10 +2,18 @@ import { describe, expect, it } from "vitest";
 import { runInNewContext } from "node:vm";
 import { renderMarkdown } from "./client/markdown.js";
 import { buildWebPage } from "./web-page.js";
+import type { updateDesktopNotify } from "./client/desktop-notify.js";
+import { ja } from "../i18n/messages.js";
 
 const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1] ?? "");
 
 describe("buildWebPage", () => {
+  it("通知の状態遷移を外部依存のない関数として埋め込む", () => {
+    const script = scriptsOf(buildWebPage("ja").html)[1]!;
+    const deps = script.slice(script.lastIndexOf("updateDesktopNotify:"), script.lastIndexOf("commands:"));
+    const update = runInNewContext(`({${deps}}).updateDesktopNotify`) as typeof updateDesktopNotify;
+    expect(update({ live: true, working: false }, { type: "event", seq: 1, event: { kind: "notice", text: "通知", at: "now" } }, ja).notification?.body).toBe("通知");
+  });
   it("画像パス抽出を自己完結した関数として埋め込み、会話本文にプレビューを付ける", () => {
     const { html } = buildWebPage("ja");
     const script = scriptsOf(html)[1]!;

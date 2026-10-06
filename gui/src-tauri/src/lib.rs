@@ -9,6 +9,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{webview::WebviewWindowBuilder, Manager, WebviewUrl};
 
 const START_TIMEOUT: Duration = Duration::from_secs(20);
@@ -16,6 +18,52 @@ const POLL_INTERVAL: Duration = Duration::from_millis(100);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const RUNTIME_NODE: &str = "runtime/node.exe";
 const RUNTIME_ENTRY: &str = "runtime/app/dist/index.js";
+const MAIN_WINDOW: &str = "main";
+const TRAY_OPEN: &str = "open";
+const TRAY_EXIT: &str = "exit";
+const TRAY_OPEN_LABEL: &str = "開く";
+const TRAY_EXIT_LABEL: &str = "終了";
+const APP_NAME: &str = "Clodex";
+
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
+    let open = MenuItem::with_id(app, TRAY_OPEN, TRAY_OPEN_LABEL, true, None::<&str>)?;
+    let exit = MenuItem::with_id(app, TRAY_EXIT, TRAY_EXIT_LABEL, true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&open, &exit])?;
+    let mut tray = TrayIconBuilder::new()
+        .tooltip(APP_NAME)
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            TRAY_OPEN => show_main_window(app),
+            TRAY_EXIT => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if matches!(
+                event,
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                }
+            ) {
+                show_main_window(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.build(app)?;
+    Ok(())
+}
 
 struct OwnedHub {
     child: Child,
@@ -168,7 +216,17 @@ pub fn run() {
     let owned_hub: Arc<Mutex<Option<OwnedHub>>> = Arc::new(Mutex::new(None));
     let owned_on_setup = Arc::clone(&owned_hub);
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            show_main_window(app)
+        }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .setup(move |app| {
             let home = home_dir()?;
             let resource_dir = app.path().resource_dir()?;
@@ -183,10 +241,13 @@ pub fn run() {
                 });
             let mut url = tauri::Url::parse(&lock.url)?;
             url.query_pairs_mut().append_pair("token", token.trim());
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
-                .title("Clodex")
+            let window = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::External(url))
+                .title(APP_NAME)
                 .inner_size(1200.0, 800.0)
+                .visible(false)
                 .build()?;
+            setup_tray(app)?;
+            window.show()?;
             Ok(())
         })
         .build(tauri::generate_context!())

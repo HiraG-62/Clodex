@@ -13,6 +13,7 @@ import type { Suggestion, createInputAssist as CreateInputAssist } from "./input
 import type { collectArtifacts as CollectArtifacts, displayPath as DisplayPath, findImagePaths as FindImagePaths } from "./artifacts.js";
 import type { MessageKey, Messages } from "../../i18n/messages.js";
 import type { chooseProjectPath as ChooseProjectPath } from "./project-picker.js";
+import type { DesktopNotification, DesktopNotifyState, updateDesktopNotify as UpdateDesktopNotify } from "./desktop-notify.js";
 
 export interface ClientDeps {
   isShellInput: typeof IsShellInput;
@@ -26,11 +27,12 @@ export interface ClientDeps {
   commands: readonly SlashCommand[];
   messages: Messages;
   chooseProjectPath: typeof ChooseProjectPath;
+  updateDesktopNotify: typeof UpdateDesktopNotify;
   version: string;
 }
 
 export function clientMain({
-  renderMarkdown, applyFeedItem, composeInputLine, createInputAssist, collectArtifacts, findImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput,
+  renderMarkdown, applyFeedItem, composeInputLine, createInputAssist, collectArtifacts, findImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -1103,10 +1105,24 @@ export function clientMain({
   log.addEventListener("scroll", () => { if (nearBottom()) newer.hidden = true; });
 
   // ---- 接続 ----
+  let notificationState: DesktopNotifyState = { live: false, working: false };
+  const notify = async (notification: DesktopNotification) => {
+    const plugin = (window as Window & { __TAURI__?: { notification?: {
+      isPermissionGranted(): Promise<boolean>;
+      requestPermission(): Promise<string>;
+      sendNotification(notification: DesktopNotification): void | Promise<void>;
+    } } }).__TAURI__?.notification;
+    if (!plugin || (!document.hidden && document.hasFocus())) return;
+    try {
+      const granted = await plugin.isPermissionGranted() || await plugin.requestPermission() === "granted";
+      if (granted && (document.hidden || !document.hasFocus())) await plugin.sendNotification(notification);
+    } catch { /* 通知の失敗で feed の描画を止めない */ }
+  };
   const conn = $("#conn");
   const connect = () => {
     const events = new EventSource("/events");
     events.onopen = () => {
+      notificationState = { live: false, working: false };
       // 接続（再接続を含む）のたびに履歴が送り直されるので作り直す
       items = [];
       opened.clear();
@@ -1115,6 +1131,9 @@ export function clientMain({
     };
     events.onmessage = (e: MessageEvent<string>) => {
       const item = JSON.parse(e.data) as FeedItem;
+      const update = updateDesktopNotify(notificationState, item, messages);
+      notificationState = update.state;
+      if (update.notification) void notify(update.notification);
       // Clodex が更新されて起動し直したら、古い画面のまま使わない
       if (item.type === "version") {
         if (item.version !== version) location.reload();

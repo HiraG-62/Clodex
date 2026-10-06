@@ -6,4 +6,8 @@ Windows の Tauri v2 アプリ。`pnpm gui:dev` は TypeScript のビルドと�
 
 GUI は生きている `~/.clodex/hub.lock` があればその Hub を使う。無ければ同梱の `runtime/node.exe` で `runtime/app/dist/index.js serve` を起動する。同梱ファイルがなければ、そのパスを含むエラーで停止する。開発中は `CLODEX_GUI_ENTRY` に手元の `dist/index.js` のフルパスを指定すると優先して使う。この場合の Node は `CLODEX_GUI_NODE` で指定でき、既定は PATH の `node`。
 
-GUI が起動した Hub は GUI を閉じると停止する。既に動いていた Hub は停止しない。Agent へのメッセージは GUI の起動だけでは送らない。
+ウィンドウを閉じると GUI はトレイに残り、Hub と Agent は動き続ける。トレイの左クリックか「開く」でウィンドウを再表示し、「終了」で GUI を終了する。もう一度起動した場合も既存のウィンドウを表示する。
+
+GUI の終了時に、GUI が起動した Hub を停止する。既に動いていた Hub は停止しない。Agent へのメッセージは GUI の起動だけでは送らない。
+
+ウィンドウが非表示かフォーカスを失っているとき、作業終了・通知・エラーを Windows の通知に表示する。履歴の読み込みでは通知しない。

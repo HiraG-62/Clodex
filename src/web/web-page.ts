@@ -16,6 +16,7 @@ import { applyFeedItem } from "./client/timeline.js";
 import { composeInputLine } from "./client/compose-input.js";
 import { isShellInput } from "./client/shell-input.js";
 import { chooseProjectPath } from "./client/project-picker.js";
+import { updateDesktopNotify } from "./client/desktop-notify.js";
 
 const STYLE = `
   :root {
@@ -392,7 +393,8 @@ const FUNCTIONS = `
   collectArtifacts: ${inlineScript(collectArtifacts.toString())},
   findImagePaths: ${inlineScript(findImagePaths.toString())},
   displayPath: ${inlineScript(displayPath.toString())},
-  chooseProjectPath: ${inlineScript(chooseProjectPath.toString())},`;
+  chooseProjectPath: ${inlineScript(chooseProjectPath.toString())},
+  updateDesktopNotify: ${inlineScript(updateDesktopNotify.toString())},`;
 const json = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
 
 // ホーム画面に置けるようにする（DESIGN.md §28 D: PWA）

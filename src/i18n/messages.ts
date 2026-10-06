@@ -1,6 +1,9 @@
 // 画面の文言カタログ（DESIGN.md §28 v0.3 i18n）。en がキーを決め、ja は同じキーをすべて持つ（欠けは型エラー）。
 // {name} は translate の params で置き換える。Agent 向けの指示（定型文・envelope・Budget のエラー）は英語のままで、ここには入れない
 export const en = {
+  "desktop.notify.finished": "Clodex · Work finished",
+  "desktop.notify.notice": "Clodex · Notice",
+  "desktop.notify.error": "Clodex · Error",
   // Web UI: 上部・入力欄・シート
   "web.top.detail": "Details",
   "web.top.detailTitle": "Expand work steps and full texts",
@@ -260,6 +263,9 @@ export type MessageKey = keyof typeof en;
 export type Messages = Record<MessageKey, string>;
 
 export const ja: Messages = {
+  "desktop.notify.finished": "Clodex · 作業終了",
+  "desktop.notify.notice": "Clodex · 通知",
+  "desktop.notify.error": "Clodex · エラー",
   "web.top.detail": "詳細",
   "web.top.detailTitle": "作業と全文を開いて表示",
   "web.top.artifacts": "成果物",
