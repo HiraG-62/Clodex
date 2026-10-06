@@ -1,10 +1,10 @@
 import React from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "ink-testing-library";
-import { setLanguage } from "../i18n/i18n.js";
+import { setLanguage, t } from "../i18n/i18n.js";
 import type { FeedItem } from "../web/web-feed.js";
 import type { FeedClient } from "./feed-client.js";
-import { TuiApp, freshScreen } from "./tui.js";
+import { DISABLE_MOUSE_TRACKING, ENABLE_MOUSE_TRACKING, TUI_RENDER_OPTIONS, TuiApp, withMouseTracking } from "./tui.js";
 
 afterEach(cleanup);
 
@@ -33,7 +33,7 @@ describe("TuiApp", () => {
     expect(app.lastFrame()).toContain("/status");
   });
 
-  it("完了したターンを Static に書き出す", async () => {
+  it("完了したターンをログに表示する", async () => {
     setLanguage("ja");
     const { client, emit } = fakeClient();
     const app = render(React.createElement(TuiApp, { client }));
@@ -58,6 +58,32 @@ describe("TuiApp", () => {
     expect(app.frames.join("\n")).toContain("Read: src/a.ts");
   });
 
+  it("Ctrl+O で過去のターンの作業も開閉する", async () => {
+    setLanguage("ja");
+    const { client, emit } = fakeClient();
+    const app = render(React.createElement(TuiApp, { client }));
+    await tick();
+    emit({ type: "event", seq: 1, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "turn_started" } } });
+    emit({ type: "event", seq: 2, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "tool", name: "Read", input: "old.ts" } } });
+    emit({ type: "event", seq: 3, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "turn", result: { status: "completed", text: "完了" } } } });
+    await tick();
+    expect(app.lastFrame()).not.toContain("Read: old.ts");
+    app.stdin.write("\x0f");
+    await tick();
+    expect(app.lastFrame()).toContain("Read: old.ts");
+  });
+
+  it("SGR マウスのクリックを入力欄に入れない", async () => {
+    setLanguage("ja");
+    const { client } = fakeClient();
+    const app = render(React.createElement(TuiApp, { client }));
+    await tick();
+    app.stdin.write("\x1b[<0;12;8M");
+    await tick();
+    expect(app.lastFrame()).toContain("メッセージ");
+    expect(app.lastFrame()).not.toContain("<0;12;8");
+  });
+
   it("空の入力欄はカーソルと同じ行に薄い案内を出し、入力すると消す", async () => {
     setLanguage("ja");
     const { client } = fakeClient();
@@ -72,8 +98,29 @@ describe("TuiApp", () => {
   });
 });
 
-describe("freshScreen", () => {
-  it("画面の行数ぶん改行して前の内容をスクロールへ押し出し、先頭へ戻る", () => {
-    expect(freshScreen(3)).toBe("\n\n\n\x1b[H");
+describe("代替画面とマウス", () => {
+  it("新着の表示を言語ごとに切り替える", () => {
+    setLanguage("ja");
+    expect(t("tui.newItems")).toBe("↓ 新着");
+    setLanguage("en");
+    expect(t("tui.newItems")).toBe("↓ New");
+    setLanguage("ja");
+  });
+  it("Ink に代替画面を使わせ、マウスの開始と終了を逆順の対として出す", async () => {
+    const writes: string[] = [];
+    expect(TUI_RENDER_OPTIONS.alternateScreen).toBe(true);
+    await withMouseTracking((value) => writes.push(value), async () => {});
+    expect(writes).toEqual(["\x1b[?1000h\x1b[?1006h", "\x1b[?1006l\x1b[?1000l"]);
+    expect(writes).toEqual([ENABLE_MOUSE_TRACKING, DISABLE_MOUSE_TRACKING]);
+  });
+  it("実行中の例外でも終了シーケンスを出す", async () => {
+    const writes: string[] = [];
+    await expect(withMouseTracking((value) => writes.push(value), async () => { throw new Error("失敗"); })).rejects.toThrow("失敗");
+    expect(writes.at(-1)).toBe(DISABLE_MOUSE_TRACKING);
+  });
+  it("シグナルと通常終了の両方が来てもマウスを一度だけ解除する", async () => {
+    const writes: string[] = [];
+    await withMouseTracking((value) => writes.push(value), async (stop) => { stop(); });
+    expect(writes).toEqual([ENABLE_MOUSE_TRACKING, DISABLE_MOUSE_TRACKING]);
   });
 });

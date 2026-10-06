@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TimelineItem } from "../web/client/timeline.js";
-import { advanceTerminalFeed, cursorSlices, editInput, formatMarkdown, formatTimelineItem } from "./terminal-layout.js";
+import { advanceTerminalFeed, CardLineCache, cardLines, cursorSlices, editInput, formatMarkdown, formatTimelineItem,
+  parseSgrMouse, scrollAfterGrowth, scrollBy, scrollToBottom, visibleRange, wrapText } from "./terminal-layout.js";
 
 const labels = {
   you: "あなた", working: "作業中", completed: "完了", failed: "失敗", interrupted: "中断",
@@ -78,5 +79,66 @@ describe("editInput", () => {
     expect(editInput({ text: "abc", cursor: 2 }, { kind: "delete" })).toEqual({ text: "ab", cursor: 2 });
     expect(cursorSlices({ text: "ab\ncd", cursor: 3 })).toEqual({ before: "ab\n", at: "c", after: "d" });
     expect(cursorSlices({ text: "ab\ncd", cursor: 2 })).toEqual({ before: "ab", at: " ", after: "\ncd" });
+  });
+});
+
+describe("ログの表示行", () => {
+  it("全角を 2 桁として折り返し、幅が変わると再計算する", () => {
+    expect(wrapText("A日本B", 3)).toEqual(["A日", "本B"]);
+    const item: TimelineItem = { kind: "output", id: "o", text: "日本語" };
+    const cache = new CardLineCache();
+    const wide = cache.lines(item, labels, false, 20);
+    expect(cache.lines(item, labels, false, 20)).toBe(wide);
+    expect(cache.lines(item, labels, false, 5)).not.toEqual(wide);
+  });
+  it("行内の太字・コード・リンクのスタイルを保って折り返す", () => {
+    const lines = cardLines({ kind: "output", title: "出力", body: "**太字** と `code` [link](https://example.com)", color: "#80808a" }, 40);
+    expect(lines.some((line) => line.parts?.some((part) => part.text.includes("太字") && part.bold))).toBe(true);
+    expect(lines.some((line) => line.parts?.some((part) => part.text.includes("code") && part.color === "#6f9a5a"))).toBe(true);
+    expect(lines.some((line) => line.parts?.some((part) => part.text.includes("link") && part.underline))).toBe(true);
+  });
+  it("見出しの経過時間に渡された言語の文言を使う", () => {
+    const lines = cardLines({ kind: "turn", title: "Claude · 作業中", body: "", color: "#b4793f" }, 40, "3 秒");
+    expect(lines[0]?.text).toContain("3 秒");
+    expect(lines[0]?.text).not.toContain("3s");
+  });
+  it("作業中のターンは毎秒の表示をキャッシュに溜めない", () => {
+    const item: TimelineItem = { kind: "turn", id: "t", agent: "claude", at: "2026-01-01T00:00:00Z", status: "working",
+      plan: "", steps: [], text: "作業中" };
+    const cache = new CardLineCache();
+    expect(cache.lines(item, labels, false, 40, "1 秒")).not.toBe(cache.lines(item, labels, false, 40, "1 秒"));
+    expect(cache.lines(item, labels, false, 40, "2 秒")[0]?.text).toContain("2 秒");
+  });
+  it("全行数、高さ、位置から表示範囲を出す", () => {
+    expect(visibleRange(20, 5, 0)).toEqual({ start: 15, end: 20 });
+    expect(visibleRange(20, 5, 3)).toEqual({ start: 12, end: 17 });
+    expect(visibleRange(2, 5, 10)).toEqual({ start: 0, end: 2 });
+  });
+});
+
+describe("スクロール", () => {
+  it("ホイールと PageUp/PageDown の移動量を制限し、末尾に戻る", () => {
+    const wheel = scrollBy(scrollToBottom(), 3, 20, 5);
+    expect(wheel.offset).toBe(3);
+    expect(scrollBy(wheel, 4, 20, 5).offset).toBe(7);
+    expect(scrollBy(wheel, -3, 20, 5)).toEqual(scrollToBottom());
+    expect(scrollBy(wheel, 100, 20, 5).offset).toBe(15);
+  });
+  it("読み返し中は増加分を補正して新着を出し、末尾なら追従する", () => {
+    expect(scrollAfterGrowth({ offset: 4, unseen: false }, 20, 23, 5)).toEqual({ offset: 7, unseen: true });
+    expect(scrollAfterGrowth(scrollToBottom(), 20, 23, 5)).toEqual(scrollToBottom());
+    expect(scrollAfterGrowth({ offset: 10, unseen: true }, 20, 5, 5).offset).toBe(0);
+  });
+});
+
+describe("SGR マウス", () => {
+  it("ホイール上下を認識し、クリックは入力対象から除く", () => {
+    expect(parseSgrMouse("\x1b[<64;10;5M")).toBe("up");
+    expect(parseSgrMouse("[<65;10;5M")).toBe("down");
+    expect(parseSgrMouse("\x1b[<68;10;5M")).toBe("up");
+    expect(parseSgrMouse("\x1b[<66;10;5M")).toBe("other");
+    expect(parseSgrMouse("\x1b[<0;10;5M")).toBe("other");
+    expect(parseSgrMouse("\x1b[<0;10;5m")).toBe("other");
+    expect(parseSgrMouse("hello")).toBeUndefined();
   });
 });

@@ -1,25 +1,23 @@
-// 完了ログは Static で端末に書き出し、操作中の領域だけを書き換える。
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Box, Static, Text, render, useApp, useInput } from "ink";
+import { Box, Text, render, useApp, useInput, useStdout } from "ink";
 import { slashCommands } from "../cli/commands.js";
 import { t } from "../i18n/i18n.js";
 import { createInputAssist } from "../web/client/input-assist.js";
 import type { WebState } from "../web/web-feed.js";
 import type { FeedClient } from "./feed-client.js";
-import { advanceTerminalFeed, cursorSlices, editInput, formatMarkdown, formatTimelineItem,
-  type InputBuffer, type MarkdownBlock, type StaticItem, type TerminalCard, type TerminalFeed, type TerminalLabels } from "./terminal-layout.js";
+import { advanceTerminalFeed, CardLineCache, cursorSlices, editInput, parseSgrMouse, TERMINAL_COLORS,
+  scrollAfterGrowth, scrollBy, scrollToBottom, textWidth, visibleRange, WHEEL_LINES, wrapText,
+  type InputBuffer, type ScrollState, type TerminalFeed, type TerminalLabels } from "./terminal-layout.js";
 
 const h = React.createElement;
 const MAX_SUGGESTIONS = 5;
 const SPINNER_INTERVAL_MS = 250;
 const SPINNER_FRAMES = ["◐", "◓", "◑", "◒"] as const;
-const CURSOR_HOME = "\x1b[H";
-const LINE_COLOR = "#d4d4d8";
-const MUTED_COLOR = "#80808a";
-const WARN_COLOR = "#b7791f";
-const CLAUDE_COLOR = "#b4793f";
-const CODEX_COLOR = "#4b6fa5";
-const CODE_COLOR = "#6f9a5a";
+export const ENABLE_MOUSE_TRACKING = "\x1b[?1000h\x1b[?1006h";
+export const DISABLE_MOUSE_TRACKING = "\x1b[?1006l\x1b[?1000l";
+export const TUI_RENDER_OPTIONS = { exitOnCtrlC: false, alternateScreen: true } as const;
+const { line: LINE_COLOR, muted: MUTED_COLOR, warn: WARN_COLOR,
+  claude: CLAUDE_COLOR, codex: CODEX_COLOR } = TERMINAL_COLORS;
 const EMPTY_STATE: WebState = { project: "", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [] };
 const EMPTY_FEED: TerminalFeed = { timeline: [], completed: [] };
 
@@ -35,35 +33,6 @@ const labels = (): TerminalLabels => ({
   steps: t("web.turn.steps"), message: t("tui.message"), notice: t("tui.notice"),
   error: t("tui.error"), output: t("tui.output"),
 });
-
-const Inline = ({ parts }: { parts: MarkdownBlock["parts"] }) => h(Text, { wrap: "wrap" },
-  ...parts.map((part, i) => h(Text, { key: i, bold: part.style === "bold", color: part.style === "code" ? CODE_COLOR : undefined,
-    underline: part.style === "link" }, part.text)));
-
-const Markdown = ({ value }: { value: string }) => h(Box, { flexDirection: "column" },
-  ...formatMarkdown(value).map((block, i) => {
-    if (block.kind === "code") return h(Box, { key: i, flexDirection: "column", borderStyle: "round", borderColor: LINE_COLOR, paddingX: 1, marginY: 1 },
-      block.language ? h(Text, { color: MUTED_COLOR }, block.language) : null,
-      h(Text, { color: CODE_COLOR, wrap: "wrap" }, block.parts[0]?.text ?? ""));
-    const marker = block.kind === "bullet" ? "• " : block.kind === "ordered" ? `${block.number}. ` : "";
-    return h(Box, { key: i, flexDirection: "row", gap: 0 },
-      marker ? h(Text, { color: MUTED_COLOR }, marker) : null,
-      h(Box, { flexGrow: 1 }, h(Text, { bold: block.kind === "heading", wrap: "wrap" }, h(Inline, { parts: block.parts }))));
-  }));
-
-const Card = ({ card, elapsedSeconds }: { card: TerminalCard; elapsedSeconds?: number }) => {
-  const divider = card.kind === "message" ? "┃" : "│";
-  return h(Box, { flexDirection: "row", marginBottom: 1 },
-    h(Text, { color: card.color, bold: true }, divider),
-    h(Box, { flexDirection: "column", paddingLeft: 1, flexGrow: 1 },
-      h(Text, { color: card.color, bold: true }, `${card.title}${elapsedSeconds === undefined ? "" : ` · ${t("tui.elapsed", { seconds: elapsedSeconds })}`}`),
-      card.tag ? h(Text, { color: card.color }, card.tag) : null,
-      card.plan ? h(Text, { color: MUTED_COLOR, wrap: "wrap" }, card.plan) : null,
-      card.stepsLabel ? h(Text, { color: MUTED_COLOR }, `${card.steps ? "▾" : "▸"} ${card.stepsLabel}`) : null,
-      ...(card.steps ?? []).map((step, i) => h(Box, { key: i, paddingLeft: 2 }, h(Text, { color: MUTED_COLOR, wrap: "wrap" }, `• ${step}`))),
-      card.body ? h(Markdown, { value: card.body }) : null,
-    ));
-};
 
 const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed; now: number }) => {
   return h(Box, { flexDirection: "column" },
@@ -90,19 +59,32 @@ const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed
   );
 };
 
-export const TuiApp = ({ client }: { client: FeedClient }) => {
+export const TuiApp = ({ client, onExit }: { client: FeedClient; onExit?: () => void }) => {
   const { exit } = useApp();
+  const { stdout } = useStdout();
+  const terminal = stdout as NodeJS.WriteStream;
+  const [size, setSize] = useState({ columns: terminal.columns ?? 80, rows: terminal.rows ?? 24 });
   const [feed, setFeed] = useState<TerminalFeed>(EMPTY_FEED);
   const [state, setState] = useState<WebState>(EMPTY_STATE);
   const [files, setFiles] = useState<string[]>([]);
   const [buffer, setBuffer] = useState<InputBuffer>({ text: "", cursor: 0 });
   const [selected, setSelected] = useState(0);
-  const [expandFuture, setExpandFuture] = useState(false);
-  const expandRef = useRef(false);
+  const [expanded, setExpanded] = useState(false);
+  const [scroll, setScroll] = useState<ScrollState>(scrollToBottom);
+  const cache = useRef(new CardLineCache());
+  const previousLineCount = useRef(0);
   const [notice, setNotice] = useState("");
   const [now, setNow] = useState(Date.now());
   const assist = useMemo(makeAssist, []);
   const cardLabels = useMemo(labels, []);
+
+  useEffect(() => () => onExit?.(), [onExit]);
+
+  useEffect(() => {
+    const resize = () => setSize({ columns: terminal.columns ?? 80, rows: terminal.rows ?? 24 });
+    stdout.on("resize", resize);
+    return () => { stdout.off("resize", resize); };
+  }, [terminal]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), SPINNER_INTERVAL_MS);
@@ -114,7 +96,7 @@ export const TuiApp = ({ client }: { client: FeedClient }) => {
     void client.connect((item) => {
       if (closed) return;
       if (item.type === "state") setState(item.state);
-      else setFeed((old) => advanceTerminalFeed(old, item, expandRef.current));
+      else setFeed((old) => advanceTerminalFeed(old, item, false));
     }).then((stop) => { if (closed) stop(); else unsubscribe = stop; }).catch((error: unknown) => setNotice(String(error)));
     return () => { closed = true; unsubscribe?.(); };
   }, [client]);
@@ -126,12 +108,42 @@ export const TuiApp = ({ client }: { client: FeedClient }) => {
 
   const suggestion = assist.suggest(buffer.text, buffer.cursor, files, state);
   const choices = suggestion?.items.slice(0, MAX_SUGGESTIONS) ?? [];
+  const nowSeconds = (at: string) => Math.max(0, Math.floor((now - Date.parse(at)) / 1000));
+  const logLines = [...feed.completed.flatMap(({ item, elapsedSeconds }) =>
+    cache.current.lines(item, cardLabels, expanded, size.columns,
+      elapsedSeconds === undefined ? undefined : t("tui.elapsed", { seconds: elapsedSeconds }))),
+    ...feed.timeline.filter((item) => item.kind === "turn").flatMap((item) =>
+      cache.current.lines(item, cardLabels, expanded, size.columns, t("tui.elapsed", { seconds: nowSeconds(item.at) })))];
+  const agentRows = state.agents.reduce((count, agent) => count + 1 + (feed.timeline.some((item) => item.kind === "turn" && item.agent === agent.id && item.status === "working") ? 1 : 0), 0);
+  const inputRows = Math.max(1, buffer.text.split("\n").reduce((count, line) => count + wrapText(line, size.columns - 4).length, 0)) + 2;
+  const fixedRows = agentRows + inputRows + (choices.length ? choices.length + 2 : 0) + (notice ? 1 : 0) + 1;
+  const logHeight = Math.max(0, size.rows - fixedRows);
+  useEffect(() => {
+    const previous = previousLineCount.current;
+    previousLineCount.current = logLines.length;
+    setScroll((old) => scrollAfterGrowth(old, previous, logLines.length, logHeight));
+  }, [logLines.length, logHeight]);
+  const range = visibleRange(logLines.length, logHeight, scroll.offset);
+  const shown = logLines.slice(range.start, range.end);
+  if (scroll.unseen && shown.length) {
+    const marker = t("tui.newItems");
+    const last = shown.at(-1);
+    const prefix = wrapText(last?.text ?? "", Math.max(1, size.columns - textWidth(marker) - 1))[0] ?? "";
+    shown[shown.length - 1] = { text: `${prefix}${" ".repeat(Math.max(1, size.columns - textWidth(prefix) - textWidth(marker)))}${marker}`, color: WARN_COLOR };
+  }
   const send = (line: string) => void client.send(line).catch((error: unknown) => setNotice(String(error)));
   const edit = (action: Parameters<typeof editInput>[1]) => setBuffer((old) => editInput(old, action));
 
   useInput((keyText, key) => {
+    const mouse = parseSgrMouse(keyText);
+    if (mouse) {
+      if (mouse !== "other") setScroll((old) => scrollBy(old, mouse === "up" ? WHEEL_LINES : -WHEEL_LINES, logLines.length, logHeight));
+      return;
+    }
     if (key.ctrl && keyText === "d") { exit(); return; }
-    if (key.ctrl && keyText === "o") { expandRef.current = !expandRef.current; setExpandFuture(expandRef.current); return; }
+    if (key.ctrl && keyText === "o") { setExpanded((old) => !old); return; }
+    if (key.pageUp || key.pageDown) { setScroll((old) => scrollBy(old, (key.pageUp ? 1 : -1) * Math.max(1, logHeight - 1), logLines.length, logHeight)); return; }
+    if (key.ctrl && key.end) { setScroll(scrollToBottom()); return; }
     if (key.ctrl && keyText === "c") {
       if (state.agents.some((agent) => agent.status === "busy")) send("/interrupt");
       else setNotice(t("tui.exitHint"));
@@ -154,7 +166,7 @@ export const TuiApp = ({ client }: { client: FeedClient }) => {
     if (key.return) {
       if (buffer.text.trim() === "/exit") exit();
       else if (buffer.text.trim()) send(buffer.text);
-      setBuffer({ text: "", cursor: 0 }); setSelected(0); return;
+      setBuffer({ text: "", cursor: 0 }); setSelected(0); setScroll(scrollToBottom()); return;
     }
     if (key.backspace) { edit({ kind: "backspace" }); setSelected(0); return; }
     if (key.delete) { edit({ kind: "delete" }); setSelected(0); return; }
@@ -165,11 +177,10 @@ export const TuiApp = ({ client }: { client: FeedClient }) => {
   const branch = state.conversations.find((conversation) => conversation.current)?.branch;
   const project = `${state.project || "Clodex"}${branch ? ` · ${t("tui.branch", { branch })}` : ""}`;
   return h(Box, { flexDirection: "column" },
-    h(Static<StaticItem>, { items: feed.completed, children: (record: StaticItem) => h(Card, {
-      key: record.item.id, card: formatTimelineItem(record.item, cardLabels, record.expanded), elapsedSeconds: record.elapsedSeconds,
-    }) }),
-    ...feed.timeline.filter((item) => item.kind === "turn").map((item) => h(Card, { key: item.id, card: formatTimelineItem(item, cardLabels, expandFuture),
-      elapsedSeconds: Math.max(0, Math.floor((now - Date.parse(item.at)) / 1000)) })),
+    h(Box, { height: logHeight, flexDirection: "column", overflow: "hidden" },
+      ...shown.map((line, i) => h(Text, { key: i, wrap: "truncate-end", color: line.color, bold: line.bold, underline: line.underline },
+        ...(line.parts ?? [{ text: line.text }]).map((part, j) => h(Text, { key: j, color: part.color, bold: part.bold, underline: part.underline }, part.text)))),
+    ),
     choices.length ? h(Box, { borderStyle: "round", borderColor: LINE_COLOR, flexDirection: "column", paddingX: 1 },
       ...choices.map((choice, i) => h(Text, { key: `${choice.insert}${i}`, color: i === selected ? CODEX_COLOR : MUTED_COLOR }, `${i === selected ? "▸" : " "} ${choice.label} · ${choice.detail}`))) : null,
     h(Box, { borderStyle: "round", borderColor: LINE_COLOR, flexDirection: "column", paddingX: 1 },
@@ -181,11 +192,23 @@ export const TuiApp = ({ client }: { client: FeedClient }) => {
   );
 };
 
-/** 画面の行数ぶん改行して起動前の内容を端末のスクロールへ押し出し、カーソルを画面の先頭へ戻す */
-export const freshScreen = (rows: number): string => `${"\n".repeat(rows)}${CURSOR_HOME}`;
+export const withMouseTracking = async (write: (value: string) => void, run: (stop: () => void) => Promise<void>): Promise<void> => {
+  write(ENABLE_MOUSE_TRACKING);
+  let stopped = false;
+  const stop = () => { if (!stopped) { stopped = true; write(DISABLE_MOUSE_TRACKING); } };
+  try { await run(stop); } finally { stop(); }
+};
 
 export const startTui = async (client: FeedClient): Promise<void> => {
-  if (process.stdout.isTTY) process.stdout.write(freshScreen(process.stdout.rows));
-  const instance = render(h(TuiApp, { client }), { exitOnCtrlC: false });
-  await instance.waitUntilExit();
+  const write = (value: string) => { if (process.stdout.isTTY) process.stdout.write(value); };
+  let stopMouse = () => {};
+  const instance = render(h(TuiApp, { client, onExit: () => stopMouse() }), TUI_RENDER_OPTIONS);
+  await withMouseTracking(write, async (stop) => {
+    stopMouse = stop;
+    const onSignal = () => { stop(); instance.unmount(); };
+    process.once("SIGINT", onSignal);
+    process.once("SIGTERM", onSignal);
+    try { await instance.waitUntilExit(); }
+    finally { process.off("SIGINT", onSignal); process.off("SIGTERM", onSignal); }
+  });
 };

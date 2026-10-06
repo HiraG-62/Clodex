@@ -83,11 +83,141 @@ export interface TerminalCard {
   at?: string;
 }
 
+export const TERMINAL_COLORS = {
+  line: "#d4d4d8", muted: "#80808a", warn: "#b7791f", claude: "#b4793f",
+  codex: "#4b6fa5", code: "#6f9a5a", error: "#d14343", review: "#8159a8",
+} as const;
+
+export const WHEEL_LINES = 3;
+const SGR_WHEEL_UP = 64;
+const SGR_WHEEL_DOWN = 65;
+const SGR_MODIFIER_MASK = 28;
+export interface ScrollState { offset: number; unseen: boolean; }
+export const clampScroll = (offset: number, total: number, height: number): number =>
+  Math.max(0, Math.min(offset, Math.max(0, total - height)));
+export const scrollBy = (state: ScrollState, delta: number, total: number, height: number): ScrollState => {
+  const offset = clampScroll(state.offset + delta, total, height);
+  return { offset, unseen: offset > 0 && state.unseen };
+};
+export const scrollToBottom = (): ScrollState => ({ offset: 0, unseen: false });
+export const scrollAfterGrowth = (state: ScrollState, previous: number, total: number, height: number): ScrollState => {
+  if (state.offset === 0) return scrollToBottom();
+  const offset = clampScroll(state.offset + Math.max(0, total - previous), total, height);
+  return { offset, unseen: offset > 0 && (state.unseen || total > previous) };
+};
+export const visibleRange = (total: number, height: number, offset: number): { start: number; end: number } => {
+  const end = Math.max(0, total - clampScroll(offset, total, height));
+  return { start: Math.max(0, end - Math.max(0, height)), end };
+};
+
+export const parseSgrMouse = (input: string): "up" | "down" | "other" | undefined => {
+  const match = /^(?:\x1b)?\[<([0-9]+);[0-9]+;[0-9]+[Mm]$/.exec(input);
+  if (!match) return undefined;
+  const button = Number(match[1]);
+  const direction = button & ~SGR_MODIFIER_MASK;
+  if (direction === SGR_WHEEL_UP) return "up";
+  if (direction === SGR_WHEEL_DOWN) return "down";
+  return "other";
+};
+
+const characterWidth = (char: string): number => {
+  const code = char.codePointAt(0) ?? 0;
+  if (code <= 0x1f || code === 0x7f) return 0;
+  if (code >= 0x1100 && (code <= 0x115f || code >= 0x2329 && code <= 0x232a ||
+    code >= 0x2e80 && code <= 0xa4cf || code >= 0xac00 && code <= 0xd7a3 ||
+    code >= 0xf900 && code <= 0xfaff || code >= 0xfe10 && code <= 0xfe6f ||
+    code >= 0xff00 && code <= 0xff60 || code >= 0xffe0 && code <= 0xffe6 || code >= 0x1f300)) return 2;
+  return 1;
+};
+
+export const textWidth = (value: string): number => [...value].reduce((sum, char) => sum + characterWidth(char), 0);
+
+export const wrapText = (value: string, width: number): string[] => {
+  const lines: string[] = [];
+  const limit = Math.max(1, width);
+  for (const source of value.split("\n")) {
+    let line = "";
+    let columns = 0;
+    for (const char of source) {
+      const size = characterWidth(char);
+      if (columns + size > limit && line) { lines.push(line); line = ""; columns = 0; }
+      line += char;
+      columns += size;
+    }
+    lines.push(line);
+  }
+  return lines;
+};
+
+export interface TerminalSegment { text: string; color?: string; bold?: boolean; underline?: boolean; }
+export interface TerminalLine extends TerminalSegment { parts?: TerminalSegment[]; }
+const wrapSegments = (segments: TerminalSegment[], width: number): TerminalSegment[][] => {
+  const lines: TerminalSegment[][] = [[]];
+  let columns = 0;
+  for (const segment of segments) {
+    for (const char of segment.text) {
+      const size = characterWidth(char);
+      if (columns + size > width && columns > 0) { lines.push([]); columns = 0; }
+      const current = lines.at(-1);
+      if (!current) continue;
+      const last = current.at(-1);
+      if (last && last.color === segment.color && last.bold === segment.bold && last.underline === segment.underline) last.text += char;
+      else current.push({ ...segment, text: char });
+      columns += size;
+    }
+  }
+  return lines;
+};
+export const cardLines = (card: TerminalCard, width: number, elapsedLabel?: string): TerminalLine[] => {
+  const divider = card.kind === "message" ? "┃" : "│";
+  const contentWidth = Math.max(1, width - 2);
+  const content: TerminalLine[] = [
+    { text: `${card.title}${elapsedLabel === undefined ? "" : ` · ${elapsedLabel}`}`, color: card.color, bold: true },
+    ...(card.tag ? [{ text: card.tag, color: card.color }] : []),
+    ...(card.plan ? [{ text: card.plan, color: TERMINAL_COLORS.muted }] : []),
+    ...(card.stepsLabel ? [{ text: `${card.steps ? "▾" : "▸"} ${card.stepsLabel}`, color: TERMINAL_COLORS.muted }] : []),
+    ...(card.steps ?? []).map((step) => ({ text: `  • ${step}`, color: TERMINAL_COLORS.muted })),
+    ...formatMarkdown(card.body).flatMap((block): TerminalLine[] => {
+      const value = block.parts.map((part) => part.text).join("");
+      if (block.kind === "code") return [{ text: `┌ ${block.language ?? ""}`, color: TERMINAL_COLORS.code },
+        ...value.split("\n").map((line) => ({ text: `│ ${line}`, color: TERMINAL_COLORS.code })), { text: "└", color: TERMINAL_COLORS.code }];
+      const prefix = block.kind === "bullet" ? "• " : block.kind === "ordered" ? `${block.number}. ` : "";
+      const parts: TerminalSegment[] = [
+        ...(prefix ? [{ text: prefix, color: TERMINAL_COLORS.muted }] : []),
+        ...block.parts.map((part) => ({ text: part.text, bold: block.kind === "heading" || part.style === "bold",
+          underline: part.style === "link", color: part.style === "code" ? TERMINAL_COLORS.code : undefined })),
+      ];
+      return [{ text: `${prefix}${value}`, parts }];
+    }),
+  ];
+  return [...content.flatMap((line) => wrapSegments(line.parts ?? [line], contentWidth).map((parts) => ({
+    text: `${divider} ${parts.map((part) => part.text).join("")}`,
+    parts: [{ text: `${divider} `, color: card.color, bold: true }, ...parts],
+  }))), { text: "" }];
+};
+
+export class CardLineCache {
+  private readonly cache = new WeakMap<TimelineItem, Map<string, TerminalLine[]>>();
+  lines(item: TimelineItem, labels: TerminalLabels, expanded: boolean, width: number, elapsedLabel?: string): TerminalLine[] {
+    if (item.kind === "turn" && item.status === "working") {
+      return cardLines(formatTimelineItem(item, labels, expanded), width, elapsedLabel);
+    }
+    let entries = this.cache.get(item);
+    if (!entries) { entries = new Map(); this.cache.set(item, entries); }
+    const key = `${width}:${expanded}:${elapsedLabel ?? ""}`;
+    const existing = entries.get(key);
+    if (existing) return existing;
+    const lines = cardLines(formatTimelineItem(item, labels, expanded), width, elapsedLabel);
+    entries.set(key, lines);
+    return lines;
+  }
+}
+
 const agentName = (id: string): string => id === "claude" ? "Claude" : id === "codex" ? "Codex" : id;
-const agentColor = (id: string): string => id === "claude" ? "#b4793f" : "#4b6fa5";
+const agentColor = (id: string): string => id === "claude" ? TERMINAL_COLORS.claude : TERMINAL_COLORS.codex;
 const MESSAGE_COLORS: Record<MessageType, string> = {
-  QUESTION: "#b7791f", REVIEW_REQUEST: "#8159a8", DELEGATE: "#b4793f",
-  RESULT: "#4b6fa5", ISSUE: "#d14343", ACK: "#80808a",
+  QUESTION: TERMINAL_COLORS.warn, REVIEW_REQUEST: TERMINAL_COLORS.review, DELEGATE: TERMINAL_COLORS.claude,
+  RESULT: TERMINAL_COLORS.codex, ISSUE: TERMINAL_COLORS.error, ACK: TERMINAL_COLORS.muted,
 };
 
 export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, expanded: boolean): TerminalCard => {
@@ -104,10 +234,10 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
     title: `${agentName(item.message.from)} → ${agentName(item.message.to)}`,
     tag: `${item.message.type} · ${item.message.taskId}`, body: item.message.body,
   };
-  if (item.kind === "human") return { kind: item.kind, color: "#80808a", title: `${labels.you} → ${agentName(item.agent)}`, body: item.text };
-  if (item.kind === "error") return { kind: item.kind, color: "#d14343", title: `${labels.error} · ${agentName(item.agent)}`, body: item.text };
-  if (item.kind === "notice") return { kind: item.kind, color: "#b7791f", title: labels.notice, body: item.text };
-  return { kind: item.kind, color: "#80808a", title: labels.output, body: item.text };
+  if (item.kind === "human") return { kind: item.kind, color: TERMINAL_COLORS.muted, title: `${labels.you} → ${agentName(item.agent)}`, body: item.text };
+  if (item.kind === "error") return { kind: item.kind, color: TERMINAL_COLORS.error, title: `${labels.error} · ${agentName(item.agent)}`, body: item.text };
+  if (item.kind === "notice") return { kind: item.kind, color: TERMINAL_COLORS.warn, title: labels.notice, body: item.text };
+  return { kind: item.kind, color: TERMINAL_COLORS.muted, title: labels.output, body: item.text };
 };
 
 export interface InputBuffer { text: string; cursor: number; }
