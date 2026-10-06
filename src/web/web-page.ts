@@ -271,6 +271,9 @@ const STYLE = `
     grid-template-areas: "top" "conn" "status" "log" "compose"; }
   .topbar { grid-area: top; } .conn { grid-area: conn; } .status { grid-area: status; } .log-wrap { grid-area: log; } .composer { grid-area: compose; }
   @media (min-width: 900px) and (hover: hover) and (pointer: fine) {
+    .sheet { align-items: center; justify-items: center; }
+    .sheet-panel { border-radius: 14px; max-height: 85vh; max-width: 640px; padding-bottom: 20px; }
+    .sheet-panel.wide { max-width: 960px; }
     .app { grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto;
       grid-template-areas: "top top" "conn conn" "side log" "side compose"; border-inline: 1px solid var(--line); }
     .side { grid-area: side; display: flex; border-right: 1px solid var(--line); overflow-y: auto; }

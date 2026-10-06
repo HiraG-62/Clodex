@@ -448,7 +448,7 @@ export function clientMain({
     button.type = "button";
     button.setAttribute("aria-label", t("web.role.open", { agent: AGENTS[id].name }));
     button.title = t("web.role.open", { agent: AGENTS[id].name });
-    button.addEventListener("click", () => openRoleEditor(id));
+    button.addEventListener("click", () => openAgentSettings(id));
     return button;
   };
 
@@ -569,7 +569,7 @@ export function clientMain({
 
   // ---- シート（スマホの操作パネル・会話・設定） ----
   let sheetAgent: AgentId | undefined;
-  let sheetKind: "agent" | "agentSettings" | "role" | "settings" | "conversations" | "conversationMenu" | "artifacts" | "viewer" | undefined;
+  let sheetKind: "agent" | "agentSettings" | "settings" | "conversations" | "conversationMenu" | "artifacts" | "viewer" | undefined;
   let pendingPrimary: AgentId | undefined;
   const sheet = $("#sheet");
   const openSheet = (title: string, content: HTMLElement[]) => {
@@ -607,22 +607,6 @@ export function clientMain({
     button.type = "button";
     button.addEventListener("click", run);
     return button;
-  };
-  const openRoleEditor = (id: AgentId) => {
-    sheetKind = "role";
-    sheetAgent = id;
-    const field = el("textarea", "role-editor") as HTMLTextAreaElement;
-    field.value = state?.roles[id] ?? "";
-    field.setAttribute("aria-label", t("web.role.title", { agent: AGENTS[id].name }));
-    const saveButton = sheetButton(t("web.role.save"), "primary-action", () => {
-      const value = field.value.replace(/\s+/g, " ").trim();
-      if (!value) return;
-      void send(`/role ${id} ${value}`).then((ok) => { if (ok) closeSheet(); });
-    });
-    openSheet(t("web.role.title", { agent: AGENTS[id].name }), [
-      field, saveButton, el("p", "muted small", t("web.role.restart", { agent: id })),
-    ]);
-    field.focus();
   };
   // ---- 成果物（DESIGN.md §28 v0.3 B） ----
   const fileUrl = (api: "file" | "diff", path: string) => `/api/${api}?path=${encodeURIComponent(path)}`;
@@ -708,12 +692,20 @@ export function clientMain({
     openSheet(title, actions);
   };
 
-  // Agent の設定: 権限・model・effort と、この Agent だけの session のやり直し
+  // Agent の設定: 役割・権限・model・effort と、この Agent だけの session のやり直し
   const openAgentSettings = (id: AgentId) => {
     const agent = state?.agents.find((a) => a.id === id);
     if (!agent) return;
     sheetAgent = id;
     sheetKind = "agentSettings";
+    const roleField = el("textarea", "role-editor") as HTMLTextAreaElement;
+    roleField.value = state?.roles[id] ?? "";
+    roleField.setAttribute("aria-label", t("web.role.title", { agent: AGENTS[id].name }));
+    const saveRole = sheetButton(t("web.role.save"), "primary-action", () => {
+      const value = roleField.value.replace(/\s+/g, " ").trim();
+      if (!value) return;
+      void send(`/role ${id} ${value}`).then((ok) => { if (ok) closeSheet(); });
+    });
     const permission = choice("permission", t("web.agentSettings.permission"), PERMISSIONS, agent.permission, (v) => v, (v) => void send(`/permission ${id} ${v}`));
     const model = el("div", "setting");
     model.append(el("div", "eyebrow", t("web.agentSettings.model")));
@@ -755,6 +747,8 @@ export function clientMain({
       closeSheet();
     });
     openSheet(t("web.agentSettings.title", { agent: AGENTS[id].name }), [
+      el("div", "eyebrow", t("web.role.title", { agent: AGENTS[id].name })),
+      roleField, saveRole, el("p", "muted small", t("web.role.restart", { agent: id })),
       permission, model, effort, restart, el("p", "muted small", t("web.agentSettings.restartNote")),
     ]);
   };

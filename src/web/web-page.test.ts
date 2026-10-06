@@ -34,4 +34,14 @@ describe("buildWebPage", () => {
       expect(html).toContain(`id="${id}"`);
     }
   });
+
+  it("PC ではシートを画面中央のモーダルとして表示する", () => {
+    const { html } = buildWebPage("ja");
+    const desktopCss = html.split("@media (min-width: 900px) and (hover: hover) and (pointer: fine)")[1]
+      ?.split("@media (max-width: 899px), (pointer: coarse)")[0];
+    expect(desktopCss).toBeDefined();
+    expect(desktopCss).toMatch(/\.sheet\s*\{[^}]*align-items:\s*center;[^}]*justify-items:\s*center;/);
+    expect(desktopCss).toMatch(/\.sheet-panel\s*\{[^}]*border-radius:\s*14px;[^}]*max-height:\s*85vh;/);
+    expect(desktopCss).toMatch(/\.sheet-panel\.wide\s*\{[^}]*max-width:\s*960px;/);
+  });
 });
