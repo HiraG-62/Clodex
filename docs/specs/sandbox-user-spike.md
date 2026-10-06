@@ -58,6 +58,7 @@ spike のスクリプトもこれに合わせる:
 - #4: 人のプロファイルの中にある CLI（`~/.local/bin/claude.exe`、`%LOCALAPPDATA%\Programs\OpenAI\Codex`、`%APPDATA%\npm\pnpm`）は、インストール先に RX を付けても使えない。Node は `realpath` で親フォルダを順に `lstat` するので、`C:\Users\<人>\AppData` で EPERM になる。人のプロファイルに穴を開けるより、CLI は `clodex-agent` 側に別途インストールする（`claude` の公式インストーラー、`npm i -g @openai/codex pnpm`）
 - #1・#7・#8・#10 は期待どおり。#8 は人のユーザーから `taskkill /T /F` で止められた
 - #9: `clodex-agent` が作ったリポジトリは、人のユーザーで `dubious ownership` になる
+- `Start-Process -Credential` は、呼び出し元（人）の環境変数を引き継ぐ（`USERPROFILE`・`APPDATA` が人のもの）。そのため Claude のインストーラーとログインが `C:\Users\<人>\.claude` に書こうとして失敗した。製品で Agent を起動するときは、`clodex-agent` の環境（プロファイルのパス、Machine の PATH）を組み立て直して渡す
 
 setup への追加:
 
