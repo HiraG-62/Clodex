@@ -471,6 +471,7 @@ Internal command（v0.1）:
 | `/model <claude\|codex> <model>` | Agent の model を切り替える（§9 Model / Effort） |
 | `/effort [claude\|codex] <level>` | Agent（省略時は両方）の reasoning effort を切り替える（§9 Model / Effort） |
 | `/limits [<name> <n>\|reset]` | Agent 間のやり取りの上限を表示・変更する（§14 上限） |
+| `/sandbox [on\|off\|uninstall]` | project の外への書き込みを OS で止める sandbox の表示・切り替え（§9 Sandbox） |
 | `/processes [番号]` | 番号なしで `!&` の background process の一覧、番号付きでその process の出力の末尾（§15） |
 | `/kill <番号>` | background process をプロセスツリーごと止める（§15） |
 | `/help` | 入力方法の一覧 |
@@ -574,6 +575,52 @@ Adapter の必須処理:
 - 起動処理の途中で変更された場合は、起動が終わった時点で反映する
 - `/permission` で切り替えた値は project ごとに保存し、次の起動でも使う（下記「Agent の設定の保存」）
 
+## Sandbox
+
+Agent は常にフル権限で動かし、project の外への書き込み・削除だけを OS で止める（docs/spikes/sandbox-hybrid.md の Spike M）。読み取り・ネットワーク・プロセスの実行は止めない。既定は off で、使う人だけが `/sandbox on` にする。
+
+仕組み:
+
+- Agent 専用のローカルユーザー `clodex-agent`（Users グループのみ。サインイン画面に出さない）を作り、Agent はそのユーザーで動かす
+- そのユーザーの中で、さらに write-restricted token（restricting SID は {`clodex-agent`, logon SID, `Everyone`, `BUILTIN\Users`}。`Authenticated Users` を外す）で起動する。システム以外のドライブは既定で `Authenticated Users` に Modify が付いているが、これで効かなくなる。ドライブの ACL は変更しない
+- 書き込みを許すのは、project（と会話の worktree）、`~/.clodex/artifacts/<project>`、`clodex-agent` 自身のプロファイルだけ。project には `clodex-agent` の Modify（継承あり）を付ける。人が所有するディレクトリなので管理者権限は要らない。付ける時間は project の大きさに比例する（`E:\dev\Clodex` で約 15 秒）
+- `C:\ProgramData`・`C:\Windows\Temp` には新規作成だけできる（既存のファイルの削除はできない）。Windows の通常のユーザーと同じ
+- Agent のプロセスは、Hub が起動する **broker**（`clodex-agent` として常駐する小さなプロセス）が起動し、stdio を localhost で中継する。別ユーザーとしての起動は環境変数を引き継ぎ、コマンドラインが 1024 文字までなので、Agent を直接は起動しない。broker には、`clodex-agent` のプロファイルから組み立てた環境変数（`USERPROFILE`・`APPDATA`・Machine の PATH の前に agent 側の CLI の場所、Windows PowerShell の `PSModulePath`。`HOME` は消す）を渡す
+- 人のユーザーからは `clodex-agent` のプロセスを `taskkill` できないので、Agent の停止は broker に頼む
+- Agent は既存の `SpawnAgentProcess` を差し替えて起動する（Adapter は変えない）。MCP は今どおり `127.0.0.1` の Hub に届く
+
+コマンド:
+
+| command | 内容 |
+|---|---|
+| `/sandbox` | 今の状態（on / off、セットアップ済みか） |
+| `/sandbox on` | この project で sandbox を使う。未セットアップならセットアップを始める。両 Agent を止めて、sandbox の中で新しい session として起動し直す |
+| `/sandbox off` | この project で sandbox を使わない。project に付けた ACL を外し、両 Agent を人のユーザーで新しい session として起動し直す |
+| `/sandbox uninstall` | `clodex-agent` を消し、付けた ACL をすべて外す（管理者権限。UAC の確認が出る） |
+
+- on / off は project ごとに保存する（`.settings.json` の `sandbox`）。設定ファイルの `sandbox: true` でも既定を変えられる。優先順位は Permission と同じ
+- on の間は権限を `full` に固定する（`/permission` は「sandbox 中は full 固定」と返す）。off に戻すと、保存した権限レベルに戻す
+- on / off を切り替えると Agent の session は引き継げない（CLI の session はユーザーのプロファイルにあるため）。Clodex の会話の履歴はそのまま残る
+- 人の `!command` は今どおり人のユーザーで動かす（sandbox の対象外）
+
+初回のセットアップ（`/sandbox on` の初回。PC の前で行う。UAC とブラウザのログインがあるため、スマホからはできない）:
+
+1. 管理者の処理（UAC で昇格した PowerShell）: `clodex-agent` の作成、サインイン画面に出さない設定、パスワードを人のユーザーの DPAPI で `~/.clodex/agent-credential` に保存
+2. CLI のインストール（broker 経由で `clodex-agent` として）: Claude の公式インストーラー、`npm i -g @openai/codex pnpm`
+3. ログイン: `clodex-agent` の PowerShell のウィンドウを開き、`claude` と `codex login` を人が行う。終わったら、起動時の認証の検査（§9 の startup probe）を `clodex-agent` で実行して確かめる
+4. 途中で失敗・中断したら、`/sandbox` に「セットアップ未完了」と出し、次の `/sandbox on` で続きから行う（各段階は冪等）
+
+git:
+
+- `clodex-agent` が作ったファイルの所有者は `clodex-agent` になるので、人の git が `dubious ownership` になる。逆に、人が作った repository は `clodex-agent` の git から見て同じになる。`/sandbox on` のとき、人と `clodex-agent` の両方の git の global 設定に、その project の `safe.directory` を足す（off では外す）
+- `clodex-agent` には git の資格情報を渡さない。push は人が行う
+
+制約（v1 では扱わない）:
+
+- 人の `~/.claude`（CLAUDE.md・settings・skill・MCP）と `~/.codex` の設定は `clodex-agent` には無い。必要なら人が `clodex-agent` 側に用意する
+- `clodex-agent` 側の CLI の更新は、Claude は自動更新、Codex と pnpm は人が `/sandbox` の案内に従って行う
+- ネットワークは止めない
+
 ## Model / Effort
 
 人が `/model`・`/effort` で、会話の途中でも Agent の model と reasoning effort を切り替えられる。
@@ -588,9 +635,9 @@ Adapter の必須処理:
 
 ## Agent の設定の保存
 
-人が `/permission`・`/model`・`/effort`・`/limits` で切り替えた値を project ごとに保存し、`clodex` を起動し直しても使う。
+人が `/permission`・`/model`・`/effort`・`/limits`・`/sandbox` で切り替えた値を project ごとに保存し、`clodex` を起動し直しても使う。
 
-- 保存先: 会話の履歴（§18）と同じ名前の `.settings.json`（例: `~/.clodex/state/E--dev-Clodex-1a2b3c4d.settings.json`）。内容は `{ "claude": { "permission", "model", "effort" }, "codex": { ... }, "limits": { ... } }`（`limits` は `/limits` で変えた上限だけ。§14）
+- 保存先: 会話の履歴（§18）と同じ名前の `.settings.json`（例: `~/.clodex/state/E--dev-Clodex-1a2b3c4d.settings.json`）。内容は `{ "claude": { "permission", "model", "effort" }, "codex": { ... }, "limits": { ... }, "sandbox": true }`（`limits` は `/limits` で変えた上限だけ。§14。`sandbox` は §9 Sandbox）
 - 保存するのは人が切り替えた値だけ。CLI から読み取った実際の model / effort（`/status` の表示用）は保存しない
 - 起動時の優先順位: 起動オプション（`--claude-model` 等）> 保存した値 > 設定ファイル（`permission`）> 既定値
 - 保存した値で起動したときは、起動時の案内に表示する（例: `saved settings: claude permission full`）。`full` が黙って引き継がれないようにする
