@@ -668,6 +668,7 @@ Agent が指定するフィールド:
 | `replyTo` | RESULT / ACK で必須 | 返信元の message ID |
 | `commit` | | 参照する commit hash |
 | `files` | | 参照する file path（project root からの相対パス） |
+| `spec` | | `DELEGATE` / `REVIEW_REQUEST` のみ。依頼の仕様を書いた設計書の path（project root からの相対パス）。送信時に通常ファイルとして存在しなければ拒否する（project root の外も拒否） |
 | `status` | | RESULT のみ。`approved` / `changes_requested` / `done` / `failed` |
 | `issues` | | RESULT / ISSUE のみ。`{ file, line?, severity, summary }` の配列。severity は `low` / `medium` / `high` / `critical` |
 
@@ -785,11 +786,13 @@ Type: REVIEW_REQUEST
 Task: AUTH-142
 Repository: C:\dev\my-app
 Commit: a82f39c
+Spec: docs/specs/AUTH-142.md
 Files:
 - src/auth/refresh.ts
 
 refresh token の race condition をレビュー
 
+Read the spec before you start and follow it. If the spec conflicts with the code or is unclear, ask with a QUESTION instead of guessing.
 Reply with the send_message tool of the "clodex" MCP server (not a shell command): to="claude", type="RESULT", taskId="AUTH-142", replyTo="msg_1a2b3c4d".
 Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.
 ```
@@ -798,6 +801,16 @@ Put findings in issues (file, line, severity, summary). Do not paste large conte
 - 末尾に、人が読む文章の言語（下記 Language）を 1 行で添える。長い会話でも依頼のたびに思い出させる
 - `RESULT` / `ISSUE` には返信を求めない（返信の連鎖を作らない）
 - 会話履歴は含めない。Agent B は必要に応じて Repository を読む
+- `spec` があれば `Spec:` 行と「作業の前に読んで従う。コードと食い違う・曖昧なら推測せず QUESTION で聞く」の 1 行を添える
+
+## Spec（設計書）
+
+依頼の詳細は body ではなく、リポジトリの中の設計書に書いて `spec` で渡す。body は 4,000 文字までの要約なので詳細を書き切れず、会話にしか残らない。設計書なら相手が何度でも読み返せ、コミットして履歴にも残る。
+
+- 既定の置き場所は `docs/specs/<taskId>.md`。project の CLAUDE.md / AGENTS.md や役割で別の場所を指示してもよい
+- `DELEGATE` / `REVIEW_REQUEST` は設計書を書いて `spec` を付けるのを基本にする。body だけで済ませるのは、数行で説明しきれる簡単な依頼だけ
+- 設計書の作成・更新・コミットは送信元の Agent が行う。Coordinator は存在を確かめるだけで中身は見ない
+- 役割の定型文（§13 Roles）でこの方針を伝える
 
 ## Native configuration
 
@@ -814,13 +827,11 @@ AGENTS.md → Codex
 .ai/
 ├── project.md
 ├── architecture.md
-├── tasks/
-│   └── AUTH-142.md
 └── decisions/
     └── ADR-003.md
 ```
 
-ただし全 Agent が常時すべて読む設計にはしない。
+ただし全 Agent が常時すべて読む設計にはしない。依頼ごとの設計書は上の Spec（`docs/specs/<taskId>.md`）に置く。
 
 ## Language
 
@@ -855,7 +866,7 @@ AGENTS.md → Codex
 - `permission` は起動時の権限レベル（§9 Permission）。両 Agent に同じレベルを使う
 - UTF-8（BOM の有無は問わない。Windows PowerShell 5.1 は BOM 付きで書く）
 - 優先順位: 起動オプション > project の設定 > ユーザーの設定 > 既定値（primary: `claude`、roles: なし）
-- Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」「権限は人が `/permission` で変えるので、拒否されたらそう伝えること」「依頼を受けたら、作業に入る前に何をするかを 1〜2 文で書くこと」「人が読む文章の言語（下記 Language）」を伝える
+- Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」「権限は人が `/permission` で変えるので、拒否されたらそう伝えること」「依頼を受けたら、作業に入る前に何をするかを 1〜2 文で書くこと」「依頼（`DELEGATE` / `REVIEW_REQUEST`）は基本的に設計書を書いて `spec` で渡し、body だけにするのは数行で済む簡単な依頼に限ること（上の Spec）」「人が読む文章の言語（下記 Language）」を伝える
 - 役割が無い Agent には、相手の Agent がいることだけを伝える
 - 役割の本文は Agent の native configuration（CLAUDE.md / AGENTS.md）と結合しない。追加の指示として渡すだけ
 
@@ -1701,7 +1712,7 @@ dogfooding で出た要望を 4 段階で入れる。小さく確実なものか
 
 - 会話で触れたファイルを一覧にする（新しい順、同じパスは 1 つ）。一覧は画面が feed から組み立てる（サーバーに状態を持たない。保存した feed から復元した会話でも出る）
   - 変更: tool event の `files`。Claude の Edit / Write / MultiEdit / NotebookEdit の `file_path`（`notebook_path`）、Codex の `fileChange` の `changes[].path`
-  - 参照: formal message の `files`
+  - 参照: formal message の `files` と `spec`
   - 画像: Agent の発言・最終応答と message の本文に書かれた画像のパス（png / jpg / jpeg / gif / webp）
 - 画面上部の「成果物」から開く。選ぶと中身を表示する。テキストはそのまま（Markdown は §17 の簡易描画）、「差分」でその時点の `git diff HEAD`（未追跡なら中身）、画像はそのまま表示する。message の関連ファイルも選べる
 - 会話の中でも画像を見せる（Web UI）。Agent の最終応答、formal message の本文、人間の入力に書かれた画像のパス（上の「画像」と同じ判定）を、本文の下にサムネイルとして並べる（同じパスは 1 つ）。`GET /api/file` で読み、読めない（範囲外・存在しない）ものは出さない。選ぶとビューアで開く。作業の途中経過（steps）と plan には出さない
