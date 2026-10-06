@@ -225,7 +225,7 @@ const STYLE = `
   .shell-input-label { color: var(--code); font-size: 12px; margin-bottom: 5px; }
   .input-wrap { position: relative; min-width: 0; }
   /* textarea の背後に同じ折り返しで描き、指定した語の背景だけを見せる */
-  .input-highlight, .box textarea { padding: 12px 14px 4px; font: inherit; font-size: 16px; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-gutter: stable; }
+  .input-highlight, .box textarea { padding: 12px 14px 4px; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-gutter: stable; }
   .input-highlight { position: absolute; inset: 0; width: 100%; height: 100%; color: transparent; pointer-events: none; overflow: hidden; }
   .input-highlight mark { color: transparent; border-radius: 3px; }
   .input-highlight .hl-command { background: color-mix(in srgb, var(--fg) 14%, transparent); }
@@ -426,7 +426,7 @@ export const buildWebPage = (language: Language): WebPage => {
 <html lang="${language}">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <title>Clodex</title>
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
