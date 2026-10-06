@@ -1704,6 +1704,7 @@ dogfooding で出た要望を 4 段階で入れる。小さく確実なものか
   - 参照: formal message の `files`
   - 画像: Agent の発言・最終応答と message の本文に書かれた画像のパス（png / jpg / jpeg / gif / webp）
 - 画面上部の「成果物」から開く。選ぶと中身を表示する。テキストはそのまま（Markdown は §17 の簡易描画）、「差分」でその時点の `git diff HEAD`（未追跡なら中身）、画像はそのまま表示する。message の関連ファイルも選べる
+- 会話の中でも画像を見せる（Web UI）。Agent の最終応答、formal message の本文、人間の入力に書かれた画像のパス（上の「画像」と同じ判定）を、本文の下にサムネイルとして並べる（同じパスは 1 つ）。`GET /api/file` で読み、読めない（範囲外・存在しない）ものは出さない。選ぶとビューアで開く。作業の途中経過（steps）と plan には出さない
 - Agent が証跡として見せたい画像（スクリーンショット等）は、`~/.clodex/artifacts/<project 名>/` に保存して本文にフルパスを書くよう、役割の定型文で伝える（project の working tree を汚さない）
 - API: `GET /api/file?path=` と `GET /api/diff?path=`（token 認証）。読めるのは project root と上の artifacts ディレクトリの中の通常ファイルだけ（`..` や symlink で外に出ない。実パスで確かめる）。大きさの上限はテキスト 2 MB、画像 10 MB
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "../../protocol/messages.js";
-import { collectArtifacts, displayPath } from "./artifacts.js";
+import { collectArtifacts, displayPath, findImagePaths } from "./artifacts.js";
 import type { TimelineItem } from "./timeline.js";
 
 const message = (files: string[], body: string): AgentMessage => ({
@@ -30,6 +30,22 @@ describe("collectArtifacts", () => {
   it("画像の拡張子でない語は拾わない", () => {
     const items: TimelineItem[] = [{ kind: "turn", id: "t", at: "1", agent: "codex", status: "completed", text: "a.pngx と png と .png", steps: [] }];
     expect(collectArtifacts(items)).toEqual([]);
+  });
+});
+
+describe("findImagePaths", () => {
+  it("Windows パスと相対パスを出現順で取り出す", () => {
+    expect(findImagePaths("C:\\out\\shot.PNG ./out/a.jpg docs/b.jpeg ../c.gif ~/d.webp")).toEqual([
+      "C:\\out\\shot.PNG", "./out/a.jpg", "docs/b.jpeg", "../c.gif", "~/d.webp",
+    ]);
+  });
+
+  it("区切りと大文字小文字が違う同じパスは最初の 1 つだけ残す", () => {
+    expect(findImagePaths("C:\\out\\shot.PNG b.gif c:/OUT/shot.png B.GIF")).toEqual(["C:\\out\\shot.PNG", "b.gif"]);
+  });
+
+  it("画像の拡張子でない語は拾わない", () => {
+    expect(findImagePaths("a.pngx png .png a.svg a.webp2")).toEqual([]);
   });
 });
 

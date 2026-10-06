@@ -40,6 +40,17 @@ export function collectArtifacts(items: readonly TimelineItem[]): Artifact[] {
   return [...found.values()].reverse();
 }
 
+export function findImagePaths(text: string): string[] {
+  const IMAGE_PATH = /(?:[A-Za-z]:)?[\w.~\\/-]*[\w-]\.(?:png|jpe?g|gif|webp)(?![\w])/gi;
+  const found = new Map<string, string>();
+  for (const match of text.matchAll(IMAGE_PATH)) {
+    const path = match[0];
+    const key = path.replace(/\\/g, "/").toLowerCase();
+    if (!found.has(key)) found.set(key, path);
+  }
+  return [...found.values()];
+}
+
 // project の中なら相対パスで見せる
 export function displayPath(path: string, projectRoot: string): string {
   const normalized = path.replace(/\\/g, "/");

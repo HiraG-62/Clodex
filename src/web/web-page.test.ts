@@ -6,6 +6,23 @@ import { buildWebPage } from "./web-page.js";
 const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1] ?? "");
 
 describe("buildWebPage", () => {
+  it("画像パス抽出を自己完結した関数として埋め込み、会話本文にプレビューを付ける", () => {
+    const { html } = buildWebPage("ja");
+    const script = scriptsOf(html)[1]!;
+    const deps = script.slice(script.lastIndexOf("findImagePaths:"), script.lastIndexOf("displayPath:"));
+    const findPaths = runInNewContext(`({${deps}}).findImagePaths`) as (text: string) => string[];
+    expect(findPaths("C:\\out\\shot.png c:/OUT/shot.PNG")).toEqual(["C:\\out\\shot.png"]);
+    expect(html.match(/appendImagePreviews\(node, item.text\)/g)).toHaveLength(2);
+    expect(html).toContain("appendImagePreviews(node, message.body)");
+    expect(html).not.toContain("appendImagePreviews(node, item.plan)");
+    expect(html).not.toContain("appendImagePreviews(node, step.text)");
+    expect(html).toContain('image.loading = "lazy"');
+    expect(html).toContain('image.src = fileUrl("file", path)');
+    expect(html).toContain('image.addEventListener("error", () => button.remove())');
+    expect(html).toMatch(/\.image-previews\s*\{[^}]*flex-wrap:\s*wrap/);
+    expect(html).toMatch(/\.image-preview img\s*\{[^}]*max-height:\s*160px/);
+  });
+
   it("コマンド入力の色・ラベル・切り替え処理をページに含める", () => {
     const { html } = buildWebPage("ja");
     expect(html).toContain('id="shell-input-label" hidden');

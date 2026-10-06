@@ -10,7 +10,7 @@ import { MESSAGES } from "../i18n/i18n.js";
 import type { MessageKey, Messages } from "../i18n/messages.js";
 import { clientMain } from "./client/client-main.js";
 import { createInputAssist } from "./client/input-assist.js";
-import { collectArtifacts, displayPath } from "./client/artifacts.js";
+import { collectArtifacts, displayPath, findImagePaths } from "./client/artifacts.js";
 import { renderMarkdown } from "./client/markdown.js";
 import { applyFeedItem } from "./client/timeline.js";
 import { composeInputLine } from "./client/compose-input.js";
@@ -175,6 +175,11 @@ const STYLE = `
   .handoff .text { color: var(--fg); overflow-wrap: anywhere; }
   .refs { display: flex; flex-wrap: wrap; gap: 4px 10px; }
   .ref { font: 12px/1.4 var(--font-mono); color: var(--fg-2); overflow-wrap: anywhere; border: 0; background: none; padding: 0; text-align: left; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  .image-previews { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; min-width: 0; }
+  .entry .image-previews { grid-column: 2; }
+  .image-previews:empty { display: none; }
+  .image-preview { max-width: 100%; min-width: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--sunken); }
+  .image-preview img { display: block; max-height: 160px; max-width: 100%; object-fit: contain; }
   .artifact { display: flex; align-items: baseline; gap: 10px; width: 100%; border: 0; background: transparent; padding: 9px 4px; border-bottom: 1px solid var(--line); text-align: left; min-width: 0; }
   .artifact:hover { background: var(--sunken); }
   .artifact .kind { flex: none; font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--sunken); color: var(--fg-2); }
@@ -385,6 +390,7 @@ const FUNCTIONS = `
   composeInputLine: ${inlineScript(composeInputLine.toString())},
   createInputAssist: ${inlineScript(createInputAssist.toString())},
   collectArtifacts: ${inlineScript(collectArtifacts.toString())},
+  findImagePaths: ${inlineScript(findImagePaths.toString())},
   displayPath: ${inlineScript(displayPath.toString())},
   chooseProjectPath: ${inlineScript(chooseProjectPath.toString())},`;
 const json = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");

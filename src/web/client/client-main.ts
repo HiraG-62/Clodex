@@ -10,7 +10,7 @@ import type { TimelineItem, applyFeedItem as ApplyFeedItem } from "./timeline.js
 import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
 import type { SlashCommand } from "../../cli/commands.js";
 import type { Suggestion, createInputAssist as CreateInputAssist } from "./input-assist.js";
-import type { collectArtifacts as CollectArtifacts, displayPath as DisplayPath } from "./artifacts.js";
+import type { collectArtifacts as CollectArtifacts, displayPath as DisplayPath, findImagePaths as FindImagePaths } from "./artifacts.js";
 import type { MessageKey, Messages } from "../../i18n/messages.js";
 import type { chooseProjectPath as ChooseProjectPath } from "./project-picker.js";
 
@@ -21,6 +21,7 @@ export interface ClientDeps {
   composeInputLine: typeof ComposeInputLine;
   createInputAssist: typeof CreateInputAssist;
   collectArtifacts: typeof CollectArtifacts;
+  findImagePaths: typeof FindImagePaths;
   displayPath: typeof DisplayPath;
   commands: readonly SlashCommand[];
   messages: Messages;
@@ -29,7 +30,7 @@ export interface ClientDeps {
 }
 
 export function clientMain({
-  renderMarkdown, applyFeedItem, composeInputLine, createInputAssist, collectArtifacts, displayPath, commands, messages, chooseProjectPath, version, isShellInput,
+  renderMarkdown, applyFeedItem, composeInputLine, createInputAssist, collectArtifacts, findImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -169,6 +170,25 @@ export function clientMain({
     return node;
   };
 
+  const appendImagePreviews = (node: HTMLElement, text: string) => {
+    const paths = findImagePaths(text);
+    if (!paths.length) return;
+    const previews = el("div", "image-previews");
+    for (const path of paths) {
+      const button = el("button", "image-preview") as HTMLButtonElement;
+      button.type = "button";
+      const image = document.createElement("img");
+      image.alt = displayPath(path, state?.project ?? "");
+      image.loading = "lazy";
+      image.addEventListener("error", () => button.remove());
+      image.src = fileUrl("file", path);
+      button.addEventListener("click", () => void openViewer(path));
+      button.append(image);
+      previews.append(button);
+    }
+    node.append(previews);
+  };
+
   const renderTurn = (item: Extract<TimelineItem, { kind: "turn" }>) => {
     const node = el("article", "entry");
     node.append(mark(item.agent));
@@ -202,6 +222,7 @@ export function clientMain({
     if (item.text) body.innerHTML = renderMarkdown(item.text);
     else if (item.status === "completed") body.append(el("span", "muted", t("web.turn.completed")));
     if (body.childNodes.length) node.append(body);
+    appendImagePreviews(node, item.text);
     return node;
   };
 
@@ -216,6 +237,7 @@ export function clientMain({
     const text = el("div", "text md");
     text.innerHTML = renderMarkdown(message.body);
     node.append(route, text);
+    appendImagePreviews(node, message.body);
     if (message.files?.length) {
       const refs = el("div", "refs");
       for (const file of message.files) {
@@ -245,6 +267,7 @@ export function clientMain({
         const body = el("div", "body md");
         body.innerHTML = renderMarkdown(item.text);
         node.append(mark("you"), head, body);
+        appendImagePreviews(node, item.text);
         return node;
       }
       case "turn": return renderTurn(item);
