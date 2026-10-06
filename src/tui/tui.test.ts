@@ -6,7 +6,7 @@ import { cleanup, render } from "ink-testing-library";
 import { setLanguage, t } from "../i18n/i18n.js";
 import type { FeedItem } from "../web/web-feed.js";
 import type { FeedClient } from "./feed-client.js";
-import { DISABLE_MOUSE_TRACKING, ENABLE_MOUSE_TRACKING, TUI_RENDER_OPTIONS, TuiApp,
+import { DISABLE_MOUSE_TRACKING, ENABLE_MOUSE_TRACKING, MouseInputRelay, TUI_RENDER_OPTIONS, TuiApp,
   enableVirtualTerminalInput, withMouseTracking } from "./tui.js";
 
 afterEach(cleanup);
@@ -76,15 +76,23 @@ describe("TuiApp", () => {
     expect(app.lastFrame()).toContain("Read: old.ts");
   });
 
-  it("SGR マウスのクリックを入力欄に入れない", async () => {
+  it("中継 stream のホイールでログをスクロールし、マウス入力を入力欄に入れない", async () => {
     setLanguage("ja");
-    const { client } = fakeClient();
-    const app = render(React.createElement(TuiApp, { client }));
+    const source = Object.assign(new PassThrough(), { isTTY: true, setRawMode: vi.fn() });
+    const mouseInput = new MouseInputRelay(source);
+    const { client, emit } = fakeClient();
+    const app = render(React.createElement(TuiApp, { client, mouseInput }));
     await tick();
-    app.stdin.write("\x1b[<0;12;8M");
+    for (let seq = 1; seq <= 30; seq++) emit({ type: "output", seq, text: `ログ ${seq}` });
     await tick();
+    expect(app.lastFrame()).toContain("ログ 30");
+    source.write("\x1b[<64;12;8M");
+    source.write("\x1b[<0;12;8M");
+    await tick();
+    expect(app.lastFrame()).not.toContain("ログ 30");
     expect(app.lastFrame()).toContain("メッセージ");
     expect(app.lastFrame()).not.toContain("<0;12;8");
+    mouseInput.close();
   });
 
   it("空の入力欄はカーソルと同じ行に薄い案内を出し、入力すると消す", async () => {
@@ -131,6 +139,38 @@ describe("TuiApp", () => {
 });
 
 describe("Windows の VT 入力", () => {
+  it("分割された SGR シーケンスをつなぎ、前後のキー入力だけ Ink 側に流す", () => {
+    const source = Object.assign(new PassThrough(), { isTTY: true, setRawMode: vi.fn() });
+    const relay = new MouseInputRelay(source);
+    const wheel: string[] = [];
+    const rest: string[] = [];
+    relay.on("wheel", (direction: string) => wheel.push(direction));
+    relay.on("data", (chunk: Buffer) => rest.push(String(chunk)));
+    source.write("A\x1b[<64;10;");
+    source.write("5MB");
+    expect(wheel).toEqual(["up"]);
+    expect(rest.join("")).toBe("AB");
+    relay.close();
+  });
+
+  it("中継 stream が raw mode と ref / unref を元の stdin に転送し、終了時に listener を外す", () => {
+    const setRawMode = vi.fn();
+    const ref = vi.fn();
+    const unref = vi.fn();
+    const source = Object.assign(new PassThrough(), { isTTY: true, setRawMode, ref, unref });
+    const relay = new MouseInputRelay(source);
+    expect(relay.isTTY).toBe(true);
+    relay.setRawMode(true);
+    relay.ref();
+    relay.unref();
+    expect(setRawMode).toHaveBeenCalledWith(true);
+    expect(ref).toHaveBeenCalledOnce();
+    expect(unref).toHaveBeenCalledOnce();
+    expect(source.listenerCount("data")).toBe(1);
+    relay.close();
+    expect(source.listenerCount("data")).toBe(0);
+    expect(source.isPaused()).toBe(true);
+  });
   it("win32 だけで実行関数を呼ぶ", async () => {
     const run = vi.fn().mockResolvedValue(undefined);
     await enableVirtualTerminalInput("linux", run);

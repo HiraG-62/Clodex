@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TimelineItem } from "../web/client/timeline.js";
 import { advanceTerminalFeed, CardLineCache, cardLines, cursorSlices, editInput, formatMarkdown, formatTimelineItem,
-  parseSgrMouse, scrollAfterGrowth, scrollBy, scrollToBottom, textWidth, visibleRange, wrapText } from "./terminal-layout.js";
+  parseSgrMouse, scrollAfterGrowth, scrollBy, scrollToBottom, splitMouseInput, textWidth, visibleRange, wrapText } from "./terminal-layout.js";
 
 const labels = {
   you: "あなた", working: "作業中", completed: "完了", failed: "失敗", interrupted: "中断",
@@ -168,6 +168,17 @@ describe("スクロール", () => {
 });
 
 describe("SGR マウス", () => {
+  it("ホイール上下と修飾キー付きホイールを順に取り出す", () => {
+    expect(splitMouseInput("\x1b[<64;10;5M\x1b[<69;10;5M\x1b[<64;10;5M"))
+      .toEqual({ wheel: ["up", "down", "up"], rest: "" });
+  });
+  it("クリックとリリースを捨て、キー入力は順序を保つ", () => {
+    expect(splitMouseInput("a\x1b[<0;10;5Mbc\x1b[<0;10;5m\x1b[<65;10;5Md"))
+      .toEqual({ wheel: ["down"], rest: "abcd" });
+  });
+  it("マウスが無いチャンクはそのまま返す", () => {
+    expect(splitMouseInput("あ\x1b[1;5Fい")).toEqual({ wheel: [], rest: "あ\x1b[1;5Fい" });
+  });
   it("ホイール上下を認識し、クリックは入力対象から除く", () => {
     expect(parseSgrMouse("\x1b[<64;10;5M")).toBe("up");
     expect(parseSgrMouse("[<65;10;5M")).toBe("down");

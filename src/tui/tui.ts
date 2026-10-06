@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
+import { PassThrough } from "node:stream";
 import { Box, Text, render, useApp, useInput, useStdout } from "ink";
 import { slashCommands } from "../cli/commands.js";
 import { t } from "../i18n/i18n.js";
 import { createInputAssist } from "../web/client/input-assist.js";
 import type { WebState } from "../web/web-feed.js";
 import type { FeedClient } from "./feed-client.js";
-import { advanceTerminalFeed, CardLineCache, cursorSlices, editInput, parseSgrMouse, TERMINAL_COLORS,
+import { advanceTerminalFeed, CardLineCache, cursorSlices, editInput, splitMouseInput, TERMINAL_COLORS,
   scrollAfterGrowth, scrollBy, scrollToBottom, textWidth, visibleRange, WHEEL_LINES, wrapText,
   type InputBuffer, type ScrollState, type TerminalFeed, type TerminalLabels } from "./terminal-layout.js";
 
@@ -14,6 +16,8 @@ const h = React.createElement;
 const MAX_SUGGESTIONS = 5;
 const SPINNER_INTERVAL_MS = 250;
 const SPINNER_FRAMES = ["◐", "◓", "◑", "◒"] as const;
+const MOUSE_FRAGMENT_TIMEOUT_MS = 20;
+const PARTIAL_MOUSE_PATTERN = /\x1b(?:\[<\d*(?:;\d*){0,2}|\[)?$/;
 const ENABLE_VIRTUAL_TERMINAL_INPUT = 0x200;
 const POWERSHELL_VT_SCRIPT = `
 Add-Type -Namespace W -Name K -MemberDefinition @'
@@ -46,6 +50,48 @@ export const enableVirtualTerminalInput = async (platform: string = process.plat
   if (platform !== "win32") return;
   await run();
 };
+
+type MouseInputSource = NodeJS.ReadableStream & {
+  isTTY?: boolean; setRawMode?: (enabled: boolean) => void; ref?: () => void; unref?: () => void;
+};
+
+export class MouseInputRelay extends PassThrough {
+  readonly isTTY: boolean;
+  private readonly decoder = new StringDecoder("utf8");
+  private pending = "";
+  private flushTimer: NodeJS.Timeout | undefined;
+  private readonly onSourceData = (chunk: Buffer | string): void => {
+    if (this.flushTimer) clearTimeout(this.flushTimer);
+    const input = this.pending + (typeof chunk === "string" ? chunk : this.decoder.write(chunk));
+    const partial = PARTIAL_MOUSE_PATTERN.exec(input)?.[0] ?? "";
+    this.pending = partial;
+    const { wheel, rest } = splitMouseInput(input.slice(0, input.length - partial.length));
+    for (const direction of wheel) this.emit("wheel", direction);
+    if (rest) this.write(rest);
+    if (partial) this.flushTimer = setTimeout(() => {
+      this.write(this.pending);
+      this.pending = "";
+      this.flushTimer = undefined;
+    }, MOUSE_FRAGMENT_TIMEOUT_MS);
+  };
+
+  constructor(private readonly source: MouseInputSource) {
+    super();
+    this.isTTY = source.isTTY === true;
+    source.on("data", this.onSourceData);
+  }
+
+  setRawMode(enabled: boolean): void { this.source.setRawMode?.(enabled); }
+  ref(): void { this.source.ref?.(); }
+  unref(): void { this.source.unref?.(); }
+  close(): void {
+    this.source.off("data", this.onSourceData);
+    this.source.pause();
+    if (this.flushTimer) clearTimeout(this.flushTimer);
+    this.pending = "";
+    this.end();
+  }
+}
 
 const makeAssist = () => createInputAssist(slashCommands(), ["claude", "codex"], {
   agent: t("web.assist.agent"), file: t("web.assist.file"), permission: t("web.assist.permission"),
@@ -85,8 +131,8 @@ const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed
   );
 };
 
-export const TuiApp = ({ client, onExit, startMouse }: {
-  client: FeedClient; onExit?: () => void; startMouse?: () => Promise<void>;
+export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
+  client: FeedClient; onExit?: () => void; startMouse?: () => Promise<void>; mouseInput?: MouseInputRelay;
 }) => {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -101,6 +147,7 @@ export const TuiApp = ({ client, onExit, startMouse }: {
   const [scroll, setScroll] = useState<ScrollState>(scrollToBottom);
   const cache = useRef(new CardLineCache());
   const previousLineCount = useRef(0);
+  const scrollBounds = useRef({ total: 0, height: 0 });
   const [notice, setNotice] = useState("");
   const [now, setNow] = useState(Date.now());
   const assist = useMemo(makeAssist, []);
@@ -146,6 +193,15 @@ export const TuiApp = ({ client, onExit, startMouse }: {
   const inputRows = Math.max(1, buffer.text.split("\n").reduce((count, line) => count + wrapText(line, size.columns - 4).length, 0)) + 2;
   const fixedRows = agentRows + inputRows + (choices.length ? choices.length + 2 : 0) + (notice ? 1 : 0) + 1;
   const logHeight = Math.max(0, size.rows - fixedRows);
+  scrollBounds.current = { total: logLines.length, height: logHeight };
+  useEffect(() => {
+    const onWheel = (direction: "up" | "down") => {
+      const { total, height } = scrollBounds.current;
+      setScroll((old) => scrollBy(old, direction === "up" ? WHEEL_LINES : -WHEEL_LINES, total, height));
+    };
+    mouseInput?.on("wheel", onWheel);
+    return () => { mouseInput?.off("wheel", onWheel); };
+  }, [mouseInput]);
   useEffect(() => {
     const previous = previousLineCount.current;
     previousLineCount.current = logLines.length;
@@ -163,11 +219,6 @@ export const TuiApp = ({ client, onExit, startMouse }: {
   const edit = (action: Parameters<typeof editInput>[1]) => setBuffer((old) => editInput(old, action));
 
   useInput((keyText, key) => {
-    const mouse = parseSgrMouse(keyText);
-    if (mouse) {
-      if (mouse !== "other") setScroll((old) => scrollBy(old, mouse === "up" ? WHEEL_LINES : -WHEEL_LINES, logLines.length, logHeight));
-      return;
-    }
     if (key.ctrl && keyText === "d") { exit(); return; }
     if (key.ctrl && keyText === "o") { setExpanded((old) => !old); return; }
     if (key.pageUp || key.pageDown) { setScroll((old) => scrollBy(old, (key.pageUp ? 1 : -1) * Math.max(1, logHeight - 1), logLines.length, logHeight)); return; }
@@ -239,13 +290,17 @@ export const withMouseTracking = async (write: (value: string) => void, run: (mo
 
 export const startTui = async (client: FeedClient): Promise<void> => {
   const write = (value: string) => { if (process.stdout.isTTY) process.stdout.write(value); };
-  await withMouseTracking(write, async (mouse) => {
-    const startMouse = async () => { await enableVirtualTerminalInput(); mouse.start(); };
-    const instance = render(h(TuiApp, { client, onExit: mouse.stop, startMouse }), TUI_RENDER_OPTIONS);
-    const onSignal = () => { mouse.stop(); instance.unmount(); };
-    process.once("SIGINT", onSignal);
-    process.once("SIGTERM", onSignal);
-    try { await instance.waitUntilExit(); }
-    finally { process.off("SIGINT", onSignal); process.off("SIGTERM", onSignal); }
-  });
+  const mouseInput = new MouseInputRelay(process.stdin);
+  try {
+    await withMouseTracking(write, async (mouse) => {
+      const startMouse = async () => { await enableVirtualTerminalInput(); mouse.start(); };
+      const instance = render(h(TuiApp, { client, onExit: mouse.stop, startMouse, mouseInput }),
+        { ...TUI_RENDER_OPTIONS, stdin: mouseInput });
+      const onSignal = () => { mouse.stop(); instance.unmount(); };
+      process.once("SIGINT", onSignal);
+      process.once("SIGTERM", onSignal);
+      try { await instance.waitUntilExit(); }
+      finally { process.off("SIGINT", onSignal); process.off("SIGTERM", onSignal); }
+    });
+  } finally { mouseInput.close(); }
 };

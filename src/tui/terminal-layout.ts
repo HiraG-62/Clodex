@@ -122,6 +122,20 @@ export const parseSgrMouse = (input: string): "up" | "down" | "other" | undefine
   return "other";
 };
 
+const SGR_MOUSE_PATTERN = /\x1b\[<\d+;\d+;\d+[Mm]/g;
+export const splitMouseInput = (chunk: string): { wheel: ("up" | "down")[]; rest: string } => {
+  const wheel: ("up" | "down")[] = [];
+  let rest = "";
+  let cursor = 0;
+  for (const match of chunk.matchAll(SGR_MOUSE_PATTERN)) {
+    rest += chunk.slice(cursor, match.index);
+    const direction = parseSgrMouse(match[0]);
+    if (direction === "up" || direction === "down") wheel.push(direction);
+    cursor = match.index + match[0].length;
+  }
+  return { wheel, rest: rest + chunk.slice(cursor) };
+};
+
 const characterWidth = (char: string): number => {
   const code = char.codePointAt(0) ?? 0;
   if (code <= 0x1f || code === 0x7f) return 0;
