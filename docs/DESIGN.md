@@ -1838,7 +1838,7 @@ D2 の詳細（Hub として複数の project を扱う）。2 段に分ける:
   - 今の `main()` の project ごとの部分（設定・履歴・Agent の設定・Workspace・feed の保存・成果物のプレビュー・アップロード先）を **ProjectContext** として切り出す（`hub/project-context.ts`）。Hub は project root ごとに ProjectContext を持ち、開いた project を残す（会話と同じく、切り替えても Agent を止めない）
   - 人が見ている project（**今の project**）は 1 つ。terminal と Web UI は今の project の今の会話を表示する
   - `/project` で開いている project の一覧、`/project <path>` でその project を開いて今の project にする（path は resolveProjectRoot と同じ規則で解決する）。Web UI は上部に project の切り替えを出し、`/project <path>` を送る
-  - 開いた project の一覧は `~/.clodex/hub.json` に保存し、次の起動で一覧に出す（開くのは選んだとき）
+  - 開いた project の一覧は `~/.clodex/hub.json` に保存し、次の起動で一覧に出す（開くのは選んだとき。ただし復旧する作業がある project は起動時に開く。§18）
   - `clodex serve`: terminal の Shell を持たずに Hub と Web UI だけを動かす（`--web` 相当。project は Web UI から開く。起動時の project は省略可）
   - 言語・Web の token・ポートは Hub で 1 つ。project ごとの設定（`.clodex.json`）は ProjectContext ごとに読む
 - **D2b: CLI から Hub へつなぐ**（D4 の TUI と一緒に行う）
