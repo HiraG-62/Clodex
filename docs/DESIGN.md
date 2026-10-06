@@ -1817,6 +1817,9 @@ D3 の詳細（Tauri GUI。Windows）:
 
 - `gui/` に Tauri v2 のプロジェクトを置く（Rust。`pnpm gui:dev` / `pnpm gui:build`。Tauri の CLI は devDependency の `@tauri-apps/cli`）
 - GUI は Hub を探し、いなければ起動する。そのため `clodex serve` は起動時に `~/.clodex/hub.lock`（`{ pid, port, url }`）を書き、終了時に消す（D2b の lock を先に入れる）。GUI は lock の pid が生きていればその Hub を使い、いなければ `clodex serve` を子プロセスで起動して lock を待つ。GUI が起動した Hub は GUI の終了で止める
+- GUI は単体で動く: Node の実行ファイルと Clodex 本体（`dist` と本番用の `node_modules`）をアプリの resource に同梱し、Hub はそれで起動する。PATH の `clodex` や Node のインストールは要らない（Claude / Codex の CLI は今どおり PATH のものを使う）。開発中は `CLODEX_GUI_ENTRY`（と `CLODEX_GUI_NODE`）で同梱物の代わりに手元の `dist/index.js` を使える
+  - 同梱物は `pnpm gui:dev` / `pnpm gui:build` の前に `gui/src-tauri/runtime/` に組み立てる（git の管理外）。`dist` は `import.meta.resolve` で `marked` のファイルを読むため、1 ファイルへの bundle はせず、`node_modules` ごと入れる
+  - 既に動いている Hub（CLI の `clodex serve` 等）があれば、版が違ってもそれを使う
 - ウィンドウは Hub の Web UI（`<url>/?token=<~/.clodex/web-token>`）を WebView2 で開くだけ。画面は Web UI と同じものを使う
 - ネイティブで足すのはフォルダの選択だけ（D3 の範囲）: Web UI の「開く」は、Tauri の中（`window.__TAURI__` がある）ならフォルダ選択のダイアログで選んだパスを `/project <path>` として送る。ブラウザでは今どおりパスを入力する。Tauri の IPC は Hub の URL（127.0.0.1）からだけ許す（capability の remote の設定）
 - 通知・トレイ常駐は D3 の後に検討する
