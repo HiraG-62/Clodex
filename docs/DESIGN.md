@@ -424,16 +424,23 @@ Project root の解決順:
 | `@claude ...` | Claude へ直接送信 | ✓ |
 | `@codex ...` | Codex へ直接送信 | ✓ |
 | `@claude! ...` / `@codex! ...` | その Agent の実行中のターンに指示を足す（steer）。実行中でなければ通常の送信（§28 v0.3 C） | ✓ |
-| `@all ...` | 両方へ送信（高コスト操作なので警告対象） | 未対応 |
+| `@all ...` / `@all! ...` | 両方の Agent へ同じ本文を送る（`@all!` はそれぞれに steer）。下記 | ✓ |
 | `@<path>` | project のファイルへの参照（行頭でも、Agent 名でなければ参照）。存在するファイルを本文の末尾に `Referenced files:` として添える（§28 v0.3 A） | ✓ |
 | `!command` | project root で shell command を実行し、出力を表示する（下記） | ✓ |
-| `!& command` | background process | 未対応（§15） |
+| `!& command` | background process として起動する（§15） | ✓ |
 | `/command` | Shell internal command | ✓（下記） |
 | Ctrl+C | 実行中の全 Agent のターンを interrupt し、実行中の `!command` を止める。どちらも無ければ終了方法を案内 | ✓ |
 | Ctrl+D / 入力の終端 | 受け付けた配送（Agent 間の連鎖を含む）が終わるのを待ってから終了 | ✓ |
 
 - 送信はキューに積むだけで、入力はすぐ次を受け付ける（§12 の mailbox）
 - 未対応の入力は、未対応である旨を表示して何もしない
+
+`@all`:
+
+- `@claude ...` と `@codex ...` を続けて入力したのと同じ。人間の入力として Agent ごとに 1 件ずつキューに積む（ID も別。`/cancel` も別々）。`@<path>` の参照と画像も両方に渡す
+- 2 倍の利用枠を使う操作なので、送るたびに `notice` を出す（例: `[CLODEX] @all: claude と codex に送信`）
+- 同じ作業を両方がしないよう（§3.2）、Agent に渡す本文の先頭に、両方に送られた入力であることを示す 1 行（`[Sent to both claude and codex]`）を足す
+- 入力の候補（`@` の後）と強調表示では、`all` を Agent 名と同じに扱う。Web UI の送り先の切り替えには足さない
 - スラッシュコマンドは 1 行で書く。2 行目以降がある入力は invalid として使い方を表示し、Agent には送らない
 - コマンドの一覧は `cli/commands.ts` の 1 か所にまとめ、`/help`・Web UI の候補・CLI の Tab 補完で共有する
 
@@ -464,10 +471,12 @@ Internal command（v0.1）:
 | `/permission [claude\|codex] <read-only\|edit\|full>` | Agent（省略時は両方）の権限レベルを切り替える（§9 Permission） |
 | `/model <claude\|codex> <model>` | Agent の model を切り替える（§9 Model / Effort） |
 | `/effort [claude\|codex] <level>` | Agent（省略時は両方）の reasoning effort を切り替える（§9 Model / Effort） |
+| `/processes [番号]` | 番号なしで `!&` の background process の一覧、番号付きでその process の出力の末尾（§15） |
+| `/kill <番号>` | background process をプロセスツリーごと止める（§15） |
 | `/help` | 入力方法の一覧 |
 | `/exit` | 全 Agent を止めて終了 |
 
-将来の候補: `/agents`, `/tasks`, `/messages`, `/budget`, `/worktree`, `/processes`
+将来の候補: `/agents`, `/tasks`, `/messages`, `/budget`, `/worktree`
 
 ---
 
@@ -952,27 +961,22 @@ Cross-Agent
 
 # 15. Process Manager
 
-将来的には Agent 以外の development process も管理する。
+dev server のように終わらない command を `!& <command>` で background process として動かす。人間が見るためのもので、Agent には渡さない（`!command` と同じ）。
 
 ```text
-> !& npm run dev
+> !& pnpm dev
+#1 started: pnpm dev
 
-Background process #1 started
-```
-
-```text
 > /processes
-
-#1 RUNNING npm run dev
+#1 running 12.3s  pnpm dev
 ```
 
-Electron:
-
-```text
-> !& npm run electron:dev
-```
-
-これも Windows native process として起動できる。
+- 起動は `!command` と同じ（PowerShell、UTF-8 の出力、終了コードの扱い。§8）。作業場所は起動したときの今の会話の作業場所
+- 番号は Hub の中で 1 から振り、使い回さない。一覧は Hub で 1 つ（project・会話をまたぐ）。終わった process も Hub の終了まで一覧に残す
+- 出力は feed に流さない。process ごとに最後の 200 行（定数）を持ち、`/processes <番号>` で表示する
+- 起動したとき・終わったときに 1 行出す（`#1 started: pnpm dev`、`#1 exit 1 (3.2s): pnpm dev`、止めたときは `#1 stopped (3.2s): pnpm dev`）
+- `/kill <番号>` でプロセスツリーごと止める。Ctrl+C と `/interrupt` では止めない（Agent のターンや `!command` を止めるたびに dev server が落ちないように）。`/exit` と Hub の終了ではすべて止める
+- state に一覧（番号・command・状態）を入れ、`/processes`・`/kill` の引数の候補に使う
 
 ---
 
@@ -1822,7 +1826,15 @@ D3 の詳細（Tauri GUI。Windows）:
   - 既に動いている Hub（CLI の `clodex serve` 等）があれば、版が違ってもそれを使う
 - ウィンドウは Hub の Web UI（`<url>/?token=<~/.clodex/web-token>`）を WebView2 で開くだけ。画面は Web UI と同じものを使う
 - ネイティブで足すのはフォルダの選択だけ（D3 の範囲）: Web UI の「開く」は、Tauri の中（`window.__TAURI__` がある）ならフォルダ選択のダイアログで選んだパスを `/project <path>` として送る。ブラウザでは今どおりパスを入力する。Tauri の IPC は Hub の URL（127.0.0.1）からだけ許す（capability の remote の設定）
-- 通知・トレイ常駐は D3 の後に検討する
+
+通知とトレイ常駐（D3 の後）:
+
+- **トレイ常駐**: ウィンドウを閉じても終了せず、ウィンドウを隠してトレイに残る（Hub と Agent は動き続ける）。トレイのアイコンを左クリックするとウィンドウを出す。メニューは「開く」「終了」で、「終了」で GUI を終える（GUI が起動した Hub は今どおり止める）。GUI をもう一度起動したら、新しいウィンドウを作らず既存のウィンドウを出す（single instance）
+- **通知**: Tauri の中の Web UI が、ウィンドウが見えていないかフォーカスが無いときに、Windows の通知を出す（`tauri-plugin-notification`）。ブラウザの Web UI では出さない
+  - 今の会話の作業が終わったとき: 作業中（どれかの Agent が busy か配送待ちがある）から、どの Agent も busy でなく配送待ちも無い状態になったとき。本文は最後に終わったターンの Agent と最終応答の 1 行目
+  - `notice`（ほかの会話の完了、利用枠など）と `error`
+  - 画面を開いたときや会話を切り替えたときの feed の読み込み（再生）では出さない
+- Tauri のメニューの文言は GUI（Rust）の定数に置く（Web UI の文言カタログの外）
 
 
 D4 の詳細（TUI。D2b と一緒に行う）:
