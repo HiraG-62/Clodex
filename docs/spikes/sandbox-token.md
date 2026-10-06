@@ -99,3 +99,68 @@ pnpm exec tsx spikes/sandbox-token.ts --cleanup <manifest>
 `--run-cli` は付けない。制限付き helper は既に restricted な親と管理者トークンを拒否する。TEMP / TMP は書き込み許可先へ変更する。別途の補助試験で TEMP の変更を省くと PowerShell が ConstrainedLanguage になったため、その試験は ACL 判定結果から除外した。
 
 検証: `pnpm test` 688 passed / 5 skipped、`pnpm typecheck` 成功。spike の TS は別途 strict な `tsc --ignoreConfig --noEmit` でも確認済み。
+
+## 通常の restricted token との比較（追加計測）
+
+`--full-restricted` は CreateRestrictedToken の flags=0、restricting SID は synthetic / logon / Everyone / BUILTIN\Users。人の SID と Authenticated Users は含めない。default DACL は従来と同じ。
+
+CLI 配置先には継承あり RX、home / AppData / Roaming / Local には継承なしの Traverse・ReadAttributes・ReadExtendedAttributes のみを付ける。Modify の許可先は従来と同じ。読み取りも制限される副作用と、home・APPDATA で削除が通った仮説を比較する。#11 は再計測しない。
+
+### 比較結果
+
+| # | 項目 | WRITE_RESTRICTED 版 | 通常 restricted token |
+|---|---|---|---|
+| 2 | project・専用 TEMP・artifacts・`.claude`・`.codex` | 作成・削除成功 | 作成・既存ファイル読取り・上書き・削除成功 |
+| 2 | `E:\` / `E:\dev\Clodex` | 作成・上書き・削除拒否 | 同じ。既存の検証用ファイルは読める |
+| 2 | home 直下 / APPDATA 直下 | 作成・上書き拒否、Win32 削除成功 | 作成・上書き・Win32 削除・既存ファイル読取りすべて拒否 |
+| 2 | `C:\Users\Public` | 作成・上書き・Win32 削除拒否、既存の検証用ファイル読取り成功 | 作成・上書き・Win32 削除・読取り拒否 |
+| 2 | project 外の Everyone Modify fixture | 作成・削除成功 | 作成・削除成功。境界漏れは残る |
+| 3 | home / Documents / APPDATA の列挙 | home 列挙成功。Documents・APPDATA の列挙は旧試験対象外 | すべて EPERM |
+| 3 | 別 project / Program Files の列挙 | 成功 | 成功 |
+| 4 | node / pnpm / git / claude / codex の version | 成功 | helper から直接起動すればすべて成功 |
+| 4 | pnpm install / git status・commit | 成功 | 成功。ただし git status は `.config/git/ignore` の Permission denied を警告 |
+| 4 | PowerShell / Node の子プロセス | PowerShell と孫プロセスが起動 | PowerShell 起動失敗、Node spawnSync は EPERM |
+| 5 | HKCU | 書き込み拒否 | `RegOpenKeyEx(HKCU\Software, KEY_QUERY_VALUE)` と `RegCreateKeyEx` がともに Win32 error 5 |
+| 6 | git ls-remote / Node HTTPS | 成功 | 成功、HTTP 200 |
+| 6 | pnpm view | 既定 cache は EPERM、project 内 cache で成功 | 同じ。既定 cache は `_cacache\tmp` の mkdir が EPERM |
+
+Public はこの PC では Everyone の書き込み許可先ではない。`icacls C:\Users\Public` は INTERACTIVE / SERVICE / BATCH の書き込み ACE を表示した。実在の Public と、Everyone Modify を明示した project 外の新規 fixture を区別して計測した。
+
+通常版の pnpm は `C:\Users\Horry\AppData\Roaming\npm\node_modules\pnpm\bin\pnpm.cjs` を Node から直接起動した。PowerShell wrapper の成功を示す結果ではない。git commit は一時 repo で user.name / user.email を指定し、hooks・署名を無効化した。人の git 設定全体が使えるという結果でもない。
+
+### 削除仮説の対照試験
+
+restricting SID を `{synthetic, logon, Everyone, BUILTIN\Users}`、ACL・default DACL・呼び出す Win32 API を同一にし、flags だけを `0` / `WRITE_RESTRICTED` に変えた。人が作成した計測ファイルに対し、`CreateFileW(DELETE)` でハンドル取得後に閉じ、`DeleteFileW` を実行した。
+
+| 対象 | flags=WRITE_RESTRICTED: DELETE open / DeleteFileW | flags=0: DELETE open / DeleteFileW |
+|---|---|---|
+| `C:\Users\Horry` | 成功 / 成功 | error 5 / error 5 |
+| `C:\Users\Horry\AppData\Roaming` | 成功 / 成功 | error 5 / error 5 |
+| `E:\` | error 5 / error 5 | error 5 / error 5 |
+| `C:\Users\Public` | error 5 / error 5 | error 5 / error 5 |
+
+この差は WRITE_RESTRICTED が削除経路に影響する仮説を支持し、前回の #2 の結果を説明できる。ただし `DELETE` と親の `FILE_DELETE_CHILD` のどちらの照合が省略されたかは、今回の試験では分離していない。Windows 内部の照合対象をすべて確定したとは扱わない。[通常 restricted token の二重照合仕様](https://learn.microsoft.com/en-us/windows/win32/secauthz/restricted-tokens)とも整合する。
+
+Node の `unlinkSync` は WRITE_RESTRICTED でも home / APPDATA で EPERM になった。API による差があるため、Node の拒否だけで削除境界が成立したとは判定しない。
+
+### 互換性と ACL 更新
+
+- PowerShell 5.1 は起動失敗。別途 PowerShell 7 を同じ構成で起動すると `Requested registry access is not allowed`、GPO 設定の読取り中に SecurityException。レジストリ読取りの制限が shell の起動を阻害している。
+- Node 自体は動くが、Node から同じ node.exe を spawnSync すると EPERM。直接起動の成功を Agent のツール実行成功とは扱えない。子の起動失敗の原因は未特定。
+- 旧 Get-Acl / Set-Acl は home で SeSecurityPrivilege を要求したため、DACL だけを取得・更新する実装にした。
+- .NET の SetAccessControl は継承なしの ACE でも home 以下を走査し、90 秒でタイムアウト。継承なしの更新・除去には SetFileSecurityW を使用し、対象だけを変更する。Modify / RX の継承あり ACE は従来どおり伝播する。[SetFileSecurityW の仕様](https://github.com/MicrosoftDocs/sdk-api/blob/docs/sdk-api-src/content/securitybaseapi/nf-securitybaseapi-setfilesecurityw.md)。
+- 走査 ACE は Traverse / ReadAttributes / ReadExtendedAttributes（.NET が Synchronize を付加）、継承なし。home の内容一覧やファイル読取りは許可しない。
+
+通常 token は指定した home / APPDATA の削除を止めたが、読み取り制限・shell 起動失敗・Node の子起動失敗・Everyone の書き込み先という課題が残る。現時点で「読み取りと実行はすべて許す」という方針を満たすものではない。
+
+### 再現・後片付け
+
+```powershell
+pnpm exec tsx spikes/sandbox-token.ts --full-restricted --output C:\Users\Horry\.clodex\sandbox-token-full-report.md
+```
+
+最終 run: `2e38b90a-c90a-43a0-a014-d78ff9d5e6f4`。synthetic SID: `S-1-5-21-148747068-872581202-400558888-1574807873`。生ログは `C:\Users\Horry\.clodex\sandbox-token-full-report.md`、manifest は `C:\Users\Horry\.clodex\sandbox-token-2e38b90a-c90a-43a0-a014-d78ff9d5e6f4.json`。
+
+全 12 付与先のルートで synthetic ACE 0 件。途中失敗を含む manifest はすべて cleaned=true、pending=0。Everyone fixture の追加 ACE も解除済み。管理者権限・共有 window station / desktop の DACL 変更・実 CLI のターンは使っていない。
+
+追加検証: `pnpm test` 690 passed / 5 skipped、`pnpm typecheck` と spike 個別 strict 型チェック成功。`--full-restricted` と `--run-cli` の併用は拒否する。

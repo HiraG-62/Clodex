@@ -23,12 +23,13 @@ const psArgs = (script: string): string[] => ["-NoLogo", "-NoProfile", "-NonInte
 const object = (value: unknown): Record<string, unknown> => typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
 const errorText = (value: unknown): string => value instanceof Error ? value.message : String(value);
 
-interface Options { project: string; otherProject: string; measureProject: string; output: string; runCli: boolean; keep: boolean; cleanup?: string }
+interface Options { project: string; otherProject: string; measureProject: string; output: string; runCli: boolean; keep: boolean; fullRestricted: boolean; cleanup?: string }
 export function parseTokenOptions(args: string[]): Options {
-  const result: Options = { project: "E:\\dev\\clodex-token-test", otherProject: REPOSITORY, measureProject: REPOSITORY, output: join(REPOSITORY, "docs", "spikes", "sandbox-token.md"), runCli: false, keep: false };
+  const result: Options = { project: "E:\\dev\\clodex-token-test", otherProject: REPOSITORY, measureProject: REPOSITORY, output: join(REPOSITORY, "docs", "spikes", "sandbox-token.md"), runCli: false, keep: false, fullRestricted: false };
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === "--run-cli") { result.runCli = true; continue; }
+    if (arg === "--full-restricted") { result.fullRestricted = true; continue; }
     if (arg === "--keep") { result.keep = true; continue; }
     const keys = { "--project": "project", "--other-project": "otherProject", "--measure-project": "measureProject", "--output": "output", "--cleanup": "cleanup" } as const;
     if (!arg || !(arg in keys)) throw new Error(`不明な引数: ${arg}`);
@@ -36,6 +37,7 @@ export function parseTokenOptions(args: string[]): Options {
     if (!value || value.startsWith("--")) throw new Error(`${arg} の値が必要`);
     result[keys[arg as keyof typeof keys]] = value;
   }
+  if (result.fullRestricted && result.runCli) throw new Error("通常 token の比較では --run-cli は対象外");
   return result;
 }
 
@@ -44,9 +46,11 @@ export function createRestrictingSid(): string {
   return `S-1-5-21-${[0, 4, 8, 12].map(offset => bytes.readUInt32LE(offset)).join("-")}`;
 }
 
-export function validateAclTarget(path: string, home: string): void {
+type AclAccess = "Modify" | "ReadAndExecute" | "Traverse";
+export function validateAclTarget(path: string, home: string, access: AclAccess = "Modify"): void {
   const normalized = win32.resolve(path);
   const relative = win32.relative(normalized, home);
+  if (relative === "" && access === "Traverse") return;
   if (!/^[a-z]:\\/i.test(path) || normalized === win32.parse(normalized).root || relative === "" || (!relative.startsWith("..") && !win32.isAbsolute(relative))) throw new Error(`ACL 対象外: ${path}`);
 }
 
@@ -78,9 +82,14 @@ public static class TokenLauncher {
   [DllImport("advapi32.dll",SetLastError=true)] static extern bool GetTokenInformation(IntPtr token,int kind,IntPtr buffer,int size,out int needed);
   [DllImport("advapi32.dll",SetLastError=true)] static extern bool SetTokenInformation(IntPtr token,int kind,IntPtr buffer,int size);
   [DllImport("advapi32.dll",SetLastError=true)] static extern bool IsTokenRestricted(IntPtr token);
+  [DllImport("advapi32.dll",CharSet=CharSet.Unicode)] static extern int RegOpenKeyEx(IntPtr key,string name,uint options,uint access,out IntPtr result);
+  [DllImport("advapi32.dll",CharSet=CharSet.Unicode)] static extern int RegCreateKeyEx(IntPtr key,string name,uint reserved,string type,uint options,uint access,IntPtr security,out IntPtr result,out uint disposition);
+  [DllImport("advapi32.dll")] static extern int RegCloseKey(IntPtr key);
   [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool ConvertStringSidToSid(string text,out IntPtr sid);
   [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool CreateProcessAsUser(IntPtr token,string app,StringBuilder command,IntPtr processAttributes,IntPtr threadAttributes,bool inherit,int flags,IntPtr environment,string cwd,ref Startup startup,out ProcessInfo result);
   [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+  [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool DeleteFile(string path);
+  [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr CreateFile(string path,uint access,uint share,IntPtr security,uint creation,uint flags,IntPtr template);
   [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int index);
   [DllImport("kernel32.dll",SetLastError=true)] static extern bool DuplicateHandle(IntPtr process,IntPtr handle,IntPtr target,out IntPtr copy,uint access,bool inherit,uint options);
   [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr CreateJobObject(IntPtr attributes,string name);
@@ -121,6 +130,18 @@ public static class TokenLauncher {
   }
   public static int Main(string[] args) {
     try {
+      if(args.Length==2 && args[0]=="--delete") {
+        var handle=CreateFile(args[1],0x10000,7,IntPtr.Zero,3,0,IntPtr.Zero);
+        int openError=handle==new IntPtr(-1)?Marshal.GetLastWin32Error():0;if(openError==0)CloseHandle(handle);
+        bool deleted=DeleteFile(args[1]);int deleteError=deleted?0:Marshal.GetLastWin32Error();
+        Console.WriteLine("{\"openDeleteError\":"+openError+",\"deleteError\":"+deleteError+"}");return 0;
+      }
+      if(args.Length==2 && args[0]=="--registry") {
+        IntPtr key; uint disposition; var hkcu=new IntPtr(unchecked((int)0x80000001));
+        int read=RegOpenKeyEx(hkcu,"Software",0,1,out key);if(read==0)RegCloseKey(key);
+        int write=RegCreateKeyEx(hkcu,args[1],0,null,0,2,IntPtr.Zero,out key,out disposition);if(write==0)RegCloseKey(key);
+        Console.WriteLine("{\"readError\":"+read+",\"writeError\":"+write+"}"); return 0;
+      }
       using(var identity=WindowsIdentity.GetCurrent()) {
         if(args.Length==1 && args[0]=="--inspect") { Console.WriteLine("{\"sid\":\""+identity.User.Value+"\",\"restricted\":"+IsTokenRestricted(identity.Token).ToString().ToLowerInvariant()+",\"restrictingSids\":["+String.Join(",",Groups(identity.Token,TOKEN_RESTRICTED_SIDS).Select(group=>"\""+group.Item1+"\""))+ "]}"); return 0; }
         if(new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator)) throw new Exception("elevated token rejected");
@@ -138,14 +159,15 @@ public static class TokenLauncher {
       if(IsTokenRestricted(original)) throw new Exception("caller already restricted; SID intersection requires separate investigation");
       string mode=Environment.GetEnvironmentVariable("CLODEX_SPIKE_TOKEN_MODE")??"dacl";
       var sidTexts=new List<string>();sidTexts.Add(sidText);
-      if(mode=="logon"||mode=="everyone") {
+      if(mode=="logon"||mode=="everyone"||mode=="full"||mode=="write-users") {
         var logon=Groups(original,TOKEN_GROUPS).Single(group=>(group.Item2&SE_GROUP_LOGON_ID)==SE_GROUP_LOGON_ID);
         sidTexts.Add(logon.Item1);
       }
-      if(mode=="everyone")sidTexts.Add("S-1-1-0");
+      if(mode=="everyone"||mode=="full"||mode=="write-users")sidTexts.Add("S-1-1-0");
+      if(mode=="full"||mode=="write-users")sidTexts.Add("S-1-5-32-545");
       var entries=new List<SidEntry>();
       foreach(string text in sidTexts){IntPtr sid;Check(ConvertStringSidToSid(text,out sid),"ConvertStringSidToSid");allocatedSids.Add(sid);var entry=new SidEntry();entry.sid=sid;entries.Add(entry);}
-      Check(CreateRestrictedToken(original,WRITE_RESTRICTED,0,IntPtr.Zero,0,IntPtr.Zero,(uint)entries.Count,entries.ToArray(),out restricted),"CreateRestrictedToken");
+      Check(CreateRestrictedToken(original,mode=="full"?0:WRITE_RESTRICTED,0,IntPtr.Zero,0,IntPtr.Zero,(uint)entries.Count,entries.ToArray(),out restricted),"CreateRestrictedToken");
       SetDefaultDacl(restricted,sidText);
       for(int i=0;i<handles.Length;i++) Check(DuplicateHandle(GetCurrentProcess(),GetStdHandle(STD_INPUT_HANDLE-i),GetCurrentProcess(),out handles[i],0,true,DUPLICATE_SAME_ACCESS),"DuplicateHandle");
       job=CreateJobObject(IntPtr.Zero,null); Check(job!=IntPtr.Zero,"CreateJobObject");
@@ -195,10 +217,14 @@ function requireSuccess(result: Result): string {
 }
 
 interface Manifest { sid: string; owner: string; targets: string[]; pending: string[]; cleaned: boolean }
-function aclScript(path: string, sid: string, remove: boolean): string {
-  return `$path=${psQuote(path)}; $acl=Get-Acl -LiteralPath $path; $sid=[Security.Principal.SecurityIdentifier]::new(${psQuote(sid)});
-${remove ? `foreach($rule in $acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier])) { if($rule.IdentityReference.Value -eq $sid.Value) { [void]$acl.RemoveAccessRuleSpecific($rule) } }` : `$item=Get-Item -LiteralPath $path -Force; $inherit=if($item.PSIsContainer){[Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'}else{[Security.AccessControl.InheritanceFlags]::None}; $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'Modify',$inherit,'None','Allow'));`}
-Set-Acl -LiteralPath $path -AclObject $acl`;
+export function aclScript(path: string, sid: string, remove: boolean, access: AclAccess = "Modify"): string {
+  const rights = access === "Traverse" ? "Traverse,ReadAttributes,ReadExtendedAttributes" : access;
+  return `$propagate=$false; $path=${psQuote(path)}; $item=Get-Item -LiteralPath $path -Force; $section=[Security.AccessControl.AccessControlSections]::Access; $acl=if($item.PSIsContainer){[IO.Directory]::GetAccessControl($path,$section)}else{[IO.File]::GetAccessControl($path,$section)}; $sid=[Security.Principal.SecurityIdentifier]::new(${psQuote(sid)});
+${remove ? `foreach($rule in $acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier])) { if($rule.IdentityReference.Value -eq $sid.Value) { if($rule.InheritanceFlags -ne [Security.AccessControl.InheritanceFlags]::None){$propagate=$true}; [void]$acl.RemoveAccessRuleSpecific($rule) } }` : `$item=Get-Item -LiteralPath $path -Force; $inherit=if($item.PSIsContainer -and ${access !== "Traverse" ? "$true" : "$false"}){[Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'}else{[Security.AccessControl.InheritanceFlags]::None}; $propagate=$inherit -ne [Security.AccessControl.InheritanceFlags]::None; $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'${rights}',$inherit,'None','Allow'));`}
+if($propagate){if($item.PSIsContainer){[IO.Directory]::SetAccessControl($path,$acl)}else{[IO.File]::SetAccessControl($path,$acl)}}else{
+Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class ClodexAcl { [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern bool SetFileSecurity(string path, uint information, byte[] descriptor); }';
+if(-not [ClodexAcl]::SetFileSecurity($path,4,$acl.GetSecurityDescriptorBinaryForm())){throw [ComponentModel.Win32Exception]::new([Runtime.InteropServices.Marshal]::GetLastWin32Error())}
+}`;
 }
 
 async function assertNoReparse(path: string): Promise<void> {
@@ -213,7 +239,7 @@ const probeWrite = (directory: string, leaf: string) => `$path=Join-Path ${psQuo
 const gitConfig = (project: string) => `-c user.name=ClodexSpike -c user.email=spike@example.invalid -c commit.gpgsign=false -c ${psQuote(`core.hooksPath=${join(project, "no-hooks")}`)}`;
 
 async function main(): Promise<void> {
-  if (process.argv.includes("--help")) { console.log("pnpm exec tsx spikes/sandbox-token.ts [--project E:\\dev\\clodex-token-test] [--keep] [--run-cli]\n--cleanup <manifest>: 記録した ACE を解除\n実 CLI は --run-cli 指定時のみ。--keep 以外は終了時に ACE を解除。"); return; }
+  if (process.argv.includes("--help")) { console.log("pnpm exec tsx spikes/sandbox-token.ts [--project E:\\dev\\clodex-token-test] [--keep] [--full-restricted] [--run-cli]\n--cleanup <manifest>: 記録した ACE を解除\n実 CLI は --run-cli 指定時のみ。--keep 以外は終了時に ACE を解除。"); return; }
   if (process.platform !== "win32") throw new Error("Windows 専用");
   const options = parseTokenOptions(process.argv.slice(2));
   const humanHome = homedir();
@@ -222,7 +248,7 @@ async function main(): Promise<void> {
   const cleanup = async (manifest: Manifest, path: string) => {
     if (manifest.owner !== who.sid || !/^S-1-5-21-(\d+-){3}\d+$/.test(manifest.sid)) throw new Error("manifest の所有者または SID が不正");
     for (const target of [...manifest.pending]) {
-      validateAclTarget(target, humanHome); await assertNoReparse(target);
+      validateAclTarget(target, humanHome, "Traverse"); await assertNoReparse(target);
       requireSuccess(await host(aclScript(target, manifest.sid, true)));
       manifest.pending = manifest.pending.filter(item => item !== target);
       await writeFile(path, JSON.stringify(manifest, null, 2));
@@ -251,16 +277,16 @@ async function main(): Promise<void> {
   const logs: string[] = [`日時: ${new Date().toISOString()}\nOS: ${process.platform} / Node ${process.version}\n人の SID: ${who.sid}\nrestricting SID: ${sid}\nproject: ${options.project}\n作業先: ${work}\nmanifest: ${manifestPath}\n--run-cli: ${options.runCli}`];
   const add = (number: number, status: string, detail: string) => { rows.push({ number, name: LABELS[number - 1]!, status, detail }); console.log(`#${number} ${status}: ${detail.slice(0, 250)}`); };
   const log = (title: string, value: unknown) => logs.push(`### ${title}\n\n\`\`\`text\n${typeof value === "string" ? value : JSON.stringify(value, null, 2)}\n\`\`\``);
-  const grant = async (target: string) => {
-    validateAclTarget(target, humanHome); await assertNoReparse(target);
+  const grant = async (target: string, access: AclAccess = "Modify") => {
+    validateAclTarget(target, humanHome, access); await assertNoReparse(target);
     if (!manifest.targets.includes(target)) manifest.targets.push(target);
     if (!manifest.pending.includes(target)) manifest.pending.push(target);
     await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
-    const result = await host(aclScript(target, sid, false)); requireSuccess(result); return result.elapsedMs;
+    const result = await host(aclScript(target, sid, false, access)); requireSuccess(result); return result.elapsedMs;
   };
   const env = { ...process.env, TEMP: temporary, TMP: temporary };
   let tokenMode = "dacl";
-  const restrictedSpawn = (command: string, args: string[], cwd = work) => launch(helper, [sid, cwd, String(TURN_TIMEOUT_MS), command, ...args], cwd, { ...env, CLODEX_SPIKE_TOKEN_MODE: tokenMode });
+  const restrictedSpawn = (command: string, args: string[], cwd = work, overrides: NodeJS.ProcessEnv = {}) => launch(helper, [sid, cwd, String(TURN_TIMEOUT_MS), command, ...args], cwd, { ...env, ...overrides, CLODEX_SPIKE_TOKEN_MODE: tokenMode });
   const restricted = (script: string, input?: string) => collect(restrictedSpawn(POWERSHELL, psArgs(script)), input);
   const measure = async (number: number, action: () => Promise<string>) => { try { add(number, "計測済み", await action()); } catch (error) { add(number, "失敗", errorText(error)); log(`#${number} エラー`, errorText(error)); } };
   try {
@@ -271,6 +297,80 @@ async function main(): Promise<void> {
     for (const path of allowed) {
       if (await lstat(path).then(() => true, () => false)) log(`ACE 付与: ${path}`, `${await grant(path)} ms`);
       else log(`ACE 未付与: ${path}`, "未存在");
+    }
+    if (options.fullRestricted) {
+      for (const path of [humanHome, join(humanHome, "AppData"), process.env.APPDATA!, process.env.LOCALAPPDATA!]) log(`走査 ACE: ${path}`, `${await grant(path, "Traverse")} ms`);
+      for (const path of [join(humanHome, ".local", "bin"), join(process.env.APPDATA!, "npm"), join(process.env.LOCALAPPDATA!, "Programs", "OpenAI", "Codex")]) {
+        if (await lstat(path).then(() => true, () => false)) log(`RX ACE: ${path}`, `${await grant(path, "ReadAndExecute")} ms`);
+      }
+    }
+    if (options.fullRestricted) {
+      tokenMode = "full";
+      const node = (code: string, extra: string[] = []) => collect(restrictedSpawn(process.execPath, ["-e", code, ...extra]));
+      log("PowerShell 起動", await restricted("'probe-ok'"));
+      await measure(1, async () => {
+        const result = await collect(restrictedSpawn(helper, ["--inspect"]));
+        log("通常 token", result); return requireSuccess(result);
+      });
+      await measure(2, async () => {
+        const results: unknown[] = [];
+        const directories = [options.project, artifacts, temporary, ...allowed.slice(2).filter(path => !path.endsWith(".json")), "E:\\", options.otherProject, humanHome, process.env.APPDATA!, process.env.PUBLIC ?? "C:\\Users\\Public"];
+        for (const mode of ["full", "write-users"]) for (const path of directories) {
+          tokenMode = mode;
+          const file = join(path, `.clodex-token-full-${runId}`);
+          const existing = `${file}-existing`;
+          await writeFile(existing, "human", { flag: "wx" });
+          try {
+            results.push({ path, mode, ...await node(`const fs=require('fs');const [file,existing]=process.argv.slice(1);const r={};for(const [name,action] of Object.entries({create:()=>fs.writeFileSync(file,'agent',{flag:'wx'}),deleteCreated:()=>fs.unlinkSync(file),readExisting:()=>fs.readFileSync(existing),writeExisting:()=>fs.writeFileSync(existing,'agent'),deleteExisting:()=>fs.unlinkSync(existing)})){try{action();r[name]=true}catch(e){r[name]=e.code}}console.log(JSON.stringify(r))`, [file, existing]) });
+          } finally { for (const target of [file, existing]) await unlink(target).catch(error => { if (object(error).code !== "ENOENT") throw error; }); }
+          await writeFile(existing, "human", { flag: "wx" });
+          try { results.push({ path, mode, api: "CreateFile DELETE / DeleteFileW", ...await collect(restrictedSpawn(helper, ["--delete", existing])) }); }
+          finally { await unlink(existing).catch(error => { if (object(error).code !== "ENOENT") throw error; }); }
+        }
+        tokenMode = "full";
+        const fixture = join(clodex, `everyone-fixture-${runId}`);
+        await mkdir(fixture);
+        try {
+          requireSuccess(await host(aclScript(fixture, "S-1-1-0", false)));
+          results.push({ path: fixture, stage: "Everyone Modify", ...await node("const fs=require('fs'),p=process.argv[1];fs.writeFileSync(p,'agent');fs.unlinkSync(p);console.log('create/delete: true')", [join(fixture, "probe.txt")]) });
+        } finally { requireSuccess(await host(aclScript(fixture, "S-1-1-0", true))); }
+        log("書き込み境界", results); return JSON.stringify(results);
+      });
+      await measure(3, async () => {
+        const result = await node("const fs=require('fs');for(const path of process.argv.slice(1)){try{console.log(JSON.stringify({path,read:true,count:fs.readdirSync(path).length}))}catch(e){console.log(JSON.stringify({path,read:false,error:e.code}))}}", [humanHome, join(humanHome, "Documents"), process.env.APPDATA!, options.otherProject, process.env.ProgramFiles!]);
+        log("読み取り", result); return requireSuccess(result);
+      });
+      const commands = object(JSON.parse(requireSuccess(await host("$r=@{}; foreach($c in @('node','pnpm.cmd','git','claude','codex')){$r[$c]=(Get-Command $c -ErrorAction Stop).Source};$r|ConvertTo-Json -Compress"))));
+      const tool = async (name: string, args: string[], cwd = work, cache = false) => {
+        const command = name === "pnpm.cmd" ? process.execPath : String(commands[name]);
+        const argv = name === "pnpm.cmd" ? [join(process.env.APPDATA!, "npm", "node_modules", "pnpm", "bin", "pnpm.cjs"), ...args] : args;
+        return collect(restrictedSpawn(command, argv, cwd, cache ? { npm_config_cache: join(work, "npm-cache") } : {}));
+      };
+      const gitDir = join(work, "git"); await mkdir(gitDir);
+      await measure(4, async () => {
+        const results: unknown[] = [];
+        results.push({ command: "Node から子を起動", ...await node(`const r=require('child_process').spawnSync(process.execPath,['--version'],{encoding:'utf8'});console.log(JSON.stringify({status:r.status,error:r.error?.code,stdout:r.stdout}));process.exitCode=r.status??1`) });
+        for (const name of ["node", "pnpm.cmd", "git", "claude", "codex"]) results.push({ command: name, ...await tool(name, ["--version"]) });
+        await writeFile(join(gitDir, "package.json"), JSON.stringify({ name: "clodex-token-spike", private: true, dependencies: { "is-number": "7.0.0" } }));
+        results.push({ command: "pnpm install", ...await tool("pnpm.cmd", ["install", "--ignore-scripts"], gitDir) });
+        for (const args of [["init"], ["status", "--short"], ["-c", "user.name=ClodexSpike", "-c", "user.email=spike@example.invalid", "-c", "commit.gpgsign=false", "-c", `core.hooksPath=${join(work, "no-hooks")}`, "commit", "--allow-empty", "-m", "sandbox-token-agent"]]) results.push({ command: `git ${args.join(" ")}`, ...await tool("git", args, gitDir) });
+        log("ツール", results); return JSON.stringify(results);
+      });
+      await measure(5, async () => {
+        const key = `Software\\ClodexTokenSpike-${runId}`;
+        try { const result = await collect(restrictedSpawn(helper, ["--registry", key])); log("HKCU", result); return JSON.stringify(result); }
+        finally { requireSuccess(await host(`[Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree(${psQuote(key)},$false)`)); }
+      });
+      await measure(6, async () => {
+        const results = [
+          { command: "git ls-remote", ...await tool("git", ["ls-remote", "https://github.com/openai/codex.git", "HEAD"]) },
+          { command: "pnpm view", ...await tool("pnpm.cmd", ["view", "is-number", "version"]) },
+          { command: "pnpm view（project 内 cache）", ...await tool("pnpm.cmd", ["view", "is-number", "version"], work, true) },
+          { command: "HTTPS（Node）", ...await node("fetch('https://registry.npmjs.org/is-number/latest').then(async r=>{console.log(r.status);await r.arrayBuffer();if(!r.ok)process.exitCode=1}).catch(e=>{console.error(e);process.exitCode=1})") },
+        ]; log("ネットワーク", results); return JSON.stringify(results);
+      });
+      for (const number of [7, 8, 9, 10, 11]) add(number, "未実行", "今回の比較対象外");
+      return;
     }
     await measure(1, async () => {
       for (const mode of ["dacl", "logon", "everyone"]) {
@@ -288,12 +388,12 @@ async function main(): Promise<void> {
     });
     await measure(2, async () => {
       const results: unknown[] = [];
-      for (const path of [options.project, artifacts, temporary, ...allowed.slice(2), "E:\\", options.otherProject, humanHome, process.env.APPDATA!]) {
+      for (const path of [options.project, artifacts, temporary, ...allowed.slice(2), "E:\\", options.otherProject, humanHome, process.env.APPDATA!, join(process.env.PUBLIC ?? "C:\\Users\\Public")]) {
         const info = await lstat(path).catch(() => undefined); if (!info) continue;
         const script = info.isDirectory() ? probeWrite(path, `.clodex-token-${runId}`) : `try { $s=[IO.File]::Open(${psQuote(path)},'Open','Write');$s.Dispose();'書き込み用 open 成功（内容変更なし）' } catch { $_.Exception.GetBaseException().Message;exit 1 }`;
         results.push({ path, ...await restricted(script) });
       }
-      for (const path of ["E:\\", options.otherProject, humanHome, process.env.APPDATA!]) {
+      for (const path of ["E:\\", options.otherProject, humanHome, process.env.APPDATA!, join(process.env.PUBLIC ?? "C:\\Users\\Public")]) {
         const file = join(path, `.clodex-token-existing-${runId}`);
         await writeFile(file, "human", { flag: "wx" });
         try {
@@ -310,7 +410,7 @@ async function main(): Promise<void> {
       log("書き込み境界", results); return JSON.stringify(results);
     });
     await measure(3, async () => {
-      const result = await restricted(`foreach($p in @(${[humanHome, options.otherProject, process.env.ProgramFiles!].map(psQuote).join(",")})) { try { $files=@(Get-ChildItem -LiteralPath $p -Force -ErrorAction Stop); @{path=$p;count=$files.Count;read=$true} | ConvertTo-Json -Compress } catch { @{path=$p;error=$_.Exception.Message} | ConvertTo-Json -Compress } }`);
+      const result = await restricted(`foreach($p in @(${[humanHome, join(humanHome, "Documents"), process.env.APPDATA!, options.otherProject, process.env.ProgramFiles!].map(psQuote).join(",")})) { try { $files=@(Get-ChildItem -LiteralPath $p -Force -ErrorAction Stop); @{path=$p;count=$files.Count;read=$true} | ConvertTo-Json -Compress } catch { @{path=$p;error=$_.Exception.Message} | ConvertTo-Json -Compress } }`);
       log("読み取り", result); return requireSuccess(result);
     });
     const gitDir = join(work, "git"); await mkdir(gitDir);

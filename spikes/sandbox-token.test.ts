@@ -1,7 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { createRestrictingSid, parseTokenOptions, validateAclTarget, tokenHelperSource } from "./sandbox-token.js";
+import { createRestrictingSid, parseTokenOptions, validateAclTarget, tokenHelperSource, aclScript } from "./sandbox-token.js";
 
 describe("write-restricted token spike", () => {
+  it("通常の restricted token は明示指定時だけ使用", () => {
+    expect(parseTokenOptions([]).fullRestricted).toBe(false);
+    expect(parseTokenOptions(["--full-restricted"]).fullRestricted).toBe(true);
+    expect(() => parseTokenOptions(["--full-restricted", "--run-cli"])).toThrow();
+  });
+  it("home の例外は継承なしの走査・属性読取りだけ", () => {
+    const home = "C:\\Users\\Human";
+    expect(() => validateAclTarget(home, home, "Traverse")).not.toThrow();
+    expect(() => validateAclTarget(home, home, "ReadAndExecute")).toThrow();
+    expect(() => validateAclTarget("C:\\Users", home, "Traverse")).toThrow();
+    const script = aclScript(home, "S-1-5-21-1-2-3-4", false, "Traverse");
+    expect(script).toContain("Traverse,ReadAttributes,ReadExtendedAttributes");
+    expect(script).toContain("InheritanceFlags]::None");
+    expect(script).not.toContain("'Modify'");
+  });
   it("CLI と ACL 保持は明示指定時だけ有効", () => {
     expect(parseTokenOptions([])).toMatchObject({ runCli: false, keep: false });
     expect(parseTokenOptions(["--run-cli", "--keep"])).toMatchObject({ runCli: true, keep: true });
