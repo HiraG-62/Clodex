@@ -9,11 +9,13 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use tauri::{webview::WebviewWindowBuilder, WebviewUrl};
+use tauri::{webview::WebviewWindowBuilder, Manager, WebviewUrl};
 
 const START_TIMEOUT: Duration = Duration::from_secs(20);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
+const RUNTIME_NODE: &str = "runtime/node.exe";
+const RUNTIME_ENTRY: &str = "runtime/app/dist/index.js";
 
 struct OwnedHub {
     child: Child,
@@ -108,22 +110,23 @@ fn live_hub(home: &Path) -> Option<HubLock> {
     Some(lock)
 }
 
-fn spawn_hub() -> Result<Child, Box<dyn Error>> {
-    // 明示した Node と dist/index.js、または PATH の clodex を使う。
+fn spawn_hub(resource_dir: &Path) -> Result<Child, Box<dyn Error>> {
     let mut command = if let Some(entry) = std::env::var_os("CLODEX_GUI_ENTRY") {
         let mut command =
             Command::new(std::env::var_os("CLODEX_GUI_NODE").unwrap_or_else(|| "node".into()));
         command.arg(entry);
         command
     } else {
-        let default_command = if cfg!(windows) {
-            "clodex.cmd"
-        } else {
-            "clodex"
-        };
-        Command::new(
-            std::env::var_os("CLODEX_GUI_COMMAND").unwrap_or_else(|| default_command.into()),
-        )
+        let node = resource_dir.join(RUNTIME_NODE);
+        let entry = resource_dir.join(RUNTIME_ENTRY);
+        for path in [&node, &entry] {
+            if !path.is_file() {
+                return Err(format!("同梱ファイルが見つかりません: {}", path.display()).into());
+            }
+        }
+        let mut command = Command::new(node);
+        command.arg(entry);
+        command
     };
     command
         .arg("serve")
@@ -139,15 +142,17 @@ fn spawn_hub() -> Result<Child, Box<dyn Error>> {
     Ok(command.spawn()?)
 }
 
-fn ensure_hub(home: &Path) -> Result<(HubLock, Option<Child>), Box<dyn Error>> {
+fn ensure_hub(
+    home: &Path,
+    resource_dir: &Path,
+) -> Result<(HubLock, Option<Child>), Box<dyn Error>> {
     if let Some(lock) = live_hub(home) {
         return Ok((lock, None));
     }
-    let mut child = spawn_hub()?;
+    let mut child = spawn_hub(resource_dir)?;
     let deadline = Instant::now() + START_TIMEOUT;
     while Instant::now() < deadline {
         if let Some(lock) = live_hub(home) {
-            // Windows の clodex.cmd は Node を子プロセスとして起動する。
             return Ok((lock, Some(child)));
         }
         if let Some(status) = child.try_wait()? {
@@ -166,7 +171,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             let home = home_dir()?;
-            let (lock, child) = ensure_hub(&home)?;
+            let resource_dir = app.path().resource_dir()?;
+            let (lock, child) = ensure_hub(&home, &resource_dir)?;
             let token = fs::read_to_string(home.join(".clodex/web-token"))?;
             *owned_on_setup.lock().expect("Hub の状態をロックできません") =
                 child.map(|child| OwnedHub {

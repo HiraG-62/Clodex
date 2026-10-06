@@ -8,8 +8,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "gui:dev": "pnpm build && cd gui && pnpm exec tauri dev",
-    "gui:build": "pnpm build && cd gui && pnpm exec tauri build",
+    "gui:dev": "pnpm build && node scripts/stage-gui-runtime.mjs && cd gui && pnpm exec tauri dev",
+    "gui:build": "pnpm build && node scripts/stage-gui-runtime.mjs && cd gui && pnpm exec tauri build",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
