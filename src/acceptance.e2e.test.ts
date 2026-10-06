@@ -5,12 +5,20 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { CoordinatorEvent } from "./coordinator/event-bus.js";
+import { detectLanguage } from "./context/language.js";
+import { en, ja, type MessageKey } from "./i18n/messages.js";
 
 const ACCEPTANCE_TIMEOUT_MS = 600_000;
 const WAIT_TIMEOUT_MS = 240_000;
 const POLL_INTERVAL_MS = 500;
 const INTERRUPT_DELAY_MS = 4_000;
 const CLODEX_ROOT = resolve(import.meta.dirname, "..");
+// 子の clodex は OS のロケールで画面の言語を決めるので、同じ判定で期待する文言を引く
+const MESSAGES = detectLanguage() === "ja" ? ja : en;
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// 文言の {name} を正規表現の断片に置き換える
+const messagePattern = (key: MessageKey, params: Record<string, string> = {}): string =>
+  escapeRegExp(MESSAGES[key]).replace(/\\\{(\w+)\\\}/g, (_, name: string) => params[name] ?? ".*?");
 const TSX_CLI = join(CLODEX_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
 const ENTRY = join(CLODEX_ROOT, "src", "index.ts");
 
@@ -58,7 +66,7 @@ describe.runIf(process.env.CLODEX_E2E === "1")("v0.1 acceptance (real clodex pro
 
     await waitForOutput(/Clodex v0\.1 {2}project: (.+)/);
     expect(output).toContain(`project: ${root}  primary:`);
-    const logPath = (await waitForOutput(/log: (.+\.jsonl)/))[1]!.trim();
+    const logPath = (await waitForOutput(new RegExp(messagePattern("start.log", { path: "(.+\\.jsonl)" }))))[1]!.trim();
 
     // 2〜9. Claude → Codex の REVIEW_REQUEST、Codex の RESULT が Claude に届き Claude が継続する
     send('@claude Use the clodex send_message tool once: to="codex", type="REVIEW_REQUEST", taskId="ACC-1", ' +
@@ -81,10 +89,12 @@ describe.runIf(process.env.CLODEX_E2E === "1")("v0.1 acceptance (real clodex pro
     send("@claude Write the numbers 1 to 2000, one per line. Do not use tools.");
     await new Promise((r) => setTimeout(r, INTERRUPT_DELAY_MS));
     send("/interrupt claude");
-    await waitForOutput(/\[CLAUDE\] interrupted/);
+    await waitForOutput(new RegExp(`\\[CLAUDE\\] ${messagePattern("log.interrupted")}`));
 
     send("/status");
-    await waitForOutput(/claude: idle, permission edit \(session /);
+    await waitForOutput(new RegExp(messagePattern("shell.status", {
+      id: "claude", status: "idle", permission: "edit", session: messagePattern("shell.session"),
+    })));
 
     // 10. message が timestamp / from / to / type / taskId 付きで記録される
     const logged = readFileSync(logPath, "utf8").trim().split("\n").map((l) => JSON.parse(l) as CoordinatorEvent);
