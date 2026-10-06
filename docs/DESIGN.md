@@ -470,12 +470,13 @@ Internal command（v0.1）:
 | `/permission [claude\|codex] <read-only\|edit\|full>` | Agent（省略時は両方）の権限レベルを切り替える（§9 Permission） |
 | `/model <claude\|codex> <model>` | Agent の model を切り替える（§9 Model / Effort） |
 | `/effort [claude\|codex] <level>` | Agent（省略時は両方）の reasoning effort を切り替える（§9 Model / Effort） |
+| `/limits [<name> <n>\|reset]` | Agent 間のやり取りの上限を表示・変更する（§14 上限） |
 | `/processes [番号]` | 番号なしで `!&` の background process の一覧、番号付きでその process の出力の末尾（§15） |
 | `/kill <番号>` | background process をプロセスツリーごと止める（§15） |
 | `/help` | 入力方法の一覧 |
 | `/exit` | 全 Agent を止めて終了 |
 
-将来の候補: `/agents`, `/tasks`, `/messages`, `/budget`, `/worktree`
+将来の候補: `/agents`, `/tasks`, `/messages`, `/worktree`
 
 ---
 
@@ -587,9 +588,9 @@ Adapter の必須処理:
 
 ## Agent の設定の保存
 
-人が `/permission`・`/model`・`/effort` で切り替えた値を project ごとに保存し、`clodex` を起動し直しても使う。
+人が `/permission`・`/model`・`/effort`・`/limits` で切り替えた値を project ごとに保存し、`clodex` を起動し直しても使う。
 
-- 保存先: 会話の履歴（§18）と同じ名前の `.settings.json`（例: `~/.clodex/state/E--dev-Clodex-1a2b3c4d.settings.json`）。内容は `{ "claude": { "permission", "model", "effort" }, "codex": { ... } }`
+- 保存先: 会話の履歴（§18）と同じ名前の `.settings.json`（例: `~/.clodex/state/E--dev-Clodex-1a2b3c4d.settings.json`）。内容は `{ "claude": { "permission", "model", "effort" }, "codex": { ... }, "limits": { ... } }`（`limits` は `/limits` で変えた上限だけ。§14）
 - 保存するのは人が切り替えた値だけ。CLI から読み取った実際の model / effort（`/status` の表示用）は保存しない
 - 起動時の優先順位: 起動オプション（`--claude-model` 等）> 保存した値 > 設定ファイル（`permission`）> 既定値
 - 保存した値で起動したときは、起動時の案内に表示する（例: `saved settings: claude permission full`）。`full` が黙って引き継がれないようにする
@@ -925,7 +926,16 @@ Agent 同士が無限に会話しないよう hard limit を持つ。
 - 結果（`RESULT` / `ISSUE`）を処理中に送った依頼は、処理中の message と同じ深さ（2 回目のレビュー依頼など、同じ階層での継続）
 - 依頼以外の message の深さは、処理中の message と同じ（無ければ 1）
 
-上限を超える message は受理せず、送信元へ tool エラーで理由を返し、Event Bus に `error` を出す。エラー文では「上限に達したので人間に報告する」よう Agent に促す。
+上限を超える message は受理せず、送信元へ tool エラーで理由を返し、Event Bus に `error` を出す。エラー文では「上限に達したので人間に報告する」よう Agent に促す。人に見せる `error` には変え方を添える（例: `maxMessagesPerChain (8) に到達（/limits messages <n>）`）。
+
+人は `/limits` で上限を表示・変更できる:
+
+- `/limits`: 4 つの上限の今の値と、既定値から変わっているかを表示する
+- `/limits <name> <n>`: 上限を変える。`name` は `messages`（`maxMessagesPerChain`）・`reviews`（`maxReviewRoundsPerChain`）・`delegations`（`maxDelegationsPerChain`）・`depth`（`maxDelegationDepth`）。`n` は 1〜100 の整数。範囲外・不明な名前は使い方を表示する
+- `/limits reset`: 保存した値を消し、設定ファイル（無ければ既定値）に戻す
+- 反映は即時。進行中の chain にも新しい上限を使う（上限に当たって止まったやり取りを、上げてから続けられるように）
+- 対象は project 全体（その project のすべての会話の Coordinator）
+- 変えた値は project ごとに保存する（§9「Agent の設定の保存」の `.settings.json` の `limits`）。起動時の優先順位は、保存した値 > 設定ファイルの `limits` > 既定値。保存した値で起動したときは起動時の案内に表示する（例: `saved settings: limits messages 16`）
 
 ## 利用枠の可視化と通知（v0.2）
 
