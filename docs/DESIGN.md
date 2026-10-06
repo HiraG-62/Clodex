@@ -770,7 +770,7 @@ MCP message を受け取った後、
 - Coordinator は `127.0.0.1` のランダムポートで Streamable HTTP の MCP server を起動する
 - URL は `http://127.0.0.1:<port>/mcp/<token>`。`<token>` は起動ごと・Agent ごとのランダム値
 - 送信元（`from`）は `<token>` から決める。Agent ごとに token を分けるので、同じ PC の他プロセスや相手 Agent が送信元を偽れない
-- tool は `send_message` の 1 つだけ。入力 schema は §11
+- tool は `send_message`（入力 schema は §11）と `ask_user`（下記）の 2 つ
 
 ## 配送ルール（v0.1）
 
@@ -781,6 +781,18 @@ MCP message を受け取った後、
 - 起動や送信に失敗したら Event Bus に `error` を出し、そのメッセージは破棄する（v0.1 は再送しない）。`/compact` の失敗も同じ扱いで、mailbox は次の項目へ進む
 - `/new`・`/resume` で Agent を止める間は、その Agent の mailbox の配送を止める。止めている間に届いた項目は捨てず、切り替え後の session に配送する
 - Coordinator の停止時は、先に全 mailbox を閉じてから Agent を止める（停止中に Agent を再起動しない）。未配送分と作業中だったことは、閉じる前の状態として保存してあり、次の起動で戻す（§18 Hub の再起動からの復旧）
+
+## 人への質問（`ask_user`）
+
+Agent が人に判断を求めるとき、文章の中に質問を書かせず、選択肢つきの質問として画面に出して答えられるようにする（Claude Code の AskUserQuestion に相当）。Claude / Codex のどちらでも同じ形にするため、各 CLI の組み込みの質問機能ではなく Clodex の MCP tool にする。
+
+- 入力: `{ questions: Array<{ question: string; header?: string; options: Array<{ label: string; description?: string }>; multiSelect?: boolean }> }`。質問は 1〜4 件、選択肢は 2〜6 件。人は選択肢のほかに自由に書いて答えることもできる（「その他」）
+- tool は待たずにすぐ返す（受理した質問の ID と「ターンを終えて回答を待つ」旨）。回答は人が答えた後、その Agent への新しいターンとして届く（`send_message` の返信と同じ。CLI の tool の timeout に左右されない）
+- Coordinator は質問を Event Bus の `question` event（`{ id, agent, questions }`）として出す。feed に流して保存し、画面は回答の欄つきのカードとして出す
+- 回答は `/answer <質問 ID> <回答>` で送る（画面のボタンもこれを送るだけ。§17 の入力の決まり）。`<回答>` は JSON の `string[][]`（質問ごとに選んだ label か自由記述）。Coordinator は `answer` event（`{ id, answers }`）を出し、質問した Agent の mailbox に人間の入力として「質問と回答」の文章を入れる
+- 答えていない質問は会話ごとに持つ（未回答の一覧は `state` に入れる）。同じ質問への 2 度目の回答・存在しない ID は拒否する。`/new`・`/resume` で Agent の session が変わっても回答はその Agent に届ける
+- 人が回答せずに普通の入力を送ってもよい（質問は未回答のまま残る）
+- Claude の組み込みの `AskUserQuestion` は `--disallowedTools AskUserQuestion` で使わせない（stream-json では人が答えられないため）。両 Agent の指示（§13 Roles と同じ場所）に「人に判断を求めるときは `ask_user` を使う」と書く
 
 ---
 
@@ -1159,6 +1171,8 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
   - 生の HTML は描画せず、文字としてエスケープして表示する（Agent や人の入力に `<script>` などが混ざっても実行しない）。リンクは `http:` / `https:` だけをリンクにし、新しいタブで開く（`rel="noopener noreferrer"`）。それ以外の URL は文字のまま
   - Web UI のクライアントは `toString()` でページに埋め込むため、`marked` のブラウザ用ビルド（UMD）をページに埋め込む
 - Agent 間の message は、送信元 → 宛先、種類、本文、関連ファイル、指摘（severity 付き）、相手に渡した全文（畳む）を表示する
+- Agent の質問（§12 `ask_user`）は、質問ごとに見出し・質問文・選択肢のボタン（説明を添える。`multiSelect` はチェック）・「その他」の入力欄と、まとめて送る「回答」ボタンのカードにする。回答済みのカードは選んだ回答を表示して操作できなくする。未回答の質問があれば、ログの外（作業中パネルのボタンと同じ並び）に件数を出し、押すとそのカードへ移動する
+- TUI は質問をカード（質問文と番号つきの選択肢）として出し、回答は `/answer` で送る。`/answer` の引数の候補に未回答の質問 ID と選択肢を出す
 
 使い勝手の決まり:
 
