@@ -416,7 +416,7 @@ export function clientMain({
     ];
   };
 
-  // Agent パネル: 設定の要約、利用枠、操作。権限・model・effort は「設定」から開くポップアップで変える
+  // Agent パネル: 設定の要約、利用枠、操作。権限・model・effort はペンアイコンかチップから開くポップアップで変える
   const agentControls = (agent: AgentState) => {
     const wrap = el("div", "controls");
     const chips = el("div", "setting-chips");
@@ -450,7 +450,6 @@ export function clientMain({
     };
     const interrupt = action(t("web.agent.interrupt"), () => void send(`/interrupt ${agent.id}`), "danger", agent.status !== "busy");
     const compact = action(t("web.agent.compact"), () => void send(`/compact ${agent.id}`), "", agent.status === "stopped");
-    action(t("web.agent.settings"), () => openAgentSettings(agent.id));
     wrap.append(links);
     controlUpdaters.set(wrap, (current) => {
       updateChips(current);
