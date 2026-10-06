@@ -47,8 +47,13 @@ interface CodexItem {
 
 interface CodexRateLimitWindow {
   usedPercent?: number;
+  windowDurationMins?: number;
   resetsAt?: number;
 }
+
+// プランによって primary が 5 時間とは限らない（Pro は primary が週で secondary が無い）ので、枠の長さで見分ける
+const FIVE_HOUR_WINDOW_MINS = 300;
+const WEEKLY_WINDOW_MINS = 10080;
 
 interface CodexNotificationParams {
   threadId?: string;
@@ -222,8 +227,10 @@ export class CodexAdapter extends BaseAgentAdapter {
   }
 
   private emitRateLimits(rateLimits: CodexNotificationParams["rateLimits"]): void {
-    const fiveHour = toRateLimitWindow(rateLimits?.primary);
-    const weekly = toRateLimitWindow(rateLimits?.secondary);
+    const windows = [rateLimits?.primary, rateLimits?.secondary];
+    const byDuration = (mins: number) => toRateLimitWindow(windows.find((w) => w?.windowDurationMins === mins));
+    const fiveHour = byDuration(FIVE_HOUR_WINDOW_MINS);
+    const weekly = byDuration(WEEKLY_WINDOW_MINS);
     this.emit({ type: "rate_limit", ...(fiveHour && { fiveHour }), ...(weekly && { weekly }) });
   }
 

@@ -15,7 +15,7 @@ const defaultResponder = (accountType = "chatgpt") => (m: JsonObject): unknown =
     case "thread/resume": return { thread: { id: params?.threadId } };
     case "turn/start": return { turn: { id: TURN_ID, status: "inProgress" } };
     case "turn/interrupt": return {};
-    case "account/rateLimits/read": return { rateLimits: { primary: { usedPercent: 4, resetsAt: 100 }, secondary: null } };
+    case "account/rateLimits/read": return { rateLimits: { primary: { usedPercent: 4, windowDurationMins: 300, resetsAt: 100 }, secondary: null } };
     case "model/list": return { data: [{ model: "gpt-6-sol" }, { model: "gpt-5.6-terra" }], nextCursor: null };
     default: return undefined;
   }
@@ -339,6 +339,26 @@ describe("CodexAdapter", () => {
       fiveHour: { usedPercent: 3, resetsAt: 1791199508 },
       weekly: { usedPercent: 29, resetsAt: 1791655240 },
     });
+  });
+
+  it("5 時間枠がないプランでは primary の週の枠を weekly として流す", async () => {
+    const { started, proc, events } = await setup();
+    await started;
+    proc.emit({ method: "account/rateLimits/updated", params: { rateLimits: {
+      primary: { usedPercent: 1, windowDurationMins: 10080, resetsAt: 1791846154 },
+      secondary: null,
+    } } });
+    expect(events).toContainEqual({ type: "rate_limit", weekly: { usedPercent: 1, resetsAt: 1791846154 } });
+  });
+
+  it("5 時間でも週でもない長さの枠は無視する", async () => {
+    const { started, proc, events } = await setup();
+    await started;
+    proc.emit({ method: "account/rateLimits/updated", params: { rateLimits: {
+      primary: { usedPercent: 7, windowDurationMins: 60, resetsAt: 1791846154 },
+      secondary: { usedPercent: 29, resetsAt: 1791655240 },
+    } } });
+    expect(events.at(-1)).toEqual({ type: "rate_limit" });
   });
 
   it("プロセスが落ちたら実行中のターンを failed にし、stopped になる", async () => {

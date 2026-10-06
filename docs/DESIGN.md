@@ -522,7 +522,7 @@ interface AgentAdapter {
 | `tool` | tool 呼び出し（名前と入力の要約）。Codex のファイル編集（`fileChange` item）は `name: "fileChange"`、入力は変更したファイルのパス |
 | `turn_started` | ターン開始（Agent が busy になった）。自発ターン（下記）も含む |
 | `turn` | ターン完了（`TurnResult`）。自発ターンも含む |
-| `rate_limit` | 5 時間 / 7 日の利用率（%）と reset 時刻 |
+| `rate_limit` | 5 時間 / 7 日の利用率（%）と reset 時刻。プランに無い枠は含めない（Codex は枠の長さ `windowDurationMins` で見分ける。Pro は週の枠だけ） |
 | `compacted` | compact が行われた（Claude の `compact_boundary`）。コンテキストの大きさは次のターンまで unknown にする（§14）。Codex は compact 後の `thread/tokenUsage/updated` で大きさが届くので出さない |
 | `context` | 今のコンテキストの大きさ（token）と上限。Claude は最後の API 呼び出しの usage と `modelUsage[].contextWindow`、Codex は `thread/tokenUsage/updated` の `last.totalTokens` と `modelContextWindow` |
 | `exit` | プロセス終了 |

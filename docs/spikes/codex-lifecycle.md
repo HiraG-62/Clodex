@@ -23,7 +23,7 @@
 - `item/agentMessage/delta`: ストリーミング出力
 - `thread/status/changed`: active / idle
 - `thread/tokenUsage/updated`: token 使用量
-- `account/rateLimits/updated`: primary（5 時間）/ secondary（7 日）の usedPercent → Budget Manager の telemetry に使える
+- `account/rateLimits/updated`: primary / secondary の usedPercent・windowDurationMins・resetsAt → Budget Manager の telemetry に使える。primary が 5 時間とは限らない（下の「プランごとの利用枠の形」）
 - サーバーからのリクエスト: `item/commandExecution/requestApproval` 等の承認要求（Coordinator が応答する必要がある）
 
 ## 注意点
@@ -35,3 +35,14 @@
 ## 結論
 
 Adapter は **app-server の長寿命プロセス** を基本とする。プロセスが落ちたときは `thread/resume` で継続する。PTY は不要。
+
+## プランごとの利用枠の形（codex-cli 0.156.1、`spikes/codex-rate-limits.ts`）
+
+`account/rateLimits/read` の `rateLimits` を実測した。枠の種類は位置ではなく `windowDurationMins` で決まる。
+
+| プラン（`planType`） | primary | secondary |
+|---|---|---|
+| plus | 5 時間（`windowDurationMins: 300`） | 週（`10080`） |
+| prolite（Pro） | 週（`10080`） | `null` |
+
+plus の値は以前の `account/rateLimits/updated` の記録（`codex-adapter.test.ts`）による。
