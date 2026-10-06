@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { TimelineItem } from "../web/client/timeline.js";
-import { advanceTerminalFeed, CardLineCache, cardLines, cursorSlices, editInput, formatMarkdown, formatTimelineItem,
+import { advanceTerminalFeed, CardLineCache, cardLines, cursorSlices, editInput, formatMarkdown, formatTimelineItem, inputFrame, TERMINAL_COLORS,
   parseSgrMouse, scrollAfterGrowth, scrollBy, scrollToBottom, splitMouseInput, textWidth, visibleRange, wrapText } from "./terminal-layout.js";
 
 const labels = {
   you: "あなた", working: "作業中", completed: "完了", failed: "失敗", interrupted: "中断",
   steps: "作業 {count} 件", message: "メッセージ", notice: "通知", error: "エラー", output: "出力",
 };
+
+it("コマンド入力の枠を緑にして上辺にラベルを置き、! を消すと戻す", () => {
+  const frame = inputFrame("!pnpm test", "コマンド", 40);
+  expect(frame.color).toBe(TERMINAL_COLORS.code);
+  expect(frame.top).toContain("╭─ コマンド ");
+  expect(textWidth(frame.top ?? "")).toBe(40);
+  expect(inputFrame("pnpm test", "コマンド", 40)).toEqual({ color: TERMINAL_COLORS.line });
+});
 
 describe("advanceTerminalFeed", () => {
   it("完了した項目だけを一度 Static へ送り、作業中は残す", () => {

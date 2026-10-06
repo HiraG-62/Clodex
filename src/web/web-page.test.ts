@@ -6,6 +6,16 @@ import { buildWebPage } from "./web-page.js";
 const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1] ?? "");
 
 describe("buildWebPage", () => {
+  it("コマンド入力の色・ラベル・切り替え処理をページに含める", () => {
+    const { html } = buildWebPage("ja");
+    expect(html).toContain('id="shell-input-label" hidden');
+    expect(html).toContain("コマンド · project root で実行（Agent には送らない）");
+    expect(html).toContain('.classList.toggle("shell-input", shell)');
+    expect(html).toContain("button.disabled = shell");
+    expect(html).toContain('.shell-input .box { border-color: var(--code)');
+    expect(html).toContain('.shell-input .box .input-highlight, .shell-input .box textarea { font-family: var(--font-mono)');
+    expect(buildWebPage("en").html).toContain("Command · Runs in project root (not sent to an Agent)");
+  });
   it("project の選択と新規オープンを画面上部に表示する", () => {
     const { html } = buildWebPage("ja");
     expect(html).toContain('<select id="projects" aria-label="プロジェクト">');

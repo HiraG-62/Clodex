@@ -8,7 +8,7 @@ import { t } from "../i18n/i18n.js";
 import { createInputAssist } from "../web/client/input-assist.js";
 import type { WebState } from "../web/web-feed.js";
 import type { FeedClient } from "./feed-client.js";
-import { advanceTerminalFeed, CardLineCache, cursorSlices, editInput, splitMouseInput, TERMINAL_COLORS,
+import { advanceTerminalFeed, CardLineCache, cursorSlices, editInput, inputFrame, splitMouseInput, TERMINAL_COLORS,
   scrollAfterGrowth, scrollBy, scrollToBottom, textWidth, visibleRange, WHEEL_LINES, wrapText,
   type InputBuffer, type ScrollState, type TerminalFeed, type TerminalLabels } from "./terminal-layout.js";
 
@@ -259,6 +259,7 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
   }, [startMouse]);
 
   const cursor = cursorSlices(buffer);
+  const frame = inputFrame(buffer.text, t("tui.shellInput"), size.columns);
   const branch = state.conversations.find((conversation) => conversation.current)?.branch;
   const project = `${state.project || "Clodex"}${branch ? ` · ${t("tui.branch", { branch })}` : ""}`;
   return h(Box, { flexDirection: "column" },
@@ -271,7 +272,8 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
     ),
     choices.length ? h(Box, { borderStyle: "round", borderColor: LINE_COLOR, flexDirection: "column", paddingX: 1 },
       ...choices.map((choice, i) => h(Text, { key: `${choice.insert}${i}`, color: i === selected ? CODEX_COLOR : MUTED_COLOR }, `${i === selected ? "▸" : " "} ${choice.label} · ${choice.detail}`))) : null,
-    h(Box, { borderStyle: "round", borderColor: LINE_COLOR, flexDirection: "column", paddingX: 1 },
+    frame.top ? h(Text, { color: frame.color }, frame.top) : null,
+    h(Box, { borderStyle: "round", borderTop: !frame.top, borderColor: frame.color, flexDirection: "column", paddingX: 1 },
       h(Text, { wrap: "wrap" }, cursor.before, h(Text, { inverse: true }, cursor.at), cursor.after,
         buffer.text ? null : h(Text, { color: MUTED_COLOR }, t("tui.inputLabel")))),
     h(StatusPanel, { state, feed, now }),

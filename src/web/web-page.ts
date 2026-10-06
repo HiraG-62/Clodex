@@ -14,13 +14,14 @@ import { collectArtifacts, displayPath } from "./client/artifacts.js";
 import { renderMarkdown } from "./client/markdown.js";
 import { applyFeedItem } from "./client/timeline.js";
 import { composeInputLine } from "./client/compose-input.js";
+import { isShellInput } from "./client/shell-input.js";
 import { chooseProjectPath } from "./client/project-picker.js";
 
 const STYLE = `
   :root {
     --bg: #fafafa; --panel: #ffffff; --sunken: #f2f2f3; --line: #e6e6e8; --line-strong: #d4d4d8;
     --fg: #111113; --fg-2: #3f3f46; --muted: #80808a;
-    --claude: #b4793f; --codex: #4b6fa5;
+    --claude: #b4793f; --codex: #4b6fa5; --code: #6f9a5a;
     --invert-bg: #111113; --invert-fg: #fafafa;
     --warn: #b7791f; --crit: #d14343; --scrim: rgba(17, 17, 19, .32);
     --font-ui: "Geist", "Zen Kaku Gothic New", system-ui, sans-serif;
@@ -152,7 +153,7 @@ const STYLE = `
   .md ul, .md ol { padding-left: 1.3em; }
   .md pre { padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; font: 12.5px/1.6 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--sunken); }
   .md pre code { padding: 0; background: none; }
-  code { font-family: var(--font-mono); font-size: .92em; padding: 1px 5px; border-radius: 4px; background: var(--sunken); color: var(--fg); overflow-wrap: anywhere; }
+  code { font-family: var(--font-mono); font-size: .92em; padding: 1px 5px; border-radius: 4px; background: var(--sunken); color: var(--code); overflow-wrap: anywhere; }
 
   .steps { grid-column: 2; margin: 2px 0 6px; min-width: 0; }
   .steps summary, .envelope summary { list-style: none; cursor: pointer; font-size: 12px; color: var(--muted); display: inline-flex; gap: 6px; padding: 2px 0; }
@@ -211,6 +212,11 @@ const STYLE = `
   .composer { padding: 10px 16px; padding-bottom: max(12px, env(safe-area-inset-bottom)); background: var(--bg); margin: 0; }
   .box { border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); display: grid; }
   .box:focus-within { border-color: var(--fg-2); }
+  .shell-input .box { border-color: var(--code); box-shadow: inset 3px 0 var(--code); }
+  /* 後ろの .box textarea の font: inherit に負けないよう詳細度を上げる */
+  .shell-input .box .input-highlight, .shell-input .box textarea { font-family: var(--font-mono); }
+  .shell-input .to { opacity: .45; }
+  .shell-input-label { color: var(--code); font-size: 12px; margin-bottom: 5px; }
   .input-wrap { position: relative; min-width: 0; }
   /* textarea の背後に同じ折り返しで描き、指定した語の背景だけを見せる */
   .input-highlight, .box textarea { padding: 12px 14px 4px; font: inherit; font-size: 16px; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-gutter: stable; }
@@ -330,6 +336,7 @@ const body = (messages: Messages) => {
     <button class="newer" type="button" id="newer" hidden>${m("web.newer")}</button>
   </div>
   <form class="composer" id="composer">
+    <div class="shell-input-label" id="shell-input-label" hidden>${m("web.shellInput")}</div>
     <div class="box">
       <ul class="pending" id="pending" aria-label="${m("web.pending.label")}" hidden></ul>
       <ul class="suggest" id="suggest" role="listbox" aria-label="${m("web.suggest.label")}" hidden></ul>
@@ -372,6 +379,7 @@ const MARKED_UMD = inlineScript(readFileSync(join(dirname(fileURLToPath(import.m
 const PAGE_VERSION_LENGTH = 12;
 const CLIENT_SOURCE = inlineScript(clientMain.toString());
 const FUNCTIONS = `
+  isShellInput: ${inlineScript(isShellInput.toString())},
   renderMarkdown: ${inlineScript(renderMarkdown.toString())},
   applyFeedItem: ${inlineScript(applyFeedItem.toString())},
   composeInputLine: ${inlineScript(composeInputLine.toString())},

@@ -3,6 +3,7 @@
 // 純関数（renderMarkdown 等）とコマンドの一覧は引数で受け取る
 import type { AgentId, AgentStatus, TurnResult } from "../../agents/agent-adapter.js";
 import type { AgentState } from "../../cli/shell.js";
+import type { isShellInput as IsShellInput } from "./shell-input.js";
 import type { FeedItem, WebState } from "../web-feed.js";
 import type { renderMarkdown as RenderMarkdown } from "./markdown.js";
 import type { TimelineItem, applyFeedItem as ApplyFeedItem } from "./timeline.js";
@@ -14,6 +15,7 @@ import type { MessageKey, Messages } from "../../i18n/messages.js";
 import type { chooseProjectPath as ChooseProjectPath } from "./project-picker.js";
 
 export interface ClientDeps {
+  isShellInput: typeof IsShellInput;
   renderMarkdown: typeof RenderMarkdown;
   applyFeedItem: typeof ApplyFeedItem;
   composeInputLine: typeof ComposeInputLine;
@@ -27,7 +29,7 @@ export interface ClientDeps {
 }
 
 export function clientMain({
-  renderMarkdown, applyFeedItem, composeInputLine, createInputAssist, collectArtifacts, displayPath, commands, messages, chooseProjectPath, version,
+  renderMarkdown, applyFeedItem, composeInputLine, createInputAssist, collectArtifacts, displayPath, commands, messages, chooseProjectPath, version, isShellInput,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -981,6 +983,11 @@ export function clientMain({
     } catch { /* 候補が出ないだけで入力はできる */ }
   };
   function onInputChanged() {
+    const shell = isShellInput(input.value);
+    $("#composer").classList.toggle("shell-input", shell);
+    $("#shell-input-label").hidden = !shell;
+    sendButton.textContent = t(shell ? "web.run" : "web.send");
+    for (const button of document.querySelectorAll<HTMLButtonElement>(".to button")) button.disabled = shell;
     resize();
     renderHighlight();
     updateSuggest();

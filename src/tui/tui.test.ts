@@ -22,6 +22,18 @@ const fakeClient = () => {
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 describe("TuiApp", () => {
+  it("先頭の ! の入力と削除でコマンドの枠ラベルを切り替える", async () => {
+    setLanguage("ja");
+    const { client } = fakeClient();
+    const app = render(React.createElement(TuiApp, { client }));
+    await tick();
+    app.stdin.write("!");
+    await tick();
+    expect(app.lastFrame()).toContain("╭─ コマンド ");
+    app.stdin.write("\x7f");
+    await tick();
+    expect(app.lastFrame()).not.toContain("╭─ コマンド ");
+  });
   it("作業中のターンと候補を下部に表示する", async () => {
     setLanguage("ja");
     const { client, emit } = fakeClient();

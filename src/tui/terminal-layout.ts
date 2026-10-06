@@ -2,6 +2,7 @@
 import { applyFeedItem, type TimelineItem } from "../web/client/timeline.js";
 import type { FeedItem } from "../web/web-feed.js";
 import type { MessageType } from "../protocol/messages.js";
+import { isShellInput } from "../web/client/shell-input.js";
 import { marked, type Token, type Tokens } from "marked";
 
 export interface StaticItem { item: TimelineItem; expanded: boolean; elapsedSeconds?: number; }
@@ -171,6 +172,13 @@ const characterWidth = (char: string): number => {
 };
 
 export const textWidth = (value: string): number => [...value].reduce((sum, char) => sum + characterWidth(char), 0);
+
+export const inputFrame = (text: string, label: string, width: number): { color: string; top?: string } => {
+  if (!isShellInput(text)) return { color: TERMINAL_COLORS.line };
+  const start = `╭─ ${label} `;
+  const end = "╮";
+  return { color: TERMINAL_COLORS.code, top: `${start}${"─".repeat(Math.max(0, width - textWidth(start + end)))}${end}` };
+};
 
 export const wrapText = (value: string, width: number): string[] => {
   const lines: string[] = [];
