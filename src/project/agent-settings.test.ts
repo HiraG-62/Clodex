@@ -68,3 +68,15 @@ describe("resolveStartSettings", () => {
     expect(resolveStartSettings({ saved: {}, models: {} })).toEqual({ claude: {}, codex: {} });
   });
 });
+
+it("上限の有効な保存値だけを読み、Agent の設定と併存する", () => {
+  const path = makePath();
+  const store = new AgentSettingsStore(path);
+  store.update(["claude"], { model: "haiku" });
+  writeFileSync(path, JSON.stringify({ claude: { model: "haiku" }, limits: { maxMessagesPerChain: 16, maxDelegationDepth: 101, unknown: 2, maxDelegationsPerChain: 1.5 } }));
+  expect(store.load()).toEqual({ claude: { model: "haiku" }, limits: { maxMessagesPerChain: 16 } });
+  store.setLimits({ maxDelegationDepth: 4 });
+  expect(store.load()).toEqual({ claude: { model: "haiku" }, limits: { maxDelegationDepth: 4 } });
+  store.setLimits({});
+  expect(store.load()).toEqual({ claude: { model: "haiku" } });
+});

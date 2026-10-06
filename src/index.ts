@@ -16,6 +16,7 @@ import { detectLanguage } from "./context/language.js";
 import type { CoordinatorEvent } from "./coordinator/event-bus.js";
 import { Hub } from "./hub/hub.js";
 import { clearHubLock, isHubAlive, readHubLock, writeHubLock } from "./hub/hub-lock.js";
+import { LIMIT_KEYS, LIMIT_NAMES } from "./coordinator/budget-manager.js";
 import { openProject, type ProjectContext } from "./hub/project-context.js";
 import { selectProject } from "./hub/project-selection.js";
 import { setLanguage, t } from "./i18n/i18n.js";
@@ -154,6 +155,7 @@ const main = async (): Promise<void> => {
     },
     busyElsewhere: () => current().workspace.busyElsewhereInSameDir(),
     resolveReference: (path) => current().currentPreview().locate(path),
+    limits: { get: () => current().limits, set: (name, value) => current().setLimit(name, value), reset: () => current().resetLimits() },
     saveSettings: (agents, change) => {
       try { current().settingsStore.update(agents, change); }
       catch (error) { print(t("error.settingsSave", { message: errorMessage(error) })); }
@@ -210,6 +212,10 @@ const main = async (): Promise<void> => {
       printTerminal(t("start.banner", { project: context.projectRoot, primary: context.primary }));
       printTerminal(t("start.log", { path: defaultLogPath(context.projectRoot, context.startedAt, context.history.currentId.slice(0, LOG_SUFFIX_LENGTH)) }));
       const saved = AGENT_IDS.flatMap((id) => Object.entries(context.savedSettings[id] ?? {}).map(([key, value]) => `${id} ${key} ${value}`));
+      for (const name of LIMIT_NAMES) {
+        const value = context.savedSettings.limits?.[LIMIT_KEYS[name]];
+        if (value !== undefined) saved.push(`limits ${name} ${value}`);
+      }
       if (saved.length) printTerminal(t("start.saved", { settings: saved.join(", ") }));
       if (args.resume) {
         const resumed = AGENT_IDS.filter((id) => context.resumedSessions[id]);

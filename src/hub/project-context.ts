@@ -8,7 +8,7 @@ import type { CliArgs } from "../cli/args.js";
 import { loadConfig, type ClodexConfig } from "../config/config.js";
 import type { Language } from "../context/language.js";
 import { buildRoleInstructions } from "../context/role-instructions.js";
-import { DEFAULT_LIMITS } from "../coordinator/budget-manager.js";
+import { DEFAULT_LIMITS, LIMIT_KEYS, type BudgetLimits, type LimitName } from "../coordinator/budget-manager.js";
 import { Coordinator } from "../coordinator/coordinator.js";
 import { EventBus } from "../coordinator/event-bus.js";
 import { Workspace, type ConversationRuntime } from "./workspace.js";
@@ -40,6 +40,9 @@ export interface ProjectContext {
   resumedSessions: SavedSessions;
   savedSettings: SavedAgentSettings;
   startedAt: Date;
+  readonly limits: BudgetLimits;
+  setLimit(name: LimitName, value: number): void;
+  resetLimits(): void;
   currentPreview(): ReturnType<typeof createFilePreview>;
   saveFeedItem(conversationId: string, item: HistoryItem): void;
   bindFeed(feed: WebFeed, isCurrent: () => boolean): void;
@@ -80,6 +83,9 @@ export const openProject = async ({
   const resumedSessions = history.currentSessions;
   const settingsStore = new AgentSettingsStore(agentSettingsPath(statePath));
   const savedSettings = settingsStore.load();
+  const baseLimits = { ...DEFAULT_LIMITS, ...config.limits };
+  let overrides = { ...savedSettings.limits };
+  let limits = { ...baseLimits, ...overrides };
   const startedAt = new Date();
   let workspace: Workspace | undefined;
   const registered = new Map<Coordinator, () => void>();
@@ -99,7 +105,7 @@ export const openProject = async ({
         saved: settingsStore.load(), models: args.models, ...(config.permission ? { configPermission: config.permission } : {}),
       }),
       instructions: (id) => buildRoleInstructions(id, config.roles, { language, artifactsDir }),
-      limits: { ...DEFAULT_LIMITS, ...config.limits },
+      limits,
       ...(config.usageAlert ? { usageAlert: config.usageAlert } : {}),
       resumeSessionIds: conversation.sessions,
       language,
@@ -138,7 +144,16 @@ export const openProject = async ({
       feedSaveFailed = true;
     }
   };
+  const applyLimits = (next: Partial<BudgetLimits>) => {
+    settingsStore.setLimits(next);
+    overrides = next;
+    limits = { ...baseLimits, ...overrides };
+    for (const runtime of activeWorkspace.allRuntimes()) runtime.coordinator.setLimits(limits);
+  };
   return {
+    get limits() { return { ...limits }; },
+    setLimit: (name, value) => applyLimits({ ...overrides, [LIMIT_KEYS[name]]: value }),
+    resetLimits: () => applyLimits({}),
     projectRoot, config, primary, history, workspace: activeWorkspace, settingsStore, feedStore,
     artifactsDir, uploadsDir, resumedSessions, savedSettings, startedAt,
     currentPreview: () => createFilePreview({ projectRoot: activeWorkspace.current.workDir, allowedDirs: [artifactsDir, uploadsDir] }),

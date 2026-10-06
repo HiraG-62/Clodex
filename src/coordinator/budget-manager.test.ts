@@ -142,3 +142,14 @@ describe("BudgetManager.closeChains", () => {
     expect(budget.admit(msg("claude", "DELEGATE"), undefined)).toBeUndefined();
   });
 });
+
+it("進行中の chain に上限の増減を反映する", () => {
+  const budget = new BudgetManager({ ...DEFAULT_LIMITS, maxMessagesPerChain: 1 });
+  const parent = msg("claude", "ISSUE");
+  budget.admit(parent, undefined);
+  expect(budget.admit(msg("codex", "ISSUE"), parent)).toContain("maxMessagesPerChain");
+  budget.setLimits({ ...DEFAULT_LIMITS, maxMessagesPerChain: 3 });
+  expect(budget.admit(msg("codex", "ISSUE"), parent)).toBeUndefined();
+  budget.setLimits({ ...DEFAULT_LIMITS, maxMessagesPerChain: 1 });
+  expect(budget.admit(msg("codex", "ISSUE"), parent)).toContain("maxMessagesPerChain");
+});

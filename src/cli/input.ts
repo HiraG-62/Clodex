@@ -1,8 +1,10 @@
 // 1 行の人間の入力を Shell command に変換する（DESIGN.md §8）
+import { LIMIT_NAMES, isLimitValue, type LimitName } from "../coordinator/budget-manager.js";
 import { t } from "../i18n/i18n.js";
 import { AGENT_IDS, CLAUDE_EFFORT_LEVELS, COMMON_EFFORT_LEVELS, PERMISSION_LEVELS, isAgentId, type AgentId, type PermissionLevel } from "../agents/agent-adapter.js";
 
 export type ShellCommand =
+  | { kind: "limits"; name?: LimitName; value?: number; reset?: true }
   | { kind: "empty" }
   | { kind: "send"; agent: AgentId; text: string; steer?: true }
   | { kind: "sendAll"; text: string; steer?: true }
@@ -95,6 +97,16 @@ const parseMention = (mention: string, text: string): ShellCommand | undefined =
 
 const parseCommand = (name: string, arg: string): ShellCommand => {
   switch (name) {
+    case "limits": {
+      if (!arg) return { kind: "limits" };
+      if (arg === "reset") return { kind: "limits", reset: true };
+      const [name, raw, ...extra] = arg.split(/\s+/);
+      const value = Number(raw);
+      if (!extra.length && name && LIMIT_NAMES.includes(name as LimitName) && raw && /^\d+$/.test(raw) && isLimitValue(value)) {
+        return { kind: "limits", name: name as LimitName, value };
+      }
+      return usage("/limits [<messages|reviews|delegations|depth> <1-100>|reset]");
+    }
     case "answer": {
       const match = /^(\S+)\s+(.+)$/.exec(arg);
       return match?.[1] && match[2] ? { kind: "answer", id: match[1], text: match[2] } : usage("/answer <id> <json>");

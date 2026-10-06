@@ -83,6 +83,9 @@ export function createInputAssist(commands: readonly SlashCommand[], agents: rea
       const agentValues = agents.map((value) => ({ value, detail: labels.agent }));
       const simple = (items: readonly string[], detail: string) => items.map((value) => ({ value, detail }));
       switch (name) {
+        case "limits":
+          if (index === 0) values = simple(commands.find((command) => command.name === name)?.argumentValues ?? [], "");
+          break;
         case "answer":
           if (index === 0) values = (state.questions ?? []).map(({ id, questions }) => ({ value: id, detail: questions[0]?.question ?? "" }));
           break;

@@ -27,3 +27,8 @@ describe("completeCommand", () => {
     expect(completeCommand("hello")).toEqual([[], "hello"]);
   });
 });
+
+it("/limits の名前と reset を補完する", () => {
+  expect(completeCommand("/limits d")[0]).toEqual(["/limits delegations ", "/limits depth "]);
+  expect(completeCommand("/limits r")[0]).toEqual(["/limits reviews ", "/limits reset "]);
+});

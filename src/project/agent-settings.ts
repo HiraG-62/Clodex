@@ -2,6 +2,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
 import { PERMISSION_LEVELS, type AgentId, type PermissionLevel } from "../agents/agent-adapter.js";
+import { LIMIT_KEYS, isLimitValue, type BudgetLimits } from "../coordinator/budget-manager.js";
 import { writeFileAtomic } from "./atomic-write.js";
 
 const settingsSchema = z.strictObject({
@@ -9,7 +10,16 @@ const settingsSchema = z.strictObject({
   model: z.string().min(1).optional(),
   effort: z.string().min(1).optional(),
 });
-const savedSchema = z.strictObject({ claude: settingsSchema.optional(), codex: settingsSchema.optional() });
+const savedLimits = z.unknown().transform((value): Partial<BudgetLimits> => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const limits: Partial<BudgetLimits> = {};
+  for (const key of Object.values(LIMIT_KEYS)) {
+    const candidate: unknown = (value as Record<string, unknown>)[key];
+    if (isLimitValue(candidate)) limits[key] = candidate;
+  }
+  return limits;
+});
+const savedSchema = z.strictObject({ claude: settingsSchema.optional(), codex: settingsSchema.optional(), limits: savedLimits.optional() });
 
 export type AgentSettings = z.infer<typeof settingsSchema>;
 export type SavedAgentSettings = z.infer<typeof savedSchema>;
@@ -29,6 +39,13 @@ export class AgentSettingsStore {
     } catch {
       return {};
     }
+  }
+
+  setLimits(limits: Partial<BudgetLimits>): void {
+    const saved = this.load();
+    if (Object.keys(limits).length) saved.limits = limits;
+    else delete saved.limits;
+    writeFileAtomic(this.path, `${JSON.stringify(saved, null, 2)}\n`);
   }
 
   update(agents: readonly AgentId[], change: AgentSettings): void {

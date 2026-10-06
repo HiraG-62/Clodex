@@ -16,6 +16,23 @@ export const DEFAULT_LIMITS: BudgetLimits = {
   maxDelegationDepth: 2,
 };
 
+export const LIMIT_KEYS = {
+  messages: "maxMessagesPerChain",
+  reviews: "maxReviewRoundsPerChain",
+  delegations: "maxDelegationsPerChain",
+  depth: "maxDelegationDepth",
+} as const satisfies Record<string, keyof BudgetLimits>;
+export type LimitName = keyof typeof LIMIT_KEYS;
+export const LIMIT_NAMES = Object.keys(LIMIT_KEYS) as LimitName[];
+export const LIMIT_MIN = 1;
+export const LIMIT_MAX = 100;
+export const isLimitValue = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= LIMIT_MIN && value <= LIMIT_MAX;
+export const humanBudgetError = (error: string): string => {
+  const name = LIMIT_NAMES.find((name) => error.startsWith(`Budget limit reached: ${LIMIT_KEYS[name]} (`));
+  return name ? `${error} (/limits ${name} <n>)` : error;
+};
+
 const REQUEST_TYPES = new Set<MessageType>(["QUESTION", "REVIEW_REQUEST", "DELEGATE"]);
 const DELEGATION_TYPES = new Set<MessageType>(["QUESTION", "DELEGATE"]);
 
@@ -45,7 +62,11 @@ export class BudgetManager {
   // /interrupt で人が止めたやり取り（DESIGN.md §28 v0.3 A）
   private readonly closed = new Set<string>();
 
-  constructor(private readonly limits: BudgetLimits = DEFAULT_LIMITS) {}
+  constructor(private limits: BudgetLimits = DEFAULT_LIMITS) {}
+
+  setLimits(limits: BudgetLimits): void {
+    this.limits = { ...limits };
+  }
 
   restore(message: AgentMessage): void {
     if (message.type === "ACK") return;

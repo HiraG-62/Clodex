@@ -702,3 +702,16 @@ describe("人への質問", () => {
     expect(codex.sent[0]).toBe(`Answer to your question ${result.id}:\n- どちらにしますか: A, 自由記述`);
   });
 });
+
+it("上限到達の人向けエラーだけに /limits を添える", async () => {
+  const { coordinator, events } = setup();
+  coordinator.setLimits({ maxMessagesPerChain: 1, maxReviewRoundsPerChain: 3, maxDelegationsPerChain: 4, maxDelegationDepth: 2 });
+  try {
+    coordinator.receiveMessage("claude", { to: "codex", type: "QUESTION", taskId: "limit", body: "question" });
+    await flush();
+    const result = coordinator.receiveMessage("codex", { to: "claude", type: "ISSUE", taskId: "limit", body: "reply" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).not.toContain("/limits");
+    expect(events.some((e) => e.kind === "agent" && e.event.type === "error" && e.event.message.includes("/limits messages <n>"))).toBe(true);
+  } finally { await coordinator.stop(); }
+});

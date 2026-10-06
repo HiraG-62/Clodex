@@ -10,7 +10,7 @@ import { t } from "../i18n/i18n.js";
 import { languageReminder, type Language } from "../context/language.js";
 import { createMessage, type AgentMessage, type CreateMessageResult } from "../protocol/messages.js";
 import { AgentMailbox } from "./agent-mailbox.js";
-import { BudgetManager, type BudgetLimits } from "./budget-manager.js";
+import { BudgetManager, humanBudgetError, type BudgetLimits } from "./budget-manager.js";
 import { DEFAULT_USAGE_ALERT, UsageMonitor, type UsageAlert, type UsageSnapshot } from "./usage-monitor.js";
 import type { EventBus } from "./event-bus.js";
 import { modelLabel, type ModelCatalog, type StartupProbe } from "../agents/startup-probe.js";
@@ -140,6 +140,10 @@ export class Coordinator {
     this.mailboxes = { claude: createMailbox("claude"), codex: createMailbox("codex") };
   }
 
+  setLimits(limits: BudgetLimits): void {
+    this.budget.setLimits(limits);
+  }
+
   askUser(agent: AgentId, input: unknown): AskUserResult {
     const parsed = askUserSchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: parsed.error.message };
@@ -183,7 +187,7 @@ export class Coordinator {
     // 送信元が処理中の message を親として chain を決める（DESIGN.md §14）
     const budgetError = this.budget.admit(message, this.mailboxes[from].current);
     if (budgetError) {
-      bus.publish({ kind: "agent", agent: from, event: { type: "error", message: budgetError } });
+      bus.publish({ kind: "agent", agent: from, event: { type: "error", message: humanBudgetError(budgetError) } });
       return { ok: false, error: budgetError };
     }
 

@@ -1,3 +1,4 @@
+import { DEFAULT_LIMITS, LIMIT_KEYS } from "../coordinator/budget-manager.js";
 import { describe, expect, it } from "vitest";
 import type { AgentId, AgentStatus, PermissionLevel, TurnResult } from "../agents/agent-adapter.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
@@ -171,8 +172,10 @@ const setup = () => {
     list: () => [{ projectRoot: "C:\\dev\\one", open: true, current: true }, { projectRoot: "C:\\dev\\two", open: false, current: false }],
     open: async (path: string) => ({ projectRoot: path, primary: "codex" as AgentId }),
   };
+  let limits = { ...DEFAULT_LIMITS };
   const shell = createShell({
     coordinator: () => coordinator, primary: "claude", notify: (text, level) => { notified.push(text); levels.push(level); }, busyElsewhere: () => busy.value, print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history, runner,
+    limits: { get: () => limits, set: (name, value) => { limits[LIMIT_KEYS[name]] = value; }, reset: () => { limits = { ...DEFAULT_LIMITS }; } },
     saveSettings: (agents, change) => saved.push({ agents, change }),
     resolveReference: async (path) => {
       references.push(path);
@@ -546,4 +549,16 @@ it("/answer は複数問への自由記述と不明な ID を拒否し、検証�
   coordinator.answerError = "Invalid answers";
   await shell.handleLine('/answer q1 {"invalid":true}');
   expect(notified.at(-1)).toBe("Invalid answers");
+});
+
+it("/limits の表示・変更・リセットを project の操作に渡す", async () => {
+  const { shell, printed } = setup();
+  await shell.handleLine("/limits messages 16");
+  expect(printed.at(-1)).toBe("limits: messages 16");
+  await shell.handleLine("/limits");
+  expect(printed.slice(-4)).toEqual(["messages 16 (default 8)", "reviews 3", "delegations 4", "depth 2"]);
+  await shell.handleLine("/limits reset");
+  expect(printed.at(-1)).toBe("limits: reset to defaults");
+  await shell.handleLine("/limits");
+  expect(printed.slice(-4)).toEqual(["messages 8", "reviews 3", "delegations 4", "depth 2"]);
 });

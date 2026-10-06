@@ -1,4 +1,5 @@
 // 人間の入力を Coordinator の操作に変換する（DESIGN.md §8）。readline 等の I/O は index.ts が持つ
+import { DEFAULT_LIMITS, LIMIT_KEYS, LIMIT_NAMES, type BudgetLimits, type LimitName } from "../coordinator/budget-manager.js";
 import type { PendingQuestion } from "../protocol/questions.js";
 import { AGENT_IDS, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult } from "../agents/agent-adapter.js";
 import type { UsageSnapshot } from "../coordinator/usage-monitor.js";
@@ -89,6 +90,11 @@ export interface ShellOptions {
     hasCurrent?(): boolean;
   };
   roles?: () => Partial<Record<AgentId, string>>;
+  limits?: {
+    get(): BudgetLimits;
+    set(name: LimitName, value: number): void;
+    reset(): void;
+  };
   saveRole?: (agent: AgentId, text: string) => string;
 }
 
@@ -160,7 +166,7 @@ export const createShell = ({
   coordinator, primary: initialPrimary, print, notify, toggleVerbose, history: historySource, runner, saveSettings = () => {}, resolveReference = async () => undefined,
   busyElsewhere = () => false, processes,
   projects,
-  roles = () => ({}), saveRole = (_agent, text) => text,
+  limits: projectLimits, roles = () => ({}), saveRole = (_agent, text) => text,
 }: ShellOptions) => {
   let primary = initialPrimary;
   const history = typeof historySource === "function" ? historySource : () => historySource;
@@ -355,6 +361,22 @@ export const createShell = ({
       case "help":
         HELP_LINES(primary).forEach((l) => print(l));
         return "continue";
+      case "limits": {
+        if (command.reset) {
+          projectLimits?.reset();
+          print(t("shell.limitsReset"));
+        } else if (command.name && command.value !== undefined) {
+          projectLimits?.set(command.name, command.value);
+          print(`limits: ${command.name} ${command.value}`);
+        } else {
+          const limits = projectLimits?.get() ?? DEFAULT_LIMITS;
+          for (const name of LIMIT_NAMES) {
+            const key = LIMIT_KEYS[name];
+            print(`${name} ${limits[key]}${limits[key] === DEFAULT_LIMITS[key] ? "" : t("shell.limitsDefault", { value: DEFAULT_LIMITS[key] })}`);
+          }
+        }
+        return "continue";
+      }
       case "permission":
         await coordinator().setPermission(command.level, command.agent);
         saveSettings(targets(command.agent), { permission: command.level });

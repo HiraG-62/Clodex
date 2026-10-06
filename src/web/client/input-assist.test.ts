@@ -21,6 +21,7 @@ describe("suggest", () => {
     processes: [{ id: 1, command: "pnpm dev", status: "running" }, { id: 2, command: "pnpm test", status: "exited" }],
   };
   it("コマンドの引数を state から候補にする", () => {
+    expect(suggest("/limits d", 9, FILES, state)?.items.map((i) => i.insert)).toEqual(["delegations ", "depth "]);
     expect(suggest("/model claude so", 16, FILES, state)?.items.map((i) => i.insert)).toContain("sonnet ");
     expect(suggest("/model claude so", 16, FILES, state)?.items[0]?.detail).toBe("Sonnet 5.5");
     expect(suggest("/model codex ", 13, FILES, state)?.items.map((i) => i.insert)).toContain("gpt-6-sol ");
