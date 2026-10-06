@@ -41,3 +41,33 @@
 ## 最後に
 
 実 CLI で 1 ターン動かす確認（`CLODEX_E2E=1`）は、段階 2 の後に claude が人の了承を取ってから行う。codex は実行しない。
+
+## 段階 1 のレビュー指摘（段階 2 の後に対応する）
+
+DESIGN.md §9 Sandbox を更新済み（broker のプロセスの DACL、broker の置き場所、git の扱い）。
+
+high:
+
+1. **broker・helper の乗っ取り**: restricting SID に agent の SID があり、broker と helper のプロセスの DACL は agent の SID に GA を与えている。そのため、制限された Agent が `OpenProcess(PROCESS_VM_WRITE | PROCESS_CREATE_THREAD | PROCESS_DUP_HANDLE)` で、制限のない broker を乗っ取れる可能性がある。まず実測し、通るなら broker と helper の起動直後に、自分のプロセス（とスレッド）の DACL を絞る（`native-source.ts:94`、`windows-platform.ts:111`）。絞った後に通らないことも実測する
+2. **git を経由した脱出**: DESIGN.md のとおり、人の git には `safe.directory` を足さない。`.git/config`・`.git/hooks`・`.git` の削除に agent の Deny を付け、off で外す。Hub の git 呼び出し（`src/project/file-preview.ts:79`、`project-files.ts:12`、`worktree.ts:24` ほか）に、無害化の `-c` と `--no-ext-diff --no-textconv` を付ける
+3. **消えた worktree**: grant では存在しないパスを飛ばす。release では ENOENT の lease を消し、`safe.directory` の削除は続ける（`controller.ts:236`、`windows-platform.ts:210, 244`）
+
+medium:
+
+4. 起動時の `initialize` の失敗で project が開けなくなる（`project-context.ts:119`）。Agent を起動しない状態で開き、「セットアップ未完了」を通知し、`/sandbox off` は受け付ける（fail-closed は保つ）
+5. broker の token が command line に出る（`windows-platform.ts:111, 125, 128`）。人の権限で開いたファイルを stdin に渡すなどして、argv に載せない
+6. bootstrap の PowerShell が、agent の書けるモジュールのパスを読む恐れがある。PowerShell を使わない起動にするか、最初に `PSModulePath` を `$PSHOME\Modules` に固定し、組み込みの API だけを使う
+7. 継承付きの ACL を付けるとき、project の中の junction・symlink をたどって、人のディレクトリに Modify を伝播しないか実測する。たどるなら、伝播の前にリンクを検出して止める
+8. off の release の失敗で Agent が止まったまま戻らない（`controller.ts:255-258`、`workspace.ts:127`）。失敗時は sandbox のまま起動し直し、通知する
+9. 実行環境のディレクトリが毎回作られて消えない（`windows-platform.ts:104-108`）。中身のハッシュで使い回す
+10. `clearAllSessions` が無題の会話のタイトルを固定する（`conversation-history.ts:138-139`）。sessions だけを空にする
+
+low:
+
+- prepare の後の stop の失敗、off のときに残った lease を外す経路がない
+- `safe.directory` の比較を正規化する（大文字小文字・区切り文字・末尾）。`--add` の失敗を無視しない
+- `validateSandboxPath`: `~/.clodex`・`AppData` 配下の project を拒否する
+- Hub 側の broker の listen は、認証の後に close する
+- マジックナンバー（`windows-platform.ts:128` の `1500`、`broker-source.ts` の `'4294967295'`・`30000`、`windows-platform.ts:68` の `slice(0, 16)`、`broker.ts:68` の `includes(10)`）を定数にする
+- platform のエラーと `shell.ts` の `sandbox: on/off` を i18n に通す。`/sandbox` にセットアップ済みかどうかを出す
+- `broker.ts:74` の `as` を zod に置き換える。`src/index.ts` の連続した空行を消す
