@@ -4,12 +4,20 @@ import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { createInterface } from "node:readline";
 import { once } from "node:events";
-import { brokerSource, directHelper, parseOptions, psQuote, validateTargets, formatTable, cliScript, assessDriveDeny } from "./sandbox-user.js";
+import { brokerSource, directHelper, parseOptions, psQuote, validateTargets, formatTable, cliScript, assessDriveDeny, deniedDrivesFromState } from "./sandbox-user.js";
 
 describe("Deny 継承の計測結果", () => {
   const project = "E:\\sandbox", other = "E:\\other";
   const denied = (directory: string) => ({ directory, created: false, deleted: false, error: "System.UnauthorizedAccessException" });
   const observations = [{ directory: project, created: true, deleted: true }, denied(other), denied("E:\\")];
+  it("state の deniedDrives を読み、追加の引数なしで境界を判定する", () => {
+    const state: unknown = JSON.parse('{"deniedDrives":["e:\\\\"]}');
+    expect(assessDriveDeny(project, other, deniedDrivesFromState(state), observations).status).toBe("成功");
+    expect(deniedDrivesFromState({})).toEqual([]);
+    expect(assessDriveDeny(project, other, deniedDrivesFromState({}), observations).detail).toBe("state に Deny の記録なし。setup の再実行が必要");
+    expect(() => deniedDrivesFromState({ deniedDrives: ["E:\\project"] })).toThrow();
+    expect(() => deniedDrivesFromState({ deniedDrives: [123] })).toThrow();
+  });
   it("project の Allow と別 project・ルートの Deny がそろったときだけ成功", () => {
     expect(assessDriveDeny(project, other, ["E:\\"], observations).status).toBe("成功");
     expect(assessDriveDeny(project, other, ["E:\\"], [...observations.slice(0, 2), { directory: "E:\\", created: true, deleted: true }]).status).toBe("失敗");

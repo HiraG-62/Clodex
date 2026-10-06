@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { writeFileSync, unlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { appendFile, lstat, readFile, unlink, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { createServer, type Socket } from "node:net";
@@ -65,11 +65,21 @@ export function formatTable(rows: Row[]): string {
 }
 
 interface WriteObservation { directory: string; created: boolean; deleted: boolean; error?: string }
+export function deniedDrivesFromState(state: unknown): string[] {
+  const value = record(state).deniedDrives;
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || !value.every((path): path is string => typeof path === "string" && /^[a-z]:\\$/i.test(path))) {
+    throw new Error("state のドライブ記録が不正");
+  }
+  return [...new Set(value.map(path => path.toUpperCase()))];
+}
+
 export function assessDriveDeny(project: string, otherProject: string, deniedDrives: string[], observations: WriteObservation[]): { status: string; detail: string } {
   const key = (path: string) => win32.resolve(path).toLowerCase();
   const roots = new Set(deniedDrives.map(key));
+  if (roots.size === 0) return { status: "未計測", detail: "state に Deny の記録なし。setup の再実行が必要" };
   if (!roots.has(key(win32.parse(project).root)) || !roots.has(key(win32.parse(otherProject).root))) {
-    return { status: "未計測", detail: "許可 project と別 project の両方に Deny 対象ドライブの指定が必要" };
+    return { status: "未計測", detail: "許可 project または別 project が state の Deny 対象外" };
   }
   const byPath = new Map(observations.map(value => [key(value.directory), value]));
   const allowed = byPath.get(key(project));
@@ -185,34 +195,10 @@ createInterface({input:socket}).on("line",line=>{
 });
 `;
 
-const resetTargetEnvironment = String.raw`
-Add-Type -TypeDefinition @'
-using System;
-using System.Collections;
-using System.Runtime.InteropServices;
-using System.Security.Principal;
-using System.ComponentModel;
-public static class TargetEnvironment {
-  [DllImport("userenv.dll",SetLastError=true)] static extern bool CreateEnvironmentBlock(out IntPtr env,IntPtr token,bool inherit);
-  [DllImport("userenv.dll")] static extern bool DestroyEnvironmentBlock(IntPtr env);
-  public static void Reset() {
-    IntPtr env;
-    using(var identity=WindowsIdentity.GetCurrent()) {
-      if(!CreateEnvironmentBlock(out env,identity.Token,false)) throw new Win32Exception(Marshal.GetLastWin32Error());
-    }
-    try {
-      foreach(DictionaryEntry entry in Environment.GetEnvironmentVariables()) Environment.SetEnvironmentVariable((string)entry.Key,null);
-      for(IntPtr p=env;;) {
-        string value=Marshal.PtrToStringUni(p); if(String.IsNullOrEmpty(value)) break;
-        int split=value.IndexOf('='); if(split>0) Environment.SetEnvironmentVariable(value.Substring(0,split),value.Substring(split+1));
-        p=IntPtr.Add(p,(value.Length+1)*2);
-      }
-    } finally { DestroyEnvironmentBlock(env); }
-  }
+export function agentEnvironmentScript(): string {
+  const source = readFileSync(new URL("./sandbox-agent-env.ps1", import.meta.url), "utf8").replace(/^\uFEFF/, "");
+  return `. {\n${source}\n} -DefineOnly\nSet-SandboxAgentEnvironment\n`;
 }
-'@
-[TargetEnvironment]::Reset();
-`;
 
 interface ProbeProcess {
   spawned: Promise<void>; events: EventEmitter; pid?: number;
@@ -250,7 +236,7 @@ function directLaunch(credential: string): Launch {
   return (script, cwd) => {
     const scriptPath = join(cwd, `.clodex-helper-${randomUUID()}.ps1`);
     // CreateProcessWithLogonW のコマンドライン上限に収め、stdin は計測対象に残す。
-    writeFileSync(scriptPath, `\uFEFF$ProgressPreference='SilentlyContinue'; ${script}`, { flag: "wx" });
+    writeFileSync(scriptPath, `\uFEFF$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; ${agentEnvironmentScript()} ${script}`, { flag: "wx" });
     let proc: ProbeProcess;
     try { proc = localProcess(POWERSHELL, psArgs(`$ErrorActionPreference='Stop'; ${credentialScript(credential)}
 Add-Type -TypeDefinition @'
@@ -332,7 +318,7 @@ async function startBroker(project: string, credential: string, tokenPath: strin
     if (!address || typeof address === "string") throw new Error("broker ポートなし");
     // token は短い起動引数で渡し、共有するスクリプトや token ファイルの ACL を広げない。
     const evaluate = "eval(Buffer.from(process.argv.splice(1,1)[0],String.fromCharCode(98,97,115,101,54,52)).toString())";
-    const bootstrap = `param([int]$Port,[string]$Token)\n$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; ${resetTargetEnvironment} & ${psQuote(process.execPath)} -e ${psQuote(evaluate)} ${Buffer.from(brokerSource).toString("base64")} $Port $Token; exit $LASTEXITCODE`;
+    const bootstrap = `param([int]$Port,[string]$Token)\n$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; ${agentEnvironmentScript()} & ${psQuote(process.execPath)} -e ${psQuote(evaluate)} ${Buffer.from(brokerSource).toString("base64")} $Port $Token; exit $LASTEXITCODE`;
     await writeFile(bootstrapPath, `\uFEFF${bootstrap}`, { flag: "wx" });
     const launchScript = `$ErrorActionPreference='Stop'; ${credentialScript(credential)} $token=Get-Content -LiteralPath ${psQuote(tokenPath)} -Raw; try { $p=Start-Process -FilePath ${psQuote(POWERSHELL)} -Credential $credential -LoadUserProfile -WorkingDirectory ${psQuote(project)} -WindowStyle Hidden -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',${psQuote(`"${bootstrapPath}"`)},'-Port','${address.port}','-Token',$token) -PassThru; $p.WaitForExit(); exit $p.ExitCode } finally { $secret.Dispose() }`;
     launcher = localProcess(POWERSHELL, psArgs(launchScript), project);
@@ -456,8 +442,7 @@ async function main(): Promise<void> {
       try { add(number, "計測済み", await action()); } catch (error) { add(number, "失敗", errorText(error)); }
     };
     await measure(2, async () => {
-      const deniedDrives = Array.isArray(state.deniedDrives) ? state.deniedDrives.filter((path): path is string => typeof path === "string") : [];
-      if (deniedDrives.some(path => !/^[a-z]:\\$/i.test(path))) throw new Error("state のドライブ記録が不正");
+      const deniedDrives = deniedDrivesFromState(state);
       const acl = await host(`${psPrelude} Get-PSDrive -PSProvider FileSystem | ForEach-Object { & icacls.exe $_.Root }; & icacls.exe ${psQuote(options.project)}; & icacls.exe ${psQuote(options.otherProject)}`);
       logs.push(`ドライブ ACL:\n\n\`\`\`text\n${acl.stdout}\n${acl.stderr}\n\`\`\``);
       const results: string[] = [];
