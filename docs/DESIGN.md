@@ -1833,6 +1833,14 @@ D1 の詳細（1 つのプロセスの中の複数の会話）:
 - Web UI の会話の一覧に、各会話の状態（作業中・待機中・停止中）と worktree の印を出す
 - 入力行は届いた順に処理する（会話の切り替えや worktree の作成を待ってから次の行へ）
 - Web UI は PWA の manifest（`/manifest.webmanifest`）とアイコン（`/icon.svg`）を token なしで返す（秘密を含まない）
+- iPhone のホーム画面用に `apple-touch-icon`（`/apple-touch-icon.png`。180px の PNG）も token なしで返す（iOS は SVG のアイコンを使わない）
+
+アイコン:
+
+- 図柄は橙の右向き記号・中央の橙の四角・青の左向き記号を黒の角丸の四角に置いたもの。元は `gui/icon.svg`（四隅は透明）。GUI・Web・PWA のアイコンはすべてここから作る
+- GUI: `gui/` で `pnpm exec tauri icon icon.svg` を実行し、`gui/src-tauri/icons/` を作り直す（生成物は commit する）
+- Web: favicon と manifest は `gui/icon.svg` と同じ SVG（`ICON_SVG`）。`apple-touch-icon` は iOS が角を丸めるため、背景を四隅まで黒で塗った `gui/icon-ios.svg` から 180px の PNG を作り、base64 の定数で持つ
+- 背景色（manifest の `background_color`・`theme_color`）はアイコンの黒（`#000000`）に揃える
 
 D2 の詳細（Hub として複数の project を扱う）。2 段に分ける:
 
