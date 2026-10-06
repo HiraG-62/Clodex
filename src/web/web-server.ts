@@ -6,12 +6,14 @@ import type { AddressInfo } from "node:net";
 import type { PreviewResult } from "../project/file-preview.js";
 import type { FeedItem, WebFeed } from "./web-feed.js";
 import { ICON_SVG, MANIFEST, type WebPage } from "./web-page.js";
+import { APPLE_TOUCH_ICON_PNG_BASE64 } from "./apple-touch-icon.js";
 
 const HOST = "127.0.0.1";
 const COOKIE_NAME = "clodex_token";
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 const KEEPALIVE_MS = 25_000;
 const MAX_BODY_BYTES = 64 * 1024;
+const APPLE_TOUCH_ICON_PNG = Buffer.from(APPLE_TOUCH_ICON_PNG_BASE64, "base64");
 const HTTP = {
   ok: 200, noContent: 204, found: 302, badRequest: 400, unauthorized: 401, notFound: 404, tooLarge: 413, unsupported: 415, serverError: 500,
 } as const;
@@ -147,6 +149,9 @@ export const startWebServer = async ({ port, token, feed, page, onInput, listFil
     }
     if (req.method === "GET" && url.pathname === "/icon.svg") {
       return void res.writeHead(HTTP.ok, { "content-type": "image/svg+xml" }).end(ICON_SVG);
+    }
+    if (req.method === "GET" && url.pathname === "/apple-touch-icon.png") {
+      return void res.writeHead(HTTP.ok, { "content-type": "image/png" }).end(APPLE_TOUCH_ICON_PNG);
     }
     if (!sameToken(cookieToken(req), token)) return void res.writeHead(HTTP.unauthorized).end();
 

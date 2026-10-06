@@ -398,10 +398,10 @@ const FUNCTIONS = `
 const json = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
 
 // ホーム画面に置けるようにする（DESIGN.md §28 D: PWA）
-export const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="#111"/><text x="256" y="330" font-family="Arial, sans-serif" font-size="260" font-weight="700" text-anchor="middle" fill="#fff">C</text></svg>`;
+export const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="100" fill="#000000"/><g fill="#DEA161"><path d="M118 144 199 225Q207 233 207 245V267Q207 279 199 287L118 368Q105 381 92 368L73 349Q60 336 73 323L132 264Q140 256 132 248L73 189Q60 176 73 163L92 144Q105 131 118 144Z"/><rect x="226" y="227" width="60" height="60" rx="12"/></g><path d="M118 144 199 225Q207 233 207 245V267Q207 279 199 287L118 368Q105 381 92 368L73 349Q60 336 73 323L132 264Q140 256 132 248L73 189Q60 176 73 163L92 144Q105 131 118 144Z" transform="translate(512 0) scale(-1 1)" fill="#7CA2DD"/></svg>`;
 export const MANIFEST = JSON.stringify({
   name: "Clodex", short_name: "Clodex", start_url: "/", display: "standalone",
-  background_color: "#111111", theme_color: "#111111",
+  background_color: "#000000", theme_color: "#000000",
   icons: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" }],
 });
 
@@ -430,8 +430,9 @@ export const buildWebPage = (language: Language): WebPage => {
 <meta name="color-scheme" content="light dark">
 <title>Clodex</title>
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
-<meta name="theme-color" content="#111111">
+<meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">

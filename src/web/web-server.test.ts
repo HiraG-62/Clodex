@@ -187,6 +187,19 @@ describe("startWebServer", () => {
     expect((await fetch(`${base}/icon.svg`)).headers.get("content-type")).toBe("image/svg+xml");
   });
 
+  it("iPhone 用の 180px PNG アイコンを token なしで返す", async () => {
+    const { base } = await setup();
+    const response = await fetch(`${base}/apple-touch-icon.png`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("image/png");
+    const png = Buffer.from(await response.arrayBuffer());
+    const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+    expect(png.subarray(0, signature.length)).toEqual(signature);
+    expect(png.toString("ascii", 12, 16)).toBe("IHDR");
+    expect(png.readUInt32BE(16)).toBe(180);
+    expect(png.readUInt32BE(20)).toBe(180);
+  });
+
   it("未知の path は 404", async () => {
     const { base } = await setup();
     expect((await fetch(`${base}/unknown`, { headers: { cookie: COOKIE } })).status).toBe(404);

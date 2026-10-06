@@ -1,13 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { runInNewContext } from "node:vm";
+import { readFileSync } from "node:fs";
 import { renderMarkdown } from "./client/markdown.js";
-import { buildWebPage } from "./web-page.js";
+import { buildWebPage, ICON_SVG, MANIFEST } from "./web-page.js";
 import type { updateDesktopNotify } from "./client/desktop-notify.js";
 import { ja } from "../i18n/messages.js";
 
 const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1] ?? "");
 
 describe("buildWebPage", () => {
+  it("GUI と同じ図形のアイコンを使う", () => {
+    const guiIcon = readFileSync(new URL("../../gui/icon.svg", import.meta.url), "utf8");
+    expect(ICON_SVG.trim()).toBe(guiIcon.trim());
+    expect(ICON_SVG).not.toContain("<text");
+  });
+
+  it("黒背景と iPhone 用アイコンを指定する", () => {
+    const { html } = buildWebPage("ja");
+    expect(html).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png">');
+    expect(html).toContain('<meta name="theme-color" content="#000000">');
+    expect(JSON.parse(MANIFEST)).toMatchObject({ background_color: "#000000", theme_color: "#000000" });
+  });
+
   it("通知の状態遷移を外部依存のない関数として埋め込む", () => {
     const script = scriptsOf(buildWebPage("ja").html)[1]!;
     const deps = script.slice(script.lastIndexOf("updateDesktopNotify:"), script.lastIndexOf("commands:"));
