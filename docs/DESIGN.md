@@ -900,7 +900,10 @@ Agent Adapter の `rate_limit` event（Claude: `rate_limit_event`、Codex: `acco
 - **週のペース超過** = 週の使用率 − 週の経過率（経過率は reset 時刻と週の長さ 7 日から計算）。正なら使いすぎ、負なら余裕あり
 - `/status` に、各 Agent の 5 時間枠の使用率と週のペース超過、コンテキストの大きさ、現在の primary を表示する。まだ受け取っていない値は `unknown`
 - コンテキストの大きさは、その Agent の session が変わったとき（`session` event、`/new`、`/resume`）と compact したとき（`compacted` event）に unknown に戻す
-- Codex は起動時に `account/rateLimits/read` で利用状況を取得する（Claude は最初の API 呼び出しの後に届く）
+- Clodex の起動時に、model の一覧と同じ短命のプロセスで両 Agent の利用状況も取得し、Agent の Lazy Start を待たずに表示する（docs/spikes/model-list.md）。ターンを送らないので利用枠を消費しない。取得は Hub で 1 回、全 project の UsageMonitor に `rate_limit` event と同じ形で渡す（通知の判定も同じ経路）
+  - Claude: `control_request` の `get_usage` の `rate_limits.five_hour` / `seven_day`。`utilization` は 0〜100 の percent、`resets_at` は ISO 8601 の文字列（`rate_limit_event` の比率・epoch 秒とは形式が違うので変換する）
+  - Codex: `account/rateLimits/read` の `rateLimits.primary` / `secondary`（`windowDurationMins` で 5 時間・週を見分ける。今の Adapter と同じ変換）
+- その後はターン中の `rate_limit` event で更新する。起動時に取得した値より新しい event が来れば上書きする
 - 次の条件を初めて満たしたとき、1 回だけ通知する（同じ条件では繰り返さない。reset 後は再び通知できる）
 
 | 条件 | 既定の閾値 | 通知例 |
@@ -1844,7 +1847,7 @@ Agent の設定（model・effort・権限）:
 - model はリストから選ぶ。一覧は CLI から取得し、固定リストは持たない（docs/spikes/model-list.md）
   - Claude: 短命の `claude -p --input-format stream-json ...` に `control_request` の `initialize` を送り、応答の `models` を使う。値は `value`、表示名は `displayName`。`default` は `displayName` に版が無いので `description` の ` · ` より前を足して `Default (Opus 5.5)` とする
   - Codex: 短命の `codex app-server` で `initialize` → `model/list`（`nextCursor` を最後までたどる）。値は `model`、表示名は `displayName`。`hidden` は除く
-  - 取得は Clodex の起動時に 1 回、Agent の Lazy Start を待たずにバックグラウンドで行う（ターンを送らないので利用枠を消費しない）。取得できるまで・失敗したときは空の一覧（「その他（入力）」だけ）。一覧は project によらないので Hub で共有する
+  - 取得は Clodex の起動時に 1 回、Agent の Lazy Start を待たずにバックグラウンドで行う（ターンを送らないので利用枠を消費しない）。同じプロセスで利用状況も取得する（§利用枠の可視化と通知）。取得できるまで・失敗したときは空の一覧（「その他（入力）」だけ）。一覧は project によらないので Hub で共有する
   - リストは表示名を出し、選ぶと値を `/model <agent> <value>` で送る。リストの最後に「その他（入力）」を置き、自由に入力もできる
 - 一覧は state に Agent ごとに `{ value, label }[]` で入れる。Claude は `resolvedModel` も持ち、今の model の表示（チップ・状態の行・`/status`）は値か `resolvedModel` が一致する項目の表示名にする（例: `claude-opus-5-5` → `Opus 5.5`）。一致しなければ値のまま
 - スラッシュコマンドの `/model` の引数の候補は値を出し、表示名を説明として添える
