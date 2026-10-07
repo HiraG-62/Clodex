@@ -1,4 +1,4 @@
-import type { PendingDeadlines, PendingSettings, resolvePendingSettings as ResolvePendingSettings, isNavigationCommand as IsNavigationCommand, nextCommandStarts as NextCommandStarts } from "./pending.js";
+import type { CommandStarts, PendingDeadlines, PendingSettings, resolvePendingSettings as ResolvePendingSettings, isNavigationCommand as IsNavigationCommand, nextCommandStarts as NextCommandStarts } from "./pending.js";
 // Web UI の画面の振る舞い（DESIGN.md §17 Web UI）。
 // ブラウザ側にそのまま埋め込むため、外部のものを参照しない 1 つの関数として書く（型の import のみ）。
 // 純関数（renderMarkdown 等）とコマンドの一覧は引数で受け取る
@@ -68,7 +68,7 @@ export function clientMain({
   const TOAST_DURATION_MS = 4000;
   const MAX_TOASTS = 3;
   const RELOAD_DELAY_MS = 350;
-  const SETTING_TIMEOUT_MS = 30_000;
+  const SETTING_TIMEOUT_MS = 5_000;
   const INTERRUPT_RETRY_MS = 5_000;
   const TOAST_EXIT_MS = 150;
   const TOKENS_PER_K = 1000;
@@ -137,12 +137,13 @@ export function clientMain({
   let state: WebState | undefined;
   let pendingSettings: PendingSettings = {};
   let pendingDeadlines: PendingDeadlines = {};
+  const settingRequests = new Map<string, symbol>();
   let reloading = false;
   const pendingRequests = new Set<string>();
   const interrupting = new Set<AgentId>();
   const interruptAttempts = new Map<AgentId, symbol>();
   let uploading = 0;
-  let commandStarts: Record<number, string> = {};
+  let commandStarts: CommandStarts = {};
   const startingAt = new Map<AgentId, string>();
   let replaying = true;
   let incomingHistory: HistoryItem[] = [];
@@ -217,20 +218,25 @@ export function clientMain({
   const requestSetting = async (id: AgentId, key: "model" | "effort" | "permission", value: string, button?: HTMLButtonElement) => {
     if (pendingSettings[id]?.[key] !== undefined) return false;
     const generation = liveGeneration;
+    const requestKey = `${id}:${key}`;
+    const request = Symbol();
+    settingRequests.set(requestKey, request);
     pendingSettings[id] = { ...pendingSettings[id], [key]: value };
-    const deadline = Date.now() + SETTING_TIMEOUT_MS;
-    pendingDeadlines[id] = { ...pendingDeadlines[id], [key]: deadline };
-    window.setTimeout(() => {
-      if (generation !== liveGeneration || pendingDeadlines[id]?.[key] !== deadline) return;
-      pendingSettings = resolvePendingSettings(pendingSettings, state?.agents ?? [], pendingDeadlines);
-      renderState();
-    }, SETTING_TIMEOUT_MS);
+    delete pendingDeadlines[id]?.[key];
     renderState();
     const sent = await send(`/${key} ${id} ${value}`, button);
-    if (generation !== liveGeneration || pendingDeadlines[id]?.[key] !== deadline) return false;
+    if (generation !== liveGeneration || settingRequests.get(requestKey) !== request) return false;
     if (!sent) {
       delete pendingSettings[id]?.[key];
       renderState();
+    } else if (pendingSettings[id]?.[key] === value) {
+      const deadline = Date.now() + SETTING_TIMEOUT_MS;
+      pendingDeadlines[id] = { ...pendingDeadlines[id], [key]: deadline };
+      window.setTimeout(() => {
+        if (generation !== liveGeneration || pendingDeadlines[id]?.[key] !== deadline) return;
+        pendingSettings = resolvePendingSettings(pendingSettings, state?.agents ?? [], pendingDeadlines);
+        renderState();
+      }, SETTING_TIMEOUT_MS);
     }
     refreshOpenSheet();
     return sent;
@@ -645,11 +651,11 @@ export function clientMain({
     for (const clock of log.querySelectorAll(".output-clock")) clock.remove();
     for (const [id, commandStart] of Object.entries(commandStarts)) {
       const clockRow = el("div", "output-clock");
-      const elapsed = el("span", "elapsed", elapsedText(commandStart));
-      elapsed.dataset.start = commandStart;
+      const elapsed = el("span", "elapsed", elapsedText(commandStart.at));
+      elapsed.dataset.start = commandStart.at;
       clockRow.dataset.commandId = id;
       clockRow.append(el("span", "spin"), el("span", "", `#${id} · ${t("web.command.running")}`), elapsed);
-      [...log.querySelectorAll(".output")].at(-1)?.before(clockRow);
+      rendered.get(commandStart.outputId)?.node.before(clockRow);
     }
     enhanceMarkdown(log);
     if (stick) scrollToBottom(); else if (changed) newer.hidden = false;
@@ -1753,6 +1759,7 @@ export function clientMain({
           startingAt.clear();
           pendingSettings = {};
           pendingDeadlines = {};
+          settingRequests.clear();
           interrupting.clear();
           if (projectChanged) {
             files = []; fileSet.clear(); filesLoadedAt = 0; filesLoading = false; filesGeneration++;
@@ -1791,8 +1798,8 @@ export function clientMain({
       }
       if (replaying) { incomingHistory.push(item); return; }
       history.push(item);
-      if (item.type === "output") commandStarts = nextCommandStarts(commandStarts, item.command, new Date().toISOString());
       items = applyFeedItem(items, item);
+      if (item.type === "output") commandStarts = nextCommandStarts(commandStarts, item.command, new Date().toISOString(), items.at(-1)?.id);
       if (item.type === "event" && item.event.kind === "human") {
         items = withStartingTurns(items, state?.agents ?? [], item.event.at, state?.pendingInputs ?? []).filter((entry): entry is TimelineItem => entry.kind !== "starting");
       }

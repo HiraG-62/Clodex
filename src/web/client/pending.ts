@@ -31,10 +31,12 @@ export function isNavigationCommand(line: string): boolean {
   return /^\/(?:new|resume|project|sandbox)(?:\s|$)/.test(line.trim());
 }
 
-export function nextCommandStarts(previous: Readonly<Record<number, string>>, command: CommandLifecycle | undefined, now: string): Record<number, string> {
+export type CommandStarts = Record<number, { at: string; outputId: string }>;
+
+export function nextCommandStarts(previous: Readonly<CommandStarts>, command: CommandLifecycle | undefined, now: string, outputId?: string): CommandStarts {
   if (!command) return previous;
   const result = { ...previous };
-  if (command.phase === "start") result[command.id] ??= now;
-  else delete result[command.id];
+  if (command.phase === "start" && outputId !== undefined) result[command.id] ??= { at: now, outputId };
+  else if (command.phase === "exit") delete result[command.id];
   return result;
 }
