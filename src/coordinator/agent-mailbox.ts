@@ -67,6 +67,8 @@ export class AgentMailbox {
 
   get activeSending(): boolean { return this.activeSend; }
 
+  get isClosed(): boolean { return this.closed; }
+
   // 配送待ちの人間の入力を取り消し、本文を返す。配送済み・無いなら undefined
   cancel(inputId: string): string | undefined {
     const index = this.queue.findIndex((item) => item.inputId === inputId);

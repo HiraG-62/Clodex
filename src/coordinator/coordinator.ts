@@ -39,6 +39,19 @@ export const RECOVERY_CONTINUE = "[Clodex] Clodex restarted and your previous tu
 export type SoloMode = "free" | AgentId;
 const SOLO_REMINDER = "[Clodex] Solo mode: do not use send_message. Do all the work yourself.";
 const SOLO_REJECTED = "solo mode: the other agent is not available. Do the work yourself.";
+// 作業を頼む message は、配送したターンが失敗したら一度だけ送り直し、それでも失敗したら送信元に引き取らせる（DESIGN.md §12 配送ルール）
+const RETRIED_TYPES: ReadonlySet<AgentMessage["type"]> = new Set(["DELEGATE", "REVIEW_REQUEST", "QUESTION"]);
+const DEFAULT_RETRY_DELAY_MS = 30_000;
+const MAX_DELIVERY_ATTEMPTS = 2;
+const ERROR_LINE_LENGTH = 200;
+const HANDOFF_ACTION: Partial<Record<AgentMessage["type"], string>> = {
+  DELEGATE: "Implement it yourself",
+  REVIEW_REQUEST: "Review the changes yourself",
+  QUESTION: "Decide it yourself",
+};
+const handoffFallback = (message: AgentMessage, error: string) =>
+  `[Clodex] Your ${message.type} ${message.id} to ${message.to} failed twice: ${error}. ` +
+  `Do not send it again. ${HANDOFF_ACTION[message.type] ?? "Do the work yourself"} and continue the task.`;
 const preview = (text: string) => (text.length > PREVIEW_LENGTH ? `${text.slice(0, PREVIEW_LENGTH)}…` : text);
 
 export interface CoordinatorOptions {
@@ -61,6 +74,8 @@ export interface CoordinatorOptions {
   resumeSessionIds?: Partial<Record<AgentId, string>>;
   // 今の会話の solo。会話の保存が持つので、毎回読む
   solo?: () => SoloMode | undefined;
+  // 作業を頼む message の配送が失敗してから送り直すまでの待ち（テスト用に短くできる）
+  retryDelayMs?: number;
 }
 
 export class Coordinator {
@@ -208,12 +223,23 @@ export class Coordinator {
   }
 
   // interrupt: 宛先が送信元からの message を処理中なら、そのターンに足す。足せなければキューに積む（DESIGN.md §28 v0.3 C）
-  private async deliver(message: AgentMessage): Promise<void> {
+  private async deliver(message: AgentMessage, attempt = 1): Promise<void> {
     const envelope = buildEnvelope(message, this.language);
     const mailbox = this.mailboxes[message.to];
     const steerable = message.interrupt && mailbox.current?.from === message.from;
     if (steerable && await this.options.agents[message.to].steer(envelope, message.id)) return;
-    await mailbox.enqueue(envelope, { message });
+    const result = await mailbox.enqueue(envelope, { message });
+    if (result.status !== "failed" || !RETRIED_TYPES.has(message.type) || mailbox.isClosed) return;
+    if (attempt < MAX_DELIVERY_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, this.options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS).unref?.());
+      if (!mailbox.isClosed) await this.deliver(message, attempt + 1);
+      return;
+    }
+    const sender = this.mailboxes[message.from];
+    if (sender.isClosed) return;
+    const error = (result.text.split("\n", 1)[0] ?? "").slice(0, ERROR_LINE_LENGTH);
+    this.options.bus.publish({ kind: "notice", text: t("notice.handoffFailed", { type: message.type, to: message.to, from: message.from }) });
+    void sender.enqueue(handoffFallback(message, error), { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, suffix: this.reminder });
   }
 
   // @agent!: 実行中なら steer し、そうでなければ通常の送信（DESIGN.md §28 v0.3 C）

@@ -255,6 +255,69 @@ describe("Coordinator", () => {
     }));
   });
 
+  describe("作業を頼む message の配送の失敗", () => {
+    const setupRetry = () => {
+      const claude = new FakeAgentAdapter("claude");
+      const codex = new FakeAgentAdapter("codex");
+      const bus = new EventBus(() => new Date(NOW));
+      const events: CoordinatorEvent[] = [];
+      bus.subscribe((e) => events.push(e));
+      let seq = 0;
+      const coordinator = new Coordinator({
+        projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus, mcpUrlFor, retryDelayMs: 0,
+        createMessageId: () => `msg_${String(++seq).padStart(8, "0")}`,
+      });
+      return { claude, codex, events, coordinator };
+    };
+    const delegate = { to: "codex", type: "DELEGATE", taskId: "T-1", body: "implement" };
+
+    it("1 回失敗したら同じ envelope をもう一度だけ送り、成功すれば送信元には何も送らない", async () => {
+      const { claude, codex, coordinator } = setupRetry();
+      coordinator.receiveMessage("claude", delegate);
+      await flush();
+      codex.completeTurn({ status: "failed", text: "server overloaded" });
+      await flush(); await flush();
+      expect(codex.sent).toHaveLength(2);
+      expect(codex.sent[1]).toBe(codex.sent[0]);
+      codex.completeTurn();
+      await flush();
+      expect(claude.sent).toEqual([]);
+    });
+
+    it("2 回失敗したら送信元に自分で進めるよう指示し、notice を出す", async () => {
+      const { claude, codex, events, coordinator } = setupRetry();
+      coordinator.receiveMessage("claude", delegate);
+      await flush();
+      codex.completeTurn({ status: "failed", text: "server overloaded\nretry later" });
+      await flush(); await flush();
+      codex.completeTurn({ status: "failed", text: "server overloaded" });
+      await flush(); await flush();
+      expect(codex.sent).toHaveLength(2);
+      expect(claude.sent).toHaveLength(1);
+      expect(claude.sent[0]).toContain("DELEGATE msg_00000001 to codex");
+      expect(claude.sent[0]).toContain("server overloaded");
+      expect(claude.sent[0]).toContain("Do not send it again");
+      expect(events).toContainEqual(expect.objectContaining({ kind: "notice", text: expect.stringContaining("DELEGATE") }));
+    });
+
+    it("RESULT・取り消し・停止は再送しない", async () => {
+      const { claude, codex, coordinator } = setupRetry();
+      coordinator.receiveMessage("codex", { to: "claude", type: "RESULT", taskId: "T", body: "done", replyTo: "msg_x" });
+      await flush();
+      claude.completeTurn({ status: "failed", text: "boom" });
+      await flush(); await flush();
+      expect(claude.sent).toHaveLength(1);
+      coordinator.receiveMessage("claude", delegate);
+      await flush();
+      const stopped = coordinator.stop();
+      codex.completeTurn({ status: "failed", text: "process exited" });
+      await stopped;
+      await flush(); await flush();
+      expect(codex.sent).toHaveLength(1);
+      expect(claude.sent).toHaveLength(1);
+    });
+  });
+
   it("stop は先に mailbox を閉じ、キューに残った配送で Agent を再起動しない", async () => {
     const { codex, coordinator } = setup();
     coordinator.receiveMessage("claude", reviewRequest);

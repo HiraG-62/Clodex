@@ -356,6 +356,7 @@ export const en = {
   // 通知・拒否
   "notice.canceled": "canceled input to {agent}: {text}",
   "notice.discarded": "discarded {count} queued agent message(s)",
+  "notice.handoffFailed": "{type} to {to} failed twice. {from} continues on its own",
   "notice.weeklyPace": "{agent} is ahead of weekly pace (+{pace}). Try /primary {peer}",
   "notice.fiveHour": "{agent} 5h usage: {percent}%",
   "notice.background": "\"{title}\": {agent} finished its turn ({status})",
@@ -717,6 +718,7 @@ export const ja: Messages = {
   "error.generic": "エラー: {message}",
   "notice.canceled": "{agent} への入力を取り消しました: {text}",
   "notice.discarded": "Agent 間の送信待ちのメッセージを {count} 件破棄しました",
+  "notice.handoffFailed": "{to} への {type} が 2 回失敗。{from} が自分で進める",
   "notice.weeklyPace": "{agent} の週の利用がペースを超過（+{pace}）。/primary {peer} も検討",
   "notice.fiveHour": "{agent} の 5 時間枠: {percent}%",
   "notice.background": "「{title}」の {agent} のターンが終わりました（{status}）",

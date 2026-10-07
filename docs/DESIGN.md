@@ -861,7 +861,10 @@ MCP message を受け取った後、
 - 宛先 Agent が stopped なら、送る前に起動する。以前の session ID があれば resume する（Lazy Start: Agent は必要になるまで起動しない。§3.2）
 - `ACK` は記録のみで宛先に配送しない（ACK の往復で Agent を起こさない。§25）
 - 送信元への tool 応答は受理結果（message ID）だけを返す。返信は送信元の現在のターンが終わった後、新しいターンとして届く
-- 起動や送信に失敗したら Event Bus に `error` を出し、そのメッセージは破棄する（v0.1 は再送しない）。`/compact` の失敗も同じ扱いで、mailbox は次の項目へ進む
+- 起動や送信に失敗したら Event Bus に `error` を出し、mailbox は次の項目へ進む。人の入力・`/compact`・`RESULT`・`ISSUE` は再送しない
+- 作業を頼む message（`DELEGATE`・`REVIEW_REQUEST`・`QUESTION`）は、配送したターンが失敗（`failed`。混雑や API のエラー）したら 30 秒待って、同じ envelope をもう一度だけ宛先の mailbox に積む。取り消し（`/interrupt`・`/cancel`）と停止（mailbox を閉じた）は失敗に数えない
+  - もう一度失敗したら、送信元の mailbox に「宛先に届かなかった。送り直さずに自分で進める」という指示（英語。message の type・ID・宛先・エラーの 1 行目）を積み、画面に notice（「{to} への {type} が 2 回失敗。{from} が自分で進める」）を出す。`DELEGATE` は自分で実装し、`REVIEW_REQUEST` は自分で確かめ、`QUESTION` は自分で判断して進める
+  - 待っている間に Hub が止まったら、再試行はしない（未配送分としても残らない）
 - `/new`・`/resume` で Agent を止める間は、その Agent の mailbox の配送を止める。止めている間に届いた項目は捨てず、切り替え後の session に配送する
 - Coordinator の停止時は、先に全 mailbox を閉じてから Agent を止める（停止中に Agent を再起動しない）。未配送分と作業中だったことは、閉じる前の状態として保存してあり、次の起動で戻す（§18 Hub の再起動からの復旧）
 
