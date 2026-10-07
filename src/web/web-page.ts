@@ -301,7 +301,7 @@ const STYLE = `
   .working-tabs { position: fixed; right: 0; top: 42%; z-index: 12; display: flex; gap: 6px; }
   .working-tab { writing-mode: vertical-rl; border: 1px solid var(--line-strong);
     border-radius: 8px 0 0 8px; background: var(--panel); color: var(--fg-2); padding: 12px 7px; font-size: 12px; box-shadow: 0 3px 14px rgba(0,0,0,.08); }
-  .working-panel { position: fixed; right: 0; top: 12%; bottom: 10%; width: min(340px, 92vw); z-index: 13;
+  .working-panel { position: fixed; right: 0; top: 12%; bottom: 10%; width: clamp(340px, 40vw, 640px); z-index: 13;
     border: 1px solid var(--line); border-radius: 12px 0 0 12px; background: var(--panel); box-shadow: -6px 0 30px rgba(0,0,0,.14);
     padding: 18px; overflow-y: auto; }
   .working-panel-head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin-bottom: 12px; }
@@ -319,6 +319,7 @@ const STYLE = `
     grid-template-areas: "top" "conn" "status" "log" "compose"; }
   .topbar { grid-area: top; } .conn { grid-area: conn; } .status { grid-area: status; } .log-wrap { grid-area: log; } .composer { grid-area: compose; }
   @media (min-width: 900px) and (hover: hover) and (pointer: fine) {
+    .working-entry .plan { grid-column: auto; }
     .sheet { align-items: center; justify-items: center; }
     .sheet-panel { border-radius: 14px; max-height: 85vh; max-width: 640px; padding-bottom: 20px; }
     .sheet-panel.wide { max-width: 960px; }
@@ -536,6 +537,7 @@ const STYLE = `
     .side { width: ${WEB_LAYOUT.sideWidth}px; justify-self: start; background: var(--bg); }
   }
   @media (min-width: ${WEB_LAYOUT.wideUsageMinWidth}px) and (hover: hover) and (pointer: fine) {
+    .working-panel { right: ${WEB_LAYOUT.sideWidth}px; }
     .usage-side { display: block; position: fixed; right: 0; top: 0; bottom: 0; width: ${WEB_LAYOUT.sideWidth}px; overflow-y: auto; border-left: 1px solid var(--line); background: var(--bg); }
     .topbar, .conn { margin-right: ${WEB_LAYOUT.sideWidth}px; }
   }
