@@ -273,13 +273,14 @@ const STYLE = `
   .sheet-close { border: 0; background: none; color: var(--muted); font-size: 13px; padding: 8px 0 8px 12px; }
   .primary-action { width: 100%; margin: 8px 0 12px; border: 0; border-radius: 8px; padding: 10px; font-weight: 600; background: var(--invert-bg); color: var(--invert-fg); }
   .setting { margin-bottom: 4px; }
+  .entry.question > :not(.mark) { grid-column: 2; min-width: 0; }
   .question-field { display: grid; gap: 8px; margin: 12px 0; }
   .question-text { margin: 0; white-space: pre-wrap; }
   .question-options { display: grid; gap: 6px; }
   .question-option { display: grid; gap: 4px; text-align: left; white-space: pre-wrap; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg); }
   .question-option.selected { border-color: currentColor; background: var(--bg); }
   .question-other { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg); }
-  .question-submit { padding: 8px 16px; border: 0; border-radius: 6px; background: var(--invert-bg); color: var(--invert-fg); }
+  .question-submit { justify-self: start; padding: 8px 16px; border: 0; border-radius: 6px; background: var(--invert-bg); color: var(--invert-fg); }
   .question-submit:disabled { opacity: .5; }
   .question-answered { margin: 0; white-space: pre-wrap; }
   .working-tabs { position: fixed; right: 0; top: 42%; z-index: 12; display: flex; gap: 6px; }
