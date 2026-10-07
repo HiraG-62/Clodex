@@ -76,6 +76,23 @@ export function clientMain({
     if (text !== undefined) node.textContent = text;
     return node;
   };
+  const icon = (name: string) => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "i");
+    svg.setAttribute("aria-hidden", "true");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", `#i-${name}`);
+    svg.append(use);
+    return svg;
+  };
+  const iconButton = (name: string, label: string, cls = "") => {
+    const button = el("button", `icon-btn ${cls}`) as HTMLButtonElement;
+    button.type = "button";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.append(icon(name));
+    return button;
+  };
   const pad2 = (n: number) => String(n).padStart(2, "0");
   const clock = (iso: string) => {
     const d = new Date(iso);
@@ -148,10 +165,14 @@ export function clientMain({
   // ---- トースト ----
   const showToast = (text: string, level: "info" | "warn" = "info") => {
     const container = $("#toast");
-    const toast = el("button", `toast-item ${level}`, text);
+    const toast = el("button", `toast-item ${level}`);
+    toast.append(icon(level === "warn" ? "alert" : "check-circle"), el("span", "", text), icon("x"));
+    toast.setAttribute("aria-label", `${text} · ${t("web.sheet.close")}`);
+    toast.title = t("web.sheet.close");
+    const dismiss = () => { toast.classList.add("leaving"); window.setTimeout(() => toast.remove(), 150); };
     container.append(toast);
-    const timer = window.setTimeout(() => toast.remove(), TOAST_DURATION_MS);
-    toast.addEventListener("click", () => { window.clearTimeout(timer); toast.remove(); });
+    const timer = window.setTimeout(dismiss, TOAST_DURATION_MS);
+    toast.addEventListener("click", () => { window.clearTimeout(timer); dismiss(); });
     while (container.children.length > MAX_TOASTS) container.firstElementChild?.remove();
   };
 
@@ -390,7 +411,8 @@ export function clientMain({
   const renderQuestionCount = () => {
     const count = state?.questions.length ?? 0;
     questionToggle.hidden = count === 0;
-    questionToggle.textContent = `${t("web.question.title")} ${count}`;
+    questionToggle.replaceChildren(icon("question"), el("span", "count", String(count)));
+    questionToggle.setAttribute("aria-label", `${t("web.question.title")} ${count}`);
   };
   questionToggle.addEventListener("click", () => {
     const oldest = state?.questions[0];
@@ -399,6 +421,8 @@ export function clientMain({
   const renderWorking = () => {
     const active = items.filter((item): item is Extract<TimelineItem, { kind: "turn" }> => item.kind === "turn" && item.status === "working");
     $("#working-count").textContent = String(active.length);
+    workingToggle.hidden = active.length === 0;
+    if (!active.length) { workingPanel.hidden = true; workingToggle.setAttribute("aria-expanded", "false"); }
     const list = $("#working-list");
     list.replaceChildren(...active.map((item) => {
       const last = item.steps.at(-1);
@@ -463,6 +487,7 @@ export function clientMain({
   const gauge = (label: string, value: string, percent: number | undefined, agent: AgentId, over = false, tick?: number) => {
     const node = el("div", "gauge");
     node.append(el("span", "k", label), el("span", `v mono${over ? " over" : ""}`, value));
+    node.querySelector<HTMLElement>(".v")!.dataset.compact = percent === undefined ? "—" : `${Math.round(percent)}%`;
     const track = el("span", `track ${agent}`);
     const fill = el("i");
     fill.style.width = `${Math.max(0, Math.min(100, percent ?? 0))}%`;
@@ -474,15 +499,21 @@ export function clientMain({
       track.append(marker);
     }
     node.append(track);
+    node.title = `${label}: ${value}`;
+    node.dataset.label = label === t("web.gauge.context") ? "ctx" : label.split(" · ")[0]?.split("（")[0]?.split(" (")[0] ?? label;
+    node.querySelector<HTMLElement>(".k")!.textContent = label.split(" · ")[0]?.split("（")[0]?.split(" (")[0] ?? label;
     return node;
   };
 
   const syncGauge = (node: HTMLElement, label: string, value: string, percent: number | undefined, over = false, tick?: number) => {
+    node.title = `${label}: ${value}`;
+    node.dataset.label = label === t("web.gauge.context") ? "ctx" : label.split(" · ")[0]?.split("（")[0]?.split(" (")[0] ?? label;
     const key = node.querySelector<HTMLElement>(".k")!;
     const val = node.querySelector<HTMLElement>(".v")!;
     const track = node.querySelector<HTMLElement>(".track")!;
-    key.textContent = label;
+    key.textContent = label.split(" · ")[0]?.split("（")[0]?.split(" (")[0] ?? label;
     val.textContent = value;
+    val.dataset.compact = percent === undefined ? "—" : `${Math.round(percent)}%`;
     val.classList.toggle("over", over);
     track.querySelector<HTMLElement>("i")!.style.width = `${Math.max(0, Math.min(100, percent ?? 0))}%`;
     let marker = track.querySelector<HTMLElement>(".tick");
@@ -543,23 +574,32 @@ export function clientMain({
     const updateChips = (current: AgentState) => {
       modelChip.textContent = current.modelLabel ?? current.model ?? "default";
       effortChip.textContent = current.effort ?? "default";
-      permissionChip.textContent = current.permission;
+      permissionChip.replaceChildren(icon(current.permission === "full" ? "shield-alert" : "shield"), document.createTextNode(current.permission === "full" ? "" : current.permission));
+      modelChip.prepend(icon("cpu"));
+      effortChip.prepend(icon("gauge"));
+      for (const button of [modelChip, effortChip, permissionChip]) {
+        button.title = `${t("web.role.open", { agent: AGENTS[current.id].name })}: ${button === permissionChip ? current.permission : button.textContent}`;
+        button.setAttribute("aria-label", button.title);
+      }
       permissionChip.classList.toggle("warning", current.permission === "full");
     };
     updateChips(agent);
     const gauges = gaugeValues(agent.usage).map((g) => gauge(g.label, g.value, g.percent, agent.id, g.over, g.tick));
-    wrap.append(chips, ...gauges);
+    const minis = el("div", "mini-gauges");
+    minis.append(...gauges);
+    wrap.append(chips, minis);
     const links = el("div", "links");
-    const action = (label: string, run: () => void, cls = "", disabled = false) => {
-      const button = el("button", cls, label) as HTMLButtonElement;
+    const action = (name: string, label: string, run: () => void, cls = "", disabled = false) => {
+      const button = iconButton(name, label, cls);
       button.type = "button";
       button.disabled = disabled;
       button.addEventListener("click", run);
       links.append(button);
       return button;
     };
-    const interrupt = action(t("web.agent.interrupt"), () => void send(`/interrupt ${agent.id}`), "danger", agent.status !== "busy");
-    const compact = action(t("web.agent.compact"), () => void send(`/compact ${agent.id}`), "", agent.status === "stopped");
+    const interrupt = action("square", t("web.agent.interrupt"), () => void send(`/interrupt ${agent.id}`), "danger", agent.status !== "busy");
+    const compact = action("fold", t("web.agent.compact"), () => void send(`/compact ${agent.id}`), "", agent.status === "stopped");
+    links.append(roleButton(agent.id));
     wrap.append(links);
     controlUpdaters.set(wrap, (current) => {
       updateChips(current);
@@ -574,11 +614,11 @@ export function clientMain({
   };
 
   const stateLabel = (agent: AgentState) => {
-    const node = el("span", `state ${agent.status === "busy" ? "working" : ""}`, t(STATUS_LABEL[agent.status]));
+    const node = el("span", `state ${agent.status === "busy" ? "working" : agent.status}`, t(STATUS_LABEL[agent.status]));
     return node;
   };
   const roleButton = (id: AgentId) => {
-    const button = el("button", "role-button", "✎") as HTMLButtonElement;
+    const button = iconButton("sliders", t("web.role.open", { agent: AGENTS[id].name }), "role-button");
     button.type = "button";
     button.setAttribute("aria-label", t("web.role.open", { agent: AGENTS[id].name }));
     button.title = t("web.role.open", { agent: AGENTS[id].name });
@@ -589,7 +629,9 @@ export function clientMain({
   const renderState = () => {
     renderQuestionCount();
     if (!state) return;
-    $("#path").textContent = state.project || t("web.top.noProject");
+    $("#project-name").textContent = state.project.split(/[\\/]/).filter(Boolean).at(-1) || t("web.top.noProject");
+    $("#project-pill").title = state.project || t("web.top.noProject");
+    document.body.dataset.to = target ?? state.primary;
     const projects = $("#projects") as HTMLSelectElement;
     const selectedProject = state.projects?.find((project) => project.current)?.projectRoot ?? "";
     const listedProjects = state.projects ?? [];
@@ -629,8 +671,9 @@ export function clientMain({
     // PC: Agent パネル
     $("#agents").replaceChildren(...state.agents.map((agent) => {
       const section = el("section", "agent");
+      section.dataset.agent = agent.id;
       const h2 = el("h2");
-      h2.append(mark(agent.id), el("span", "", AGENTS[agent.id].name), roleButton(agent.id), stateLabel(agent));
+      h2.append(mark(agent.id), el("span", "", AGENTS[agent.id].name), stateLabel(agent));
       section.append(h2);
       section.append(agentControls(agent));
       return section;
@@ -691,7 +734,7 @@ export function clientMain({
         void send(`/resume ${index + 1}`);
         closeSheet();
       });
-      const menu = el("button", "conv-menu", "⋯") as HTMLButtonElement;
+      const menu = iconButton("ellipsis", t("web.conv.menu"), "conv-menu");
       menu.type = "button";
       menu.setAttribute("aria-label", t("web.conv.menu"));
       menu.addEventListener("click", () => openConversationMenu(conversation, index + 1));
@@ -724,7 +767,7 @@ export function clientMain({
     if (!agent) return;
     sheetAgent = id;
     sheetKind = "agent";
-    openSheet(AGENTS[id].name, [roleButton(id), agentControls(agent)]);
+    openSheet(AGENTS[id].name, [agentControls(agent)]);
   };
   const openConversations = () => {
     sheetKind = "conversations";
@@ -1119,7 +1162,9 @@ export function clientMain({
     const shell = isShellInput(input.value);
     $("#composer").classList.toggle("shell-input", shell);
     $("#shell-input-label").hidden = !shell;
-    sendButton.textContent = t(shell ? "web.run" : "web.send");
+    sendButton.replaceChildren(icon(shell ? "terminal" : "arrow-up"));
+    sendButton.setAttribute("aria-label", t(shell ? "web.run" : "web.send"));
+    sendButton.title = t(shell ? "web.run" : "web.send");
     for (const button of document.querySelectorAll<HTMLButtonElement>(".to button")) button.disabled = shell;
     resize();
     renderHighlight();

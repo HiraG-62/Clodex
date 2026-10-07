@@ -1,3 +1,4 @@
+import { UI_ICONS } from "./web-icons.js";
 // Web UI の画面（DESIGN.md §17 Web UI）。HTML 1 枚に CSS と JS を inline で持つ。
 // 画面の振る舞いは src/web/client/ に型付きで書き、関数のソースをそのまま埋め込む
 import { createHash } from "node:crypto";
@@ -20,6 +21,11 @@ import { updateDesktopNotify } from "./client/desktop-notify.js";
 
 const STYLE = `
   :root {
+    --r-outer: 8px; --r: 6px; --r-inner: 4px; --r-pill: 999px;
+    --ring: 0 0 0 1px var(--line); --ring-strong: 0 0 0 1px var(--line-strong);
+    --hover-bg: color-mix(in srgb, var(--fg) 6%, transparent); --press-bg: color-mix(in srgb, var(--fg) 10%, transparent);
+    --accent: var(--claude); --accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
+    --shadow-pop: 0 12px 32px var(--scrim), var(--ring); --ease: 120ms cubic-bezier(.2, .7, .3, 1);
     --bg: #fafafa; --panel: #ffffff; --sunken: #f2f2f3; --line: #e6e6e8; --line-strong: #d4d4d8;
     --fg: #111113; --fg-2: #3f3f46; --muted: #80808a;
     --claude: #b4793f; --codex: #4b6fa5; --code: #6f9a5a;
@@ -308,8 +314,8 @@ const STYLE = `
     .sheet { align-items: center; justify-items: center; }
     .sheet-panel { border-radius: 14px; max-height: 85vh; max-width: 640px; padding-bottom: 20px; }
     .sheet-panel.wide { max-width: 960px; }
-    .app { grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto;
-      grid-template-areas: "top top" "conn conn" "side log" "side compose"; border-inline: 1px solid var(--line); }
+    .app { grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+      grid-template-areas: "top top" "conn conn" "side agents" "side log" "side compose"; border-inline: 1px solid var(--line); }
     .side { grid-area: side; display: flex; border-right: 1px solid var(--line); overflow-y: auto; }
     .status { display: none; }
     .log { padding-inline: 32px; } .composer { padding-inline: 32px; }
@@ -323,6 +329,105 @@ const STYLE = `
       border-radius: 999px; padding: 5px 12px; }
     .working-panel { top: auto; bottom: 0; left: 0; width: 100%; max-height: 65vh; border-radius: 14px 14px 0 0; }
   }
+
+  body[data-to="codex"] { --accent: var(--codex); }
+  [data-agent="claude"] { --agent: var(--claude); } [data-agent="codex"] { --agent: var(--codex); }
+  button, select, summary { transition: background-color var(--ease), color var(--ease), box-shadow var(--ease), transform var(--ease); }
+  button { position: relative; }
+  button:hover:not(:disabled), summary:hover { background-color: var(--hover-bg); }
+  button:active:not(:disabled), summary:active { background-color: var(--press-bg); transform: scale(.97); }
+  button:disabled, button.danger:disabled { color: var(--muted); cursor: default; }
+  button[aria-pressed="true"] { background: var(--panel); color: var(--fg); box-shadow: var(--ring); }
+  .i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+  .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex: none; padding: 0; border: 0; border-radius: var(--r); background: transparent; color: var(--muted); }
+  .icon-btn:hover:not(:disabled) { color: var(--fg); }
+  .icon-btn.danger:hover:not(:disabled) { color: var(--crit); }
+  .icon-btn:disabled { opacity: .38; }
+  .tray { display: flex; gap: 2px; padding: 2px; background: var(--sunken); border-radius: var(--r-outer); }
+  .header-tray { margin-left: auto; }
+  .topbar { gap: 10px; }
+  .project-pill { position: relative; display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 10px; background: var(--sunken); border-radius: var(--r); max-width: 280px; min-width: 100px; }
+  #project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+  #projects { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; max-width: none; }
+  .project-pill:focus-within { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .project-pill:hover { box-shadow: var(--ring-strong); }
+  .working-tabs { position: static; display: flex; gap: 2px; }
+  .working-tab { writing-mode: horizontal-tb; box-shadow: none; padding: 0; border: 0; border-radius: var(--r); }
+  .count { position: absolute; top: -2px; right: -2px; min-width: 15px; padding: 1px 3px; border-radius: var(--r-pill); font: 10px var(--font-mono); color: var(--fg); background: var(--panel); box-shadow: var(--ring); }
+  .agent-strip { display: none; grid-area: agents; gap: 4px; padding: 8px 16px; min-width: 0; background: var(--bg); border-bottom: 1px solid var(--line); }
+  .agent-strip .agent { display: grid; grid-template-columns: minmax(0, 1fr) 136px auto; grid-template-areas: "title gauges actions" "chips gauges actions"; gap: 4px 10px; align-items: center; min-width: 0; background: var(--panel); box-shadow: var(--ring); border-radius: var(--r-outer); padding: 7px 10px; min-height: 52px; }
+  .agent-strip h2 { grid-area: title; margin: 0; gap: 6px; font-size: 13px; }
+  .agent-strip h2 .mark { width: 22px; height: 22px; font-size: 11px; }
+  .agent-strip .controls { display: contents; }
+  .setting-chips { margin: 0; }
+  .agent-strip .gauge:nth-child(3) { order: -1; }
+  .conv .m { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .setting-chip { display: inline-flex; align-items: center; gap: 4px; border: 0; border-radius: var(--r-inner); padding: 4px 6px; font-size: 11px; }
+  .setting-chip .i { width: 13px; height: 13px; color: var(--muted); }
+  .setting-chip.warning { color: var(--fg-2); background: var(--sunken); }
+  .setting-chip.warning .i { color: var(--warn); }
+  .setting-chip:hover:not(:disabled) { background: var(--panel); box-shadow: var(--ring-strong); }
+  .agent-strip .setting-chips { grid-area: chips; flex-wrap: nowrap; gap: 3px; min-width: 0; }
+  .agent-strip .setting-chip { font-size: 10px; white-space: nowrap; min-width: 0; overflow: hidden; padding: 3px 4px; }
+  .mini-gauges { display: grid; gap: 8px; }
+  .agent-strip .mini-gauges { grid-area: gauges; gap: 3px; }
+  .agent-strip .gauge { grid-template-columns: 32px minmax(0, 1fr) 32px; align-items: center; line-height: 12px; height: 12px; color: var(--muted); }
+  .agent-strip .gauge .track { grid-column: 2; grid-row: 1; }
+  .agent-strip .gauge .v { grid-column: 3; grid-row: 1; text-align: right; font-size: 0; display: flex; justify-content: flex-end; height: 12px; }
+  .agent-strip .gauge .v::after { content: attr(data-compact); font-size: 10.5px; line-height: 12px; }
+  .agent-strip .gauge .k { display: none; }
+  .agent-strip .gauge::before { grid-column: 1; grid-row: 1; content: attr(data-label); overflow: hidden; white-space: nowrap; }
+  .gauge { margin: 0; gap: 4px 5px; font-size: 10.5px; }
+  .gauge .k, .gauge .v { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track { height: 4px; border-radius: var(--r-inner); }
+  .track > i { border-radius: inherit; }
+  .links { display: flex; gap: 3px; margin-top: 12px; }
+  .links .icon-btn { padding: 0; text-decoration: none; }
+  .agent-strip .links { grid-area: actions; margin: 0; }
+  .agent-strip .links .icon-btn { width: 28px; height: 28px; }
+  .agent .state, .status-row .state { display: inline-flex; align-items: center; gap: 6px; padding: 2px 7px; border-radius: var(--r-pill); background: var(--sunken); font-size: 11px; }
+  .agent .state::before, .status-row .state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+  .agent .state.working::before { background: var(--agent); animation: state-pulse 1.4s infinite; }
+  .state.starting::before { background: none; border: 1px dashed var(--agent, var(--muted)); animation: spin .8s linear infinite; }
+  .conv-row { border-radius: var(--r-outer); margin: 6px 0; padding: 2px; }
+  .conv-row.current { background: var(--panel); box-shadow: var(--ring); }
+  .conv-row.current .conv { background: transparent; box-shadow: none; }
+  .conv-row .conv:disabled { color: var(--fg); opacity: 1; }
+  .conv-row.busy .conv .t::before { background: var(--agent, var(--muted)); }
+  .conv-menu { opacity: .55; }
+  .conv-row:hover .conv-menu { opacity: 1; }
+  .box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .send.icon-btn { background: var(--accent); color: var(--invert-fg); box-shadow: var(--ring); }
+  .seg { gap: 2px; padding: 2px; background: var(--sunken); border: 0; border-radius: var(--r); overflow: visible; }
+  .seg button { border: 0; border-radius: var(--r-inner); }
+  .seg button + button { border: 0; }
+  .seg button[aria-pressed="true"] { background: var(--panel); color: var(--fg); box-shadow: var(--ring); }
+  .question-options { background: var(--sunken); padding: 3px; border-radius: var(--r-outer); }
+  .question-option { background: transparent; border: 0; border-radius: var(--r); }
+  .question-option.selected { background: var(--panel); box-shadow: var(--ring); }
+  .question-option.selected > :first-child::before { content: ""; display: inline-block; width: 6px; height: 6px; background: var(--accent); border-radius: 50%; margin-right: 7px; }
+  .model-form button, .secondary-action { background: var(--panel); color: var(--fg); box-shadow: var(--ring); }
+  .toast-item { display: flex; align-items: center; gap: 10px; background: var(--panel); color: var(--fg); box-shadow: var(--shadow-pop); animation: toast-in 150ms ease-out; }
+  .toast-item.warn { background: var(--panel); color: var(--warn); }
+  .toast-item.leaving { opacity: 0; transform: translateY(-8px); transition: opacity 150ms, transform 150ms; }
+  .sheet-panel { animation: sheet-in 150ms ease-out; }
+  .is-loading { color: transparent !important; pointer-events: none; }
+  .is-loading > * { visibility: hidden; }
+  .is-loading::after { content: ""; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px; border: 1.75px solid var(--fg-2); border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes state-pulse { 50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--agent) 20%, transparent); } }
+  @keyframes sheet-in { from { opacity: 0; transform: scale(.98); } }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } }
+  @media (min-width: 900px) and (hover: hover) and (pointer: fine) {
+    .topbar { height: 52px; padding: 0 12px 0 16px; }
+    .side { background: var(--bg); padding: 16px; }
+    .composer { padding: 6px 32px 16px; }
+    .agent-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .icon-btn[title]:hover::before { content: attr(title); position: absolute; top: calc(100% + 9px); right: 0; z-index: 40; padding: 5px 8px; border-radius: var(--r); background: var(--panel); color: var(--fg); box-shadow: var(--shadow-pop); white-space: nowrap; font-size: 12px; pointer-events: none; animation: tooltip-in 400ms step-end; }
+  }
+  @media (min-width: 900px) and (max-width: 1199px) { .agent-strip .agent { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title actions" "chips actions" "gauges gauges"; } .agent-strip .mini-gauges { grid-template-columns: repeat(3,minmax(0,1fr)); } .agent-strip .gauge { grid-template-columns: 1fr auto; } .agent-strip .gauge .track { grid-column: 1 / -1; grid-row: 2; } .agent-strip .gauge .v { grid-column: 2; } }
+  @keyframes tooltip-in { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 `;
 
 const escapeHtml = (text: string) =>
@@ -330,24 +435,30 @@ const escapeHtml = (text: string) =>
 
 const body = (messages: Messages) => {
   const m = (key: MessageKey) => escapeHtml(messages[key]);
+  const icon = (name: string) => `<svg class="i" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
+  const button = (id: string, name: string, key: MessageKey, cls = "", extra = "") =>
+    `<button class="icon-btn ${cls}" type="button" id="${id}" aria-label="${m(key)}" title="${m(key)}" ${extra}>${icon(name)}</button>`;
   return `
+${UI_ICONS}
 <div class="app">
   <header class="topbar">
     <span class="brand">Clodex</span>
-    <select id="projects" aria-label="${m("web.top.projects")}"></select>
-    <button class="ghost" type="button" id="open-project">${m("web.top.openProject")}</button>
-    <span class="path mono" id="path"></span>
-    <button class="ghost" type="button" id="detail" aria-pressed="false" title="${m("web.top.detailTitle")}">${m("web.top.detail")}</button>
-    <button class="ghost" type="button" id="open-artifacts">${m("web.top.artifacts")}</button>
-    <button class="ghost" type="button" id="open-conversations">${m("web.top.conversations")}</button>
-    <button class="ghost" type="button" id="open-settings">${m("web.top.settings")}</button>
+    <div class="project-pill" id="project-pill">${icon("folder")}<span id="project-name"></span>${icon("chevron-down")}<select id="projects" aria-label="${m("web.top.projects")}"></select></div>
+    ${button("open-project", "folder-open", "web.top.openProject")}
+    <div class="header-tray tray">
+      <div class="working-tabs">${button("question-toggle", "question", "web.question.title", "working-tab", 'hidden')}<button class="icon-btn working-tab" id="working-toggle" type="button" aria-expanded="false" aria-label="${m("web.working.title")}" title="${m("web.working.title")}" hidden>${icon("activity")}<span class="count" id="working-count">0</span></button></div>
+      ${button("detail", "list-tree", "web.top.detailTitle", "", 'aria-pressed="false"')}
+      ${button("open-artifacts", "files", "web.top.artifacts")}
+      ${button("open-conversations", "messages", "web.top.conversations")}
+      ${button("open-settings", "settings", "web.top.settings")}
+    </div>
   </header>
   <div class="conn" id="conn" hidden role="status">${m("web.conn.lost")}</div>
   <div class="status" id="status"></div>
+  <section class="agent-strip" id="agents" aria-label="Agent"></section>
   <aside class="side">
-    <div id="agents" style="display:grid;gap:28px"></div>
     <section>
-      <div class="side-head"><div class="eyebrow">${m("web.side.conversations")}</div><button class="ghost small" type="button" id="new-conversation">${m("web.side.newConversation")}</button></div>
+      <div class="side-head"><div class="eyebrow">${m("web.side.conversations")}</div>${button("new-conversation", "square-pen", "web.side.newConversation")}</div>
       <div id="conversations"></div>
     </section>
   </aside>
@@ -371,23 +482,21 @@ const body = (messages: Messages) => {
           <button type="button" data-agent="claude" aria-pressed="true">Claude</button>
           <button type="button" data-agent="codex" aria-pressed="false">Codex</button>
         </div>
-        <button class="attach" type="button" id="attach" title="${m("web.attach.label")}">${m("web.attach")}</button>
+        ${button("attach", "image-plus", "web.attach.label", "attach")}
         <input type="file" id="attach-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
-        <button class="send" type="submit">${m("web.send")}</button>
+        <button class="send icon-btn" type="submit" aria-label="${m("web.send")}" title="${m("web.send")}">${icon("arrow-up")}</button>
       </div>
     </div>
   </form>
 </div>
-<div class="working-tabs"><button class="working-tab" id="question-toggle" type="button" hidden></button>
-<button class="working-tab" id="working-toggle" type="button" aria-expanded="false">${m("web.working.title")} <span id="working-count">0</span></button></div>
 <aside class="working-panel" id="working-panel" hidden aria-label="${m("web.working.title")}">
-  <div class="working-panel-head"><span>${m("web.working.title")}</span><button id="working-close" type="button" aria-label="${m("web.working.close")}">×</button></div>
+  <div class="working-panel-head"><span>${m("web.working.title")}</span>${button("working-close", "x", "web.working.close")}</div>
   <div class="working-list" id="working-list"></div>
 </aside>
 <div class="sheet" id="sheet" hidden>
   <button class="sheet-backdrop" id="sheet-backdrop" type="button" aria-label="${m("web.sheet.close")}"></button>
   <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-    <div class="sheet-head"><h2 id="sheet-title"></h2><button class="sheet-close" id="sheet-close" type="button">${m("web.sheet.close")}</button></div>
+    <div class="sheet-head"><h2 id="sheet-title"></h2>${button("sheet-close", "x", "web.sheet.close", "sheet-close")}</div>
     <div id="sheet-body"></div>
   </div>
 </div>

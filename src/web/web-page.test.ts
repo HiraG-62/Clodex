@@ -59,7 +59,7 @@ describe("buildWebPage", () => {
   it("project の選択と新規オープンを画面上部に表示する", () => {
     const { html } = buildWebPage("ja");
     expect(html).toContain('<select id="projects" aria-label="プロジェクト">');
-    expect(html).toContain('id="open-project">開く</button>');
+    expect(html).toMatch(/id="open-project"[^>]*aria-label="開く"[^>]*title="開く"/);
   });
   it("埋め込んだ script が構文として正しい（実行はしない）", () => {
     for (const language of ["ja", "en"] as const) {
@@ -84,8 +84,8 @@ describe("buildWebPage", () => {
   });
 
   it("言語の文言で画面を作る", () => {
-    expect(buildWebPage("ja").html).toContain(">送信</button>");
-    expect(buildWebPage("en").html).toContain(">Send</button>");
+    expect(buildWebPage("ja").html).toContain('aria-label="送信" title="送信"');
+    expect(buildWebPage("en").html).toContain('aria-label="Send" title="Send"');
     expect(buildWebPage("en").html).toContain('<html lang="en">');
   });
 
@@ -94,6 +94,22 @@ describe("buildWebPage", () => {
     for (const id of ["log", "newer", "input", "input-highlight", "suggest", "pending", "open-artifacts", "attach", "attach-file", "composer", "status", "agents", "conversations", "sheet", "conn", "toast", "detail"]) {
       expect(html).toContain(`id="${id}"`);
     }
+  });
+
+  it("操作アイコンに名前を付け、Agent ストリップを会話一覧の外に置く", () => {
+    const html = buildWebPage("ja").html;
+    const body = html.slice(html.indexOf("<body>"), html.indexOf("<script>"));
+    const buttons = [...body.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)];
+    const icons = buttons.filter(([, , content]) => content?.includes("<use"));
+    expect(icons.length).toBeGreaterThan(8);
+    for (const [, attributes] of icons) {
+      expect(attributes).toMatch(/aria-label="[^"]+"/);
+      expect(attributes).toMatch(/title="[^"]+"/);
+    }
+    expect(body.match(/<symbol id="i-folder"/g)).toHaveLength(1);
+    expect(body).toMatch(/<section class="agent-strip" id="agents"/);
+    expect(body.match(/<aside class="side">([\s\S]*?)<\/aside>/)?.[1]).not.toContain('id="agents"');
+    expect(body).not.toContain('id="path"');
   });
 
   it("PC ではシートを画面中央のモーダルとして表示する", () => {
