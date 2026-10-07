@@ -9,7 +9,7 @@ export type TimelineStep = { kind: "say"; text: string } | { kind: "tool"; name:
 
 export type TimelineItem =
   | { kind: "question"; id: string; at: string; agent: AgentId; questions: UserQuestion[]; answers?: string[][] }
-  | { kind: "human"; id: string; at: string; agent: AgentId; text: string; steer?: boolean; queued?: boolean }
+  | { kind: "human"; id: string; at: string; agent: AgentId; text: string; steer?: boolean; steerId?: string; delivered?: boolean; queued?: boolean }
   | {
     kind: "turn"; id: string; at: string; agent: AgentId;
     status: "working" | TurnResult["status"]; steps: TimelineStep[]; text: string;
@@ -58,7 +58,8 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   if (event.kind === "question") return limit([...items, { kind: "question", id: event.id, agent: event.agent, at: event.at, questions: event.questions }]);
   if (event.kind === "answer") return items.map((entry) => entry.kind === "question" && entry.id === event.id ? { ...entry, answers: event.answers } : entry);
   if (event.kind === "human") {
-    return limit([...items, { kind: "human", id, at: event.at, agent: event.agent, text: event.text, ...(event.steer ? { steer: true } : {}) }]);
+    return limit([...items, { kind: "human", id, at: event.at, agent: event.agent, text: event.text,
+      ...(event.steer ? { steer: true } : {}), ...(event.steerId ? { steerId: event.steerId } : {}) }]);
   }
   if (event.kind === "notice") return limit([...items, { kind: "notice", id, at: event.at, text: event.text }]);
   if (event.kind === "message") {
@@ -66,6 +67,9 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   }
 
   const { agent, event: agentEvent, at } = event;
+  if (agentEvent.type === "steer_delivered") {
+    return items.map((entry) => entry.kind === "human" && entry.steerId === agentEvent.steerId ? { ...entry, delivered: true } : entry);
+  }
   const newTurn = (): Turn => ({ kind: "turn", id, at, agent, status: "working", steps: [], text: "" });
   // その Agent の実行中のターンを更新する。開始を受け取っていなければ新しいターンとして受け止める
   const updateTurn = (update: (turn: Turn) => Turn): TimelineItem[] => {

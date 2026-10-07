@@ -518,7 +518,10 @@ export function clientMain({
         const node = el("article", "entry you");
         const head = el("div", "head");
         head.append(el("b", "", t("web.you")), el("span", `c-${item.agent}`, `→ ${AGENTS[item.agent].name}`), el("time", "mono", clock(item.at)));
-        if (item.steer) head.append(el("span", "kind steer", t("web.steer")));
+        if (item.steer) {
+          head.append(el("span", "kind steer", t("web.steer")),
+            el("span", item.delivered ? "steer-state delivered" : "steer-state", t(item.delivered ? "web.steer.delivered" : "web.steer.sent")));
+        }
         const body = el("div", "body md");
         body.innerHTML = renderMarkdown(item.text);
         node.append(mark("you"), head, body);

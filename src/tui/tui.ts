@@ -106,6 +106,7 @@ const labels = (): TerminalLabels => ({
   failed: t("web.turn.failed"), interrupted: t("web.turn.interrupted"),
   steps: t("web.turn.steps"), message: t("tui.message"), notice: t("tui.notice"),
   error: t("tui.error"), output: t("tui.output"),
+  steer: t("web.steer"), steerSent: t("web.steer.sent"), steerDelivered: t("web.steer.delivered"),
 });
 
 const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed; now: number }) => {

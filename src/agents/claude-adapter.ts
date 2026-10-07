@@ -10,7 +10,8 @@ import { BaseAgentAdapter } from "./base-agent-adapter.js";
 
 // claude -p の stream-json プロトコル（docs/spikes/claude-lifecycle.md）
 const CLAUDE_COMMAND = "claude";
-const STREAM_ARGS = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"];
+// --replay-user-messages: 割り込みを取り込んだ時点を replay で知る（docs/spikes/steer-ack.md）
+const STREAM_ARGS = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--replay-user-messages"];
 const SUBSCRIPTION_API_KEY_SOURCE = "none";
 const HTTP_UNAUTHORIZED = 401;
 const RATIO_TO_PERCENT = 100;
@@ -80,6 +81,8 @@ interface ClaudeEvent {
   result?: string;
   is_error?: boolean;
   rate_limit_info?: { unifiedWindows?: { five_hour?: UtilizationWindow; seven_day?: UtilizationWindow } };
+  isReplay?: boolean;
+  uuid?: string;
 }
 
 const toRateLimitWindow = (w: UtilizationWindow | undefined): RateLimitWindow | undefined =>
@@ -90,6 +93,8 @@ const toRateLimitWindow = (w: UtilizationWindow | undefined): RateLimitWindow | 
 export class ClaudeAdapter extends BaseAgentAdapter {
   readonly id = "claude";
   private interruptRequested = false;
+  // 割り込みの行の uuid → steerId
+  private readonly undeliveredSteers = new Map<string, string>();
   // 最後の API 呼び出しの usage。今のコンテキストの大きさとして使う（DESIGN.md §9）
   private lastUsage: MessageUsage | undefined;
   private settingTurn: SettingKind | undefined;
@@ -156,9 +161,11 @@ export class ClaudeAdapter extends BaseAgentAdapter {
   }
 
   // 実行中に user message をもう 1 行送ると、そのターンの tool の区切りで取り込まれる（docs/spikes/steer-image-subagent.md）
-  async steer(text: string): Promise<boolean> {
+  async steer(text: string, steerId: string): Promise<boolean> {
     if (this.status !== "busy" || !this.proc) return false;
-    this.proc.write(JSON.stringify({ type: "user", message: { role: "user", content: text } }));
+    const uuid = this.createId();
+    this.undeliveredSteers.set(uuid, steerId);
+    this.proc.write(JSON.stringify({ type: "user", uuid, message: { role: "user", content: text } }));
     return true;
   }
 
@@ -195,6 +202,8 @@ export class ClaudeAdapter extends BaseAgentAdapter {
         return this.handleSystem(event);
       case "assistant":
         return this.handleAssistant(event);
+      case "user":
+        return this.handleReplay(event);
       case "rate_limit_event": {
         const windows = event.rate_limit_info?.unifiedWindows;
         const fiveHour = toRateLimitWindow(windows?.five_hour);
@@ -209,6 +218,14 @@ export class ClaudeAdapter extends BaseAgentAdapter {
         return this.finishTurn({ status: this.resultStatus(event, setting), text: event.result ?? "" });
       }
     }
+  }
+
+  private handleReplay(event: ClaudeEvent): void {
+    if (!event.isReplay || !event.uuid) return;
+    const steerId = this.undeliveredSteers.get(event.uuid);
+    if (!steerId) return;
+    this.undeliveredSteers.delete(event.uuid);
+    this.emit({ type: "steer_delivered", steerId });
   }
 
   private handleSystem(event: ClaudeEvent): void {

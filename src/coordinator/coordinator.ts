@@ -205,14 +205,15 @@ export class Coordinator {
     const envelope = buildEnvelope(message, this.language);
     const mailbox = this.mailboxes[message.to];
     const steerable = message.interrupt && mailbox.current?.from === message.from;
-    if (steerable && await this.options.agents[message.to].steer(envelope)) return;
+    if (steerable && await this.options.agents[message.to].steer(envelope, message.id)) return;
     await mailbox.enqueue(envelope, { message });
   }
 
   // @agent!: 実行中なら steer し、そうでなければ通常の送信（DESIGN.md §28 v0.3 C）
   async steerOrSend(id: AgentId, text: string): Promise<"steered" | "queued"> {
-    if (await this.options.agents[id].steer(`${text}${this.reminder}`)) {
-      this.options.bus.publish({ kind: "human", agent: id, text, steer: true });
+    const steerId = randomUUID();
+    if (await this.options.agents[id].steer(`${text}${this.reminder}`, steerId)) {
+      this.options.bus.publish({ kind: "human", agent: id, text, steer: true, steerId });
       return "steered";
     }
     void this.sendToAgent(id, text);

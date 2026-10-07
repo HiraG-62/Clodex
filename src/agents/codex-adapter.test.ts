@@ -422,20 +422,45 @@ describe("CodexAdapter の steer", () => {
   it("実行中のターンに turn/steer を送り、turn ID が無い・失敗したら false", async () => {
     const { adapter, started, proc } = await setup();
     await started;
-    await expect(adapter.steer("x")).resolves.toBe(false);
+    await expect(adapter.steer("x", "s-0")).resolves.toBe(false);
     void adapter.send("work");
     await flush();
-    const steered = adapter.steer("方針を変えて");
+    const steered = adapter.steer("方針を変えて", "s-1");
     await flush();
     const request = proc.writtenWith("method", "turn/steer")[0]!;
     expect(request.params).toEqual({ threadId: THREAD_ID, expectedTurnId: TURN_ID, input: [{ type: "text", text: "方針を変えて", text_elements: [] }] });
     proc.emit({ id: request.id, result: { turnId: TURN_ID } });
     await expect(steered).resolves.toBe(true);
-    const rejected = adapter.steer("もう一度");
+    const rejected = adapter.steer("もう一度", "s-2");
     await flush();
     const second = proc.writtenWith("method", "turn/steer")[1]!;
     proc.emit({ id: second.id, error: { message: "activeTurnNotSteerable" } });
     await expect(rejected).resolves.toBe(false);
+  });
+
+  it("ターンの 2 つ目以降の userMessage で、送った順に steer_delivered を出す", async () => {
+    const { adapter, started, proc, events } = await setup();
+    await started;
+    void adapter.send("work");
+    await flush();
+    proc.emit({ method: "turn/started", params: { threadId: THREAD_ID, turn: { id: TURN_ID } } });
+    const steer = async (text: string, steerId: string) => {
+      const steered = adapter.steer(text, steerId);
+      await flush();
+      const request = proc.writtenWith("method", "turn/steer").at(-1)!;
+      proc.emit({ id: request.id, result: { turnId: TURN_ID } });
+      await steered;
+    };
+    await steer("一つ目", "s-1");
+    await steer("二つ目", "s-2");
+    const userMessage = (id: string) => ({ method: "item/completed", params: { threadId: THREAD_ID, item: { type: "userMessage", id } } });
+    proc.emit(userMessage("input"));
+    expect(events.filter((e) => e.type === "steer_delivered")).toEqual([]);
+    proc.emit(userMessage("u1"));
+    proc.emit(userMessage("u2"));
+    expect(events.filter((e) => e.type === "steer_delivered")).toEqual([
+      { type: "steer_delivered", steerId: "s-1" }, { type: "steer_delivered", steerId: "s-2" },
+    ]);
   });
 });
 

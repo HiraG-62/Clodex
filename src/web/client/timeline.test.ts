@@ -169,6 +169,15 @@ describe("applyFeedItem の割り込み", () => {
     const item: FeedItem = { type: "event", seq: 900, event: { kind: "human", agent: "codex", text: "fix", steer: true, at: AT } };
     expect(applyFeedItem([], item)).toMatchObject([{ kind: "human", text: "fix", steer: true }]);
   });
+
+  it("steer_delivered で同じ steerId の人間の割り込みを届いたにする", () => {
+    const human: FeedItem = { type: "event", seq: 900, event: { kind: "human", agent: "codex", text: "fix", steer: true, steerId: "s-1", at: AT } };
+    const other: FeedItem = { type: "event", seq: 901, event: { kind: "human", agent: "codex", text: "next", steer: true, steerId: "s-2", at: AT } };
+    const delivered: FeedItem = { type: "event", seq: 902, event: { kind: "agent", agent: "codex", at: AT, event: { type: "steer_delivered", steerId: "s-1" } } };
+    const items = [human, other, delivered].reduce(applyFeedItem, []);
+    expect(items).toMatchObject([{ text: "fix", steerId: "s-1", delivered: true }, { text: "next", steerId: "s-2" }]);
+    expect(items[1]).not.toHaveProperty("delivered");
+  });
 });
 
 it("toast は timeline を変更しない", () => {

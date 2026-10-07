@@ -94,6 +94,8 @@ export const en = {
   // Web UI: ログ
   "web.you": "You",
   "web.steer": "Steer",
+  "web.steer.sent": "Sent",
+  "web.steer.delivered": "Delivered",
   "web.elapsed.minutes": "{minutes}m {seconds}s",
   "web.elapsed.seconds": "{seconds}s",
   "web.turn.working": "Working",
@@ -429,6 +431,8 @@ export const ja: Messages = {
   "question.invalid": "回答の形式が不正",
   "web.you": "あなた",
   "web.steer": "割り込み",
+  "web.steer.sent": "送信済み",
+  "web.steer.delivered": "届いた",
   "web.elapsed.minutes": "{minutes}分{seconds}秒",
   "web.elapsed.seconds": "{seconds}秒",
   "web.turn.working": "作業中",

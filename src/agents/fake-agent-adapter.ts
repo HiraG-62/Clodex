@@ -49,9 +49,11 @@ export class FakeAgentAdapter implements AgentAdapter {
   }
 
   readonly steered: string[] = [];
-  async steer(text: string): Promise<boolean> {
+  readonly steerIds: string[] = [];
+  async steer(text: string, steerId: string): Promise<boolean> {
     if (this.status !== "busy") return false;
     this.steered.push(text);
+    this.steerIds.push(steerId);
     return true;
   }
 

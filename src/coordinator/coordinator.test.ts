@@ -545,7 +545,8 @@ describe("Coordinator の割り込み（steer）", () => {
     await expect(coordinator.steerOrSend("codex", "fix")).resolves.toBe("steered");
     expect(codex.steered).toEqual(["fix"]);
     expect(codex.sent).toEqual(["first"]);
-    expect(events).toContainEqual(expect.objectContaining({ kind: "human", agent: "codex", text: "fix", steer: true }));
+    expect(events).toContainEqual(expect.objectContaining({ kind: "human", agent: "codex", text: "fix", steer: true, steerId: codex.steerIds[0] }));
+    expect(codex.steerIds[0]).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it("interrupt: true は宛先が送信元からの message を処理中のときだけ steer する", async () => {

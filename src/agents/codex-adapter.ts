@@ -72,6 +72,9 @@ export class CodexAdapter extends BaseAgentAdapter {
   // 次の turn/start で sandbox を変える。以降のターンにも引き継がれるので 1 回だけ送る
   private pendingSandbox: PermissionLevel | undefined;
   private lastAgentText = "";
+  // ターンの最初の userMessage は入力そのもの。2 つ目以降が割り込みで、送った順に取り込まれる（docs/spikes/steer-ack.md）
+  private turnInputSeen = false;
+  private undeliveredSteers: string[] = [];
 
   constructor(private readonly spawnProcess: SpawnAgentProcess = spawnAgentProcess) {
     super();
@@ -115,12 +118,13 @@ export class CodexAdapter extends BaseAgentAdapter {
   }
 
   // turn/steer は実行中の turn ID を前提にする（docs/spikes/steer-image-subagent.md）
-  async steer(text: string): Promise<boolean> {
+  async steer(text: string, steerId: string): Promise<boolean> {
     if (this.status !== "busy" || !this.turnId) return false;
     try {
       await this.request("turn/steer", {
         threadId: this.sessionId, expectedTurnId: this.turnId, input: [{ type: "text", text, text_elements: [] }],
       });
+      this.undeliveredSteers.push(steerId);
       return true;
     } catch {
       return false;
@@ -160,6 +164,8 @@ export class CodexAdapter extends BaseAgentAdapter {
     this.lastAgentText = "";
     this.turnId = undefined;
     this.interruptPending = false;
+    this.turnInputSeen = false;
+    this.undeliveredSteers = [];
   }
 
   protected writeTurn(text: string, images: readonly string[] = []): void {
@@ -238,6 +244,7 @@ export class CodexAdapter extends BaseAgentAdapter {
   }
 
   private handleItem(item: CodexItem): void {
+    if (item.type === "userMessage") return this.handleUserMessage();
     if (item.type === "fileChange") {
       const files = item.changes?.map((change) => change.path) ?? [];
       this.emit({ type: "tool", name: "fileChange", input: summarizeToolInput(files.join(", ")), files });
@@ -255,6 +262,15 @@ export class CodexAdapter extends BaseAgentAdapter {
     if (item.type === "commandExecution") {
       this.emit({ type: "tool", name: "command", input: summarizeToolInput(item.command ?? "") });
     }
+  }
+
+  private handleUserMessage(): void {
+    if (!this.turnInputSeen) {
+      this.turnInputSeen = true;
+      return;
+    }
+    const steerId = this.undeliveredSteers.shift();
+    if (steerId) this.emit({ type: "steer_delivered", steerId });
   }
 
   // v0.1 は承認要求等の server request を扱わない（DESIGN.md §9）

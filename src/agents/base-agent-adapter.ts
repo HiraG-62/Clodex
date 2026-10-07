@@ -28,7 +28,7 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
 
   abstract start(options: AgentStartOptions): Promise<void>;
   abstract interrupt(): Promise<void>;
-  abstract steer(text: string): Promise<boolean>;
+  abstract steer(text: string, steerId: string): Promise<boolean>;
   // 起動中の Agent に権限レベルの変更を反映する（CLI 固有）
   protected abstract applyPermission(level: PermissionLevel): Promise<void>;
 

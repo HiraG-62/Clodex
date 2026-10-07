@@ -433,11 +433,25 @@ describe("ClaudeAdapter の変更ファイル", () => {
 describe("ClaudeAdapter の steer", () => {
   it("実行中のターンには user message を足し、実行中でなければ false", async () => {
     const { adapter, proc } = await setup();
-    await expect(adapter.steer("今のうちに")).resolves.toBe(false);
+    await expect(adapter.steer("今のうちに", "s-0")).resolves.toBe(false);
     void adapter.send("work");
-    await expect(adapter.steer("方針を変えて")).resolves.toBe(true);
-    expect(proc.written).toContainEqual({ type: "user", message: { role: "user", content: "方針を変えて" } });
+    await expect(adapter.steer("方針を変えて", "s-1")).resolves.toBe(true);
+    expect(proc.written).toContainEqual({ type: "user", uuid: expect.any(String), message: { role: "user", content: "方針を変えて" } });
     expect(adapter.status).toBe("busy");
+  });
+
+  it("割り込みの行の replay を受け取ったら steer_delivered を出す", async () => {
+    const { adapter, proc, events, spawner } = await setup();
+    expect(spawner.calls[0]!.args).toContain("--replay-user-messages");
+    void adapter.send("work");
+    await adapter.steer("方針を変えて", "s-1");
+    const line = proc.written.find((w) => (w as { message?: { content?: unknown } }).message?.content === "方針を変えて") as { uuid: string };
+    proc.emit({ type: "user", isReplay: true, uuid: "other", message: { role: "user", content: "work" } });
+    expect(events.filter((e) => e.type === "steer_delivered")).toEqual([]);
+    proc.emit({ type: "user", isReplay: true, uuid: line.uuid, message: { role: "user", content: "方針を変えて" } });
+    expect(events.filter((e) => e.type === "steer_delivered")).toEqual([{ type: "steer_delivered", steerId: "s-1" }]);
+    proc.emit({ type: "user", isReplay: true, uuid: line.uuid, message: { role: "user", content: "方針を変えて" } });
+    expect(events.filter((e) => e.type === "steer_delivered")).toHaveLength(1);
   });
 });
 

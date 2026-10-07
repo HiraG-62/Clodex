@@ -44,6 +44,7 @@ export type AgentEvent =
   | { type: "rate_limit"; fiveHour?: RateLimitWindow; weekly?: RateLimitWindow }
   | { type: "context"; tokens: number; window?: number }
   | { type: "compacted" }
+  | { type: "steer_delivered"; steerId: string } // 割り込みを取り込んだ（DESIGN.md §28 v0.3 C）
   | { type: "exit"; code: number | null }
   | { type: "error"; message: string };
 
@@ -63,7 +64,7 @@ export interface AgentAdapter {
   // 手動 compact。1 ターンとして扱う（docs/spikes/compact.md）
   compact(): Promise<TurnResult>;
   // 実行中のターンに指示を足す。足せなければ false（DESIGN.md §28 v0.3 C）
-  steer(text: string): Promise<boolean>;
+  steer(text: string, steerId: string): Promise<boolean>;
   // 停止中なら次の起動時に使う
   setPermission(level: PermissionLevel): Promise<void>;
   setModel(model: string): Promise<TurnResult | void>;
