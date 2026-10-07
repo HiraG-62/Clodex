@@ -7,7 +7,7 @@ const labels = {
   question: "質問", answered: "回答済み",
   you: "あなた", working: "作業中", completed: "完了", failed: "失敗", interrupted: "中断",
   steps: "作業 {count} 件", message: "メッセージ", notice: "通知", error: "エラー", output: "出力",
-  steer: "割り込み", steerSent: "送信済み", steerDelivered: "届いた",
+  steer: "割り込み",
 };
 
 it("コマンド入力の枠を緑にして上辺にラベルを置き、! を消すと戻す", () => {
@@ -118,8 +118,8 @@ describe("editInput", () => {
 describe("ログの表示行", () => {
   it("人間の割り込みに届いたかどうかを出す", () => {
     const human = { kind: "human", id: "h", at: "2026-01-01T00:00:00Z", agent: "claude", text: "本文", steer: true, steerId: "s-1" } as const;
-    expect(formatTimelineItem(human, labels, false).tag).toBe("割り込み · 送信済み");
-    expect(formatTimelineItem({ ...human, delivered: true }, labels, false).tag).toBe("割り込み · 届いた");
+    expect(formatTimelineItem(human, labels, false).tag).toBe("割り込み");
+    expect(formatTimelineItem({ ...human, delivered: true }, labels, false).tag).toBe("割り込み ✓");
     expect(formatTimelineItem({ ...human, steer: undefined }, labels, false).tag).toBeUndefined();
   });
   it("人とターンの見出し 1 行だけを発言者の背景色で幅いっぱいに埋める", () => {

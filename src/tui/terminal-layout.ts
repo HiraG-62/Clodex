@@ -101,7 +101,7 @@ export interface TerminalLabels {
   you: string; working: string; completed: string; failed: string; interrupted: string;
   question: string; answered: string;
   steps: string; message: string; notice: string; error: string; output: string;
-  steer: string; steerSent: string; steerDelivered: string;
+  steer: string;
 }
 export interface TerminalCard {
   kind: TimelineItem["kind"];
@@ -359,7 +359,7 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
   };
   if (item.kind === "human") return { kind: item.kind, color: TERMINAL_COLORS.muted,
     headerBackgroundColor: TERMINAL_COLORS.humanHeader, title: `${labels.you} → ${agentName(item.agent)}`, body: item.text,
-    ...(item.steer ? { tag: `${labels.steer} · ${item.delivered ? labels.steerDelivered : labels.steerSent}` } : {}) };
+    ...(item.steer ? { tag: item.delivered ? `${labels.steer} ✓` : labels.steer } : {}) };
   if (item.kind === "error") return { kind: item.kind, color: TERMINAL_COLORS.error, title: `${labels.error} · ${agentName(item.agent)}`, body: item.text };
   if (item.kind === "notice") return { kind: item.kind, color: TERMINAL_COLORS.warn, title: labels.notice, body: item.text };
   return { kind: item.kind, color: TERMINAL_COLORS.muted, title: labels.output, body: item.text };

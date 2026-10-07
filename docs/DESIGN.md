@@ -1946,7 +1946,7 @@ dogfooding で出た要望を 4 段階で入れる。小さく確実なものか
 - Adapter は、割り込みを取り込んだ時点で AgentEvent の `{ type: "steer_delivered", steerId }` を出す
   - Claude: 起動引数に `--replay-user-messages` を足す。割り込みの行に Adapter が作った UUID を `uuid` として付け、`steerId` と対応付けて覚える。`isReplay` の `user` の `uuid` が一致したら出す。区切りが無いまま終わったターンでは、割り込みが次のターンとして取り込まれ、そのときに出る
   - Codex: steer に成功したら、そのターンの未着の列の末尾に `steerId` を足す。自分の thread の `item/started`（`userMessage`）のうち、ターンの 2 つ目以降が来たら、列の先頭を出す。ターンが終わったら列を空にする
-- 画面: 人間の割り込みの発言の「割り込み」の横に、届くまでは「送信済み」、届いたら「届いた」と出す（Web UI と TUI）。feed の再生でも同じ印になる（`steer_delivered` も Agent の event として feed に残る）
+- 画面: 人間の割り込みの発言の「割り込み」の横に、届いたらチェックマークを出す（Web UI はアイコンで、`title` に「届いた」。TUI は `✓`）。届くまでは何も出さない。feed の再生でも同じ印になる（`steer_delivered` も Agent の event として feed に残る）
 - Agent の割り込み（message）には印を付けない。message の event は steer できるか決まる前に出すため、通常の配送に回ったものと区別できない
 
 マルチエージェント:

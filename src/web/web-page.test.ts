@@ -95,6 +95,13 @@ describe("buildWebPage", () => {
     expect(html).not.toContain("working-entry");
   });
 
+  it("割り込みが届いたらチェックマークのアイコンを出し、文言は title に持たせる", () => {
+    const { html } = buildWebPage("ja");
+    expect(html).toContain('const delivered = el("span", "steer-delivered");');
+    expect(html).toContain('delivered.append(icon("check"));');
+    expect(html).not.toContain("steer-state");
+  });
+
   it("未回答の質問は入力欄の上の質問欄に 1 問ずつ出し、件数の pill は出さない", () => {
     const { html } = buildWebPage("ja");
     const composer = html.slice(html.indexOf('<form class="composer"'), html.indexOf('<div class="box">'));

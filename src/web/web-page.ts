@@ -232,8 +232,8 @@ const STYLE = `
   .notice { color: var(--warn); } .error-row { color: var(--crit); }
   .notice::before, .error-row::before { content: "!"; font: 600 11px/18px var(--font-mono); width: 18px; height: 18px; text-align: center; border: 1px solid currentColor; border-radius: 50%; flex: none; }
   .kind.steer { color: var(--crit); border-color: currentColor; }
-  .steer-state { color: var(--muted); font-size: 11px; }
-  .steer-state.delivered { color: var(--code); }
+  .steer-delivered { display: inline-flex; color: var(--code); }
+  .steer-delivered .i { width: 14px; height: 14px; }
   .plan { grid-column: 2; min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: 13.5px; }
   .now { grid-column: 2; display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 12.5px; color: var(--muted); }
   .now .k { flex: none; }
