@@ -2000,6 +2000,20 @@ D3 の詳細（Tauri GUI。Windows）:
   - 音は Windows の既定の通知音（plugin は `sound` を指定しないと無音にする）
 - Tauri のメニューの文言は GUI（Rust）の定数に置く（Web UI の文言カタログの外）
 
+GUI の自動更新（D3 の後）:
+
+- インストーラーを手で入れ直さずに、GUI の中で新しい版を取得して入れ替える。配布も兼ねて、更新の元は GitHub Releases にする（Tauri 公式の `tauri-plugin-updater`）
+- 版の元は `package.json` の `version` だけにする。`tauri.conf.json` の `version` は `../../package.json` を指す。tag は `v<version>`
+- 公開: tag `v*` の push で GitHub Actions（`.github/workflows/release.yml`、Windows の runner）が `pnpm build` と同梱物の組み立ての後に `tauri-apps/tauri-action` で build し、NSIS のインストーラー・署名（`.sig`）・`latest.json` を Release に上げる。tag と `package.json` の版が違えば失敗させる
+- 署名: 鍵は `tauri signer generate` で作る。公開鍵は `tauri.conf.json` の `plugins.updater.pubkey`、秘密鍵とパスワードは GitHub の Secret（`TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）にだけ置く。更新用の成果物（`createUpdaterArtifacts`）は CI 用の設定（`gui/src-tauri/tauri.release.conf.json`）でだけ有効にし、手元の `pnpm gui:build` は秘密鍵なしで今どおり動かす
+- 取得先: `https://github.com/HiraG-62/Clodex/releases/latest/download/latest.json`
+- 確認は GUI（Rust）が行う。Web UI には足さない
+  - 起動時に 1 回、ウィンドウを出した後にバックグラウンドで確認する。新しい版が無いか、確認に失敗したら何も出さない
+  - トレイのメニューに「更新を確認」を足す。新しい版が無ければ「最新版」、失敗したらエラーをダイアログで出す
+  - 新しい版があれば、ダイアログで「Clodex <version> に更新しますか？作業中のターンは止まります」と聞く（「更新」「後で」）
+- 入れ替え: 「更新」でダウンロードし署名を検証する。GUI が起動した Hub を止めてから（同梱の `node.exe` を使っているため。updater はインストーラーを起動するとプロセスを即座に終えるので、終了時の処理には頼らない）インストーラーを passive で起動し、入れ替え後に GUI を起動し直す。止めた Hub の会話は §Hub の再起動からの復旧 で戻る
+- GUI が起動していない Hub（CLI の `clodex serve`）は止めない。その Hub は入れ替えの対象外
+
 
 D4 の詳細（TUI。D2b と一緒に行う）:
 

@@ -5,3 +5,4 @@ gui/src-tauri/gen/
 gui/src-tauri/runtime/
 *.log
 .playwright-mcp/
+spikes/updater/out/

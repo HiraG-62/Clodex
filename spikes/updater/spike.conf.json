@@ -1,0 +1,11 @@
+{
+  "productName": "ClodexSpike",
+  "identifier": "dev.clodex.spike",
+  "bundle": { "createUpdaterArtifacts": true },
+  "plugins": {
+    "updater": {
+      "endpoints": ["http://127.0.0.1:8765/latest.json"],
+      "dangerousInsecureTransportProtocol": true
+    }
+  }
+}
