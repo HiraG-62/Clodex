@@ -24,6 +24,7 @@ import { openProject, type ProjectContext } from "./hub/project-context.js";
 import { selectProject } from "./hub/project-selection.js";
 import { setLanguage, t } from "./i18n/i18n.js";
 import { defaultLogPath, type DisplayMode } from "./logging/event-log.js";
+import { pruneLogs } from "./logging/log-retention.js";
 import { listProjectFiles } from "./project/project-files.js";
 import { resolveProjectRoot } from "./project/project-root.js";
 import { saveProjectRole } from "./project/role-settings.js";
@@ -74,6 +75,7 @@ const main = async (): Promise<void> => {
     await startTui(client);
     return;
   }
+  pruneLogs(homeDir);
   const rl = args.serve || interactive ? undefined : createInterface({
     input: process.stdin, output: process.stdout, prompt: PROMPT, terminal: false, completer: completeCommand,
   });

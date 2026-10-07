@@ -1151,6 +1151,8 @@ Coordinator 内の observable event は in-memory の Event Bus（`coordinator/e
 | terminal | `HH:MM:SS [CLAUDE] ...` / `[CODEX]` / `[MESSAGE]` | 人が読む用。既定は要点だけ、`/verbose` で全 event |
 | file | JSONL（1 event 1 行、Event Bus の event そのまま） | 記録用。常に全 event。`~/.clodex/logs/<project 名>-<起動時刻>.jsonl` |
 
+ログの保持: `~/.clodex/logs` は起動のたびにファイルが増えるので、Hub（同じプロセスで動く CLI を含む）の起動時に、更新日時が 14 日より前のファイルを消す。対象は `.jsonl`（Event Log）と `.log`（GUI が書く Hub の stderr・Hub のエラーのログ）だけで、ほかのファイルとディレクトリには触れない。消せなかったファイルは飛ばし、起動は止めない。既に動いている Hub につなぐだけの CLI では消さない
+
 terminal の表示（「誰が何をしていて、誰が誰に何を頼んだか」だけを追えるようにする）:
 
 | event | 既定 | `/verbose` |
