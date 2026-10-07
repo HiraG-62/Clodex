@@ -13,6 +13,7 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{webview::WebviewWindowBuilder, Manager, WebviewUrl};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
 mod update;
 
@@ -29,6 +30,15 @@ const TRAY_OPEN_LABEL: &str = "開く";
 const TRAY_EXIT_LABEL: &str = "終了";
 const TRAY_UPDATE_LABEL: &str = "更新を確認";
 pub(crate) const APP_NAME: &str = "Clodex";
+
+// 表示状態は戻さない（隠したまま終えると、次の起動で見えないまま戻るため）
+fn window_state_flags() -> StateFlags {
+    StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED
+}
+
+fn save_window_state(app: &tauri::AppHandle) {
+    let _ = app.save_window_state(window_state_flags());
+}
 
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
@@ -50,7 +60,10 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id.as_ref() {
             TRAY_OPEN => show_main_window(app),
             TRAY_UPDATE => update::check(app.clone(), update::Trigger::Manual),
-            TRAY_EXIT => app.exit(0),
+            TRAY_EXIT => {
+                save_window_state(app);
+                app.exit(0)
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -290,9 +303,15 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(window_state_flags())
+                .build(),
+        )
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
+                save_window_state(window.app_handle());
                 let _ = window.hide();
             }
         })
