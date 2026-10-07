@@ -14,7 +14,7 @@ import { BrokerExitError, connectBroker, type BrokerConnection } from "./broker.
 import { brokerSource } from "./broker-source.js";
 import { buildAgentEnvironment } from "./environment.js";
 import { nativeSource } from "./native-source.js";
-import { POWERSHELL, psQuote, psArgs, runHost } from "./powershell.js";
+import { CMD, POWERSHELL, psQuote, psArgs, runHost } from "./powershell.js";
 import { gitProtectionPaths, isMissing, type GrantKind } from "./git-protection.js";
 import { prepareRuntimeDirectory, removeRuntimeDirectory } from "./runtime-directory.js";
 
@@ -313,9 +313,10 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
 
   async login(): Promise<void> {
     if (!this.runtimeDir || !this.identity) throw new Error(t("sandbox.disconnected"));
-    const command = `-NoLogo -NoProfile -NoExit -ExecutionPolicy Bypass -File "${join(this.runtimeDir, "login.ps1")}"`;
-    if (POWERSHELL.length + command.length + 3 > MAX_LOGON_COMMAND) throw new Error(t("sandbox.argumentsLong"));
-    await runHost(`$secret=Get-Content -LiteralPath ${psQuote(this.credentialPath)} -Raw|ConvertTo-SecureString;$credential=[Management.Automation.PSCredential]::new("$env:COMPUTERNAME\\${ACCOUNT}",$secret);try{(Start-Process -FilePath ${psQuote(POWERSHELL)} -ArgumentList ${psQuote(command)} -Credential $credential -LoadUserProfile -WorkingDirectory ${psQuote(this.identity.profile)} -WindowStyle Normal -PassThru).WaitForExit()}finally{$secret.Dispose()}`);
+    // Start-Process -Credential は新しいコンソールを作らず呼び出し元（GUI の Hub では見えない）に相乗りするため、start で別ウィンドウにする
+    const command = `/c start "Clodex sandbox" /wait "${POWERSHELL}" -NoLogo -NoProfile -NoExit -ExecutionPolicy Bypass -File "${join(this.runtimeDir, "login.ps1")}"`;
+    if (CMD.length + command.length + 3 > MAX_LOGON_COMMAND) throw new Error(t("sandbox.argumentsLong"));
+    await runHost(`$secret=Get-Content -LiteralPath ${psQuote(this.credentialPath)} -Raw|ConvertTo-SecureString;$credential=[Management.Automation.PSCredential]::new("$env:COMPUTERNAME\\${ACCOUNT}",$secret);try{(Start-Process -FilePath ${psQuote(CMD)} -ArgumentList ${psQuote(command)} -Credential $credential -LoadUserProfile -WorkingDirectory ${psQuote(this.identity.profile)} -WindowStyle Hidden -PassThru).WaitForExit()}finally{$secret.Dispose()}`);
   }
 
   private async snapshot(path: string, kind?: GrantKind, sid=this.identity!.agentSid): Promise<Acl> {

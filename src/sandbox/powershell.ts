@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { subscriptionEnv } from "../agents/agent-process.js";
 
 export const POWERSHELL = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+export const CMD = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "cmd.exe");
 export const psQuote = (value: string): string => `'${value.replaceAll("'", "''")}'`;
 export const psArgs = (script: string): string[] => ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", Buffer.from(`$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; $env:PSModulePath="$env:ProgramFiles\\WindowsPowerShell\\Modules;$PSHOME\\Modules"; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); ${script}`, "utf16le").toString("base64")];
 

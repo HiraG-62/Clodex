@@ -145,3 +145,4 @@ restricted token 内の Windows PowerShell 5.1 で HTTPS に失敗するため�
 
 - Windows PowerShell 5.1 の `Start-Process -Credential` に `-Wait` を付けると、`Access is denied`（5）で起動に失敗する。`-Wait` は子プロセスを Job object に入れて待つため、別ユーザーのプロセスでは失敗すると見られる。`-Wait` を外して `-PassThru` の `WaitForExit()` で待てば起動できる。ただし、別ユーザーのプロセスの終了コードは取れない（`ExitCode` が空になる）
 - `CreateProcessWithLogonW` を直接呼ぶ場合は、ドメインの指定（`.` か PC 名か）、環境変数のブロック、`lpDesktop` によらず成功した
+- `Start-Process -Credential` で起動したコンソールのプログラムは、新しいウィンドウを作らず、呼び出し元のコンソールに相乗りする。GUI の Hub は見えないコンソールで動くため、ログイン用の PowerShell が画面に出なかった。`cmd.exe /c start "<title>" /wait …` を挟むと別ウィンドウで開く
