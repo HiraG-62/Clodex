@@ -334,7 +334,7 @@ export function clientMain({
 
   const imageKey = (path: string) => path.replace(/\\/g, "/").toLowerCase();
   // 本文の画像のパスをクリックでビューアを開ける要素にする（リンクの中は除く）
-  const linkImagePaths = (root: HTMLElement) => {
+  const linkImagePaths = (root: HTMLElement, version: string) => {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const texts: Text[] = [];
     while (walker.nextNode()) texts.push(walker.currentNode as Text);
@@ -346,6 +346,7 @@ export function clientMain({
         if (!part.path) return document.createTextNode(part.text);
         const link = el("span", "image-link", part.text);
         link.dataset.path = part.path;
+        link.dataset.version = version;
         link.setAttribute("role", "button");
         link.tabIndex = 0;
         return link;
@@ -360,20 +361,20 @@ export function clientMain({
   };
   document.addEventListener("click", (event) => {
     const link = (event.target as Element | null)?.closest?.<HTMLElement>(".image-link");
-    if (link?.dataset.path) openImage(link.dataset.path);
+    if (link?.dataset.path) openImage(link.dataset.path, link.dataset.version);
   });
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
     const link = (event.target as Element | null)?.closest?.<HTMLElement>(".image-link");
     if (!link?.dataset.path) return;
     event.preventDefault();
-    openImage(link.dataset.path);
+    openImage(link.dataset.path, link.dataset.version);
   });
 
-  const appendImagePreviews = (node: HTMLElement, text: string) => {
+  const appendImagePreviews = (node: HTMLElement, text: string, version: string) => {
     const paths = findImagePaths(text);
     if (!paths.length) return;
-    linkImagePaths(node);
+    linkImagePaths(node, version);
     const previews = el("div", "image-previews");
     for (const path of paths) {
       const button = el("button", "image-preview") as HTMLButtonElement;
@@ -382,8 +383,8 @@ export function clientMain({
       image.alt = displayPath(path, state?.project ?? "");
       image.loading = "lazy";
       image.addEventListener("error", () => { button.remove(); unlinkImagePath(node, path); });
-      image.src = fileUrl("file", path);
-      button.addEventListener("click", () => openImage(path));
+      image.src = fileUrl("file", path, version);
+      button.addEventListener("click", () => openImage(path, version));
       button.append(image);
       previews.append(button);
     }
@@ -423,7 +424,7 @@ export function clientMain({
     if (item.text) body.innerHTML = renderMarkdown(item.text);
     else if (item.status === "completed") body.append(el("span", "muted", t("web.turn.completed")));
     if (body.childNodes.length) node.append(body);
-    appendImagePreviews(node, item.text);
+    appendImagePreviews(node, item.text, item.at);
     return node;
   };
 
@@ -438,7 +439,7 @@ export function clientMain({
     const text = el("div", "text md");
     text.innerHTML = renderMarkdown(message.body);
     node.append(route, text);
-    appendImagePreviews(node, message.body);
+    appendImagePreviews(node, message.body, item.at);
     if (message.spec || message.files?.length) {
       const refs = el("div", "refs");
       if (message.spec) {
@@ -573,7 +574,7 @@ export function clientMain({
         const body = el("div", "body md");
         body.innerHTML = renderMarkdown(item.text);
         node.append(mark("you"), head, body);
-        appendImagePreviews(node, item.text);
+        appendImagePreviews(node, item.text, item.at);
         return node;
       }
       case "question": return renderQuestion(item);
@@ -1218,7 +1219,9 @@ export function clientMain({
     return button;
   };
   // ---- 成果物（DESIGN.md §28 v0.3 B） ----
-  const fileUrl = (api: "file" | "diff", path: string) => `/api/${api}?path=${encodeURIComponent(path)}`;
+  // version: 同じパスの画像が書き換わっても、メッセージごとに別の URL にして古い画像を使い回させない
+  const fileUrl = (api: "file" | "diff", path: string, version?: string) =>
+    `/api/${api}?path=${encodeURIComponent(path)}${version ? `&v=${encodeURIComponent(version)}` : ""}`;
   const openArtifacts = () => {
     sheetKind = "artifacts";
     sheetAgent = undefined;
@@ -1269,15 +1272,15 @@ export function clientMain({
     if (Math.abs(lbView.scale - 1) < 0.01 && lbFitScale < 1) fitImage();
     else zoomImage(1 / lbView.scale, point);
   };
-  const openImage = (path: string) => {
+  const openImage = (path: string, version?: string) => {
     const shown = displayPath(path, state?.project ?? "");
     $("#lb-name").textContent = shown.split(/[\/]/).at(-1) ?? shown;
     $("#lb-name").title = path;
-    ($("#lb-open") as HTMLAnchorElement).href = fileUrl("file", path);
+    ($("#lb-open") as HTMLAnchorElement).href = fileUrl("file", path, version);
     lbImage.alt = shown;
     lbImage.style.transform = "";
     lbImage.onload = fitImage;
-    lbImage.src = fileUrl("file", path);
+    lbImage.src = fileUrl("file", path, version);
     lightbox.hidden = false;
     $("#lb-close").focus();
   };

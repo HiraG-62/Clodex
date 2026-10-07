@@ -56,14 +56,14 @@ describe("buildWebPage", () => {
     const deps = script.slice(script.lastIndexOf("findImagePaths:"), script.lastIndexOf("displayPath:"));
     const findPaths = runInNewContext(`({${deps}}).findImagePaths`) as (text: string) => string[];
     expect(findPaths("C:\\out\\shot.png c:/OUT/shot.PNG")).toEqual(["C:\\out\\shot.png"]);
-    expect(html.match(/appendImagePreviews\(node, item.text\)/g)).toHaveLength(2);
-    expect(html).toContain("appendImagePreviews(node, message.body)");
+    expect(html.match(/appendImagePreviews\(node, item.text, item.at\)/g)).toHaveLength(2);
+    expect(html).toContain("appendImagePreviews(node, message.body, item.at)");
     expect(html).not.toContain("appendImagePreviews(node, item.plan)");
     expect(html).not.toContain("appendImagePreviews(node, step.text)");
     expect(html).toContain('image.loading = "lazy"');
-    expect(html).toContain('image.src = fileUrl("file", path)');
+    expect(html).toContain('image.src = fileUrl("file", path, version)');
     expect(html).toContain("unlinkImagePath(node, path)");
-    expect(html).toContain("linkImagePaths(node);");
+    expect(html).toContain("linkImagePaths(node, version);");
     expect(html).toMatch(/\.image-link\s*\{[^}]*cursor:\s*zoom-in/);
     expect(html).toContain(".md a, .image-link { color: var(--link); text-decoration: underline;");
     const split = runInNewContext(`({${deps}}).splitImagePaths`) as (text: string) => Array<{ text: string; path?: string }>;
@@ -76,7 +76,7 @@ describe("buildWebPage", () => {
     expect(html).toContain('id="lightbox"');
     expect(html).toContain('aria-label="拡大"');
     expect(html).toContain('aria-label="新しいタブで開く"');
-    expect(html).toContain('button.addEventListener("click", () => openImage(path))');
+    expect(html).toContain('button.addEventListener("click", () => openImage(path, version))');
     const script = scriptsOf(html)[1]!;
     const deps = script.slice(script.lastIndexOf("fitView:"), script.lastIndexOf("createInputAssist:"));
     const { fitView, zoomView } = runInNewContext(`({${deps}})`) as { fitView: (a: object, b: object) => { scale: number }; zoomView: (v: object, f: number, p: object) => { scale: number } };
