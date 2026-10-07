@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ensureUserConfigTemplate, loadConfig } from "./config.js";
+import { ensureUserConfigTemplate, loadConfig, saveUserLanguage } from "./config.js";
 
 const setup = (files: { user?: unknown; project?: unknown } = {}) => {
   const base = mkdtempSync(join(tmpdir(), "clodex-config-"));
@@ -16,6 +16,22 @@ const setup = (files: { user?: unknown; project?: unknown } = {}) => {
   if (files.project !== undefined) write(join(projectRoot, ".clodex.json"), files.project);
   return { homeDir, projectRoot };
 };
+
+describe("saveUserLanguage", () => {
+  it("他のキーと空の役割を保持し、不正な言語は保存しない", () => {
+    const user = { primary: "codex", roles: { claude: "", codex: "実装" }, web: { port: 5000 } };
+    const paths = setup({ user });
+    saveUserLanguage(paths.homeDir, "ja");
+    expect(JSON.parse(readFileSync(join(paths.homeDir, ".clodex", "config.json"), "utf8"))).toEqual({ ...user, language: "ja" });
+    expect(() => saveUserLanguage(paths.homeDir, "fr" as "ja")).toThrow();
+    expect(loadConfig(paths).language).toBe("ja");
+  });
+  it("設定がない場合も保存する", () => {
+    const paths = setup();
+    saveUserLanguage(paths.homeDir, "en");
+    expect(loadConfig(paths).language).toBe("en");
+  });
+});
 
 describe("loadConfig", () => {
   it("設定ファイルが無ければ空の設定", () => {

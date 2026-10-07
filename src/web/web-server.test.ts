@@ -7,7 +7,7 @@ import { startWebServer, type WebServerHandle } from "./web-server.js";
 
 const TOKEN = "a".repeat(64);
 const COOKIE = `clodex_token=${TOKEN}`;
-const STATE: WebState = { project: "C:\app", primary: "claude", roles: { codex: "実装" }, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [] };
+const STATE: WebState = { project: "C:\app", primary: "claude", roles: { codex: "実装" }, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } };
 
 let server: WebServerHandle | undefined;
 afterEach(async () => {
@@ -55,6 +55,19 @@ const readEvents = async (response: Response, count: number): Promise<FeedItem[]
 };
 
 describe("startWebServer", () => {
+  it("言語変更後の HTML と版を接続中と新規の画面に配信する", async () => {
+    const { base } = await setup();
+    const response = await fetch(`${base}/events`, { headers: { cookie: COOKIE } });
+    const next = buildWebPage("en");
+    expect(next.version).not.toBe(PAGE.version);
+    server!.updatePage(next);
+    expect(await readEvents(response, 2)).toEqual([
+      { type: "version", version: PAGE.version }, { type: "version", version: next.version },
+    ]);
+    expect(await (await fetch(`${base}/`, { headers: { cookie: COOKIE } })).text()).toBe(next.html);
+    expect(await readEvents(await fetch(`${base}/events`, { headers: { cookie: COOKIE } }), 1))
+      .toEqual([{ type: "version", version: next.version }]);
+  });
   it("127.0.0.1 だけで待ち受ける", async () => {
     const { base } = await setup();
     expect(base).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);

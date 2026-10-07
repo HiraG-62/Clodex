@@ -543,6 +543,16 @@ const STYLE = `
   .code-block { min-width: 0; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; margin: 12px 0; }
   .code-head { display: flex; justify-content: flex-end; border-bottom: 1px solid var(--line); padding-inline: 4px; background: var(--sunken); }
   .code-block pre { margin: 0; border: 0; }
+  .limits-settings { display: grid; gap: 12px; }
+  .limit-row { display: grid; grid-template-columns: minmax(0, 1fr) 68px auto; gap: 2px 10px; align-items: center; }
+  .limit-label { font-size: 13px; line-height: 1.5; }
+  .limit-row input { min-width: 0; width: 100%; padding: 6px 8px; height: 32px; border: 0; border-radius: var(--r-inner); box-shadow: var(--ring); background: var(--sunken); color: var(--fg); font: 13px var(--font-mono); }
+  .limit-row .btn, .limits-reset { min-height: 32px; font-size: 12px; }
+  .limit-row input { grid-column: 2; grid-row: 1 / span 2; }
+  .limit-row .btn { grid-column: 3; grid-row: 1 / span 2; }
+  .limit-default { grid-column: 1; grid-row: 2; }
+  .limit-changed { color: var(--accent); margin-left: 6px; }
+  .limits-reset { justify-self: start; }
   .code-more { display: none; }
   .table-scroll { overflow-x: auto; max-width: 100%; box-shadow: inset -8px 0 8px -8px var(--muted); }
   .table-scroll table { min-width: 100%; }
@@ -585,6 +595,7 @@ const STYLE = `
     .fold > summary { min-height: 44px; padding: 8px 6px; }
     .code-head .icon-btn { width: 44px; height: 44px; }
     .code-block.long:not(.expanded) pre { max-height: 168px; overflow: hidden; mask-image: linear-gradient(#000 60%, transparent); }
+    .limit-row input, .limit-row .btn, .limits-reset { min-height: 44px; }
     .code-block.long .code-more { display: flex; justify-content: center; align-items: center; gap: 6px; width: 100%; height: 44px; border: 0; border-top: 1px solid var(--line); background: var(--panel); color: var(--fg-2); }
     .code-block.expanded .code-more .i { transform: rotate(180deg); }
     .question-option { min-height: 48px; }
@@ -685,6 +696,7 @@ ${UI_ICONS}
       ${button("detail", "list-tree", "web.top.detailTitle", "", 'aria-pressed="false"')}
       ${button("open-artifacts", "files", "web.top.artifacts")}
       ${button("open-conversations", "messages", "web.top.conversations")}
+      ${button("cycle-theme", "monitor", "web.settings.theme")}
       ${button("open-settings", "settings", "web.top.settings")}
     </div>
   </header>

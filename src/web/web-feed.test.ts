@@ -1,12 +1,29 @@
 import { describe, expect, it } from "vitest";
 import type { CoordinatorEvent } from "../coordinator/event-bus.js";
-import { DEFAULT_RECENT_ITEMS, WebFeed, type FeedItem, type WebState } from "./web-feed.js";
+import { DEFAULT_RECENT_ITEMS, WebFeed, buildLimitState, type FeedItem, type WebState } from "./web-feed.js";
+import { DEFAULT_LIMITS } from "../coordinator/budget-manager.js";
 
 const AT = "2026-10-05T12:00:00.000Z";
 const textEvent = (text: string): CoordinatorEvent => ({ kind: "agent", agent: "claude", event: { type: "text", text }, at: AT });
-const STATE: WebState = { project: "C:\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [] };
+const STATE: WebState = { project: "C:\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } };
 
 describe("WebFeed", () => {
+  it("limits の既定値は設定ファイルを優先し、実行中の上書きとは分ける", () => {
+    expect(buildLimitState({ ...DEFAULT_LIMITS, maxMessagesPerChain: 5 }, { maxMessagesPerChain: 12 })).toEqual({
+      messages: { value: 5, default: 12 }, reviews: { value: 3, default: 3 },
+      delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 },
+    });
+  });
+  it("sandbox・既定値を含む limits・language を最新 state として配信する", () => {
+    const feed = new WebFeed();
+    const received: FeedItem[] = [];
+    feed.subscribe(item => received.push(item));
+    const state: WebState = { ...STATE, sandbox: { enabled: true, ready: true }, language: "ja",
+      limits: { messages: { value: 3, default: 10 }, reviews: { value: 2, default: 2 }, delegations: { value: 4, default: 4 }, depth: { value: 1, default: 1 } } };
+    feed.publishState(state);
+    expect(feed.latestState()).toEqual(state);
+    expect(received).toEqual([{ type: "state", state }]);
+  });
   it("output の command を配信・保存用コールバック・履歴に保持する", () => {
     const recorded: FeedItem[] = [];
     const received: FeedItem[] = [];

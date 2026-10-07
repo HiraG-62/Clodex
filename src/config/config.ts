@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { AGENT_IDS, PERMISSION_LEVELS } from "../agents/agent-adapter.js";
-import { LANGUAGES } from "../context/language.js";
+import { LANGUAGES, type Language } from "../context/language.js";
 import { writeFileAtomic } from "../project/atomic-write.js";
 
 const USER_CONFIG_PATH = join(".clodex", "config.json");
@@ -74,3 +74,10 @@ export const loadConfig = ({ homeDir, projectRoot }: ConfigPaths): ClodexConfig 
   ...readConfigFile(join(homeDir, USER_CONFIG_PATH)),
   ...readConfigFile(join(projectRoot, PROJECT_CONFIG_FILE)),
 });
+
+export const saveUserLanguage = (homeDir: string, language: Language): void => {
+  const next = z.enum(LANGUAGES).parse(language);
+  const path = join(homeDir, USER_CONFIG_PATH);
+  const config = existsSync(path) ? configSchema.parse(JSON.parse(readFileSync(path, "utf8").replace(/^\uFEFF/, ""))) : {};
+  writeFileAtomic(path, `${JSON.stringify({ ...config, language: next }, null, 2)}\n`);
+};

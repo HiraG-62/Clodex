@@ -3,12 +3,24 @@ import { EventBus } from "../coordinator/event-bus.js";
 import { WebFeed, type FeedItem, type WebState } from "./web-feed.js";
 import { connectWebFeed, historyItemOf } from "./web-ui.js";
 
-const STATE: WebState = { project: "C:\\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [] };
+const STATE: WebState = { project: "C:\\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } };
 const message = {
   id: "msg_1", from: "claude", to: "codex", type: "QUESTION", taskId: "T", body: "?", repository: "C:\\app", createdAt: "x",
 } as const;
 
 describe("connectWebFeed", () => {
+  it("言語変更後の message は新しい言語の envelope にする", () => {
+    const bus = new EventBus();
+    const feed = new WebFeed();
+    let language: "ja" | "en" = "ja";
+    connectWebFeed(bus, feed, () => ({ ...STATE, language }), () => language);
+    bus.publish({ kind: "message", message });
+    language = "en";
+    bus.publish({ kind: "message", message });
+    const items = feed.recent();
+    expect(items[0]?.type === "event" && items[0].envelope).toContain("Japanese");
+    expect(items[1]?.type === "event" && items[1].envelope).toContain("English");
+  });
   it("接続時に状態を送り、Event Bus の event を feed に流す。message には envelope を付ける", () => {
     const bus = new EventBus();
     const feed = new WebFeed();

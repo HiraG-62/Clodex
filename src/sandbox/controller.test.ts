@@ -20,6 +20,16 @@ function fixture() {
   return { platform, controller, events };
 }
 
+it("ready の検査結果を state 用に保持し、失敗時に古い値を残さない", async () => {
+  const { controller, platform } = fixture();
+  expect(controller.setupReady).toBe(false);
+  expect(await controller.ready()).toBe(true);
+  expect(controller.setupReady).toBe(true);
+  vi.mocked(platform.inspect).mockRejectedValueOnce(new Error("検査失敗"));
+  await expect(controller.ready()).rejects.toThrow("検査失敗");
+  expect(controller.setupReady).toBe(false);
+});
+
 it("検査が通らなければ Agent・ACL・保存設定を変えない", async () => {
   const { platform, controller, events } = fixture();
   vi.mocked(platform.inspect).mockResolvedValue(false);

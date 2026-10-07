@@ -50,7 +50,7 @@ export interface CoordinatorOptions {
   limits?: BudgetLimits;
   settings?: Partial<Record<AgentId, AgentStartSettings>>;
   // 人が読む文章の言語。Task envelope に添える（DESIGN.md §13 Language）
-  language?: Language;
+  language?: Language | (() => Language);
   usageAlert?: Partial<UsageAlert>;
   modelCatalog?: () => ModelCatalog;
   // clodex --resume: 各 Agent の最初の起動で継続する session（DESIGN.md §18）
@@ -98,7 +98,7 @@ export class Coordinator {
           void this.mailboxes[id].enqueue(item.text, { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, images: item.images, suffix: this.reminder });
         } else {
           this.budget.restore(item.message);
-          void this.mailboxes[id].enqueue(buildEnvelope(item.message, this.options.language), { message: item.message });
+          void this.mailboxes[id].enqueue(buildEnvelope(item.message, this.language), { message: item.message });
         }
       }
     }
@@ -202,7 +202,7 @@ export class Coordinator {
 
   // interrupt: 宛先が送信元からの message を処理中なら、そのターンに足す。足せなければキューに積む（DESIGN.md §28 v0.3 C）
   private async deliver(message: AgentMessage): Promise<void> {
-    const envelope = buildEnvelope(message, this.options.language);
+    const envelope = buildEnvelope(message, this.language);
     const mailbox = this.mailboxes[message.to];
     const steerable = message.interrupt && mailbox.current?.from === message.from;
     if (steerable && await this.options.agents[message.to].steer(envelope)) return;
@@ -224,9 +224,14 @@ export class Coordinator {
     return this.mailboxes[id].enqueue(text, { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, images, suffix: this.reminder });
   }
 
+  private get language(): Language | undefined {
+    const language = this.options.language;
+    return typeof language === "function" ? language() : language;
+  }
+
   // 人の入力の末尾に足す言語の 1 行（DESIGN.md §13 Language）。言語の指定が無ければ空
   private get reminder(): string {
-    const { language } = this.options;
+    const language = this.language;
     return language ? `
 
 ${languageReminder(language)}` : "";

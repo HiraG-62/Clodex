@@ -13,7 +13,13 @@ export const HISTORY_PAGE_ITEMS = 200;
 import type { PendingInput } from "../cli/shell.js";
 import type { ConversationActivity } from "../hub/workspace.js";
 
+import type { Language } from "../context/language.js";
+import { DEFAULT_LIMITS, LIMIT_KEYS, type BudgetLimits, type LimitName } from "../coordinator/budget-manager.js";
+
 export interface WebState {
+  language: Language;
+  sandbox: { enabled: boolean; ready: boolean };
+  limits: Record<LimitName, { value: number; default: number }>;
   project: string;
   projects?: Array<{ projectRoot: string; open: boolean; current: boolean }>;
   primary: AgentId;
@@ -26,6 +32,11 @@ export interface WebState {
   questions: PendingQuestion[];
   processes: Array<{ id: number; command: string; status: "running" | "exited" | "stopped" }>;
 }
+
+export const buildLimitState = (values: BudgetLimits = DEFAULT_LIMITS, configured: Partial<BudgetLimits> = {}): WebState["limits"] => {
+  const limit = (name: LimitName) => ({ value: values[LIMIT_KEYS[name]], default: configured[LIMIT_KEYS[name]] ?? DEFAULT_LIMITS[LIMIT_KEYS[name]] });
+  return { messages: limit("messages"), reviews: limit("reviews"), delegations: limit("delegations"), depth: limit("depth") };
+};
 
 export type FeedItem =
   | { type: "event"; seq: number; event: CoordinatorEvent; envelope?: string }

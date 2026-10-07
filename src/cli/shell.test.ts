@@ -176,10 +176,13 @@ const setup = () => {
     open: async (path: string) => ({ projectRoot: path, primary: "codex" as AgentId }),
   };
   let limits = { ...DEFAULT_LIMITS };
+  let language: "ja" | "en" = "ja";
+  const languages: string[] = [];
   let sandboxEnabled = false;
   const sandbox = { enabled: () => sandboxEnabled, ready: async () => true, set: async (enabled: boolean) => { sandboxEnabled = enabled; }, uninstall: async () => { sandboxEnabled = false; } };
   const shell = createShell({
     sandbox,
+    language: { get: () => language, set: (value) => { language = value; languages.push(value); } },
     coordinator: () => coordinator, primary: "claude", notify: (text, level) => { notified.push(text); levels.push(level); }, busyElsewhere: () => busy.value, print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history, runner,
     limits: { get: () => limits, set: (name, value) => { limits[LIMIT_KEYS[name]] = value; }, reset: () => { limits = { ...DEFAULT_LIMITS }; } },
     saveSettings: (agents, change) => saved.push({ agents, change }),
@@ -191,8 +194,21 @@ const setup = () => {
     roles: () => roles,
     saveRole: (agent, value) => { roles[agent] = value; return value; },
   });
-  return { coordinator, printed, notified, levels, shell, history, runner, saved, busy, projects, roles, background, references, sandbox };
+  return { languages, coordinator, printed, notified, levels, shell, history, runner, saved, busy, projects, roles, background, references, sandbox };
 };
+
+it("/language は現在値を表示し、正しい値だけ保存する", async () => {
+  const { shell, languages, printed } = setup();
+  await shell.handleLine("/language");
+  expect(printed.at(-1)).toContain("ja");
+  await shell.handleLine("/language en");
+  await shell.handleLine("/language");
+  expect(printed.at(-1)).toContain("en");
+  await shell.handleLine("/language fr");
+  await shell.handleLine("/language ja en");
+  expect(languages).toEqual(["en"]);
+  expect(printed.at(-1)).toContain("/language");
+});
 
 describe("createShell", () => {
   it("Web の /sandbox on 失敗は表示し、入力 API は 204 を返す", async()=>{

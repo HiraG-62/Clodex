@@ -12,7 +12,7 @@ import { createCommandRunner, type CommandLifecycle } from "./cli/command-runner
 import { createProcessManager } from "./process/process-manager.js";
 import { completeCommand } from "./cli/commands.js";
 import { createShell, type ConversationList } from "./cli/shell.js";
-import { ensureUserConfigTemplate, loadConfig } from "./config/config.js";
+import { ensureUserConfigTemplate, loadConfig, saveUserLanguage } from "./config/config.js";
 import { detectLanguage } from "./context/language.js";
 import type { CoordinatorEvent } from "./coordinator/event-bus.js";
 import { Hub } from "./hub/hub.js";
@@ -29,7 +29,7 @@ import { saveProjectRole } from "./project/role-settings.js";
 import { createLocalFeedClient, createRemoteFeedClient } from "./tui/feed-client.js";
 import { startTui } from "./tui/tui.js";
 import { MAX_UPLOAD_BYTES, isUploadType, saveUpload } from "./project/uploads.js";
-import { DEFAULT_RECENT_ITEMS, WebFeed } from "./web/web-feed.js";
+import { DEFAULT_RECENT_ITEMS, WebFeed, buildLimitState } from "./web/web-feed.js";
 import { buildWebPage } from "./web/web-page.js";
 import { startWebServer } from "./web/web-server.js";
 import { loadOrCreateWebToken, webTokenPath } from "./web/web-token.js";
@@ -62,7 +62,7 @@ const main = async (): Promise<void> => {
   ensureUserConfigTemplate(homeDir);
   // 言語と Web のポートは Hub 全体で 1 つ。project の設定は ProjectContext が読む。
   const hubConfig = loadConfig({ homeDir, projectRoot: homeDir });
-  const language = hubConfig.language ?? detectLanguage();
+  let language = hubConfig.language ?? detectLanguage();
   setLanguage(language);
   const interactive = !args.serve && Boolean(process.stdin.isTTY);
   const liveHub = interactive ? readHubLock(homeDir) : undefined;
@@ -99,7 +99,7 @@ const main = async (): Promise<void> => {
   hub = new Hub({ homeDir, cwd, openProject: async (projectRoot) => {
     let context: ProjectContext;
     context = await openProject({
-      projectRoot, homeDir, args, language, printTerminal, notify, displayMode: () => displayMode,
+      projectRoot, homeDir, args, language: () => language, printTerminal, notify, displayMode: () => displayMode,
       isCurrent: () => hub.current === context, modelCatalog: () => modelCatalog, registerCoordinator,
     });
     context.workspace.onEvent((runtime, event, current) => {
@@ -143,6 +143,12 @@ const main = async (): Promise<void> => {
     primary: hub.current?.primary ?? DEFAULT_PRIMARY,
     print, notify, toggleVerbose, runner, processes,
     projects: { list: () => hub.list(), open: openInHub, hasCurrent: () => hub.current !== undefined },
+    language: { get: () => language, set: (next) => {
+      saveUserLanguage(homeDir, next);
+      language = next;
+      setLanguage(next);
+      web?.updatePage(buildWebPage(next));
+    } },
     roles: () => current().config.roles ?? {},
     saveRole: (agent, text) => {
       const context = current();
@@ -179,6 +185,9 @@ const main = async (): Promise<void> => {
     const context = hub.current;
     const runtime = context?.workspace.currentIfReady;
     return {
+      language,
+      sandbox: { enabled: context?.sandbox.enabled ?? false, ready: context?.sandbox.setupReady ?? false },
+      limits: buildLimitState(context?.limits, context?.config.limits),
       project: runtime?.workDir ?? context?.projectRoot ?? "",
       projects: hub.list(),
       primary: shell.getPrimary(),
@@ -192,7 +201,7 @@ const main = async (): Promise<void> => {
         return { ...conversation, current: conversation.id === context.history.currentId, ...(activity ? { activity } : {}) };
       }) ?? [],
     };
-  }, language);
+  }, () => language);
   refreshState = requestState;
   refreshState();
 

@@ -257,6 +257,24 @@ export function clientMain({
   };
   let theme = (THEMES as readonly string[]).includes(storage.get(THEME_KEY) ?? "") ? storage.get(THEME_KEY) as Theme : "system";
   applyTheme(theme);
+  const THEME_ICON: Record<Theme, string> = { system: "monitor", light: "sun", dark: "moon" };
+  const syncThemeButton = (button: HTMLButtonElement, text: boolean) => {
+    const label = t("web.settings.themeCurrent", { theme: t(THEME_LABEL[theme]) });
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    button.replaceChildren(icon(THEME_ICON[theme]));
+    if (text) button.append(el("span", "", label));
+  };
+  const cycleTheme = () => {
+    theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]!;
+    storage.set(THEME_KEY, theme);
+    applyTheme(theme);
+    syncThemeButton($("#cycle-theme"), false);
+    const menuButton = document.querySelector<HTMLButtonElement>("#mobile-theme");
+    if (menuButton) syncThemeButton(menuButton, true);
+  };
+  syncThemeButton($("#cycle-theme"), false);
+  $("#cycle-theme").addEventListener("click", cycleTheme);
 
   // ---- トースト ----
   const showToast = (text: string, level: "info" | "warn" = "info") => {
@@ -1288,7 +1306,7 @@ export function clientMain({
     refreshOpenSheet();
   };
 
-  const choice = <T extends string>(key: string, label: string, options: readonly T[], current: T, name: (v: T) => string, pick: (v: T) => void) => {
+  const choice = <T extends string>(key: string, label: string, options: readonly T[], current: T, name: (v: T) => string, pick: (v: T, button: HTMLButtonElement) => void) => {
     const wrap = el("div", "setting");
     wrap.append(el("div", "eyebrow", label));
     const seg = el("div", "seg");
@@ -1299,7 +1317,7 @@ export function clientMain({
       button.dataset.value = option;
       button.setAttribute("aria-pressed", String(option === current));
       button.addEventListener("click", () => {
-        pick(option);
+        pick(option, button);
         for (const selected of seg.querySelectorAll<HTMLButtonElement>("button")) {
           selected.setAttribute("aria-pressed", String(selected === button));
         }
@@ -1309,23 +1327,72 @@ export function clientMain({
     wrap.append(seg);
     return wrap;
   };
+  const LIMIT_LABEL: Record<keyof WebState["limits"], MessageKey> = {
+    messages: "web.settings.messages", reviews: "web.settings.reviews", delegations: "web.settings.delegations", depth: "web.settings.depth",
+  };
+  const LIMIT_MIN = 1;
+  const LIMIT_MAX = 100;
+  const settingsRequests = new Set<string>();
+  const settingsChoice = <T extends string>(key: string, label: string, options: readonly T[], current: T, name: (value: T) => string) =>
+    choice(key, label, options, current, name, (value, button) => {
+      const segment = button.parentElement!;
+      settingsRequests.add(key);
+      for (const control of segment.querySelectorAll<HTMLButtonElement>("button")) control.disabled = true;
+      void send(`/${key} ${value}`, button).then(ok => {
+        settingsRequests.delete(key);
+        for (const control of document.querySelectorAll<HTMLButtonElement>(`[data-choice="${key}"] button`)) { setPending(control, false); control.disabled = false; }
+        if (!ok) refreshOpenSheet();
+      });
+    });
   const openSettings = () => {
+    if (!state) return;
     sheetKind = "settings";
     sheetAgent = undefined;
-    openSheet(t("web.settings.title"), [
-      choice("theme", t("web.settings.theme"), THEMES, theme, (v) => t(THEME_LABEL[v]), (v) => {
-        theme = v;
-        storage.set(THEME_KEY, v);
-        applyTheme(v);
-      }),
-      choice("primary", t("web.settings.primary"), AGENT_IDS, target ?? state?.primary ?? "claude", (a) => AGENTS[a].name, (a) => {
-        target = a;
-        pendingPrimary = a;
-        void send(`/primary ${a}`);
-        renderState();
-      }),
-      choice("detail", t("web.settings.detail"), ["closed", "open"] as const, detail ? "open" : "closed", (v) => t(v === "open" ? "web.settings.detailOpen" : "web.settings.detailClosed"), (v) => setDetail(v === "open")),
-    ]);
+    const sandbox = settingsChoice("sandbox", t("web.settings.sandbox"), ["off", "on"] as const, state.sandbox.enabled ? "on" : "off", value => value);
+    sandbox.append(el("p", "muted small sandbox-ready"));
+    const limits = el("section", "setting limits-settings");
+    limits.append(el("div", "eyebrow", t("web.settings.limits")));
+    for (const name of Object.keys(LIMIT_LABEL) as Array<keyof WebState["limits"]>) {
+      const row = el("form", "limit-row") as HTMLFormElement;
+      row.dataset.limit = name;
+      const label = el("label", "limit-label", t(LIMIT_LABEL[name])) as HTMLLabelElement;
+      label.htmlFor = `limit-${name}`;
+      label.title = name;
+      const mark = el("span", "limit-changed", "•");
+      mark.title = t("web.settings.changed");
+      mark.setAttribute("aria-label", mark.title);
+      label.append(mark);
+      const field = el("input") as HTMLInputElement;
+      field.id = label.htmlFor;
+      field.name = name;
+      field.type = "number";
+      field.min = String(LIMIT_MIN);
+      field.max = String(LIMIT_MAX);
+      field.step = "1";
+      field.required = true;
+      const button = el("button", "btn", t("web.settings.apply")) as HTMLButtonElement;
+      button.type = "submit";
+      row.append(label, field, button, el("span", "muted small limit-default"));
+      row.addEventListener("submit", event => {
+        event.preventDefault();
+        if (!row.reportValidity() || settingsRequests.has(name)) return;
+        settingsRequests.add(name);
+        field.disabled = true;
+        void send(`/limits ${name} ${field.value}`, button).finally(() => {
+          settingsRequests.delete(name);
+          const activeField = document.querySelector<HTMLInputElement>(`#limit-${name}`);
+          if (activeField) activeField.disabled = false;
+        });
+      });
+      limits.append(row);
+    }
+    const reset = el("button", "btn limits-reset", t("web.settings.reset")) as HTMLButtonElement;
+    reset.type = "button";
+    reset.addEventListener("click", () => void send("/limits reset", reset));
+    limits.append(reset);
+    const language = settingsChoice("language", t("web.settings.language"), ["ja", "en"] as const, state.language, value => value === "ja" ? "日本語" : "English");
+    openSheet(t("web.settings.title"), [sandbox, limits, language]);
+    refreshOpenSheet();
   };
 
   const refreshOpenSheet = () => {
@@ -1386,11 +1453,29 @@ export function clientMain({
         pendingLabel.replaceChildren(el("span", "spin"), el("span", "", t("web.setting.pending")));
       }
     }
-    if (sheetKind === "settings") {
-      const selected = target ?? state?.primary;
-      const buttons = $("#sheet-body").querySelectorAll<HTMLButtonElement>('[data-choice="primary"] button');
-      for (const button of buttons) {
-        button.setAttribute("aria-pressed", String(button.dataset.value === selected));
+    if (sheetKind === "settings" && state) {
+      const body = $("#sheet-body");
+      for (const [key, value] of [["sandbox", state.sandbox.enabled ? "on" : "off"], ["language", state.language]]) {
+        const pendingLine = [...pendingRequests].find(line => line.startsWith(`/${key} `));
+        for (const button of body.querySelectorAll<HTMLButtonElement>(`[data-choice="${key}"] button`)) {
+          button.setAttribute("aria-pressed", String(button.dataset.value === (pendingLine?.split(" ")[1] ?? value)));
+          setPending(button, Boolean(pendingLine) && button.dataset.value === pendingLine?.split(" ")[1]);
+          button.disabled = Boolean(pendingLine);
+        }
+      }
+      const ready = body.querySelector<HTMLElement>(".sandbox-ready");
+      if (ready) ready.textContent = t(state.sandbox.ready ? "web.settings.ready" : "web.settings.notReady");
+      for (const row of body.querySelectorAll<HTMLElement>("[data-limit]")) {
+        const name = row.dataset.limit as keyof WebState["limits"];
+        const limit = state.limits[name];
+        const field = row.querySelector<HTMLInputElement>("input")!;
+        field.disabled = settingsRequests.has(name);
+        if (field.dataset.synced !== String(limit.value)) {
+          field.value = String(limit.value);
+          field.dataset.synced = field.value;
+        }
+        row.querySelector<HTMLElement>(".limit-default")!.textContent = t("web.settings.default", { value: limit.default });
+        row.querySelector<HTMLElement>(".limit-changed")!.hidden = limit.value === limit.default;
       }
     }
   };
@@ -1411,6 +1496,11 @@ export function clientMain({
       button.addEventListener("click", () => { closeSheet(); $("#" + id).click(); });
       actions.append(button);
     }
+    const themeButton = iconButton(THEME_ICON[theme], "");
+    themeButton.id = "mobile-theme";
+    syncThemeButton(themeButton, true);
+    themeButton.addEventListener("click", cycleTheme);
+    actions.insertBefore(themeButton, actions.children[1]!);
     const project = iconButton("folder", t("web.mobile.project"));
     project.append(el("span", "", `${t("web.mobile.project")}: ${$("#project-name").textContent}`));
     project.addEventListener("click", openConversations);

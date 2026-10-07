@@ -1,4 +1,5 @@
 // スラッシュコマンドの一覧（DESIGN.md §8）。/help・サジェスト・Tab 補完で共有する
+import { LANGUAGES } from "../context/language.js";
 import { LIMIT_NAMES } from "../coordinator/budget-manager.js";
 import { t } from "../i18n/i18n.js";
 import type { MessageKey } from "../i18n/messages.js";
@@ -39,6 +40,7 @@ const SPECS: readonly SlashCommandSpec[] = [
   { name: "model", args: "<agent> <model>", description: "cmd.model" },
   { name: "effort", args: "[agent] <level>", description: "cmd.effort" },
   { name: "limits", args: "[<name> <n>|reset]", description: "cmd.limits", argumentValues: [...LIMIT_NAMES, "reset"] },
+  { name: "language", args: "[ja|en]", argumentValues: LANGUAGES, description: "cmd.language" },
   { name: "verbose", args: "", description: "cmd.verbose" },
   { name: "help", args: "", description: "cmd.help" },
   { name: "exit", args: "", description: "cmd.exit" },
@@ -52,6 +54,7 @@ export const commandUsage = ({ name, args }: Pick<SlashCommand, "name" | "args">
 
 // readline の completer。コマンド名の入力中だけ補完する
 export const completeCommand = (line: string): [string[], string] => {
+  if (line.startsWith("/language ")) return [LANGUAGES.map(value => `/language ${value} `).filter(value => value.startsWith(line)), line];
   if (line.startsWith("/limits ")) {
     return [[...LIMIT_NAMES, "reset"].map((name) => `/limits ${name} `).filter((value) => value.startsWith(line)), line];
   }

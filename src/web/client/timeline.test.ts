@@ -152,7 +152,7 @@ describe("applyFeedItem", () => {
       agent("claude", { type: "rate_limit" }),
       agent("claude", { type: "context", tokens: 1 }),
       agent("claude", { type: "exit", code: 0 }),
-      { type: "state", state: { project: "C:\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [] } },
+      { type: "state", state: { project: "C:\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } },
     ])).toEqual([]);
   });
 

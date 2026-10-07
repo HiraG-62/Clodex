@@ -38,6 +38,7 @@ export interface WebServerOptions {
 
 export interface WebServerHandle {
   readonly url: string;
+  updatePage(page: WebPage): void;
   close(): Promise<void>;
 }
 
@@ -190,6 +191,10 @@ export const startWebServer = async ({ port, token, feed, page, onInput, listFil
   });
 
   return {
+    updatePage: (next) => {
+      page = next;
+      for (const res of streams) sendItem(res, { type: "version", version: page.version });
+    },
     url: `http://${HOST}:${(http.address() as AddressInfo).port}`,
     close: () => new Promise<void>((resolve) => {
       for (const res of streams) res.end();

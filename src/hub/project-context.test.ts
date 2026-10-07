@@ -8,6 +8,38 @@ import { rebuildTimeline, applyFeedItem } from "../web/client/timeline.js";
 import { WebFeed } from "../web/web-feed.js";
 import { openProject } from "./project-context.js";
 
+it("言語変更で session を作り直さず、次の session の system prompt に反映する", async () => {
+  const homeDir = mkdtempSync(join(tmpdir(), "clodex-language-"));
+  const projectRoot = join(homeDir, "project");
+  mkdirSync(projectRoot);
+  let language: "ja" | "en" = "ja";
+  const agents: FakeAgentAdapter[] = [];
+  const context = await openProject({
+    projectRoot, homeDir, args: { models: {}, resume: false, web: false, serve: false }, language: () => language,
+    printTerminal: () => {}, notify: () => {}, displayMode: () => "normal", isCurrent: () => true,
+    modelCatalog: EMPTY_MODEL_CATALOG, registerCoordinator: () => () => {},
+    sandboxPlatform: { inspect: async () => false, connect: async () => {}, grant: async () => {}, release: async () => {}, close: async () => {}, spawn: vi.fn() },
+    createAgents: () => {
+      const claude = new FakeAgentAdapter("claude");
+      agents.push(claude);
+      return { claude, codex: new FakeAgentAdapter("codex") };
+    },
+  });
+  try {
+    void context.workspace.current.coordinator.sendToAgent("claude", "最初");
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(agents[0]!.starts[0]?.instructions).toContain("Japanese");
+    language = "en";
+    expect(agents[0]!.starts).toHaveLength(1);
+    agents[0]!.completeTurn();
+    await context.workspace.startNew();
+    void context.workspace.current.coordinator.sendToAgent("claude", "次");
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(agents[1]!.starts[0]?.instructions).toContain("English");
+    agents[1]!.completeTurn();
+  } finally { await context.close(); }
+});
+
 it("起動中・作業中の会話に戻ってもターンを中断せず、完了を一つのターンにまとめる", async () => {
   const homeDir = mkdtempSync(join(tmpdir(), "clodex-project-feed-"));
   const projectRoot = join(homeDir, "project");

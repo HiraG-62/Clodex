@@ -17,6 +17,11 @@ describe("SLASH_COMMAND_NAMES", () => {
 });
 
 describe("completeCommand", () => {
+  it("/language の値を補完する", () => {
+    expect(completeCommand("/lang")).toEqual([["/language "], "/lang"]);
+    expect(completeCommand("/language j")).toEqual([["/language ja "], "/language j"]);
+    expect(completeCommand("/language e")).toEqual([["/language en "], "/language e"]);
+  });
   it("コマンド名の入力中は前方一致の候補を返す", () => {
     expect(completeCommand("/co")).toEqual([["/compact "], "/co"]);
     expect(completeCommand("/")[0]).toHaveLength(SLASH_COMMAND_NAMES.length);

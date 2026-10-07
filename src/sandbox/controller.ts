@@ -25,6 +25,8 @@ export class SandboxController {
   private active = false;
   private available = false;
   private changing = false;
+  private setupComplete = false;
+  get setupReady(): boolean { return this.setupComplete; }
   get enabled(): boolean { return this.active; }
   get usable(): boolean { return !this.active || this.available; }
   constructor(readonly platform: SandboxPlatform, private readonly lifecycle: SandboxLifecycle) {}
@@ -45,7 +47,7 @@ export class SandboxController {
   async initialize(): Promise<void> {
     this.active = true;
     try {
-      if (this.platform.ready && !await this.platform.ready()) throw new Error(t("sandbox.incomplete"));
+      if (!await this.ready()) throw new Error(t("sandbox.incomplete"));
       await this.prepare();
       this.available = true;
     } catch { this.lifecycle.notify?.(t("sandbox.incomplete")); }
@@ -90,7 +92,9 @@ export class SandboxController {
   }
 
   async ready(): Promise<boolean> {
-    return this.platform.ready ? this.platform.ready() : this.platform.inspect();
+    this.setupComplete = false;
+    this.setupComplete = await (this.platform.ready ? this.platform.ready() : this.platform.inspect());
+    return this.setupComplete;
   }
 
   async uninstall(): Promise<void> {

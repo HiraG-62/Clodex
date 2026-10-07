@@ -254,6 +254,23 @@ it("reset と version で前の会話のログを消す", async () => {
   }
 });
 
+it("接続中の言語変更ではログを保持し、以後のラベルと候補を切り替える", async () => {
+  setLanguage("ja");
+  const { client, emit } = fakeClient();
+  const app = render(React.createElement(TuiApp, { client }));
+  await tick();
+  emit({ type: "version", version: "ja" });
+  emit({ type: "output", seq: 1, text: "保持するログ" });
+  await tick();
+  emit({ type: "version", version: "en" });
+  emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [], language: "en", sandbox: { enabled: false, ready: false }, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
+  app.stdin.write("/language");
+  await tick();
+  expect(app.lastFrame()).toContain("保持するログ");
+  expect(app.lastFrame()).toContain("show or change language");
+  setLanguage("ja");
+});
+
 it("上端で履歴を読み、reset 後に届いた前の会話の履歴を捨てる", async () => {
   const { client, emit } = fakeClient();
   let finish: ((page: Awaited<ReturnType<FeedClient["history"]>>) => void) | undefined;

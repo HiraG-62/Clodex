@@ -4,9 +4,9 @@ import { StringDecoder } from "node:string_decoder";
 import { PassThrough } from "node:stream";
 import { Box, Text, render, useApp, useInput, useStdout } from "ink";
 import { slashCommands } from "../cli/commands.js";
-import { t } from "../i18n/i18n.js";
+import { t, setLanguage, getLanguage } from "../i18n/i18n.js";
 import { createInputAssist } from "../web/client/input-assist.js";
-import type { HistoryItem, WebState } from "../web/web-feed.js";
+import { buildLimitState, type HistoryItem, type WebState } from "../web/web-feed.js";
 import type { FeedClient } from "./feed-client.js";
 import { advanceTerminalFeed, CardLineCache, cursorSlices, editInput, inputFrame, splitMouseInput, TERMINAL_COLORS,
   scrollAfterGrowth, scrollBy, scrollToBottom, textWidth, visibleRange, WHEEL_LINES, wrapText,
@@ -36,7 +36,7 @@ export const DISABLE_MOUSE_TRACKING = "\x1b[?1006l\x1b[?1000l";
 export const TUI_RENDER_OPTIONS = { exitOnCtrlC: false, alternateScreen: true } as const;
 const { line: LINE_COLOR, muted: MUTED_COLOR, warn: WARN_COLOR,
   claude: CLAUDE_COLOR, codex: CODEX_COLOR } = TERMINAL_COLORS;
-const EMPTY_STATE: WebState = { project: "", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [] };
+const EMPTY_STATE: WebState = { project: "", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [], language: getLanguage(), sandbox: { enabled: false, ready: false }, limits: buildLimitState() };
 const EMPTY_FEED: TerminalFeed = { timeline: [], completed: [] };
 
 const runWindowsConsoleMode = (): Promise<void> => new Promise((resolve, reject) => {
@@ -141,7 +141,7 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
   const terminal = stdout as NodeJS.WriteStream;
   const [size, setSize] = useState({ columns: terminal.columns ?? 80, rows: terminal.rows ?? 24 });
   const [feed, setFeed] = useState<TerminalFeed>(EMPTY_FEED);
-  const [state, setState] = useState<WebState>(EMPTY_STATE);
+  const [state, setState] = useState<WebState>(() => ({ ...EMPTY_STATE, language: getLanguage() }));
   const [files, setFiles] = useState<string[]>([]);
   const [buffer, setBuffer] = useState<InputBuffer>({ text: "", cursor: 0 });
   const [selected, setSelected] = useState(0);
@@ -153,13 +153,13 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
   const historyPrepended = useRef(false);
   const [historyRequest, requestHistory] = useState(0);
   const [scroll, setScroll] = useState<ScrollState>(scrollToBottom);
-  const cache = useRef(new CardLineCache());
+  const cache = useMemo(() => new CardLineCache(), [state.language]);
   const previousLineCount = useRef(0);
   const scrollBounds = useRef({ total: 0, height: 0 });
   const [notice, setNotice] = useState("");
   const [now, setNow] = useState(Date.now());
-  const assist = useMemo(makeAssist, []);
-  const cardLabels = useMemo(labels, []);
+  const assist = useMemo(makeAssist, [state.language]);
+  const cardLabels = useMemo(labels, [state.language]);
 
   useEffect(() => () => onExit?.(), [onExit]);
 
@@ -175,15 +175,20 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
   }, []);
   useEffect(() => {
     let closed = false;
+    let receivedVersion = false;
     let unsubscribe: (() => void) | undefined;
     let toastTimer: ReturnType<typeof setTimeout> | undefined;
     void client.connect((item) => {
       if (closed) return;
+      if (item.type === "version") {
+        if (receivedVersion) return;
+        receivedVersion = true;
+      }
       if (item.type === "toast") {
         clearTimeout(toastTimer);
         setNotice(item.text);
         toastTimer = setTimeout(() => setNotice(""), TOAST_DURATION_MS);
-      } else if (item.type === "state") setState(item.state);
+      } else if (item.type === "state") { setLanguage(item.state.language); setState(item.state); }
       else if (item.type === "reset" || item.type === "version") {
         history.current = [];
         historyGeneration.current++;
@@ -209,10 +214,10 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
   const choices = suggestion?.items.slice(0, MAX_SUGGESTIONS) ?? [];
   const nowSeconds = (at: string) => Math.max(0, Math.floor((now - Date.parse(at)) / 1000));
   const logLines = [...feed.completed.flatMap(({ item, elapsedSeconds }) =>
-    cache.current.lines(item, cardLabels, expanded, size.columns,
+    cache.lines(item, cardLabels, expanded, size.columns,
       elapsedSeconds === undefined ? undefined : t("tui.elapsed", { seconds: elapsedSeconds }))),
     ...feed.timeline.filter((item) => item.kind === "turn").flatMap((item) =>
-      cache.current.lines(item, cardLabels, expanded, size.columns, t("tui.elapsed", { seconds: nowSeconds(item.at) })))];
+      cache.lines(item, cardLabels, expanded, size.columns, t("tui.elapsed", { seconds: nowSeconds(item.at) })))];
   const agentRows = state.agents.reduce((count, agent) => count + 1 + (feed.timeline.some((item) => item.kind === "turn" && item.agent === agent.id && item.status === "working") ? 1 : 0), 0);
   const inputRows = Math.max(1, buffer.text.split("\n").reduce((count, line) => count + wrapText(line, size.columns - 4).length, 0)) + 2;
   const fixedRows = agentRows + inputRows + (choices.length ? choices.length + 2 : 0) + (notice ? 1 : 0) + 1;

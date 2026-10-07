@@ -577,6 +577,24 @@ describe("Coordinator の画像", () => {
 });
 
 describe("Coordinator の言語の 1 行（DESIGN.md §13 Language）", () => {
+  it("言語の変更後は同じ session の次の入力から新しい言語を使う", async () => {
+    const claude = new FakeAgentAdapter("claude");
+    const codex = new FakeAgentAdapter("codex");
+    let language: "ja" | "en" = "ja";
+    const coordinator = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor, language: () => language });
+    void coordinator.sendToAgent("claude", "最初");
+    await flush();
+    expect(claude.sent[0]).toContain("Japanese");
+    claude.completeTurn();
+    await flush();
+    language = "en";
+    void coordinator.sendToAgent("claude", "次");
+    await flush();
+    expect(claude.sent[1]).toContain("English");
+    expect(claude.starts).toHaveLength(1);
+    claude.completeTurn();
+    await coordinator.stop();
+  });
   const withLanguage = () => {
     const claude = new FakeAgentAdapter("claude");
     const codex = new FakeAgentAdapter("codex");

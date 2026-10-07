@@ -27,7 +27,7 @@ export const historyItemOf = (event: CoordinatorEvent, language?: Language): His
   return { type: "event", seq: UNNUMBERED, event, ...(envelope ? { envelope } : {}) };
 };
 
-export const connectWebFeed = (source: EventSource, feed: WebFeed, buildState: () => WebState, language?: Language) => {
+export const connectWebFeed = (source: EventSource, feed: WebFeed, buildState: () => WebState, language?: Language | (() => Language)) => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const refreshState = () => {
     if (timer) return;
@@ -39,7 +39,7 @@ export const connectWebFeed = (source: EventSource, feed: WebFeed, buildState: (
   };
 
   source.subscribe((event) => {
-    if (isFeedEvent(event)) feed.publishEvent(event, envelopeOf(event, language));
+    if (isFeedEvent(event)) feed.publishEvent(event, envelopeOf(event, typeof language === "function" ? language() : language));
     refreshState();
   });
   feed.publishState(buildState());

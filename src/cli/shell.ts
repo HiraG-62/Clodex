@@ -1,5 +1,7 @@
 // 人間の入力を Coordinator の操作に変換する（DESIGN.md §8）。readline 等の I/O は index.ts が持つ
 import { DEFAULT_LIMITS, LIMIT_KEYS, LIMIT_NAMES, type BudgetLimits, type LimitName } from "../coordinator/budget-manager.js";
+import { getLanguage } from "../i18n/i18n.js";
+import type { Language } from "../context/language.js";
 import type { PendingQuestion } from "../protocol/questions.js";
 import { AGENT_IDS, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult } from "../agents/agent-adapter.js";
 import type { UsageSnapshot } from "../coordinator/usage-monitor.js";
@@ -89,6 +91,7 @@ export interface ShellOptions {
     open(path: string): Promise<{ projectRoot: string; primary: AgentId }>;
     hasCurrent?(): boolean;
   };
+  language?: { get(): Language; set(value: Language): void | Promise<void> };
   roles?: () => Partial<Record<AgentId, string>>;
   sandbox?: { enabled(): boolean; ready(): Promise<boolean>; set(enabled: boolean): Promise<void>; uninstall(): Promise<void> };
   limits?: {
@@ -167,7 +170,7 @@ export const createShell = ({
   coordinator, primary: initialPrimary, print, notify, toggleVerbose, history: historySource, runner, saveSettings = () => {}, resolveReference = async () => undefined,
   busyElsewhere = () => false, processes,
   projects,
-  sandbox, limits: projectLimits, roles = () => ({}), saveRole = (_agent, text) => text,
+  language, sandbox, limits: projectLimits, roles = () => ({}), saveRole = (_agent, text) => text,
 }: ShellOptions) => {
   let primary = initialPrimary;
   const history = typeof historySource === "function" ? historySource : () => historySource;
@@ -224,7 +227,7 @@ export const createShell = ({
 
   const handleLine = async (line: string): Promise<ShellOutcome> => {
     const command = parseInput(line, primary);
-    if (projects?.hasCurrent && !projects.hasCurrent() && !["project", "help", "exit", "empty"].includes(command.kind)) {
+    if (projects?.hasCurrent && !projects.hasCurrent() && !["project", "language", "help", "exit", "empty"].includes(command.kind)) {
       print(t("shell.noProjectSelected"));
       return "continue";
     }
@@ -361,6 +364,10 @@ export const createShell = ({
         return "continue";
       case "help":
         HELP_LINES(primary).forEach((l) => print(l));
+        return "continue";
+      case "language":
+        if (command.value) await language?.set(command.value);
+        print(t("shell.language", { language: language?.get() ?? getLanguage() }));
         return "continue";
       case "sandbox":
         try {

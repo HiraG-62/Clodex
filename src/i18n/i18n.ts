@@ -8,9 +8,12 @@ export type MessageParams = Record<string, string | number>;
 export const MESSAGES: Record<Language, Messages> = { en, ja };
 
 let current: Messages = en;
+let language: Language = "en";
+export const getLanguage = (): Language => language;
 
-export const setLanguage = (language: Language): void => {
-  current = MESSAGES[language];
+export const setLanguage = (next: Language): void => {
+  language = next;
+  current = MESSAGES[next];
 };
 
 export const format = (template: string, params: MessageParams = {}): string =>

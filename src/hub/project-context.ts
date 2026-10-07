@@ -62,7 +62,7 @@ export interface OpenProjectOptions {
   projectRoot: string;
   homeDir: string;
   args: CliArgs;
-  language: Language;
+  language: Language | (() => Language);
   notify(text: string, level: "info" | "warn"): void;
   printTerminal(line: string): void;
   displayMode(): DisplayMode;
@@ -121,6 +121,8 @@ export const openProject = async ({
   });
   if (savedSettings.sandbox ?? config.sandbox ?? false) await sandbox.initialize();
 
+  if (!sandbox.enabled) await sandbox.ready().catch(() => false);
+
   const createRuntime = async (conversation: Conversation): Promise<ConversationRuntime> => {
     const bus = new EventBus();
     const workDir = conversation.workDir ?? projectRoot;
@@ -138,7 +140,7 @@ export const openProject = async ({
       settings: resolveStartSettings({
         saved: sandbox.enabled ? { ...settingsStore.load(), claude: { ...settingsStore.load().claude, permission: "full" }, codex: { ...settingsStore.load().codex, permission: "full" } } : settingsStore.load(), models: args.models, ...(config.permission ? { configPermission: config.permission } : {}),
       }),
-      instructions: (id) => buildRoleInstructions(id, config.roles, { language, artifactsDir }),
+      instructions: (id) => buildRoleInstructions(id, config.roles, { language: typeof language === "function" ? language() : language, artifactsDir }),
       limits,
       ...(config.usageAlert ? { usageAlert: config.usageAlert } : {}),
       resumeSessionIds: conversation.sessions,
