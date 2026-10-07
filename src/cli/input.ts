@@ -9,7 +9,7 @@ import { LANGUAGES, type Language } from "../context/language.js";
 export type ShellCommand =
   | { kind: "language"; value?: Language }
   | { kind: "sandbox"; action?: "on" | "off" | "uninstall" }
-  | { kind: "limits"; name?: LimitName; value?: number; reset?: true }
+  | { kind: "limits"; name?: LimitName; value?: number; reset?: true; unlimited?: true }
   | { kind: "empty" }
   | { kind: "send"; agent: AgentId; text: string; steer?: true }
   | { kind: "sendAll"; text: string; steer?: true }
@@ -122,12 +122,13 @@ const parseCommand = (name: string, arg: string): ShellCommand => {
     case "limits": {
       if (!arg) return { kind: "limits" };
       if (arg === "reset") return { kind: "limits", reset: true };
+      if (arg === "unlimited") return { kind: "limits", unlimited: true };
       const [name, raw, ...extra] = arg.split(/\s+/);
       const value = Number(raw);
       if (!extra.length && name && LIMIT_NAMES.includes(name as LimitName) && raw && /^\d+$/.test(raw) && isLimitValue(value)) {
         return { kind: "limits", name: name as LimitName, value };
       }
-      return usage("/limits [<messages|reviews|delegations|depth> <1-100>|reset]");
+      return usage("/limits [<messages|reviews|delegations|depth> <1-100>|reset|unlimited]");
     }
     case "answer": {
       const match = /^(\S+)\s+(.+)$/.exec(arg);

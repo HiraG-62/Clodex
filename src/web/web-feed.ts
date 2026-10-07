@@ -20,6 +20,8 @@ export interface WebState {
   language: Language;
   sandbox: { enabled: boolean; ready: boolean };
   limits: Record<LimitName, { value: number; default: number }>;
+  // /limits unlimited（DESIGN.md §14）
+  limitsUnlimited: boolean;
   project: string;
   projects?: Array<{ projectRoot: string; open: boolean; current: boolean }>;
   primary: AgentId;

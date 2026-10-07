@@ -13,7 +13,7 @@ import type { CliArgs } from "../cli/args.js";
 import { loadConfig, type ClodexConfig } from "../config/config.js";
 import type { Language } from "../context/language.js";
 import { buildRoleInstructions } from "../context/role-instructions.js";
-import { DEFAULT_LIMITS, LIMIT_KEYS, type BudgetLimits, type LimitName } from "../coordinator/budget-manager.js";
+import { DEFAULT_LIMITS, LIMIT_KEYS, UNLIMITED_LIMITS, type BudgetLimits, type LimitName } from "../coordinator/budget-manager.js";
 import { Coordinator } from "../coordinator/coordinator.js";
 import { EventBus } from "../coordinator/event-bus.js";
 import { Workspace, type ConversationRuntime } from "./workspace.js";
@@ -48,8 +48,10 @@ export interface ProjectContext {
   savedSettings: SavedAgentSettings;
   startedAt: Date;
   readonly limits: BudgetLimits;
+  readonly unlimited: boolean;
   setLimit(name: LimitName, value: number): void;
   resetLimits(): void;
+  setUnlimited(): void;
   currentPreview(): ReturnType<typeof createFilePreview>;
   saveFeedItem(conversationId: string, item: HistoryItem): void;
   bindFeed(feed: WebFeed, isCurrent: () => boolean): void;
@@ -98,6 +100,9 @@ export const openProject = async ({
   const baseLimits = { ...DEFAULT_LIMITS, ...config.limits };
   let overrides = { ...savedSettings.limits };
   let limits = { ...baseLimits, ...overrides };
+  let unlimited = savedSettings.limitsUnlimited === true;
+  // Coordinator に渡す上限。無制限なら判定しない値にする（DESIGN.md §14）
+  const effectiveLimits = () => (unlimited ? UNLIMITED_LIMITS : limits);
   const startedAt = new Date();
   let workspace: Workspace | undefined;
   const registered = new Map<Coordinator, () => void>();
@@ -142,7 +147,7 @@ export const openProject = async ({
         saved: sandbox.enabled ? { ...settingsStore.load(), claude: { ...settingsStore.load().claude, permission: "full" }, codex: { ...settingsStore.load().codex, permission: "full" } } : settingsStore.load(), models: args.models, ...(config.permission ? { configPermission: config.permission } : {}),
       }),
       instructions: (id) => buildRoleInstructions(id, config.roles, { language: typeof language === "function" ? language() : language, artifactsDir }),
-      limits,
+      limits: effectiveLimits(),
       ...(config.usageAlert ? { usageAlert: config.usageAlert } : {}),
       resumeSessionIds: conversation.sessions,
       solo: () => history.soloOf(conversation.id),
@@ -181,17 +186,21 @@ export const openProject = async ({
       feedSaveFailed = true;
     }
   };
-  const applyLimits = (next: Partial<BudgetLimits>) => {
+  const applyLimits = (next: Partial<BudgetLimits>, nextUnlimited = false) => {
     settingsStore.setLimits(next);
+    settingsStore.setUnlimited(nextUnlimited);
     overrides = next;
     limits = { ...baseLimits, ...overrides };
-    for (const runtime of activeWorkspace.allRuntimes()) runtime.coordinator.setLimits(limits);
+    unlimited = nextUnlimited;
+    for (const runtime of activeWorkspace.allRuntimes()) runtime.coordinator.setLimits(effectiveLimits());
   };
   return {
     sandbox, probe,
     get limits() { return { ...limits }; },
+    get unlimited() { return unlimited; },
     setLimit: (name, value) => applyLimits({ ...overrides, [LIMIT_KEYS[name]]: value }),
     resetLimits: () => applyLimits({}),
+    setUnlimited: () => applyLimits(overrides, true),
     projectRoot, config, primary, history, workspace: activeWorkspace, settingsStore, feedStore,
     artifactsDir, uploadsDir, resumedSessions, savedSettings, startedAt,
     currentPreview: () => createFilePreview({ projectRoot: activeWorkspace.current.workDir, allowedDirs: [artifactsDir, uploadsDir] }),

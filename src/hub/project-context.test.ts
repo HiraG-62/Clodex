@@ -111,6 +111,22 @@ it("project の上限を保存し、既存・新規の会話と再起動に反�
     context.resetLimits();
     expect(context.limits.maxMessagesPerChain).toBe(12);
     expect(context.settingsStore.load().limits).toBeUndefined();
+    const applied = vi.spyOn(context.workspace.current.coordinator, "setLimits");
+    context.setUnlimited();
+    expect(context.unlimited).toBe(true);
+    expect(applied).toHaveBeenLastCalledWith({
+      maxMessagesPerChain: Infinity, maxReviewRoundsPerChain: Infinity, maxDelegationsPerChain: Infinity, maxDelegationDepth: Infinity,
+    });
+    await context.close();
+    context = await open();
+    expect(context.unlimited).toBe(true);
+    context.setLimit("messages", 5);
+    expect(context.unlimited).toBe(false);
+    expect(context.limits.maxMessagesPerChain).toBe(5);
+    context.setUnlimited();
+    context.resetLimits();
+    expect(context.unlimited).toBe(false);
+    expect(context.settingsStore.load().limitsUnlimited).toBeUndefined();
   } finally { await context.close(); }
 });
 

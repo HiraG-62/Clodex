@@ -194,6 +194,7 @@ const setup = ({ withoutProject = false } = {}) => {
   // 本物と同じく、project を開く前に会話を求めると例外にする
   const historyOf = () => { if (!hasProject) throw new Error("no project"); return history; };
   let limits = { ...DEFAULT_LIMITS };
+  let unlimited = false;
   let language: "ja" | "en" = "ja";
   const languages: string[] = [];
   let sandboxEnabled = false;
@@ -203,7 +204,12 @@ const setup = ({ withoutProject = false } = {}) => {
     sandbox,
     language: languageSettings,
     coordinator: () => coordinator, primary: "claude", notify: (text, level) => { notified.push(text); levels.push(level); }, busyElsewhere: () => busy.value, print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history: historyOf, runner,
-    limits: { get: () => limits, set: (name, value) => { limits[LIMIT_KEYS[name]] = value; }, reset: () => { limits = { ...DEFAULT_LIMITS }; } },
+    limits: {
+      get: () => limits, unlimited: () => unlimited,
+      set: (name, value) => { limits[LIMIT_KEYS[name]] = value; unlimited = false; },
+      reset: () => { limits = { ...DEFAULT_LIMITS }; unlimited = false; },
+      setUnlimited: () => { unlimited = true; },
+    },
     saveSettings: (agents, change) => saved.push({ agents, change }),
     resolveReference: async (path) => {
       references.push(path);
@@ -686,6 +692,17 @@ it("/limits の表示・変更・リセットを project の操作に渡す", as
   expect(printed.at(-1)).toBe("limits: reset to defaults");
   await shell.handleLine("/limits");
   expect(printed.slice(-4)).toEqual(["messages 8", "reviews 3", "delegations 4", "depth 2"]);
+});
+
+it("/limits unlimited で無制限にし、/limits で無制限と表示する", async () => {
+  const { shell, printed } = setup();
+  await shell.handleLine("/limits unlimited");
+  expect(printed.at(-1)).toBe("limits: unlimited");
+  await shell.handleLine("/limits");
+  expect(printed.at(-1)).toBe("limits: unlimited");
+  await shell.handleLine("/limits reset");
+  await shell.handleLine("/limits");
+  expect(printed.at(-1)).toBe("depth 2");
 });
 
 it("/language の保存失敗は表示し、Web は 204 を返して言語を保持する", async () => {

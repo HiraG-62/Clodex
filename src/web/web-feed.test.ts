@@ -5,7 +5,7 @@ import { DEFAULT_LIMITS } from "../coordinator/budget-manager.js";
 
 const AT = "2026-10-05T12:00:00.000Z";
 const textEvent = (text: string): CoordinatorEvent => ({ kind: "agent", agent: "claude", event: { type: "text", text }, at: AT });
-const STATE: WebState = { project: "C:\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } };
+const STATE: WebState = { project: "C:\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } };
 
 describe("WebFeed", () => {
   it("limits の既定値は設定ファイルを優先し、実行中の上書きとは分ける", () => {

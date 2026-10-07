@@ -16,6 +16,14 @@ export const DEFAULT_LIMITS: BudgetLimits = {
   maxDelegationDepth: 2,
 };
 
+// /limits unlimited（DESIGN.md §14）
+export const UNLIMITED_LIMITS: BudgetLimits = {
+  maxMessagesPerChain: Infinity,
+  maxReviewRoundsPerChain: Infinity,
+  maxDelegationsPerChain: Infinity,
+  maxDelegationDepth: Infinity,
+};
+
 export const LIMIT_KEYS = {
   messages: "maxMessagesPerChain",
   reviews: "maxReviewRoundsPerChain",

@@ -1016,7 +1016,9 @@ Agent 同士が無限に会話しないよう hard limit を持つ。
 
 - `/limits`: 4 つの上限の今の値と、既定値から変わっているかを表示する
 - `/limits <name> <n>`: 上限を変える。`name` は `messages`（`maxMessagesPerChain`）・`reviews`（`maxReviewRoundsPerChain`）・`delegations`（`maxDelegationsPerChain`）・`depth`（`maxDelegationDepth`）。`n` は 1〜100 の整数。範囲外・不明な名前は使い方を表示する
-- `/limits reset`: 保存した値を消し、設定ファイル（無ければ既定値）に戻す
+- `/limits reset`: 保存した値を消し、設定ファイル（無ければ既定値）に戻す。無制限も解除する
+- `/limits unlimited`: 4 つの上限をすべて無くす（無制限）。`.settings.json` に `limitsUnlimited: true` として保存する。`/limits <name> <n>` で値を変えるか `/limits reset` で解除する。無制限の間も chain は数える（`/interrupt` で閉じた chain の拒否は今どおり）。`/limits` の表示と起動時の案内に「無制限」と出す
+- 設定画面の上限の欄に「無制限」を置く（押すと `/limits unlimited`。無制限の間は押された状態）
 - 反映は即時。進行中の chain にも新しい上限を使う（上限に当たって止まったやり取りを、上げてから続けられるように）
 - 対象は project 全体（その project のすべての会話の Coordinator）
 - 変えた値は project ごとに保存する（§9「Agent の設定の保存」の `.settings.json` の `limits`）。起動時の優先順位は、保存した値 > 設定ファイルの `limits` > 既定値。保存した値で起動したときは起動時の案内に表示する（例: `saved settings: limits messages 16`）

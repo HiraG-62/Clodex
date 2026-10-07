@@ -1405,7 +1405,12 @@ export function clientMain({
     const reset = el("button", "btn limits-reset", t("web.settings.reset")) as HTMLButtonElement;
     reset.type = "button";
     reset.addEventListener("click", () => void send("/limits reset", reset));
-    limits.append(reset);
+    const unlimited = el("button", "btn limits-unlimited", t("web.settings.unlimited")) as HTMLButtonElement;
+    unlimited.type = "button";
+    unlimited.addEventListener("click", () => void send("/limits unlimited", unlimited));
+    const actions = el("div", "limits-actions");
+    actions.append(reset, unlimited);
+    limits.append(actions);
     const language = settingsChoice("language", t("web.settings.language"), ["ja", "en"] as const, state.language, value => value === "ja" ? "日本語" : "English");
     // 端末ごとの設定なので Hub には送らない。スマホは常に Enter で改行するので出さない
     const sendKeyChoice = choice("sendKey", t("web.settings.sendKey"), SEND_KEYS, sendKey,
@@ -1485,6 +1490,8 @@ export function clientMain({
       }
       const ready = body.querySelector<HTMLElement>(".sandbox-ready");
       if (ready) ready.textContent = t(state.sandbox.ready ? "web.settings.ready" : "web.settings.notReady");
+      body.querySelector(".limits-settings")?.classList.toggle("unlimited", state.limitsUnlimited);
+      body.querySelector(".limits-unlimited")?.setAttribute("aria-pressed", String(state.limitsUnlimited));
       for (const row of body.querySelectorAll<HTMLElement>("[data-limit]")) {
         const name = row.dataset.limit as keyof WebState["limits"];
         const limit = state.limits[name];

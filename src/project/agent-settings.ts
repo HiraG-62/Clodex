@@ -19,7 +19,10 @@ const savedLimits = z.unknown().transform((value): Partial<BudgetLimits> => {
   }
   return limits;
 });
-const savedSchema = z.strictObject({ sandbox: z.boolean().optional(), claude: settingsSchema.optional(), codex: settingsSchema.optional(), limits: savedLimits.optional() });
+const savedSchema = z.strictObject({
+  sandbox: z.boolean().optional(), claude: settingsSchema.optional(), codex: settingsSchema.optional(), limits: savedLimits.optional(),
+  limitsUnlimited: z.literal(true).optional(),
+});
 
 export type AgentSettings = z.infer<typeof settingsSchema>;
 export type SavedAgentSettings = z.infer<typeof savedSchema>;
@@ -50,6 +53,11 @@ export class AgentSettingsStore {
     if (Object.keys(limits).length) saved.limits = limits;
     else delete saved.limits;
     writeFileAtomic(this.path, `${JSON.stringify(saved, null, 2)}\n`);
+  }
+
+  setUnlimited(unlimited: boolean): void {
+    const { limitsUnlimited: _old, ...saved } = this.load();
+    writeFileAtomic(this.path, `${JSON.stringify(unlimited ? { ...saved, limitsUnlimited: true } : saved, null, 2)}\n`);
   }
 
   update(agents: readonly AgentId[], change: AgentSettings): void {

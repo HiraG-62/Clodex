@@ -102,8 +102,10 @@ export interface ShellOptions {
   sandbox?: { enabled(): boolean; ready(): Promise<boolean>; set(enabled: boolean): Promise<void>; uninstall(): Promise<void> };
   limits?: {
     get(): BudgetLimits;
+    unlimited(): boolean;
     set(name: LimitName, value: number): void;
     reset(): void;
+    setUnlimited(): void;
   };
   saveRole?: (agent: AgentId, text: string) => string;
 }
@@ -431,6 +433,11 @@ export const createShell = ({
         if (command.reset) {
           projectLimits?.reset();
           print(t("shell.limitsReset"));
+        } else if (command.unlimited) {
+          projectLimits?.setUnlimited();
+          print(t("shell.limitsUnlimited"));
+        } else if (projectLimits?.unlimited()) {
+          print(t("shell.limitsUnlimited"));
         } else if (command.name && command.value !== undefined) {
           projectLimits?.set(command.name, command.value);
           print(`limits: ${command.name} ${command.value}`);

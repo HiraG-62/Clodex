@@ -76,6 +76,10 @@ describe("parseInput", () => {
     expect(parseInput("@claude first\nsecond", "claude")).toEqual({ kind: "send", agent: "claude", text: "first\nsecond" });
   });
 
+  it("/limits unlimited を解釈する", () => {
+    expect(parseInput("/limits unlimited", "claude")).toEqual({ kind: "limits", unlimited: true });
+  });
+
   it("/solo を解釈する", () => {
     expect(parseInput("/solo", "claude")).toEqual({ kind: "solo", mode: "free" });
     expect(parseInput("/solo enable", "claude")).toEqual({ kind: "solo", mode: "free" });

@@ -172,7 +172,10 @@ const main = async (): Promise<void> => {
         resetSandboxSettings(homeDir);
       },
     },
-    limits: { get: () => current().limits, set: (name, value) => current().setLimit(name, value), reset: () => current().resetLimits() },
+    limits: {
+      get: () => current().limits, unlimited: () => current().unlimited,
+      set: (name, value) => current().setLimit(name, value), reset: () => current().resetLimits(), setUnlimited: () => current().setUnlimited(),
+    },
     saveSettings: (agents, change) => {
       try { current().settingsStore.update(agents, change); }
       catch (error) { print(t("error.settingsSave", { message: errorMessage(error) })); }
@@ -187,6 +190,7 @@ const main = async (): Promise<void> => {
       language,
       sandbox: { enabled: context?.sandbox.enabled ?? false, ready: context?.sandbox.setupReady ?? false },
       limits: buildLimitState(context?.limits, context?.config.limits),
+      limitsUnlimited: context?.unlimited ?? false,
       project: runtime?.workDir ?? context?.projectRoot ?? "",
       projects: hub.list(),
       primary: shell.getPrimary(),
@@ -237,6 +241,7 @@ const main = async (): Promise<void> => {
         const value = context.savedSettings.limits?.[LIMIT_KEYS[name]];
         if (value !== undefined) saved.push(`limits ${name} ${value}`);
       }
+      if (context.savedSettings.limitsUnlimited) saved.push("limits unlimited");
       if (saved.length) printTerminal(t("start.saved", { settings: saved.join(", ") }));
       if (args.resume) {
         const resumed = AGENT_IDS.filter((id) => context.resumedSessions[id]);

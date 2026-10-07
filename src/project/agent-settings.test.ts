@@ -80,3 +80,12 @@ it("上限の有効な保存値だけを読み、Agent の設定と併存する"
   store.setLimits({});
   expect(store.load()).toEqual({ claude: { model: "haiku" } });
 });
+
+it("無制限を保存し、解除で消す", () => {
+  const store = new AgentSettingsStore(makePath());
+  store.setLimits({ maxMessagesPerChain: 16 });
+  store.setUnlimited(true);
+  expect(store.load()).toEqual({ limits: { maxMessagesPerChain: 16 }, limitsUnlimited: true });
+  store.setUnlimited(false);
+  expect(store.load()).toEqual({ limits: { maxMessagesPerChain: 16 } });
+});

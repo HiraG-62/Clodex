@@ -263,7 +263,7 @@ it("接続中の言語変更ではログを保持し、以後のラベルと候�
   emit({ type: "output", seq: 1, text: "保持するログ" });
   await tick();
   emit({ type: "version", version: "en" });
-  emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [], language: "en", sandbox: { enabled: false, ready: false }, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
+  emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [], language: "en", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
   app.stdin.write("/language");
   await tick();
   expect(app.lastFrame()).toContain("保持するログ");
@@ -317,7 +317,7 @@ it("今の会話が solo なら下の行に出す", async () => {
   const app = render(React.createElement(TuiApp, { client }));
   await tick();
   const conversation = { id: "c1", startedAt: "2026-10-08T00:00:00Z", updatedAt: "2026-10-08T00:00:00Z", sessions: {}, current: true, solo: "codex" as const };
-  emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], conversations: [conversation], pendingInputs: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
+  emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], conversations: [conversation], pendingInputs: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
   await tick();
   expect(app.lastFrame()).toContain("app · solo · Codex");
 });
