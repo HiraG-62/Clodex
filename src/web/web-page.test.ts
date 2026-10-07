@@ -10,6 +10,15 @@ import { ja } from "../i18n/messages.js";
 const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1] ?? "");
 
 describe("buildWebPage", () => {
+  it("コマンド印を送り先と同じ場所に置き、利用状況のパネルを持つ", () => {
+    const html = buildWebPage("ja").html;
+    expect(html).not.toContain('id="shell-input-label"');
+    expect(html).toContain('class="target-slot"');
+    expect(html).toContain('class="shell-badge"');
+    expect(html).toContain('id="usage-popover"');
+    expect(html).toContain('aria-label="利用状況"');
+    expect(html).not.toMatch(/el\("button", "(?:strip-summary|setting-chip mono)"/);
+  });
   it("GUI と同じ図形のアイコンを使う", () => {
     const guiIcon = readFileSync(new URL("../../gui/icon.svg", import.meta.url), "utf8");
     expect(ICON_SVG.trim()).toBe(guiIcon.trim());
@@ -48,13 +57,13 @@ describe("buildWebPage", () => {
 
   it("コマンド入力の色・ラベル・切り替え処理をページに含める", () => {
     const { html } = buildWebPage("ja");
-    expect(html).toContain('id="shell-input-label" hidden');
-    expect(html).toContain('id="shell-input-label" hidden>コマンド</div>');
+    expect(html).not.toContain('id="shell-input-label"');
+    expect(html).toContain("<span>コマンド</span>");
     expect(html).toContain('.classList.toggle("shell-input", shell)');
     expect(html).toContain("button.disabled = shell");
     expect(html).toContain('.shell-input .box { border-color: var(--code)');
     expect(html).toContain('.shell-input .box .input-highlight, .shell-input .box textarea { font-family: var(--font-mono)');
-    expect(buildWebPage("en").html).toContain('id="shell-input-label" hidden>Command</div>');
+    expect(buildWebPage("en").html).toContain("<span>Command</span>");
   });
   it("project の選択と新規オープンを画面上部に表示する", () => {
     const { html } = buildWebPage("ja");

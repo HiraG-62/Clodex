@@ -6,6 +6,7 @@ export const en = {
   "desktop.notify.error": "Clodex · Error",
   // Web UI: 上部・入力欄・シート
   "web.top.detail": "Details",
+  "web.usage.title": "Usage",
   "web.top.more": "More",
   "web.mobile.detail": "Details",
   "web.mobile.project": "Project",
@@ -328,6 +329,7 @@ export const ja: Messages = {
   "desktop.notify.notice": "Clodex · 通知",
   "desktop.notify.error": "Clodex · エラー",
   "web.top.detail": "詳細",
+  "web.usage.title": "利用状況",
   "web.top.more": "その他",
   "web.mobile.detail": "詳細",
   "web.mobile.project": "プロジェクト",

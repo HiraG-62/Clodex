@@ -225,11 +225,18 @@ const STYLE = `
   .composer { padding: 10px 16px; padding-bottom: max(12px, env(safe-area-inset-bottom)); background: var(--bg); margin: 0; }
   .box { border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); display: grid; }
   .box:focus-within { border-color: var(--fg-2); }
-  .shell-input .box { border-color: var(--code); box-shadow: inset 3px 0 var(--code); }
+  .composer.shell-input { --accent: var(--code); --accent-soft: color-mix(in srgb, var(--code) 18%, transparent); }
+  .shell-input .box { border-color: var(--code); }
   /* 後ろの .box textarea の font: inherit に負けないよう詳細度を上げる */
   .shell-input .box .input-highlight, .shell-input .box textarea { font-family: var(--font-mono); }
-  .shell-input .to { opacity: .45; }
-  .shell-input-label { color: var(--code); font-size: 12px; margin-bottom: 5px; }
+  .target-slot { display: grid; }
+  .target-slot > * { grid-area: 1 / 1; }
+  .shell-badge { visibility: hidden; display: inline-flex; align-items: center; gap: 6px; padding: 2px; border-radius: var(--r); background: var(--sunken); color: var(--code); font-size: 12.5px; }
+  .shell-badge > span { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: var(--r-inner); background: var(--panel); box-shadow: var(--ring); }
+  .shell-badge > span::before { content: ""; width: 6px; height: 6px; border-radius: 1px; background: var(--code); }
+  .shell-badge .i { margin-left: 8px; width: 14px; height: 14px; }
+  .shell-input .target-slot .to { visibility: hidden; }
+  .shell-input .shell-badge { visibility: visible; }
   .input-wrap { position: relative; min-width: 0; }
   /* textarea の背後に同じ折り返しで描き、指定した語の背景だけを見せる */
   .input-highlight, .box textarea { padding: 12px 14px 4px; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-gutter: stable; }
@@ -367,7 +374,7 @@ const STYLE = `
   .setting-chip .i { width: 13px; height: 13px; color: var(--muted); }
   .setting-chip.warning { color: var(--fg-2); background: var(--sunken); }
   .setting-chip.warning .i { color: var(--warn); }
-  .setting-chip:hover:not(:disabled) { background: var(--panel); box-shadow: var(--ring-strong); }
+
   .agent-strip .setting-chips { grid-area: chips; flex-wrap: nowrap; gap: 3px; min-width: 0; }
   .agent-strip .setting-chip { font-size: 10px; white-space: nowrap; min-width: 0; overflow: hidden; padding: 3px 4px; }
   .mini-gauges { display: grid; gap: 8px; }
@@ -399,6 +406,7 @@ const STYLE = `
   .conv-row:hover .conv-menu { opacity: 1; }
   .box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .send.icon-btn { background: var(--accent); color: var(--invert-fg); box-shadow: var(--ring); }
+  .shell-input .send.icon-btn:hover:not(:disabled), .shell-input .send.icon-btn:active:not(:disabled) { background: color-mix(in srgb, var(--code) 85%, var(--fg)); }
   .seg { gap: 2px; padding: 2px; background: var(--sunken); border: 0; border-radius: var(--r); overflow: visible; }
   .seg button { border: 0; border-radius: var(--r-inner); }
   .seg button + button { border: 0; }
@@ -510,6 +518,13 @@ const STYLE = `
   .starting-turn .body { display: grid; gap: 9px; padding: 12px; background: var(--sunken); border-radius: var(--r-outer); }
   .starting-turn .body .sk:first-child { width: 65%; }
   .starting-turn .body .sk:last-child { width: 42%; }
+  .agent-strip button.mini-gauges { border: 0; padding: 0; background: transparent; text-align: left; border-radius: var(--r); color: inherit; font: inherit; }
+  .agent-strip button.mini-gauges:hover, .agent-strip button.mini-gauges[aria-expanded="true"] { background: var(--hover-bg); box-shadow: var(--ring); }
+  .usage-popover { position: fixed; z-index: 18; padding: 16px; display: grid; gap: 16px; background: var(--panel); border-radius: var(--r-outer); box-shadow: var(--shadow-pop); }
+  .usage-popover .gauge-reset { display: inline; margin-right: 8px; color: var(--muted); }
+  .usage-popover .gauge { font-size: 12px; }
+  .usage-popover .gauge .k { overflow: visible; }
+  .usage-popover .gauge .track { grid-column: 1 / -1; }
   .mobile-only, .grab { display: none; }
   .code-block { min-width: 0; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; margin: 12px 0; }
   .code-head { display: flex; justify-content: flex-end; border-bottom: 1px solid var(--line); padding-inline: 4px; background: var(--sunken); }
@@ -573,7 +588,9 @@ const STYLE = `
     .box { grid-template-columns: 44px minmax(0, 1fr) 44px 44px; align-items: end; border-radius: 16px; padding: 2px; gap: 0; }
     .box > .pending, .box > .suggest { grid-column: 1 / -1; }
     .box > .pending { grid-row: 1; } .box > .suggest { grid-row: 2; }
-    .box .bar { display: contents; } .to { display: none; }
+    .box .bar { display: contents; } .to, .target-slot { display: none; }
+    .shell-input .to-mark:disabled { opacity: 1; color: var(--code); }
+    .shell-input .to-mark > .i { width: 26px; height: 26px; }
     .to-mark { display: inline-grid; place-items: center; grid-column: 1; grid-row: 3; width: 44px; height: 44px; border-radius: 13px; }
     .to-mark .mark { width: 26px; height: 26px; font-size: 12px; border-radius: 7px; }
     .input-wrap { grid-column: 2; grid-row: 3; }
@@ -674,7 +691,6 @@ ${UI_ICONS}
     <button class="newer" type="button" id="newer" hidden>${m("web.newer")}</button>
   </div>
   <form class="composer" id="composer">
-    <div class="shell-input-label" id="shell-input-label" hidden>${m("web.shellInput")}</div>
     <div class="upload-status" id="upload-status" role="status" hidden><span class="spin"></span>${m("web.upload.loading")}</div>
     <div class="box">
       <ul class="pending" id="pending" aria-label="${m("web.pending.label")}" hidden></ul>
@@ -685,10 +701,11 @@ ${UI_ICONS}
         <textarea id="input" rows="1" aria-label="${m("web.input.label")}" enterkeyhint="enter" role="combobox" aria-controls="suggest" aria-expanded="false" aria-autocomplete="list"></textarea>
       </div>
       <div class="bar">
-        <div class="to" role="group" aria-label="${m("web.to.label")}">
+        <div class="target-slot"><div class="to" role="group" aria-label="${m("web.to.label")}">
           <button type="button" data-agent="claude" aria-pressed="true">Claude</button>
           <button type="button" data-agent="codex" aria-pressed="false">Codex</button>
         </div>
+        <div class="shell-badge">${icon("terminal")}<span>${m("web.shellInput")}</span></div></div>
         ${button("attach", "image-plus", "web.attach.label", "attach")}
         ${button("mobile-add", "plus", "web.mobile.add", "mobile-only mobile-add")}
         <input type="file" id="attach-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
@@ -709,6 +726,7 @@ ${UI_ICONS}
     <div id="sheet-body"></div>
   </div>
 </div>
+<div class="usage-popover" id="usage-popover" role="dialog" aria-label="${m("web.usage.title")}" hidden></div>
 <div class="toast" id="toast" role="status"></div>
 `;
 };

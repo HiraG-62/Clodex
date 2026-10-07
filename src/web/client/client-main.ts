@@ -63,6 +63,7 @@ export function clientMain({
   const SWIPE_CLOSE_PX = 72;
   const KEYBOARD_THRESHOLD_PX = 120;
   const CODE_FOLD_LINES = 8;
+  const USAGE_POPOVER_GAP_PX = 8;
   const NEAR_BOTTOM_PX = 120;
   const HISTORY_THRESHOLD_PX = 200;
   const TOAST_DURATION_MS = 4000;
@@ -746,9 +747,7 @@ export function clientMain({
     wrap.append(currentStatus);
     const chips = el("div", "setting-chips");
     const chip = (label: string) => {
-      const button = el("button", "setting-chip mono", label) as HTMLButtonElement;
-      button.type = "button";
-      button.addEventListener("click", () => openAgentSettings(agent.id));
+      const button = el("span", "setting-chip mono", label);
       chips.append(button);
       return button;
     };
@@ -763,7 +762,7 @@ export function clientMain({
       modelChip.prepend(icon("cpu"));
       effortChip.prepend(icon("gauge"));
       for (const button of [modelChip, effortChip, permissionChip]) {
-        button.title = `${t("web.role.open", { agent: AGENTS[current.id].name })}: ${button === permissionChip ? current.permission : button.textContent}`;
+        button.title = `${button === permissionChip ? current.permission : button.textContent}`;
         button.setAttribute("aria-label", button.title);
       }
       permissionChip.classList.toggle("warning", current.permission === "full");
@@ -823,6 +822,51 @@ export function clientMain({
     return button;
   };
 
+  let usageAgent: AgentId | undefined;
+  const usagePopover = $("#usage-popover");
+  const closeUsage = () => {
+    usageAgent = undefined;
+    usagePopover.hidden = true;
+    for (const button of document.querySelectorAll("#agents button.mini-gauges")) button.setAttribute("aria-expanded", "false");
+  };
+  const positionUsage = () => {
+    if (!usageAgent || usagePopover.hidden) return;
+    const card = document.querySelector<HTMLElement>(`#agents [data-agent="${usageAgent}"]`);
+    if (!card || mobile.matches) return closeUsage();
+    const rect = card.getBoundingClientRect();
+    usagePopover.style.left = `${rect.left}px`;
+    usagePopover.style.top = `${rect.bottom + USAGE_POPOVER_GAP_PX}px`;
+    usagePopover.style.width = `${rect.width}px`;
+  };
+  const refreshUsage = () => {
+    if (!usageAgent) return;
+    const agent = state?.agents.find((entry) => entry.id === usageAgent);
+    if (!agent || mobile.matches) return closeUsage();
+    if (usagePopover.dataset.agent !== agent.id) {
+      usagePopover.replaceChildren(...gaugeValues(agent.usage).map((g) => gauge(g.label, g.value, g.percent, agent.id, g.over, g.tick, g.reset)));
+      usagePopover.dataset.agent = agent.id;
+    }
+    gaugeValues(agent.usage).forEach((g, index) => {
+      const node = usagePopover.children[index] as HTMLElement;
+      const value = g.label === t("web.gauge.context") && agent.usage.contextWindow && agent.usage.contextTokens !== undefined
+        ? `${g.value} · ${Math.round(g.percent ?? 0)}%` : g.value;
+      syncGauge(node, g.label, value, g.percent, g.over, g.tick, g.reset);
+      node.querySelector<HTMLElement>(".k")!.textContent = g.label.split(" · ")[0]!;
+      node.querySelector<HTMLElement>(".track")!.hidden = g.value === "—";
+      node.querySelector<HTMLElement>(".gauge-reset")!.hidden = g.value === "—";
+    });
+    usagePopover.hidden = false;
+    for (const button of document.querySelectorAll("#agents button.mini-gauges")) button.setAttribute("aria-expanded", String(button.closest<HTMLElement>(".agent")?.dataset.agent === agent.id));
+    positionUsage();
+  };
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (target instanceof Element && !target.closest("#usage-popover, #agents button.mini-gauges")) closeUsage();
+  });
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeUsage(); });
+  window.addEventListener("resize", positionUsage);
+  mobile.addEventListener("change", positionUsage);
+
   const renderState = () => {
     renderQuestionCount();
     if (!state) return;
@@ -875,8 +919,8 @@ export function clientMain({
       return button;
     }));
     const selected = target ?? state.primary;
-    $("#target-toggle").replaceChildren(mark(selected));
-    $("#target-toggle").setAttribute("aria-label", `${t("web.to.label")}: ${AGENTS[selected].name}`);
+    $("#target-toggle").replaceChildren(isShellInput(input.value) ? icon("terminal") : mark(selected));
+    $("#target-toggle").setAttribute("aria-label", isShellInput(input.value) ? t("web.shellInput") : `${t("web.to.label")}: ${AGENTS[selected].name}`);
     $("#target-toggle").title = $("#target-toggle").getAttribute("aria-label")!;
     // PC: Agent パネル
     const well = el("div", "strip-well");
@@ -894,23 +938,33 @@ export function clientMain({
       }
       h2.append(el("span", "", AGENTS[agent.id].name), status);
       const current = displayedAgent(agent);
-      const summary = el("button", "strip-summary") as HTMLButtonElement;
-      summary.type = "button";
+      const summary = el("div", "strip-summary");
       summary.title = t("web.agent.summary", { model: current.modelLabel ?? current.model ?? "default", effort: current.effort ?? "default", permission: current.permission });
-      summary.setAttribute("aria-label", `${t("web.role.open", { agent: AGENTS[agent.id].name })}: ${summary.title}`);
+      summary.setAttribute("aria-label", summary.title);
       summary.append(el("span", "model", current.modelLabel ?? current.model ?? "default"),
         el("span", "", `· ${current.effort ?? "default"} ·`), el("span", current.permission === "full" ? "permission-full" : "", current.permission));
       if (Object.keys(pendingSettings[agent.id] ?? {}).length) {
         summary.classList.add("pending");
         summary.title += ` · ${t("web.setting.pending")}`;
       }
-      summary.addEventListener("click", () => openAgentSettings(agent.id));
       who.append(h2, summary);
       const controls = agentControls(agent);
-      section.append(mark(agent.id), who, controls.querySelector(".mini-gauges")!, controls.querySelector(".links")!);
+      const miniButton = el("button", "mini-gauges") as HTMLButtonElement;
+      miniButton.type = "button";
+      miniButton.title = t("web.usage.title");
+      miniButton.setAttribute("aria-label", t("web.usage.title"));
+      miniButton.setAttribute("aria-expanded", String(usageAgent === agent.id));
+      miniButton.setAttribute("aria-controls", "usage-popover");
+      miniButton.append(...controls.querySelector(".mini-gauges")!.childNodes);
+      miniButton.addEventListener("click", () => {
+        if (usageAgent === agent.id) closeUsage();
+        else { usageAgent = agent.id; refreshUsage(); }
+      });
+      section.append(mark(agent.id), who, miniButton, controls.querySelector(".links")!);
       return section;
     }));
     $("#agents").replaceChildren(well);
+    refreshUsage();
     $("#conversations").replaceChildren(...conversationList());
     // 送り先: 人が選んでいなければ primary に合わせる
     for (const button of document.querySelectorAll<HTMLButtonElement>(".to button")) {
@@ -1568,7 +1622,9 @@ export function clientMain({
   function onInputChanged() {
     const shell = isShellInput(input.value);
     $("#composer").classList.toggle("shell-input", shell);
-    $("#shell-input-label").hidden = !shell;
+    $("#target-toggle").replaceChildren(shell ? icon("terminal") : mark(target ?? state?.primary ?? "claude"));
+    $("#target-toggle").setAttribute("aria-label", shell ? t("web.shellInput") : `${t("web.to.label")}: ${AGENTS[target ?? state?.primary ?? "claude"].name}`);
+    $("#target-toggle").title = $("#target-toggle").getAttribute("aria-label")!;
     sendButton.replaceChildren(icon(shell ? "terminal" : "arrow-up"));
     sendButton.setAttribute("aria-label", t(shell ? "web.run" : "web.send"));
     sendButton.title = t(shell ? "web.run" : "web.send");
@@ -1765,6 +1821,7 @@ export function clientMain({
         if (projectChanged || conversationChanged) {
           liveGeneration++;
           startingAt.clear();
+          closeUsage();
           pendingSettings = {};
           pendingDeadlines = {};
           settingRequests.clear();
