@@ -344,7 +344,9 @@ export function clientMain({
       if (!parts.some((part) => part.path)) continue;
       text.replaceWith(...parts.map((part) => {
         if (!part.path) return document.createTextNode(part.text);
-        const link = el("span", "image-link", part.text);
+        // 本文にはファイル名だけを出し、フルパスは title とクリックで開くときに使う
+        const link = el("span", "image-link", part.text.split(/[\\/]/).at(-1) ?? part.text);
+        link.title = part.path;
         link.dataset.path = part.path;
         link.dataset.version = version;
         link.setAttribute("role", "button");
