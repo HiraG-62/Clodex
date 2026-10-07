@@ -12,6 +12,34 @@ vi.mock("./powershell.js", async (original) => ({ ...await original<typeof impor
 vi.mock("./broker.js", async (original) => ({ ...await original<typeof import("./broker.js")>(), connectBroker: vi.fn() }));
 afterEach(() => {vi.restoreAllMocks();vi.unstubAllEnvs();});
 
+it("Git 作者の空白・日本語・引用符を broker の1引数で保存する",async()=>{
+  const platform=new WindowsSandboxPlatform("human","project");
+  const run=vi.fn().mockResolvedValue("");
+  Object.defineProperty(platform,"broker",{value:{run}});
+  Object.defineProperty(platform,"identity",{value:{profile:"agent-profile"}});
+  const name=' 山田 太郎 "開発" O\'Brien ';
+  vi.mocked(runHost).mockResolvedValueOnce(JSON.stringify(name)).mockResolvedValueOnce(JSON.stringify("dev@example.invalid"));
+  await platform["syncGitIdentity"]();
+  expect(run.mock.calls).toEqual([
+    ["git",["config","--global","--replace-all","user.name",name],"agent-profile"],
+    ["git",["config","--global","--replace-all","user.email","dev@example.invalid"],"agent-profile"],
+  ]);
+});
+
+it("人の Git 作者設定がなければ agent の既存設定を消さない",async()=>{
+  const platform=new WindowsSandboxPlatform("human","project");
+  const run=vi.fn();Object.defineProperty(platform,"broker",{value:{run}});
+  vi.mocked(runHost).mockResolvedValue("null");
+  await platform["syncGitIdentity"]();
+  expect(run).not.toHaveBeenCalled();
+});
+
+it("Git 作者の取得失敗を未設定扱いにしない",async()=>{
+  const platform=new WindowsSandboxPlatform("human","project");
+  vi.mocked(runHost).mockRejectedValueOnce(new Error("git failed"));
+  await expect(platform["syncGitIdentity"]()).rejects.toThrow("git failed");
+});
+
 it("保存済み authenticated=true に依存せず毎回認証を検査する", async () => {
   const home = await mkdtemp(join(tmpdir(), "clodex-auth-status-"));
   await mkdir(join(home,".clodex"));

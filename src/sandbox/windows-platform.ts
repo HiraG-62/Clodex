@@ -345,6 +345,14 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
     return runHost(`& git ${args.map(psQuote).join(" ")};if(@(${allowed.join(",")}) -notcontains $LASTEXITCODE){throw ${psQuote(t("sandbox.gitFailed"))}}`);
   }
 
+  private async syncGitIdentity(): Promise<void> {
+    for (const key of ["user.name", "user.email"]) {
+      const output = await runHost(`$value=@(& git config --global --get ${psQuote(key)});if($LASTEXITCODE -eq 1){'null'}elseif($LASTEXITCODE -ne 0){throw ${psQuote(t("sandbox.gitFailed"))}}else{ConvertTo-Json -Compress -InputObject ([string]::Join([char]10,$value))}`);
+      const value = z.string().nullable().parse(JSON.parse(output));
+      if (value !== null) await this.git(true, ["config", "--global", "--replace-all", key, value]);
+    }
+  }
+
   async grant(path: string, git: boolean): Promise<void> {
     validateSandboxPath(path, this.home, !git);
     try { await noReparse(path); } catch (error) { if (isMissing(error)) return; throw error; }
@@ -367,6 +375,7 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
     }
     const lease = await this.grantAcl(path, "modify");
     if (!git) return;
+    await this.syncGitIdentity();
     if (lease.gitHuman) { await this.removeSafeDirectory(false, path); lease.gitHuman = false; this.save(); }
     const directories = (await this.git(true, ["config", "--global", "--get-all", "safe.directory"])).split(/\r?\n/);
     if (directories.some(directory => directory && normalizeSandboxPath(directory) === normalizeSandboxPath(path))) return;

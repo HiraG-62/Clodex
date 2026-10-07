@@ -621,6 +621,7 @@ git:
 - `.git/config`・`.git/hooks`（worktree の `.git/worktrees/*` の同じもの）と `.git` ディレクトリ自体の削除には、`clodex-agent` の明示の Deny を付ける。Agent が hook・`core.fsmonitor`・`include.path`・diff / filter driver を仕込み、人の権限で動く git に実行させるのを防ぐため。Agent の commit・branch はできるが、`git config` の書き換えと `git remote add` はできない
 - Hub が人の権限で実行する git（file preview・`ls-files`・worktree の作成など）には、念のため `-c core.fsmonitor=false -c core.hooksPath=<空のディレクトリ>` と `--no-ext-diff --no-textconv` を付ける
 - 人が sandbox の project で、Agent の書いたスクリプト（`pnpm` の scripts など）を実行すれば、それは人の権限で動く。sandbox はこれを防がない
+- `/sandbox on` のとき、人の git の global の `user.name` / `user.email` を、存在する項目だけ `clodex-agent` の global に写す（Agent が commit できるように）。off では消さない
 - `clodex-agent` には git の資格情報を渡さない。push は人が行う
 
 制約（v1 では扱わない）:
