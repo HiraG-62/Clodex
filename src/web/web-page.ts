@@ -319,6 +319,9 @@ const STYLE = `
     grid-template-areas: "top" "conn" "status" "log" "compose"; }
   .topbar { grid-area: top; } .conn { grid-area: conn; } .status { grid-area: status; } .log-wrap { grid-area: log; } .composer { grid-area: compose; }
   @media (min-width: 900px) and (hover: hover) and (pointer: fine) {
+    .handoff { grid-template-columns: 22px minmax(0, 1fr); column-gap: 12px; }
+    .handoff > :not(.route) { grid-column: 2; }
+    .handoff > .route { grid-column: 1 / -1; }
     .working-entry .plan { grid-column: auto; }
     .sheet { align-items: center; justify-items: center; }
     .sheet-panel { border-radius: 14px; max-height: 85vh; max-width: 640px; padding-bottom: 20px; }
