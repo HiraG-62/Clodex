@@ -8,7 +8,7 @@ it("agent のプロファイルと Machine PATH で環境を構築し、人の H
   expect(env.USERPROFILE).toBe("C:\\Users\\clodex-agent");
   expect(env.APPDATA).toBe("C:\\Users\\clodex-agent\\AppData\\Roaming");
   expect(env.TEMP).toBe("C:\\Users\\clodex-agent\\AppData\\Local\\Temp");
-  expect(env.PATH).toBe("C:\\Users\\clodex-agent\\.local\\bin;C:\\Users\\clodex-agent\\AppData\\Roaming\\npm;C:\\Windows;C:\\Program Files\\nodejs");
+  expect(env.PATH).toBe("C:\\Users\\clodex-agent\\AppData\\Roaming\\npm;C:\\Users\\clodex-agent\\.local\\bin;C:\\Windows;C:\\Program Files\\nodejs");
   expect(env.PSMODULEPATH).not.toContain("PowerShell7");
   expect(env.HOME).toBeUndefined();
   expect(env.OPENAI_API_KEY).toBeUndefined();

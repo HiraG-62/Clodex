@@ -122,6 +122,25 @@ Web の 500 は `src/cli/shell.ts` の sandbox 分岐からの例外が `src/ind
 
 ユニットテストでは、非空の旧 journal の ACE 復元、途中失敗時の journal 維持、復旧の再実行、runtime の所有者・reparse point 検査、uninstall → 再作成 → uninstall の runtime / journal 除去を確認。実際の uninstall は管理者操作を伴うため未実行。
 
+## npm による CLI インストール
+
+2026-10-07、`pnpm exec tsx spikes/sandbox-debug-probe.ts --install` を実行。restricted token の broker 経由で `npm install --global @anthropic-ai/claude-code @openai/codex pnpm` が成功し、3 CLI の `--version` も成功した。保存先は agent の `%APPDATA%\npm`。UAC・ログイン・CLI のターンは実行していない。
+
+| 判定 | 実行前 | インストール後 |
+|---|---|---|
+| inspect / connect(false) | 成功 | 成功 |
+| managed / user / credential | すべて true | すべて true |
+| claude / codex / pnpm | すべて false | すべて true |
+| authenticated | false | false |
+
+[npm registry の Claude 配布情報](https://registry.npmjs.org/@anthropic-ai/claude-code/latest)では、確認時点の 2.1.292 の Windows entry は `bin/claude.exe`。broker の起動と setupStatus は npm の `node_modules/@anthropic-ai/claude-code/bin/claude.exe` を参照し、PATH も npm を先頭にする。
+
+broker は stdout / stderr を別々に転送し、失敗・タイムアウト・起動失敗のメッセージに各最大 8 KiB の末尾を付ける。stderr は Agent の行プロトコルには渡さない。
+
+DESIGN.md §9「制約」への追記案: restricted token 内では Windows PowerShell 5.1 の HTTPS（`Invoke-WebRequest` / `Invoke-RestMethod` など）が失敗する。CLI のインストールには Node の HTTPS を使う npm を使用する。
+
+restricted token 内の Windows PowerShell 5.1 で HTTPS に失敗するため、Claude・Codex・pnpm を npm でインストールする。判定・起動先・PATH は agent の npm prefix に統一し、broker.run の失敗には stdout / stderr の末尾を含める。検証には `spikes/sandbox-debug-probe.ts --install` を使い、ログインと CLI のターンは実行しない。
+
 ## 実機の確認で見つかった問題（2026-10-07）
 
 - Windows PowerShell 5.1 の `Start-Process -Credential` に `-Wait` を付けると、`Access is denied`（5）で起動に失敗する。`-Wait` は子プロセスを Job object に入れて待つため、別ユーザーのプロセスでは失敗すると見られる。`-Wait` を外して `-PassThru` の `WaitForExit()` で待てば起動できる。ただし、別ユーザーのプロセスの終了コードは取れない（`ExitCode` が空になる）

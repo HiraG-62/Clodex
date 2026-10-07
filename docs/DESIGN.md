@@ -611,7 +611,7 @@ Agent は常にフル権限で動かし、project の外への書き込み・削
 初回のセットアップ（`/sandbox on` の初回。PC の前で行う。UAC とブラウザのログインがあるため、スマホからはできない）:
 
 1. 管理者の処理（UAC で昇格した PowerShell）: `clodex-agent` の作成、サインイン画面に出さない設定、パスワードを人のユーザーの DPAPI で `~/.clodex/agent-credential` に保存
-2. CLI のインストール（broker 経由で `clodex-agent` として）: Claude の公式インストーラー、`npm i -g @openai/codex pnpm`
+2. CLI のインストール（broker 経由で `clodex-agent` として）: `npm i -g @anthropic-ai/claude-code @openai/codex pnpm`（`%APPDATA%\npm` に入る）
 3. ログイン: `clodex-agent` の PowerShell のウィンドウを開き、`claude` と `codex login` を人が行う。終わったら、起動時の認証の検査（§9 の startup probe）を `clodex-agent` で実行して確かめる
 4. 途中で失敗・中断したら、`/sandbox` に「セットアップ未完了」と出し、次の `/sandbox on` で続きから行う（各段階は冪等）
 
@@ -627,6 +627,7 @@ git:
 制約（v1 では扱わない）:
 
 - 人の `~/.claude`（CLAUDE.md・settings・skill・MCP）と `~/.codex` の設定は `clodex-agent` には無い。必要なら人が `clodex-agent` 側に用意する
+- restricted token の中では、Windows PowerShell 5.1 の HTTPS（`Invoke-WebRequest`・`Invoke-RestMethod` など）が失敗する。Node・git の HTTPS は動く。CLI のインストールに npm を使うのはこのため。Agent が PowerShell で HTTPS を使う作業も失敗する
 - `clodex-agent` 側の CLI の更新は、Claude は自動更新、Codex と pnpm は人が `/sandbox` の案内に従って行う
 - ネットワークは止めない
 

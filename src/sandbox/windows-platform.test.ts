@@ -12,6 +12,20 @@ vi.mock("./powershell.js", async (original) => ({ ...await original<typeof impor
 vi.mock("./broker.js", async (original) => ({ ...await original<typeof import("./broker.js")>(), connectBroker: vi.fn() }));
 afterEach(() => {vi.restoreAllMocks();vi.unstubAllEnvs();});
 
+it("不足した CLI をすべて agent の npm prefix にインストールする",async()=>{
+  const platform=new WindowsSandboxPlatform("human","project");
+  const run=vi.fn().mockResolvedValue("");
+  Object.defineProperty(platform,"broker",{value:{run}});
+  Object.defineProperty(platform,"identity",{value:{profile:"agent-profile"}});
+  await platform.installCli({managed:true,user:true,credential:true,claude:false,codex:true,pnpm:true,authenticated:false});
+  const args=run.mock.calls[0]![1] as string[];
+  const script=Buffer.from(args.at(-1)!,"base64").toString("utf16le");
+  expect(script).toContain("$env:NPM_CONFIG_PREFIX=Join-Path $env:APPDATA 'npm'");
+  expect(script).toContain("npm.cmd install --global @anthropic-ai/claude-code @openai/codex pnpm");
+  expect(script).not.toContain("Invoke-RestMethod");
+  expect(run.mock.calls.slice(1).map(call=>call[0])).toEqual(["claude","codex","pnpm"]);
+});
+
 it("safe.directory の大文字小文字・区切り・末尾を正規化する", () => {
   expect(normalizeSandboxPath("e:/Dev/Project/")).toBe(normalizeSandboxPath("E:\\dev\\project"));
 });

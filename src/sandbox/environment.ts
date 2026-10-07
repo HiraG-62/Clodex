@@ -18,7 +18,7 @@ export function buildAgentEnvironment(profile: string, machine: NodeJS.ProcessEn
   env.LOCALAPPDATA = win32.join(profile, "AppData", "Local");
   env.TEMP = win32.join(env.LOCALAPPDATA, "Temp");
   env.TMP = env.TEMP;
-  env.PATH = `${win32.join(profile, ".local", "bin")};${win32.join(appData, "npm")};${env.PATH ?? ""}`;
+  env.PATH = `${win32.join(appData, "npm")};${win32.join(profile, ".local", "bin")};${env.PATH ?? ""}`;
   env.PSMODULEPATH = `${win32.join(profile, "Documents", "WindowsPowerShell", "Modules")};${env.PROGRAMFILES ?? "C:\\Program Files"}\\WindowsPowerShell\\Modules;${env.SYSTEMROOT ?? "C:\\Windows"}\\System32\\WindowsPowerShell\\v1.0\\Modules`;
   for (const key of ["USERNAME", "USERDOMAIN", "COMPUTERNAME"]) if (identity[key]) env[key] = identity[key];
   delete env.HOME;

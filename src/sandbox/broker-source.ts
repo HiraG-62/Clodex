@@ -22,7 +22,7 @@ socket.on('connect',()=>send({type:'hello',token}));
 socket.on('error',cleanup);socket.on('end',cleanup);socket.on('close',()=>{cleanup();process.exit(0)});
 process.on('SIGTERM',cleanup);process.on('SIGINT',cleanup);
 function resolveCommand(command,args){
-  if(command==='claude')return [join(process.env.USERPROFILE,'.local','bin','claude.exe'),args];
+  if(command==='claude')return [join(process.env.APPDATA,'npm','node_modules','@anthropic-ai','claude-code','bin','claude.exe'),args];
   if(command==='codex')return [process.execPath,[join(process.env.APPDATA,'npm','node_modules','@openai','codex','bin','codex.js'),...args]];
   if(command==='pnpm'){
     const directory=join(process.env.APPDATA,'npm','node_modules','pnpm','bin');
@@ -60,7 +60,7 @@ createInterface({input:socket}).on('error',cleanup).on('line',line=>{
     children.set(m.id,child);child.stdin.on('error',()=>{});
     child.on('spawn',()=>send({type:'spawn',id:m.id}));
     child.stdout.on('data',data=>send({type:'stdout',id:m.id,data:data.toString('base64')}));
-    child.stderr.resume();
+    child.stderr.on('data',data=>send({type:'stderr',id:m.id,data:data.toString('base64')}));
     child.on('error',error=>send({type:'error',id:m.id,message:error.message}));
     child.on('close',code=>{children.delete(m.id);send({type:'exit',id:m.id,code})});
   }catch(error){send({type:'error',id:m.id,message:error.message});send({type:'exit',id:m.id,code:null})}

@@ -217,7 +217,7 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
     } catch { /* spike からの移行も管理者処理で検査する。 */ }
     try {
       await this.connect(false);
-      const output = await this.broker!.run("node", ["-e", "const f=require('node:fs'),p=require('node:path');console.log(JSON.stringify({claude:f.existsSync(p.join(process.env.USERPROFILE,'.local','bin','claude.exe')),codex:f.existsSync(p.join(process.env.APPDATA,'npm','node_modules','@openai','codex','bin','codex.js')),pnpm:['pnpm.cjs','pnpm.mjs'].some(name=>f.existsSync(p.join(process.env.APPDATA,'npm','node_modules','pnpm','bin',name)))}))"], this.identity!.profile);
+      const output = await this.broker!.run("node", ["-e", "const f=require('node:fs'),p=require('node:path');console.log(JSON.stringify({claude:f.existsSync(p.join(process.env.APPDATA,'npm','node_modules','@anthropic-ai','claude-code','bin','claude.exe')),codex:f.existsSync(p.join(process.env.APPDATA,'npm','node_modules','@openai','codex','bin','codex.js')),pnpm:['pnpm.cjs','pnpm.mjs'].some(name=>f.existsSync(p.join(process.env.APPDATA,'npm','node_modules','pnpm','bin',name)))}))"], this.identity!.profile);
       const cli = z.object({ claude: z.boolean(), codex: z.boolean(), pnpm: z.boolean() }).parse(JSON.parse(output));
       for (const command of ["claude", "codex", "pnpm"] as const) {
         if (cli[command]) try { await this.broker!.run(command, ["--version"], this.identity!.profile); } catch { cli[command] = false; }
@@ -297,10 +297,9 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
 
   async installCli(status: SetupStatus): Promise<void> {
     if (!this.broker || !this.identity) throw new Error(t("sandbox.disconnected"));
-    const script = [
-      ...(!status.claude ? ["& ([scriptblock]::Create((Invoke-RestMethod 'https://claude.ai/install.ps1')))"] : []),
-      ...(!status.codex || !status.pnpm ? [`$env:NPM_CONFIG_PREFIX=Join-Path $env:APPDATA 'npm'; & npm.cmd install --global @openai/codex pnpm; if($LASTEXITCODE -ne 0){throw ${psQuote(t("sandbox.installFailed"))}}`] : []),
-    ].join("; ");
+    const script = !status.claude || !status.codex || !status.pnpm
+      ? "$env:NPM_CONFIG_PREFIX=Join-Path $env:APPDATA 'npm'; & npm.cmd install --global @anthropic-ai/claude-code @openai/codex pnpm; exit $LASTEXITCODE"
+      : "";
     const INSTALL_TIMEOUT = 10 * 60_000;
     if (script) await this.broker.run(POWERSHELL, psArgs(script), this.identity.profile, INSTALL_TIMEOUT);
     for (const command of ["claude", "codex", "pnpm"]) await this.broker.run(command, ["--version"], this.identity.profile);
