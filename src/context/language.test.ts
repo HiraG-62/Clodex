@@ -25,5 +25,6 @@ describe("languageReminder", () => {
     const { languageReminder } = await import("./language.js");
     expect(languageReminder("ja")).toMatch(/^\[Clodex\] .*Japanese/);
     expect(languageReminder("en")).toContain("English");
+    expect(languageReminder("ja")).toContain("every progress note between tool calls");
   });
 });

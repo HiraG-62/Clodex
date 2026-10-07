@@ -13,7 +13,7 @@ describe("collectArtifacts", () => {
     const items: TimelineItem[] = [
       {
         kind: "turn", id: "t1", at: "1", agent: "claude", status: "completed", text: "証跡: C:\\home\\.clodex\\artifacts\\p\\shot.png を見て",
-        steps: [{ kind: "tool", name: "Edit", input: "", files: ["C:\\dev\\app\\src\\a.ts"] }, { kind: "say", text: "途中 ./out/diagram.webp" }],
+        steps: [{ kind: "tool", name: "Edit", input: "", files: ["C:\\dev\\app\\src\\a.ts"] }, { kind: "say", text: "途中 ./out/diagram.webp", at: "" }],
       },
       { kind: "message", id: "m1", at: "2", message: message(["src/b.ts", "C:/dev/app/src/a.ts"], "画像は docs/fig.PNG") },
       { kind: "human", id: "h", at: "3", agent: "claude", text: "x.png" },

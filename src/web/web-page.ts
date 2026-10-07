@@ -15,7 +15,7 @@ import { clientMain } from "./client/client-main.js";
 import { createInputAssist } from "./client/input-assist.js";
 import { collectArtifacts, displayPath, findImagePaths, splitImagePaths } from "./client/artifacts.js";
 import { renderMarkdown } from "./client/markdown.js";
-import { applyFeedItem, rebuildTimeline, withStartingTurns } from "./client/timeline.js";
+import { applyFeedItem, rebuildTimeline, withStartingTurns, workingFeed } from "./client/timeline.js";
 import { composeInputLine } from "./client/compose-input.js";
 import { isSendKey } from "./client/send-key.js";
 import { fitView, zoomView } from "./client/image-zoom.js";
@@ -328,13 +328,14 @@ const STYLE = `
     padding: 18px; overflow-y: auto; }
   .working-panel-head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin-bottom: 12px; }
   .working-panel-head button { border: 0; background: transparent; color: var(--muted); font-size: 18px; }
-  .working-list { display: grid; gap: 8px; }
-  .working-entry { display: grid; gap: 5px; width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 8px;
-    background: var(--bg); padding: 10px; font-size: 12px; }
-  .working-entry .name { font-weight: 600; color: var(--fg); }
-  .working-entry .work { color: var(--fg-2); overflow-wrap: anywhere; }
-  .working-entry .plan { color: var(--muted); overflow-wrap: anywhere; }
-  .working-entry .elapsed { color: var(--muted); font-family: var(--font-mono); }
+  .working-list { display: grid; gap: 6px; }
+  .working-head { display: flex; align-items: baseline; gap: 8px; width: 100%; min-width: 0; text-align: left; border: 0;
+    border-top: 1px solid var(--line); background: transparent; padding: 10px 0 2px; font-size: 12px; }
+  .working-list > .working-head:first-child { border-top: 0; padding-top: 0; }
+  .working-head .name { font-weight: 600; flex: none; }
+  .working-head .plan { color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .working-head .elapsed { color: var(--muted); font-family: var(--font-mono); flex: none; margin-left: auto; }
+  .working-say { color: var(--fg-2); font-size: 13px; overflow-wrap: anywhere; border-left: 2px solid var(--line-strong); padding-left: 10px; }
 
   .app { display: grid; height: 100%; max-width: ${WEB_LAYOUT.sideWidth + WEB_LAYOUT.chatMaxWidth}px; margin: 0 auto; min-width: 0;
     grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto;
@@ -344,7 +345,6 @@ const STYLE = `
     .handoff { grid-template-columns: 22px minmax(0, 1fr); column-gap: 12px; }
     .handoff > :not(.route) { grid-column: 2; }
     .handoff > .route { grid-column: 1 / -1; }
-    .working-entry .plan { grid-column: auto; }
     .sheet { align-items: center; justify-items: center; }
     .sheet-panel { border-radius: 14px; max-height: 85vh; max-width: 640px; padding-bottom: 20px; }
     .sheet-panel.wide { max-width: 960px; }
@@ -813,6 +813,7 @@ const FUNCTIONS = `
   renderMarkdown: ${inlineScript(renderMarkdown.toString())},
   applyFeedItem: ${inlineScript(applyFeedItem.toString())},
   rebuildTimeline: ${inlineScript(rebuildTimeline.toString())},
+  workingFeed: ${inlineScript(workingFeed.toString())},
   withStartingTurns: ${inlineScript(withStartingTurns.toString())},
   resolvePendingSettings: ${inlineScript(resolvePendingSettings.toString())},
   isNavigationCommand: ${inlineScript(isNavigationCommand.toString())},

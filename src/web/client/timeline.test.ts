@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "../../agents/agent-adapter.js";
 import type { FeedItem } from "../web-feed.js";
-import { rebuildTimeline, applyFeedItem, withStartingTurns, type TimelineItem } from "./timeline.js";
+import { rebuildTimeline, applyFeedItem, withStartingTurns, workingFeed, type TimelineItem } from "./timeline.js";
 
 const AT = "2026-10-05T12:00:00.000Z";
 let seq = 0;
-const agent = (name: "claude" | "codex", event: AgentEvent): FeedItem =>
-  ({ type: "event", seq: ++seq, event: { kind: "agent", agent: name, event, at: AT } });
+const agent = (name: "claude" | "codex", event: AgentEvent, at = AT): FeedItem =>
+  ({ type: "event", seq: ++seq, event: { kind: "agent", agent: name, event, at } });
 const human = (name: "claude" | "codex", text: string): FeedItem =>
   ({ type: "event", seq: ++seq, event: { kind: "human", agent: name, text, at: AT } });
 const output = (text: string): FeedItem => ({ type: "output", seq: ++seq, text });
@@ -68,7 +68,7 @@ describe("applyFeedItem", () => {
       {
         kind: "turn", id: expect.any(String), at: AT, agent: "claude", status: "completed", text: "直しました。",
         // 最初の発言は方針。最終応答と同じ最後の発言は作業から外す
-        plan: "確認します。",
+        plan: "確認します。", planAt: AT,
         steps: [{ kind: "tool", name: "Read", input: "a.ts" }],
       },
     ]);
@@ -214,4 +214,41 @@ it("同じ Agent のターンが始まったら、その Agent の作業中の�
   ]);
   const turns = items.flatMap((item) => item.kind === "turn" ? [`${item.agent}:${item.status}`] : []);
   expect(turns).toEqual(["claude:interrupted", "codex:working", "claude:completed"]);
+});
+
+describe("workingFeed", () => {
+  const at = (second: number) => `2026-10-05T12:00:${String(second).padStart(2, "0")}.000Z`;
+  it("作業中のターンの発言を時系列に並べ、ターンが変わるところに見出しを挟む（方針の直前の見出しには方針を重ねない）", () => {
+    const items = run([
+      agent("claude", { type: "turn_started" }, at(0)),
+      agent("claude", { type: "text", text: "設計する" }, at(1)),
+      agent("codex", { type: "turn_started" }, at(2)),
+      agent("codex", { type: "text", text: "実装する" }, at(3)),
+      agent("claude", { type: "tool", name: "Read", input: "a.ts" }, at(4)),
+      agent("claude", { type: "text", text: "読んだ" }, at(5)),
+      agent("codex", { type: "text", text: "テストを書いた" }, at(6)),
+      agent("codex", { type: "text", text: "通った" }, at(7)),
+    ]);
+    const [claude, codex] = items;
+    expect(workingFeed(items)).toEqual([
+      { kind: "head", turnId: claude!.id, agent: "claude", at: at(0) },
+      { kind: "say", agent: "claude", text: "設計する" },
+      { kind: "head", turnId: codex!.id, agent: "codex", at: at(2) },
+      { kind: "say", agent: "codex", text: "実装する" },
+      { kind: "head", turnId: claude!.id, agent: "claude", at: at(0), plan: "設計する" },
+      { kind: "say", agent: "claude", text: "読んだ" },
+      { kind: "head", turnId: codex!.id, agent: "codex", at: at(2), plan: "実装する" },
+      { kind: "say", agent: "codex", text: "テストを書いた" },
+      { kind: "say", agent: "codex", text: "通った" },
+    ]);
+  });
+  it("発言の無いターンは見出しだけ、終わったターンは出さない", () => {
+    const items = run([
+      agent("codex", { type: "turn_started" }, at(0)),
+      agent("codex", { type: "text", text: "完了" }, at(1)),
+      agent("codex", { type: "turn", result: { status: "completed", text: "完了" } }, at(2)),
+      agent("claude", { type: "turn_started" }, at(3)),
+    ]);
+    expect(workingFeed(items)).toEqual([{ kind: "head", turnId: items[1]!.id, agent: "claude", at: at(3) }]);
+  });
 });

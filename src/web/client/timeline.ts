@@ -5,7 +5,7 @@ import type { UserQuestion } from "../../protocol/questions.js";
 import type { AgentMessage } from "../../protocol/messages.js";
 import type { FeedItem, HistoryItem } from "../web-feed.js";
 
-export type TimelineStep = { kind: "say"; text: string } | { kind: "tool"; name: string; input: string; files?: string[] };
+export type TimelineStep = { kind: "say"; text: string; at: string } | { kind: "tool"; name: string; input: string; files?: string[] };
 
 export type TimelineItem =
   | { kind: "question"; id: string; at: string; agent: AgentId; questions: UserQuestion[]; answers?: string[][] }
@@ -14,6 +14,7 @@ export type TimelineItem =
     kind: "turn"; id: string; at: string; agent: AgentId;
     status: "working" | TurnResult["status"]; steps: TimelineStep[]; text: string;
     plan?: string; // ターンの最初の発言（方針。DESIGN.md §17 ログ）
+    planAt?: string;
   }
   | { kind: "message"; id: string; at: string; message: AgentMessage; envelope?: string }
   | { kind: "notice"; id: string; at: string; text: string }
@@ -91,8 +92,8 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
     }
     case "text":
       return updateTurn((turn) => (turn.plan === undefined
-        ? { ...turn, plan: agentEvent.text }
-        : { ...turn, steps: [...turn.steps, { kind: "say", text: agentEvent.text }] }));
+        ? { ...turn, plan: agentEvent.text, planAt: at }
+        : { ...turn, steps: [...turn.steps, { kind: "say", text: agentEvent.text, at }] }));
     case "tool":
       return updateTurn((turn) => ({ ...turn, steps: [...turn.steps, { kind: "tool", name: agentEvent.name, input: agentEvent.input, ...(agentEvent.files ? { files: agentEvent.files } : {}) }] }));
     case "turn":
@@ -103,7 +104,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
         const steps = last?.kind === "say" && last.text.trim() === text.trim() ? turn.steps.slice(0, -1) : turn.steps;
         // 発言が最終応答だけなら、方針として重ねて出さない
         if (turn.plan !== undefined && turn.plan.trim() === text.trim()) {
-          const { plan: _same, ...rest } = turn;
+          const { plan: _same, planAt: _sameAt, ...rest } = turn;
           return { ...rest, status, text, steps };
         }
         return { ...turn, status, text, steps };
@@ -115,6 +116,38 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
     default:
       return items;
   }
+}
+
+export type WorkingEntry =
+  | { kind: "head"; turnId: string; agent: AgentId; at: string; plan?: string }
+  | { kind: "say"; agent: AgentId; text: string };
+
+// 作業中パネル（DESIGN.md §28 作業中の表示）: 作業中のターンの発言を時系列に並べ、発言のターンが変わるところに見出しを挟む
+export function workingFeed(items: readonly TimelineItem[]): WorkingEntry[] {
+  type Turn = Extract<TimelineItem, { kind: "turn" }>;
+  const turns = items.filter((item): item is Turn => item.kind === "turn" && item.status === "working");
+  const says = turns.flatMap((turn) => [
+    ...(turn.plan === undefined ? [] : [{ turn, text: turn.plan, at: turn.planAt ?? turn.at }]),
+    ...turn.steps.flatMap((step) => step.kind === "say" ? [{ turn, text: step.text, at: step.at }] : []),
+  ]);
+  // 発言の無いターンは開始の位置に見出しだけを置く
+  const events: Array<{ turn: Turn; at: string; text?: string }> = [
+    ...says,
+    ...turns.filter((turn) => !says.some((say) => say.turn === turn)).map((turn) => ({ turn, at: turn.at })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+  const entries: WorkingEntry[] = [];
+  let current: Turn | undefined;
+  for (const event of events) {
+    if (event.turn !== current) {
+      const { id, agent, at, plan } = event.turn;
+      // 直後の発言が方針そのものなら、見出しには重ねて出さない
+      const showPlan = plan !== undefined && event.text !== plan;
+      entries.push({ kind: "head", turnId: id, agent, at, ...(showPlan ? { plan } : {}) });
+      current = event.turn;
+    }
+    if (event.text !== undefined) entries.push({ kind: "say", agent: event.turn.agent, text: event.text });
+  }
+  return entries;
 }
 
 export function rebuildTimeline(history: readonly HistoryItem[], apply: typeof applyFeedItem): TimelineItem[] {

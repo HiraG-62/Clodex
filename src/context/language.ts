@@ -12,7 +12,7 @@ export const detectLanguage = (locale: string = Intl.DateTimeFormat().resolvedOp
 
 // 毎回の人の入力の末尾に添える 1 行。直近の指示ほど強く効くので、長い会話でも言語がずれないようにする
 export const languageReminder = (language: Language): string =>
-  `[Clodex] Write your reply and progress notes in ${LANGUAGE_NAMES[language]}.`;
+  `[Clodex] Write your reply and every progress note between tool calls in ${LANGUAGE_NAMES[language]}.`;
 
 export const languageDirective = (language: Language): string =>
   `Write everything the human may read in ${LANGUAGE_NAMES[language]}: the short plan before you start, ` +

@@ -8,7 +8,7 @@ import type { AgentState } from "../../cli/shell.js";
 import type { isShellInput as IsShellInput } from "./shell-input.js";
 import type { FeedItem, HistoryItem, HistoryPage, WebState } from "../web-feed.js";
 import type { renderMarkdown as RenderMarkdown } from "./markdown.js";
-import type { TimelineItem, DisplayTimelineItem, withStartingTurns as WithStartingTurns, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline } from "./timeline.js";
+import type { TimelineItem, DisplayTimelineItem, withStartingTurns as WithStartingTurns, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline, workingFeed as WorkingFeed } from "./timeline.js";
 import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
 import type { isSendKey as IsSendKey, SendKey } from "./send-key.js";
 import type { fitView as FitView, zoomView as ZoomView } from "./image-zoom.js";
@@ -29,6 +29,7 @@ export interface ClientDeps {
   renderMarkdown: typeof RenderMarkdown;
   applyFeedItem: typeof ApplyFeedItem;
   rebuildTimeline: typeof RebuildTimeline;
+  workingFeed: typeof WorkingFeed;
   composeInputLine: typeof ComposeInputLine;
   isSendKey: typeof IsSendKey;
   fitView: typeof FitView;
@@ -46,7 +47,7 @@ export interface ClientDeps {
 }
 
 export function clientMain({
-  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
+  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -614,25 +615,28 @@ export function clientMain({
     workingToggle.hidden = active.length === 0;
     if (!active.length) { workingPanel.hidden = true; workingToggle.setAttribute("aria-expanded", "false"); }
     const list = $("#working-list");
-    list.replaceChildren(...active.map((item) => {
-      const last = item.steps.at(-1);
-      const work = last?.kind === "say" ? last.text : last?.kind === "tool" ? `${last.name}: ${last.input}` : t("web.turn.working");
-      const button = el("button", "working-entry") as HTMLButtonElement;
+    const following = workingPanel.scrollHeight - workingPanel.scrollTop - workingPanel.clientHeight < NEAR_BOTTOM_PX;
+    list.replaceChildren(...workingFeed(items).map((entry) => {
+      if (entry.kind === "say") {
+        const say = el("div", "working-say md");
+        say.innerHTML = renderMarkdown(entry.text);
+        return say;
+      }
+      const button = el("button", "working-head") as HTMLButtonElement;
       button.type = "button";
-      button.append(el("span", `name c-${item.agent}`, AGENTS[item.agent].name));
-      if (item.plan) button.append(el("span", "plan", item.plan.split("\n", 1)[0] ?? ""));
-      button.append(el("span", "work", work.split("\n", 1)[0] ?? ""));
-      const elapsed = el("span", "elapsed", elapsedText(item.at));
-      elapsed.dataset.start = item.at;
+      button.append(el("span", `name c-${entry.agent}`, AGENTS[entry.agent].name));
+      if (entry.plan) button.append(el("span", "plan", (entry.plan.split("\n", 1)[0] ?? "").replace(/`/g, "")));
+      const elapsed = el("span", "elapsed", elapsedText(entry.at));
+      elapsed.dataset.start = entry.at;
       button.append(elapsed);
       button.addEventListener("click", () => {
         workingPanel.hidden = true;
         workingToggle.setAttribute("aria-expanded", "false");
-        rendered.get(item.id)?.node.scrollIntoView({ behavior: "smooth", block: "center" });
+        rendered.get(entry.turnId)?.node.scrollIntoView({ behavior: "smooth", block: "center" });
       });
       return button;
     }));
-    if (!active.length) list.append(el("p", "muted small", t("web.working.empty")));
+    if (following) workingPanel.scrollTop = workingPanel.scrollHeight;
   };
   workingToggle.addEventListener("click", () => {
     workingPanel.hidden = !workingPanel.hidden;

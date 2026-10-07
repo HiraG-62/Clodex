@@ -85,6 +85,16 @@ describe("buildWebPage", () => {
     expect(zoomView({ scale: 1, x: 0, y: 0 }, 2, { x: 0, y: 0 }).scale).toBe(2);
   });
 
+  it("作業中パネルは発言を時系列に並べる関数を埋め込んで描く", () => {
+    const { html } = buildWebPage("ja");
+    const script = scriptsOf(html)[1]!;
+    const deps = script.slice(script.lastIndexOf("workingFeed:"), script.lastIndexOf("withStartingTurns:"));
+    expect(runInNewContext(`({${deps}}).workingFeed`)([])).toEqual([]);
+    expect(html).toContain("list.replaceChildren(...workingFeed(items).map((entry) => {");
+    expect(html).toContain('el("div", "working-say md")');
+    expect(html).not.toContain("working-entry");
+  });
+
   it("コマンド入力の色・ラベル・切り替え処理をページに含める", () => {
     const { html } = buildWebPage("ja");
     expect(html).not.toContain('id="shell-input-label"');
