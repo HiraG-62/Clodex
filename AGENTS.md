@@ -10,6 +10,9 @@ Claude Code と Codex CLI を Windows ネイティブ環境で協調させる薄
 - CLI の挙動に依存する変更は、推測で実装せず `spikes/` で実測し、結果を `docs/spikes/` に記録する
 - `any` は使わない。マジックナンバー・文字列は定数にする。早期リターンでネストを浅く保つ
 - コミットメッセージは `<type>: <概要>`（type: feat, fix, refactor, docs, style, test, chore）。1 コミット = 1 つの論理的変更
+- GUI のリリース（DESIGN.md §28 GUI の自動更新）: dev 版は master への push で CI が自動で公開する。版の変更と tag の作成はしない
+- 本番リリースは人が指示したときだけ行う。`package.json` の `version` を上げてコミットし、`v<version>` の tag を作る（push は人が行う）
+- 公開済みの tag は付け直さない・消さない。CI が失敗したら版を上げて出し直す
 
 ## コマンド
 
