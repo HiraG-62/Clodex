@@ -10,6 +10,7 @@ import type { FeedItem, HistoryItem, HistoryPage, WebState } from "../web-feed.j
 import type { renderMarkdown as RenderMarkdown } from "./markdown.js";
 import type { TimelineItem, DisplayTimelineItem, withStartingTurns as WithStartingTurns, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline } from "./timeline.js";
 import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
+import type { isSendKey as IsSendKey, SendKey } from "./send-key.js";
 import type { SlashCommand } from "../../cli/commands.js";
 import type { Suggestion, createInputAssist as CreateInputAssist } from "./input-assist.js";
 import type { collectArtifacts as CollectArtifacts, displayPath as DisplayPath, findImagePaths as FindImagePaths } from "./artifacts.js";
@@ -28,6 +29,7 @@ export interface ClientDeps {
   applyFeedItem: typeof ApplyFeedItem;
   rebuildTimeline: typeof RebuildTimeline;
   composeInputLine: typeof ComposeInputLine;
+  isSendKey: typeof IsSendKey;
   createInputAssist: typeof CreateInputAssist;
   collectArtifacts: typeof CollectArtifacts;
   findImagePaths: typeof FindImagePaths;
@@ -40,7 +42,7 @@ export interface ClientDeps {
 }
 
 export function clientMain({
-  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, composeInputLine, createInputAssist, collectArtifacts, findImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
+  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, composeInputLine, isSendKey, createInputAssist, collectArtifacts, findImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -85,6 +87,8 @@ export function clientMain({
   const REFERENCES_SEPARATOR = "\n\nReferenced files:\n";
   const ARTIFACT_LABEL: Record<"changed" | "referenced" | "image", MessageKey> = { changed: "web.artifact.changed", referenced: "web.artifact.referenced", image: "web.artifact.image" };
   const THEME_KEY = "clodex-theme";
+  const SEND_KEY_KEY = "clodex-send-key";
+  const SEND_KEYS: readonly SendKey[] = ["enter", "ctrlEnter"];
   const DETAIL_KEY = "clodex-detail";
 
   const $ = <T extends HTMLElement>(selector: string) => document.querySelector(selector) as T;
@@ -256,6 +260,7 @@ export function clientMain({
     else document.documentElement.setAttribute("data-theme", theme);
   };
   let theme = (THEMES as readonly string[]).includes(storage.get(THEME_KEY) ?? "") ? storage.get(THEME_KEY) as Theme : "system";
+  let sendKey: SendKey = (SEND_KEYS as readonly string[]).includes(storage.get(SEND_KEY_KEY) ?? "") ? storage.get(SEND_KEY_KEY) as SendKey : "enter";
   applyTheme(theme);
   const THEME_ICON: Record<Theme, string> = { system: "monitor", light: "sun", dark: "moon" };
   const syncThemeButton = (button: HTMLButtonElement, text: boolean) => {
@@ -1395,7 +1400,11 @@ export function clientMain({
     reset.addEventListener("click", () => void send("/limits reset", reset));
     limits.append(reset);
     const language = settingsChoice("language", t("web.settings.language"), ["ja", "en"] as const, state.language, value => value === "ja" ? "日本語" : "English");
-    openSheet(t("web.settings.title"), [sandbox, limits, language]);
+    // 端末ごとの設定なので Hub には送らない。スマホは常に Enter で改行するので出さない
+    const sendKeyChoice = choice("sendKey", t("web.settings.sendKey"), SEND_KEYS, sendKey,
+      value => t(value === "enter" ? "web.settings.sendEnter" : "web.settings.sendCtrlEnter"),
+      value => { sendKey = value; storage.set(SEND_KEY_KEY, value); });
+    openSheet(t("web.settings.title"), mobile.matches ? [sandbox, limits, language] : [sandbox, limits, language, sendKeyChoice]);
     refreshOpenSheet();
   };
 
@@ -1809,7 +1818,7 @@ export function clientMain({
   input.addEventListener("keyup", (e) => {
     if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) updateSuggest();
   });
-  // PC は Enter で送信。スマホは Enter で改行し、送信はボタン（日本語入力の誤送信を防ぐ）
+  // PC は送信キーの設定で送信。スマホは Enter で改行し、送信はボタン（日本語入力の誤送信を防ぐ）
   input.addEventListener("keydown", (e) => {
     if (e.isComposing) return;
     if (suggestion) {
@@ -1819,7 +1828,8 @@ export function clientMain({
         selected = (selected + (e.key === "ArrowDown" ? 1 : count - 1)) % count;
         return renderSuggest();
       }
-      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !mobile.matches)) {
+      // Enter は候補を確定しない（入力のまま送れるように）
+      if (e.key === "Tab") {
         e.preventDefault();
         return accept(selected);
       }
@@ -1829,7 +1839,7 @@ export function clientMain({
         return closeSuggest();
       }
     }
-    if (mobile.matches || e.key !== "Enter" || e.shiftKey) return;
+    if (!isSendKey(e, sendKey, mobile.matches)) return;
     e.preventDefault();
     void submit();
   });

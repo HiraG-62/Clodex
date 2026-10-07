@@ -17,6 +17,7 @@ import { collectArtifacts, displayPath, findImagePaths } from "./client/artifact
 import { renderMarkdown } from "./client/markdown.js";
 import { applyFeedItem, rebuildTimeline, withStartingTurns } from "./client/timeline.js";
 import { composeInputLine } from "./client/compose-input.js";
+import { isSendKey } from "./client/send-key.js";
 import { isShellInput } from "./client/shell-input.js";
 import { chooseProjectPath } from "./client/project-picker.js";
 import { updateDesktopNotify } from "./client/desktop-notify.js";
@@ -781,6 +782,7 @@ const FUNCTIONS = `
   isNavigationCommand: ${inlineScript(isNavigationCommand.toString())},
   nextCommandStarts: ${inlineScript(nextCommandStarts.toString())},
   composeInputLine: ${inlineScript(composeInputLine.toString())},
+  isSendKey: ${inlineScript(isSendKey.toString())},
   createInputAssist: ${inlineScript(createInputAssist.toString())},
   collectArtifacts: ${inlineScript(collectArtifacts.toString())},
   findImagePaths: ${inlineScript(findImagePaths.toString())},
