@@ -16,12 +16,11 @@ GUI の終了時に、GUI が起動した Hub を停止する。既に動いて�
 
 GUI は起動時とトレイの「更新を確認」で、GitHub Releases の `latest.json` を確認する。新しい版があれば確認のダイアログを出し、「更新」でダウンロードして署名を検証する。その後、GUI が起動した Hub を止めて、インストーラーを passive で実行する。インストールが終わると GUI が起動し直す。
 
-公開の手順:
+公開は `.github/workflows/release.yml` が Windows でビルドし、インストーラー・`.sig`・`latest.json` を Release に上げる。
 
-1. `package.json` の `version` を上げて commit する（`tauri.conf.json` はこの版を使う）
-2. `git tag v<version>` を作り、commit と tag を push する
-3. `.github/workflows/release.yml` が Windows でビルドし、インストーラー・`.sig`・`latest.json` を Release に上げる
+- dev: master に push するだけ（`docs/**` と `*.md` だけの変更は除く）。版は CI が `package.json` の次のパッチに `-dev.<実行番号>` を付けて決める（`0.1.1` → `0.1.2-dev.57`）。prerelease なので公開版の GUI には届かない。dev の prerelease は新しい 3 件だけ残る
+- 本番: `package.json` の `version` を上げて commit し（`tauri.conf.json` はこの版を使う）、`git tag v<version>` を作って commit と tag を push する
 
-自分の環境だけで試す版は、`0.1.1-dev.1` のように版に `-` を付けて同じ手順で公開する。この版は prerelease になり、公開版の GUI には届かない。`~/.clodex/config.json` に `"updateChannel": "dev"` を書いた GUI は、prerelease の `dev` にある `latest.json` を見て、dev 版と正式版のうち最新のものを受け取る。
+`~/.clodex/config.json` に `"updateChannel": "dev"` を書いた GUI は、prerelease の `dev` にある `latest.json` を見て、dev 版と本番の版のうち最新のものを受け取る。
 
 署名の秘密鍵は GitHub の Secret の `TAURI_SIGNING_PRIVATE_KEY`（パスワードは `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）に置く。公開鍵は `tauri.conf.json` の `plugins.updater.pubkey`。更新用の成果物は `tauri.release.conf.json` を渡したときだけ作るため、手元の `pnpm gui:build` に秘密鍵は要らない。

@@ -1,12 +1,20 @@
-# tag v* の push で GUI をビルドし、更新用の latest.json とともに GitHub Releases に公開する（DESIGN.md §28 GUI の自動更新）。
+# GUI をビルドし、更新用の latest.json とともに GitHub Releases に公開する（DESIGN.md §28 GUI の自動更新）。
+# 本番は tag v* の push、dev は master への push で公開する。
 name: release
 
 on:
   push:
     tags: ['v*']
+    branches: [master]
+    paths-ignore: ['docs/**', '**/*.md']
 
 permissions:
   contents: write
+
+# 古い dev の build が後から latest.json を戻さないよう、新しい push が来たら止める。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
 
 jobs:
   release:
@@ -24,9 +32,10 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: gui/src-tauri
-      - name: tag と package.json の版の一致を確認
+      - name: 公開する版を決める
+        id: version
         shell: bash
-        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+        run: echo "version=$(node scripts/release-version.mjs "$GITHUB_REF_TYPE" "$GITHUB_REF_NAME" "$GITHUB_RUN_NUMBER")" >> "$GITHUB_OUTPUT"
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: node scripts/stage-gui-runtime.mjs
@@ -41,14 +50,26 @@ jobs:
           tauriScript: node ${{ github.workspace }}/node_modules/@tauri-apps/cli/tauri.js
           # tauri の CLI は --config の相対パスを gui/ から解決しないため、絶対パスで渡す。
           args: --config ${{ github.workspace }}\gui\src-tauri\tauri.release.conf.json
-          tagName: ${{ github.ref_name }}
-          releaseName: Clodex ${{ github.ref_name }}
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          tagName: v${{ steps.version.outputs.version }}
+          releaseName: Clodex v${{ steps.version.outputs.version }}
+          commitish: ${{ github.sha }}
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
       - name: dev のチャンネルに latest.json を上げる
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ steps.version.outputs.version }}
         run: |
-          gh release download "$GITHUB_REF_NAME" --pattern latest.json --dir dev-channel
+          gh release download "$TAG" --pattern latest.json --dir dev-channel
           gh release view dev > /dev/null 2>&1 || gh release create dev --prerelease --title "Clodex dev" --notes "dev チャンネルの latest.json"
           gh release upload dev dev-channel/latest.json --clobber
+      - name: 古い dev の prerelease を消す
+        if: github.ref_type == 'branch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEEP: 3
+        run: |
+          gh release list --limit 100 --json tagName,isPrerelease,createdAt \
+            --jq "[.[] | select(.isPrerelease and (.tagName | test(\"^v.+-dev[.]\")))] | sort_by(.createdAt) | reverse | .[$KEEP:] | .[].tagName" |
+            while read -r tag; do gh release delete "$tag" --yes --cleanup-tag; done
