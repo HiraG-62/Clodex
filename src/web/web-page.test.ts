@@ -112,6 +112,14 @@ describe("buildWebPage", () => {
     expect(body).not.toContain('id="path"');
   });
 
+  it("初回の Agent と会話の skeleton に情報の形を持たせる", () => {
+    const html = buildWebPage("ja").html;
+    const body = html.slice(html.indexOf("<body>"), html.indexOf("<script>"));
+    expect(body.match(/class="strip-skeleton"/g)).toHaveLength(2);
+    expect(body.match(/class="conv-skeleton"/g)).toHaveLength(3);
+    expect(body).toContain('class="sk sk-state"');
+  });
+
   it("PC ではシートを画面中央のモーダルとして表示する", () => {
     const { html } = buildWebPage("ja");
     const desktopCss = html.split("@media (min-width: 900px) and (hover: hover) and (pointer: fine)")[1]

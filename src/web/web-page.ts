@@ -447,14 +447,69 @@ const STYLE = `
   .sk-lines .sk:first-child { width: 120px; }
   .sk-lines .sk:last-child { width: 64%; }
   .sk-row:nth-child(2) { width: 80%; }
-  .initial-loading #agents::before, .initial-loading #agents::after, .initial-loading #conversations::before { content: ""; display: block; height: 70px; border-radius: var(--r); background: linear-gradient(90deg,var(--sunken),var(--line),var(--sunken)); background-size: 220% 100%; animation: shimmer 1.5s infinite; }
-  .initial-loading #conversations::before { height: 180px; mask-image: repeating-linear-gradient(to bottom,#000 0 15px,transparent 15px 35px); }
   .setting-pending { color: var(--muted); font-size: 11px; display: flex; gap: 6px; align-items: center; margin: 6px 0; }
   .setting-chip.pending { box-shadow: var(--ring-strong); }
   .starting-turn .body { display: flex; gap: 8px; align-items: center; color: var(--muted); }
   .output-clock { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; }
   @keyframes progress { from { transform: translateX(-100%); } to { transform: translateX(350%); } }
   @keyframes shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+
+  .count { background: var(--fg); color: var(--bg); box-shadow: 0 0 0 2px var(--panel); font-weight: 600; }
+  #question-toggle .count { background: var(--crit); color: #fff; }
+  .strip-well { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-column: 1 / -1; gap: 2px; padding: 2px; background: var(--sunken); border-radius: 12px; min-width: 0; }
+  .agent-strip .agent { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) 136px auto; grid-template-areas: none; gap: 10px; padding: 7px 8px 7px 10px; align-items: center; min-height: 52px; border-radius: 10px; background: transparent; box-shadow: none; }
+  .agent-strip .agent.busy { background: var(--panel); box-shadow: var(--ring); }
+  .agent-strip .agent.busy::after { content: ""; position: absolute; inset: auto 0 0; height: 1px; background: linear-gradient(90deg,transparent,var(--agent),transparent); }
+  .strip-who { min-width: 0; }
+  .agent-strip h2 { grid-area: auto; display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; font-size: 13px; line-height: 20px; }
+  .agent-strip h2 .state { margin-left: 0; padding: 0; border-radius: 0; background: transparent; font-weight: 400; font-size: 11.5px; gap: 5px; }
+  .agent-strip .state.working::after { display: none; }
+  .agent-strip .state .elapsed { font-size: 10.5px; }
+  .strip-summary { display: flex; gap: 4px; width: 100%; min-width: 0; padding: 0; border: 0; border-radius: var(--r-inner); background: transparent; color: var(--muted); font: 11.5px/1.4 var(--font-mono); text-align: left; }
+  .strip-summary > span { flex: none; white-space: nowrap; }
+  .strip-summary .model { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .strip-summary .permission-full { color: var(--warn); }
+  .strip-summary.pending { box-shadow: var(--ring); }
+  .agent-strip .mini-gauges, .agent-strip .links { grid-area: auto; }
+  .agent-strip .mini-gauges { grid-template-columns: minmax(0, 1fr); }
+  .agent-strip .gauge { grid-template-columns: 30px minmax(0, 1fr) 30px; }
+  .agent-strip .gauge .v { grid-column: 3; }
+  .agent-strip .gauge .track { grid-column: 2; grid-row: 1; }
+  .agent-strip .track > i { background: var(--fg-2); }
+  .question.claude { --accent: var(--claude); } .question.codex { --accent: var(--codex); }
+  .question-card { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .question-card-title { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+  .question-card-title .i { width: 14px; height: 14px; color: var(--warn); }
+  .question-text { font-weight: 600; }
+  .question-option { display: grid; grid-template-columns: 6px minmax(0, 1fr); column-gap: 10px; }
+  .question-option::before { content: ""; width: 6px; height: 6px; border-radius: 1px; background: var(--muted); opacity: .5; grid-column: 1; grid-row: 1; align-self: center; }
+  .question-option > * { grid-column: 2; }
+  .question-option.selected::before { background: var(--accent); opacity: 1; }
+  .question-option.selected > :first-child::before { display: none; }
+  .question-footer { display: flex; gap: 8px; align-items: stretch; }
+  .question-footer .question-other { flex: 1; min-width: 0; }
+  .question-footer .question-submit { flex: none; }
+
+  .strip-skeleton { display: grid; grid-template-columns: 22px minmax(0, 1fr) 136px; align-items: center; gap: 10px; min-height: 56px; padding: 8px 10px; background: var(--panel); border-radius: 10px; }
+  .sk-identity { display: grid; gap: 8px; }
+  .sk-identity > div { display: flex; align-items: center; gap: 12px; }
+  .sk-name { width: 60px; }
+  .sk-state { width: 50px; height: 18px; border-radius: var(--r-pill); }
+  .sk-settings { width: 90%; }
+  .sk-gauges { display: grid; gap: 7px; }
+  .sk-gauges .sk { height: 4px; }
+  .conv-skeleton { display: grid; gap: 7px; padding: 12px 10px; }
+  .conv-skeleton .sk:first-child { width: 80%; }
+  .conv-skeleton .sk:last-child { width: 50%; height: 8px; }
+  .conv-skeleton:nth-child(2) .sk:first-child { width: 65%; }
+  .conv-skeleton:nth-child(3) .sk:first-child { width: 72%; }
+  .initial-loading #project-name { width: 68px; height: 10px; border-radius: var(--r-inner); background: linear-gradient(90deg,var(--sunken),var(--line),var(--sunken)); background-size: 220% 100%; animation: shimmer 1.5s infinite; }
+  .starting-turn .head .elapsed { margin-left: auto; }
+  .starting-turn .state { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; background: var(--sunken); border-radius: var(--r-pill); }
+  .starting-turn .state::before { content: ""; width: 9px; height: 9px; border: 1px dashed var(--muted); border-radius: 50%; animation: spin .8s linear infinite; }
+  .starting-turn .body { display: grid; gap: 9px; padding: 12px; background: var(--sunken); border-radius: var(--r-outer); }
+  .starting-turn .body .sk:first-child { width: 65%; }
+  .starting-turn .body .sk:last-child { width: 42%; }
 `;
 
 const escapeHtml = (text: string) =>
@@ -474,7 +529,7 @@ ${UI_ICONS}
     <div class="project-pill" id="project-pill">${icon("folder")}<span id="project-name"></span>${icon("chevron-down")}<select id="projects" aria-label="${m("web.top.projects")}"></select></div>
     ${button("open-project", "folder-open", "web.top.openProject")}
     <div class="header-tray tray">
-      <div class="working-tabs">${button("question-toggle", "question", "web.question.title", "working-tab", 'hidden')}<button class="icon-btn working-tab" id="working-toggle" type="button" aria-expanded="false" aria-label="${m("web.working.title")}" title="${m("web.working.title")}" hidden>${icon("activity")}<span class="count" id="working-count">0</span></button></div>
+      <div class="working-tabs"><button class="icon-btn working-tab" id="working-toggle" type="button" aria-expanded="false" aria-label="${m("web.working.title")}" title="${m("web.working.title")}" hidden>${icon("activity")}<span class="count" id="working-count">0</span></button>${button("question-toggle", "question", "web.question.title", "working-tab", 'hidden')}</div>
       ${button("detail", "list-tree", "web.top.detailTitle", "", 'aria-pressed="false"')}
       ${button("open-artifacts", "files", "web.top.artifacts")}
       ${button("open-conversations", "messages", "web.top.conversations")}
@@ -483,11 +538,11 @@ ${UI_ICONS}
   </header>
   <div class="conn" id="conn" hidden role="status"><span class="spin" id="conn-spinner"></span><span id="conn-label">${m("web.conn.lost")}</span><button class="btn" id="reload" type="button" hidden>${m("web.conn.reload")}</button></div>
   <div class="status" id="status"></div>
-  <section class="agent-strip" id="agents" aria-label="Agent"></section>
+  <section class="agent-strip" id="agents" aria-label="Agent"><div class="strip-well" aria-hidden="true">${[0, 1].map(() => '<div class="strip-skeleton"><span class="sk sk-avatar"></span><div class="sk-identity"><div><span class="sk sk-name"></span><span class="sk sk-state"></span></div><span class="sk sk-settings"></span></div><div class="sk-gauges"><span class="sk"></span><span class="sk"></span><span class="sk"></span></div></div>').join("")}</div></section>
   <aside class="side">
     <section>
       <div class="side-head"><div class="eyebrow">${m("web.side.conversations")}</div>${button("new-conversation", "square-pen", "web.side.newConversation")}</div>
-      <div id="conversations"></div>
+      <div id="conversations">${[0, 1, 2].map(() => '<div class="conv-skeleton" aria-hidden="true"><span class="sk"></span><span class="sk"></span></div>').join("")}</div>
     </section>
   </aside>
   <div class="log-wrap">

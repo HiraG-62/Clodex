@@ -133,6 +133,7 @@ export function clientMain({
   const interrupting = new Set<AgentId>();
   let uploading = 0;
   let commandStart: string | undefined;
+  const startingAt = new Map<AgentId, string>();
   let replaying = true;
   let incomingHistory: HistoryItem[] = [];
   let replayScheduled = false;
@@ -363,8 +364,13 @@ export function clientMain({
   const renderQuestion = (item: Extract<TimelineItem, { kind: "question" }>): HTMLElement => {
     const node = el("article", `entry question ${item.agent}`);
     const head = el("div", "head");
-    head.append(el("b", `c-${item.agent}`, AGENTS[item.agent].name), el("span", "kind", t(item.answers ? "web.question.answered" : "web.question.title")), el("time", "mono", clock(item.at)));
+    head.append(el("b", `c-${item.agent}`, AGENTS[item.agent].name), el("time", "mono", clock(item.at)));
     node.append(mark(item.agent), head);
+    const card = el("div", "question-card");
+    const heading = el("div", "question-card-title");
+    heading.append(icon("question"), el("span", "", t(item.answers ? "web.question.answered" : "web.question.title")));
+    card.append(heading);
+    node.append(card);
     const draft = questionDrafts.get(item.id) ?? { selected: item.questions.map(() => new Set<number>()), other: item.questions.map(() => "") };
     if (!item.answers) questionDrafts.set(item.id, draft);
     else questionDrafts.delete(item.id);
@@ -418,9 +424,11 @@ export function clientMain({
         refreshOptions();
       });
       refreshOptions();
-      field.append(options, other);
+      const footer = el("div", "question-footer");
+      footer.append(other);
+      field.append(options, footer);
       if (item.answers) field.append(el("p", "question-answered", (item.answers[index] ?? []).join(", ")));
-      node.append(field);
+      card.append(field);
     }
     submit.addEventListener("click", async () => {
       submitting = true;
@@ -430,7 +438,8 @@ export function clientMain({
       refreshSubmit();
     });
     refreshSubmit();
-    node.append(submit);
+    const footer = [...card.querySelectorAll(".question-footer")].at(-1);
+    (footer ?? card).append(submit);
     return node;
   };
 
@@ -440,9 +449,12 @@ export function clientMain({
         const node = el("article", "entry starting-turn");
         node.append(mark(item.agent));
         const head = el("div", "head");
-        head.append(el("b", `c-${item.agent}`, AGENTS[item.agent].name));
+        const elapsed = el("span", "elapsed mono", elapsedText(item.at));
+        elapsed.dataset.start = item.at;
+        head.append(el("b", `c-${item.agent}`, AGENTS[item.agent].name), el("span", "state starting", t("web.turn.starting")), elapsed);
         const body = el("div", "body");
-        body.append(el("span", "spin"), el("span", "", t("web.turn.starting")));
+        body.setAttribute("aria-hidden", "true");
+        body.append(el("span", "sk"), el("span", "sk"));
         node.append(head, body);
         return node;
       }
@@ -524,6 +536,12 @@ export function clientMain({
   const renderLog = (force = false) => {
     const stick = nearBottom();
     const visibleItems = withStartingTurns(items, state?.agents ?? [], new Date().toISOString());
+    for (const item of visibleItems) {
+      if (item.kind !== "starting") continue;
+      if (!startingAt.has(item.agent)) startingAt.set(item.agent, item.at);
+      item.at = startingAt.get(item.agent)!;
+    }
+    for (const id of AGENT_IDS) if (!visibleItems.some((item) => item.kind === "starting" && item.agent === id)) startingAt.delete(id);
     const keep = new Set(visibleItems.map((i) => i.id));
     for (const [id, entry] of rendered) {
       if (!keep.has(id)) {
@@ -757,15 +775,38 @@ export function clientMain({
       return row;
     }));
     // PC: Agent パネル
-    $("#agents").replaceChildren(...state.agents.map((agent) => {
-      const section = el("section", "agent");
+    const well = el("div", "strip-well");
+    well.append(...state.agents.map((agent) => {
+      const section = el("section", `agent ${agent.status}`);
       section.dataset.agent = agent.id;
+      const who = el("div", "strip-who");
       const h2 = el("h2");
-      h2.append(mark(agent.id), el("span", "", AGENTS[agent.id].name), stateLabel(agent));
-      section.append(h2);
-      section.append(agentControls(agent));
+      const status = stateLabel(agent);
+      const turn = items.findLast((item) => item.kind === "turn" && item.agent === agent.id && item.status === "working");
+      if (agent.status === "busy" && turn && "at" in turn) {
+        const elapsed = el("span", "elapsed", elapsedText(turn.at));
+        elapsed.dataset.start = turn.at;
+        status.append(elapsed);
+      }
+      h2.append(el("span", "", AGENTS[agent.id].name), status);
+      const current = displayedAgent(agent);
+      const summary = el("button", "strip-summary") as HTMLButtonElement;
+      summary.type = "button";
+      summary.title = t("web.agent.summary", { model: current.modelLabel ?? current.model ?? "default", effort: current.effort ?? "default", permission: current.permission });
+      summary.setAttribute("aria-label", `${t("web.role.open", { agent: AGENTS[agent.id].name })}: ${summary.title}`);
+      summary.append(el("span", "model", current.modelLabel ?? current.model ?? "default"),
+        el("span", "", `· ${current.effort ?? "default"} ·`), el("span", current.permission === "full" ? "permission-full" : "", current.permission));
+      if (Object.keys(pendingSettings[agent.id] ?? {}).length) {
+        summary.classList.add("pending");
+        summary.title += ` · ${t("web.setting.pending")}`;
+      }
+      summary.addEventListener("click", () => openAgentSettings(agent.id));
+      who.append(h2, summary);
+      const controls = agentControls(agent);
+      section.append(mark(agent.id), who, controls.querySelector(".mini-gauges")!, controls.querySelector(".links")!);
       return section;
     }));
+    $("#agents").replaceChildren(well);
     $("#conversations").replaceChildren(...conversationList());
     // 送り先: 人が選んでいなければ primary に合わせる
     for (const button of document.querySelectorAll<HTMLButtonElement>(".to button")) {
@@ -813,12 +854,17 @@ export function clientMain({
     if (!state) return [];
     const nodes: HTMLElement[] = state.conversations.map((conversation, index) => {
       const row = el("div", `conv-row${conversation.current ? " current" : ""}${conversation.activity === "busy" ? " busy" : ""}`);
+      if (conversation.current) {
+        const active = state!.agents.filter((agent) => agent.status === "busy");
+        const color = active.length > 1 ? state!.primary : active[0]?.id;
+        if (color) row.dataset.agent = color;
+      }
       const button = el("button", `conv${conversation.current ? " current" : ""}`) as HTMLButtonElement;
       button.type = "button";
       const activity = conversation.activity ? `${t(STATUS_LABEL[conversation.activity])} · ` : "";
       const branch = conversation.branch ? ` · ⎇ ${conversation.branch}` : "";
       const meta = `${conversation.pinned ? t("web.conv.pinned") : ""}${activity}${shortDate(conversation.updatedAt)} · ${Object.keys(conversation.sessions).join(", ") || "—"}${branch}${conversation.current ? t("web.conv.current") : ""}`;
-      button.append(el("span", "t", conversation.title ?? t("web.conv.untitled")), el("span", "m mono", meta));
+      button.append(el("span", "t", conversation.title ?? t("web.conv.untitled")), el("span", "m", meta));
       button.disabled = conversation.current;
       button.dataset.command = `/resume ${index + 1}`;
       button.addEventListener("click", () => {
@@ -1387,7 +1433,7 @@ export function clientMain({
   newer.addEventListener("click", scrollToBottom);
   setInterval(() => {
     for (const node of log.querySelectorAll<HTMLElement>(".elapsed[data-start]")) node.textContent = elapsedText(node.dataset.start ?? "");
-    for (const node of workingPanel.querySelectorAll<HTMLElement>(".elapsed[data-start]")) node.textContent = elapsedText(node.dataset.start ?? "");
+    for (const node of document.querySelectorAll<HTMLElement>("#working-panel .elapsed[data-start], #agents .elapsed[data-start]")) node.textContent = elapsedText(node.dataset.start ?? "");
   }, MS_PER_SECOND);
   const loadHistory = async () => {
     const oldest = history[0];
@@ -1484,6 +1530,7 @@ export function clientMain({
         const conversationChanged = state?.conversations.find((entry) => entry.current)?.id !== item.state.conversations.find((entry) => entry.current)?.id;
         if (projectChanged || conversationChanged) {
           liveGeneration++;
+          startingAt.clear();
           pendingSettings = {};
           interrupting.clear();
           if (projectChanged) {
