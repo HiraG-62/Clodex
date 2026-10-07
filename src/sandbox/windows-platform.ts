@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { dirname, join, resolve, win32 } from "node:path";
 import { z } from "zod";
 import { setTimeout as delay } from "node:timers/promises";
-import { fetchStartupProbe } from "../agents/startup-probe.js";
+import { inspectSandboxAuthentication } from "./authentication.js";
 import { ensureSandboxSetup, setupComplete, type SetupStatus } from "./setup.js";
 import { WindowsAccountSetup } from "./account-setup.js";
 import { t } from "../i18n/i18n.js";
@@ -222,11 +222,7 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
       for (const command of ["claude", "codex", "pnpm"] as const) {
         if (cli[command]) try { await this.broker!.run(command, ["--version"], this.identity!.profile); } catch { cli[command] = false; }
       }
-      let authenticated = false;
-      try {
-        const complete = z.object({ authenticated: z.boolean(), agentSid: z.string() }).parse(JSON.parse(await readFile(join(this.home, ".clodex", "sandbox-setup.json"), "utf8")));
-        authenticated = complete.authenticated && complete.agentSid === this.identity!.agentSid;
-      } catch { /* 初回は startup probe で検査する。 */ }
+      const authenticated = cli.claude && cli.codex && await this.authenticate();
       return { ...base, ...cli, authenticated };
     } catch { return base; }
   }
@@ -307,8 +303,8 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
 
   async authenticate(): Promise<boolean> {
     if (!this.broker || !this.identity) return false;
-    const probe = await fetchStartupProbe(this.identity.profile, this.spawn);
-    return probe.models.claude.length > 0 && probe.models.codex.length > 0 && Boolean(probe.usage.claude && probe.usage.codex);
+    const auth = await inspectSandboxAuthentication(this.broker, this.identity.profile);
+    return auth.claude && auth.codex;
   }
 
   async login(): Promise<void> {

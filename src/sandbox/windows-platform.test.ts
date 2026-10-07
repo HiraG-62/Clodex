@@ -12,6 +12,22 @@ vi.mock("./powershell.js", async (original) => ({ ...await original<typeof impor
 vi.mock("./broker.js", async (original) => ({ ...await original<typeof import("./broker.js")>(), connectBroker: vi.fn() }));
 afterEach(() => {vi.restoreAllMocks();vi.unstubAllEnvs();});
 
+it("保存済み authenticated=true に依存せず毎回認証を検査する", async () => {
+  const home = await mkdtemp(join(tmpdir(), "clodex-auth-status-"));
+  await mkdir(join(home,".clodex"));
+  await writeFile(join(home,".clodex","sandbox-setup.json"), JSON.stringify({authenticated:true,agentSid:"agent"}));
+  const platform = new WindowsSandboxPlatform(home,"project");
+  vi.mocked(runHost).mockResolvedValue(JSON.stringify({user:true,credential:true}));
+  vi.spyOn(platform,"inspect").mockResolvedValue(true);
+  vi.spyOn(platform,"connect").mockResolvedValue();
+  Object.defineProperty(platform,"identity",{value:{agentSid:"agent",profile:"profile"}});
+  Object.defineProperty(platform,"broker",{value:{run:vi.fn(async()=>JSON.stringify({claude:true,codex:true,pnpm:true}))}});
+  const authenticate = vi.spyOn(platform,"authenticate").mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  expect((await platform.setupStatus()).authenticated).toBe(false);
+  expect((await platform.setupStatus()).authenticated).toBe(true);
+  expect(authenticate).toHaveBeenCalledTimes(2);
+});
+
 it("不足した CLI をすべて agent の npm prefix にインストールする",async()=>{
   const platform=new WindowsSandboxPlatform("human","project");
   const run=vi.fn().mockResolvedValue("");

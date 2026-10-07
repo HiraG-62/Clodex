@@ -45,6 +45,7 @@ export class SandboxController {
   async initialize(): Promise<void> {
     this.active = true;
     try {
+      if (this.platform.ready && !await this.platform.ready()) throw new Error(t("sandbox.incomplete"));
       await this.prepare();
       this.available = true;
     } catch { this.lifecycle.notify?.(t("sandbox.incomplete")); }
@@ -52,14 +53,18 @@ export class SandboxController {
 
   async setEnabled(enabled: boolean): Promise<void> {
     if (this.changing) throw new Error(t("sandbox.changing"));
-    if (this.active === enabled && this.usable) {
-      if (!enabled) { await this.platform.release(); await this.platform.close(); }
-      return;
-    }
     this.changing = true;
     try {
+      let stopped = false;
+      if (this.active === enabled && this.usable) {
+        if (!enabled) { await this.platform.release(); await this.platform.close(); return; }
+        if (!this.platform.ready || await this.platform.ready()) return;
+        this.available = false;
+        await this.lifecycle.stop();
+        stopped = true;
+      }
       if (enabled) { await this.platform.setup?.(); await this.prepare(); }
-      try { await this.lifecycle.stop(); }
+      try { if (!stopped) await this.lifecycle.stop(); }
       catch (error) {
         if (enabled) { try { await this.platform.release(); } finally { await this.platform.close(); } }
         throw error;

@@ -102,6 +102,27 @@ it("on の再実行ではセットアップを繰り返して broker を閉じ�
   expect(platform.close).not.toHaveBeenCalled();
 });
 
+it("on のまま認証が失効したら再セットアップし、失敗時は起動を禁止する", async () => {
+  const {platform,controller,events}=fixture();
+  platform.setup=vi.fn(async()=>{});
+  await controller.setEnabled(true);
+  platform.ready=vi.fn(async()=>false);
+  vi.mocked(platform.setup).mockRejectedValueOnce(new Error("未ログイン"));
+  await expect(controller.setEnabled(true)).rejects.toThrow("未ログイン");
+  expect(controller.enabled).toBe(true); expect(controller.usable).toBe(false);
+  expect(events.at(-1)).toBe("stop");
+  await controller.setEnabled(true);
+  expect(controller.usable).toBe(true);
+  expect(platform.setup).toHaveBeenCalledTimes(3);
+});
+
+it("保存済み on でも実認証が未完了なら Agent の起動を禁止する",async()=>{
+  const {platform,controller}=fixture();platform.ready=vi.fn(async()=>false);
+  await controller.initialize();
+  expect(controller.enabled).toBe(true);expect(controller.usable).toBe(false);
+  expect(platform.grant).not.toHaveBeenCalled();
+});
+
 it("uninstall は Agent 停止後に実行し、成功後だけ off を保存する", async () => {
   const { platform, controller, events } = fixture();
   platform.uninstall = vi.fn(async () => { events.push("uninstall"); });
