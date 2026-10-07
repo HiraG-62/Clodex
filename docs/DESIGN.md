@@ -1189,7 +1189,7 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
 | type | 内容 |
 |---|---|
 | `event` | Event Bus の event（§17）。formal message には相手に渡した Task envelope の全文（`envelope`）を付ける |
-| `output` | コマンドの出力（`/help` 等、Shell が表示する行） |
+| `output` | コマンドの出力（`/help` 等、Shell が表示する行）。`!command` の開始と終了の行には `command: { id, phase: "start" \| "exit" }` を付ける（画面が実行中の経過時間を出すため。並行して実行できるので id で対応を取る） |
 | `state` | 状態のスナップショット（下記）。変化があるたびに送る（短い間隔の変化はまとめる） |
 | `reset` | 今の会話が変わった（`/new`、`/resume`）。画面はログを消し、続けて送られる切り替え先の会話の履歴を表示する |
 | `toast` | 会話の中身ではない一時的な知らせ（`{ text, level: "info" \| "warn" }`）。画面はポップアップで出し、ログには入れない。保存も再送もしない（下記） |
