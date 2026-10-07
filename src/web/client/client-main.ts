@@ -924,6 +924,9 @@ export function clientMain({
     if (!state) return;
     $("#project-name").textContent = state.project.split(/[\\/]/).filter(Boolean).at(-1) || t("web.top.noProject");
     $("#project-pill").title = state.project || t("web.top.noProject");
+    // solo で送り先が固定されていればその Agent にする（DESIGN.md §11 Solo）。送り先の色より先に決める
+    const solo = state.conversations.find((conversation) => conversation.current)?.solo;
+    if (solo && solo !== "free") target = solo;
     document.body.dataset.to = target ?? state.primary;
     const projects = $("#projects") as HTMLSelectElement;
     const selectedProject = state.projects?.find((project) => project.current)?.projectRoot ?? "";
@@ -1021,9 +1024,7 @@ export function clientMain({
     $("#agents").replaceChildren(well);
     refreshUsage();
     $("#conversations").replaceChildren(...conversationList());
-    // 送り先: 人が選んでいなければ primary に合わせる。solo で固定されていればその Agent にする（DESIGN.md §11 Solo）
-    const solo = state.conversations.find((conversation) => conversation.current)?.solo;
-    if (solo && solo !== "free") target = solo;
+    // 送り先: 人が選んでいなければ primary に合わせる
     for (const button of document.querySelectorAll<HTMLButtonElement>(".to button")) {
       const id = button.dataset.agent as AgentId;
       button.setAttribute("aria-pressed", String((target ?? state.primary) === id));
@@ -1761,16 +1762,17 @@ export function clientMain({
   };
   // コマンド入力中と、solo で送り先が固定されているときは送り先を変えられない
   function syncTargetButtons() {
+    const shell = isShellInput(input.value);
     const solo = state?.conversations.find((conversation) => conversation.current)?.solo;
-    const disabled = isShellInput(input.value) || Boolean(solo && solo !== "free");
+    const disabled = shell || Boolean(solo && solo !== "free");
     for (const button of document.querySelectorAll<HTMLButtonElement>(".to button, #target-toggle")) button.disabled = disabled;
+    $("#target-toggle").replaceChildren(shell ? icon("terminal") : mark(target ?? state?.primary ?? "claude"));
+    $("#target-toggle").setAttribute("aria-label", shell ? t("web.shellInput") : `${t("web.to.label")}: ${AGENTS[target ?? state?.primary ?? "claude"].name}`);
+    $("#target-toggle").title = $("#target-toggle").getAttribute("aria-label")!;
   }
   function onInputChanged() {
     const shell = isShellInput(input.value);
     $("#composer").classList.toggle("shell-input", shell);
-    $("#target-toggle").replaceChildren(shell ? icon("terminal") : mark(target ?? state?.primary ?? "claude"));
-    $("#target-toggle").setAttribute("aria-label", shell ? t("web.shellInput") : `${t("web.to.label")}: ${AGENTS[target ?? state?.primary ?? "claude"].name}`);
-    $("#target-toggle").title = $("#target-toggle").getAttribute("aria-label")!;
     sendButton.replaceChildren(icon(shell ? "terminal" : "arrow-up"));
     sendButton.setAttribute("aria-label", t(shell ? "web.run" : "web.send"));
     sendButton.title = t(shell ? "web.run" : "web.send");

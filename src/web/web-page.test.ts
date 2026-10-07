@@ -72,7 +72,7 @@ describe("buildWebPage", () => {
     expect(html).not.toContain('id="shell-input-label"');
     expect(html).toContain("<span>コマンド</span>");
     expect(html).toContain('.classList.toggle("shell-input", shell)');
-    expect(html).toContain("const disabled = isShellInput(input.value) || Boolean(solo && solo !== \"free\")");
+    expect(html).toContain("const disabled = shell || Boolean(solo && solo !== \"free\")");
     expect(html).toContain('.shell-input .box { border-color: var(--code)');
     expect(html).toContain('.shell-input .box .input-highlight, .shell-input .box textarea { font-family: var(--font-mono)');
     expect(buildWebPage("en").html).toContain("<span>Command</span>");
