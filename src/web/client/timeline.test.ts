@@ -204,3 +204,14 @@ it("質問と回答を同じカードにまとめ、他のカードを変更し�
   expect(answered[0]).toBe(first[0]);
   expect(applyFeedItem([], { type: "event", seq: 21, event: { kind: "answer", id: "missing", agent: "codex", answers: [["A"]], at: AT } })).toEqual([]);
 });
+
+it("同じ Agent のターンが始まったら、その Agent の作業中のターンを中断にする", () => {
+  const items = run([
+    agent("claude", { type: "turn_started" }),
+    agent("codex", { type: "turn_started" }),
+    agent("claude", { type: "turn_started" }),
+    agent("claude", { type: "turn", result: { status: "completed", text: "続き" } }),
+  ]);
+  const turns = items.flatMap((item) => item.kind === "turn" ? [`${item.agent}:${item.status}`] : []);
+  expect(turns).toEqual(["claude:interrupted", "codex:working", "claude:completed"]);
+});

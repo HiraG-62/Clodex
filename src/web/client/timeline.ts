@@ -83,8 +83,12 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   };
 
   switch (agentEvent.type) {
-    case "turn_started":
-      return limit([...items, newTurn()]);
+    case "turn_started": {
+      // 1 つの Agent が同時に動かすターンは 1 つ。閉じていない前のターン（Hub が作業中に止まったもの）は中断にする
+      const closed = items.map((entry) => entry.kind === "turn" && entry.agent === agent && entry.status === "working"
+        ? { ...entry, status: "interrupted" as const } : entry);
+      return limit([...closed, newTurn()]);
+    }
     case "text":
       return updateTurn((turn) => (turn.plan === undefined
         ? { ...turn, plan: agentEvent.text }

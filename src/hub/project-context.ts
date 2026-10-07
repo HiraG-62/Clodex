@@ -80,6 +80,9 @@ export const openProject = async ({
   const config = loadConfig({ homeDir, projectRoot });
   const primary = args.primary ?? config.primary ?? DEFAULT_PRIMARY;
   const statePath = conversationStatePath(homeDir, projectRoot);
+  // この project のターンはまだ動いていない。前の Hub が残した終わっていないターンを、復旧より先に閉じる（DESIGN.md §17）
+  const feedStore = new FeedStore(feedDirPath(statePath));
+  feedStore.closeUnfinished();
   const recovery = loadRecovery(homeDir, projectRoot);
   const hasWork = recovery !== undefined && Object.values(recovery.conversations).some(hasRecoveryWork);
   const artifactsDir = artifactsDirPath(homeDir, statePath);
@@ -169,7 +172,6 @@ export const openProject = async ({
   const registerRuntime = (runtime: ConversationRuntime) => {
     if (!registered.has(runtime.coordinator)) registered.set(runtime.coordinator, registerCoordinator(runtime.coordinator));
   };
-  const feedStore = new FeedStore(feedDirPath(statePath));
   let feedSaveFailed = false;
   const saveFeedItem = (conversationId: string, item: HistoryItem) => {
     try {

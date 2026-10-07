@@ -55,6 +55,25 @@ describe("FeedStore", () => {
     expect(store.load("a")).toEqual([output(1), output(2)]);
   });
 
+  it("closeUnfinished は全会話の終わっていないターンを中断としてファイルに書き足す", () => {
+    const store = new FeedStore(makeDir());
+    const agentEvent = (seq: number, agent: "claude" | "codex", event: { type: "turn_started" } | { type: "turn"; result: { status: "completed"; text: string } }): HistoryItem =>
+      ({ type: "event", seq, event: { kind: "agent", agent, at: "2026-10-05T12:00:00Z", event } });
+    store.append("a", agentEvent(1, "claude", { type: "turn_started" }));
+    store.append("a", agentEvent(2, "codex", { type: "turn_started" }));
+    store.append("a", agentEvent(3, "codex", { type: "turn", result: { status: "completed", text: "done" } }));
+    store.append("b", agentEvent(1, "codex", { type: "turn_started" }));
+    store.closeUnfinished();
+    // 復旧で同じ Agent が作業中でも、前の Hub のターンは中断のまま
+    store.append("a", agentEvent(4, "claude", { type: "turn_started" }));
+    const loaded = store.load("a", new Set(["claude"]));
+    const turns = loaded.flatMap((item) => item.type === "event" && item.event.kind === "agent" ? [`${item.event.agent}:${item.event.event.type}${item.event.event.type === "turn" ? `:${item.event.event.result.status}` : ""}`] : []);
+    expect(turns).toEqual(["claude:turn_started", "codex:turn_started", "codex:turn:completed", "claude:turn:interrupted", "claude:turn_started"]);
+    expect(store.load("b").at(-1)).toMatchObject({ event: { agent: "codex", event: { type: "turn", result: { status: "interrupted" } } } });
+    store.closeUnfinished();
+    expect(readFileSync(join(store.directory, "b.jsonl"), "utf8").trim().split("\n")).toHaveLength(2);
+  });
+
   it("保存時に終わっていないターンを読み込み時に interrupted にする", () => {
     const store = new FeedStore(makeDir());
     store.append("a", { type: "event", seq: 1, event: { kind: "agent", agent: "claude", at: "2026-10-05T12:00:00Z", event: { type: "turn_started" } } });

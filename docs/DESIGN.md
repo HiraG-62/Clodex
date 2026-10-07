@@ -1237,6 +1237,8 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
 - `event` / `output` は会話ごとにファイルにも保存する（§18）。`clodex` を起動し直しても、`/resume` で戻っても、その会話の流れを表示できる
 - `agent` event のうち、ログに表示するもの（`turn_started` / `text` / `tool` / `turn` / `error` / `compacted` / `steer_delivered`）だけを feed に流して保存する。それ以外（`session` / `rate_limit` / `context` / `exit`）は `state` に反映するだけにする（頻繁な `context` で直近 1,000 件の枠を使い切らない）
 - 保存した feed を読み込んだとき、終わっていない（`turn` が無い）ターンは中断したものとして表示する（作業中のまま残さない）。ただし、その会話の runtime でその Agent が今も作業中（`busy` / `starting`）なら作業中のまま残す（会話を切り替えて戻っても、裏で動いているターンを中断扱いにしない）
+- Hub が project を開いたとき（その project のターンがまだ 1 つも動いていない時点）に、その project のすべての会話の feed で終わっていないターンを、中断（`turn` の `interrupted`）の event をファイルに書き足して閉じる。前の Hub が作業中に止まったターンを、復旧で同じ Agent が作業を始めても作業中のまま残さないため
+- 画面は、ある Agent のターンが始まったら、その Agent の作業中のターンを中断にする（1 つの Agent が同時に動かすターンは 1 つ。上の対処の前に保存された feed にも効く）
 - 状態のスナップショット: primary、各 Agent の状態・権限・model / effort・session・利用枠・コンテキスト（`/status` と同じ内容）、会話の一覧と今の会話、project の sandbox（on / off、セットアップ済みか）、上限（4 つの今の値と既定値）、言語
 
 ### 入力
