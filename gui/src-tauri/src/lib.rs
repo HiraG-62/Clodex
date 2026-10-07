@@ -6,13 +6,15 @@ use std::io::Write;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{webview::WebviewWindowBuilder, Manager, WebviewUrl};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+
+mod update;
 
 const START_TIMEOUT: Duration = Duration::from_secs(20);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -22,9 +24,11 @@ const RUNTIME_ENTRY: &str = "runtime/app/dist/index.js";
 const MAIN_WINDOW: &str = "main";
 const TRAY_OPEN: &str = "open";
 const TRAY_EXIT: &str = "exit";
+const TRAY_UPDATE: &str = "update";
 const TRAY_OPEN_LABEL: &str = "開く";
 const TRAY_EXIT_LABEL: &str = "終了";
-const APP_NAME: &str = "Clodex";
+const TRAY_UPDATE_LABEL: &str = "更新を確認";
+pub(crate) const APP_NAME: &str = "Clodex";
 
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
@@ -36,14 +40,16 @@ fn show_main_window(app: &tauri::AppHandle) {
 
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, TRAY_OPEN, TRAY_OPEN_LABEL, true, None::<&str>)?;
+    let check_update = MenuItem::with_id(app, TRAY_UPDATE, TRAY_UPDATE_LABEL, true, None::<&str>)?;
     let exit = MenuItem::with_id(app, TRAY_EXIT, TRAY_EXIT_LABEL, true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &exit])?;
+    let menu = Menu::with_items(app, &[&open, &check_update, &exit])?;
     let mut tray = TrayIconBuilder::new()
         .tooltip(APP_NAME)
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             TRAY_OPEN => show_main_window(app),
+            TRAY_UPDATE => update::check(app.clone(), update::Trigger::Manual),
             TRAY_EXIT => app.exit(0),
             _ => {}
         })
@@ -64,6 +70,19 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     }
     tray.build(app)?;
     Ok(())
+}
+
+type SharedHub = Mutex<Option<OwnedHub>>;
+
+pub(crate) fn stop_owned_hub(app: &tauri::AppHandle) {
+    let hub = app
+        .state::<SharedHub>()
+        .lock()
+        .expect("Hub の状態をロックできません")
+        .take();
+    if let Some(hub) = hub {
+        hub.stop();
+    }
 }
 
 struct OwnedHub {
@@ -263,21 +282,21 @@ fn ensure_hub(
 }
 
 pub fn run() {
-    let owned_hub: Arc<Mutex<Option<OwnedHub>>> = Arc::new(Mutex::new(None));
-    let owned_on_setup = Arc::clone(&owned_hub);
     let app = tauri::Builder::default()
+        .manage(SharedHub::new(None))
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             show_main_window(app)
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
             }
         })
-        .setup(move |app| {
+        .setup(|app| {
             let home = home_dir()?;
             if let Some(message) = take_previous_failure(&home) {
                 app.dialog().message(message).title(APP_NAME).kind(MessageDialogKind::Error).show(|_| {});
@@ -285,7 +304,7 @@ pub fn run() {
             let resource_dir = app.path().resource_dir()?;
             let (lock, child) = ensure_hub(&home, &resource_dir)?;
             let token = fs::read_to_string(home.join(".clodex/web-token"))?;
-            *owned_on_setup.lock().expect("Hub の状態をロックできません") =
+            *app.state::<SharedHub>().lock().expect("Hub の状態をロックできません") =
                 child.map(|child| OwnedHub {
                     child,
                     port: lock.port,
@@ -301,19 +320,14 @@ pub fn run() {
                 .build()?;
             setup_tray(app)?;
             window.show()?;
+            update::check(app.handle().clone(), update::Trigger::Startup);
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("Clodex GUI を起動できません");
-    app.run(move |_, event| {
+    app.run(|app, event| {
         if matches!(event, tauri::RunEvent::Exit) {
-            if let Some(hub) = owned_hub
-                .lock()
-                .expect("Hub の状態をロックできません")
-                .take()
-            {
-                hub.stop();
-            }
+            stop_owned_hub(app);
         }
     });
 }

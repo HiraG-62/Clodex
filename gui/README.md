@@ -11,3 +11,15 @@ GUI は生きている `~/.clodex/hub.lock` があればその Hub を使う。�
 GUI の終了時に、GUI が起動した Hub を停止する。既に動いていた Hub は停止しない。Agent へのメッセージは GUI の起動だけでは送らない。
 
 ウィンドウが非表示かフォーカスを失っているとき、作業終了・通知・エラーを Windows の通知に表示する。履歴の読み込みでは通知しない。
+
+## 更新と公開
+
+GUI は起動時とトレイの「更新を確認」で、GitHub Releases の `latest.json` を確認する。新しい版があれば確認のダイアログを出し、「更新」でダウンロードして署名を検証する。その後、GUI が起動した Hub を止めて、インストーラーを passive で実行する。インストールが終わると GUI が起動し直す。
+
+公開の手順:
+
+1. `package.json` の `version` を上げて commit する（`tauri.conf.json` はこの版を使う）
+2. `git tag v<version>` を作り、commit と tag を push する
+3. `.github/workflows/release.yml` が Windows でビルドし、インストーラー・`.sig`・`latest.json` を Release に上げる
+
+署名の秘密鍵は GitHub の Secret の `TAURI_SIGNING_PRIVATE_KEY`（パスワードは `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）に置く。公開鍵は `tauri.conf.json` の `plugins.updater.pubkey`。更新用の成果物は `tauri.release.conf.json` を渡したときだけ作るため、手元の `pnpm gui:build` に秘密鍵は要らない。

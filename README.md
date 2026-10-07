@@ -15,7 +15,9 @@ Windows ネイティブ環境で Claude Code と Codex CLI を対等な開発エ
 
 ### GUI（推奨）
 
-リポジトリで `pnpm install`、`pnpm gui:build` を実行し、`gui/src-tauri/target/release/bundle/nsis/` のインストーラーを使う。GUI には Node と Clodex 本体が同梱されるため、インストール先の PC で Node や `clodex` を PATH に入れる必要はない。Claude Code CLI と Codex CLI は必要。
+[GitHub Releases](https://github.com/HiraG-62/Clodex/releases/latest) の `Clodex_<version>_x64-setup.exe` を使う。ソースから作るときは、リポジトリで `pnpm install`、`pnpm gui:build` を実行し、`gui/src-tauri/target/release/bundle/nsis/` のインストーラーを使う。GUI には Node と Clodex 本体が同梱されるため、インストール先の PC で Node や `clodex` を PATH に入れる必要はない。Claude Code CLI と Codex CLI は必要。
+
+GUI は起動時に新しい版を確認し、あれば更新するか聞く。トレイの「更新を確認」でも確認できる。
 
 ウィンドウを閉じるとトレイに残り、終了はトレイのメニューから行う。ウィンドウが非表示かフォーカスがないときは作業終了・通知・エラーを Windows の通知で知らせる。ビルドと起動の詳細は [gui/README.md](gui/README.md)、GUI の設計は [DESIGN.md §28](docs/DESIGN.md#28-future-roadmap)。
 

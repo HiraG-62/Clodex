@@ -1,0 +1,44 @@
+# tag v* の push で GUI をビルドし、更新用の latest.json とともに GitHub Releases に公開する（DESIGN.md §28 GUI の自動更新）。
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: gui/src-tauri
+      - name: tag と package.json の版の一致を確認
+        shell: bash
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: node scripts/stage-gui-runtime.mjs
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: gui
+          tauriScript: pnpm exec tauri
+          # tauri の CLI は --config の相対パスを gui/ から解決しないため、絶対パスで渡す。
+          args: --config ${{ github.workspace }}\gui\src-tauri\tauri.release.conf.json
+          tagName: ${{ github.ref_name }}
+          releaseName: Clodex ${{ github.ref_name }}
