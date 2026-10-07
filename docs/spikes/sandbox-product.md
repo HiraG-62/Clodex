@@ -112,6 +112,16 @@ git の保護対象には agent の書き込み・削除に加え ACL 変更・�
 
 broker の配置先は `%ProgramData%\Clodex-Sandbox-<human SID>\<content hash>`。コード・Node・環境設定・ログインスクリプトのハッシュで再利用し、親ディレクトリは作成時に保護した DACL を指定する。agent の bootstrap は native helper に置き換え、接続 token は人が開いた stdin から渡す。
 
+## 専用ユーザー再作成後の復旧
+
+SID が変更された場合、古い runtime の RX と project journal が復旧を妨げる。人が所有する runtime の ACL を現在の SID に再構築し、古い SID の journal は記録先の明示 ACE を解除して再作成する。uninstall は runtime と journal も除去する。`/sandbox` の例外は shell で表示し、入力 API へ送出しない。実機確認は `spikes/sandbox-debug-probe.ts` の inspect / connect(false) / setupStatus に限定する。
+
+2026-10-07 の実機確認で、旧 SID 末尾 `1005` から新 SID 末尾 `1006` への復旧に成功。probe を 2 回実行し、両方とも inspect=true、connect(false)・setupStatus・close は例外なし。runtime の RX は新 SID のみ、3 件の journal はすべて新 SID・lease 0 件になった。ユーザー・資格情報・managed は true、CLI 3 種と authenticated は false。UAC・CLI インストール・ログイン・実 CLI のターンは未実行。
+
+Web の 500 は `src/cli/shell.ts` の sandbox 分岐からの例外が `src/index.ts` の onInput を通って `src/web/web-server.ts` の共通 500 応答まで伝わったもの。sandbox 分岐内で捕捉して print し、実際の POST /api/input を使うテストでエラー表示と HTTP 204 を確認した。
+
+ユニットテストでは、非空の旧 journal の ACE 復元、途中失敗時の journal 維持、復旧の再実行、runtime の所有者・reparse point 検査、uninstall → 再作成 → uninstall の runtime / journal 除去を確認。実際の uninstall は管理者操作を伴うため未実行。
+
 ## 実機の確認で見つかった問題（2026-10-07）
 
 - Windows PowerShell 5.1 の `Start-Process -Credential` に `-Wait` を付けると、`Access is denied`（5）で起動に失敗する。`-Wait` は子プロセスを Job object に入れて待つため、別ユーザーのプロセスでは失敗すると見られる。`-Wait` を外して `-PassThru` の `WaitForExit()` で待てば起動できる。ただし、別ユーザーのプロセスの終了コードは取れない（`ExitCode` が空になる）

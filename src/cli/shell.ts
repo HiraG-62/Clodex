@@ -363,10 +363,12 @@ export const createShell = ({
         HELP_LINES(primary).forEach((l) => print(l));
         return "continue";
       case "sandbox":
-        if (!sandbox) throw new Error(t("sandbox.incomplete"));
-        if (command.action === "uninstall") await sandbox.uninstall();
-        else if (command.action) await sandbox.set(command.action === "on");
-        print(t("sandbox.status", { state: sandbox.enabled() ? "on" : "off", setup: t(await sandbox.ready() ? "sandbox.ready" : "sandbox.incomplete") }));
+        try {
+          if (!sandbox) throw new Error(t("sandbox.incomplete"));
+          if (command.action === "uninstall") await sandbox.uninstall();
+          else if (command.action) await sandbox.set(command.action === "on");
+          print(t("sandbox.status", { state: sandbox.enabled() ? "on" : "off", setup: t(await sandbox.ready() ? "sandbox.ready" : "sandbox.incomplete") }));
+        } catch (error) { print(t("sandbox.failed", {message:error instanceof Error ? error.message : String(error)})); }
         return "continue";
       case "limits": {
         if (command.reset) {

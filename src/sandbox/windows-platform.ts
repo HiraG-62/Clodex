@@ -1,4 +1,4 @@
-import { copyFile, lstat, mkdir, readFile, readdir, rmdir, unlink, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, join, resolve, win32 } from "node:path";
 import { z } from "zod";
@@ -16,6 +16,7 @@ import { buildAgentEnvironment } from "./environment.js";
 import { nativeSource } from "./native-source.js";
 import { POWERSHELL, psQuote, psArgs, runHost } from "./powershell.js";
 import { gitProtectionPaths, isMissing, type GrantKind } from "./git-protection.js";
+import { prepareRuntimeDirectory, removeRuntimeDirectory } from "./runtime-directory.js";
 
 const ACCOUNT = "clodex-agent";
 const MAX_LOGON_COMMAND = 1024;
@@ -70,6 +71,7 @@ const ruleSignature = (acl: Acl) => JSON.stringify(acl.rules.map((rule) => JSON.
 
 export class WindowsSandboxPlatform implements SandboxPlatform {
   private static readonly setups = new Map<string, Promise<void>>();
+  private static readonly recoveries = new Map<string, Promise<void>>();
   private identity: Identity | undefined;
   private broker: BrokerConnection | undefined;
   private runtimeDir: string | undefined;
@@ -92,6 +94,13 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
       await noReparse(this.credentialPath);
       const output = await runHost(`$human=[Security.Principal.WindowsIdentity]::GetCurrent(); if(([Security.Principal.WindowsPrincipal]::new($human)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw ${psQuote(t("sandbox.adminDenied"))}}; $user=Get-LocalUser -Name '${ACCOUNT}'; if(-not $user.Enabled){throw ${psQuote(t("sandbox.userDisabled"))}}; $profile=(Get-ItemProperty -LiteralPath ('HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\'+$user.SID.Value)).ProfileImagePath; $machine=[Environment]::GetEnvironmentVariables('Machine');$machine['SystemRoot']=[Environment]::GetFolderPath('Windows');$machine['ProgramFiles']=[Environment]::GetFolderPath('ProgramFiles');$machine['ProgramFiles(x86)']=[Environment]::GetFolderPath('ProgramFilesX86');$machine['ProgramData']=[Environment]::GetFolderPath('CommonApplicationData'); @{humanSid=$human.User.Value;agentSid=$user.SID.Value;profile=[Environment]::ExpandEnvironmentVariables($profile);machine=$machine}|ConvertTo-Json -Depth 4 -Compress`);
       this.identity = identitySchema.parse(JSON.parse(output));
+      const key=this.home.toLowerCase();
+      let recovery=WindowsSandboxPlatform.recoveries.get(key);
+      if(!recovery){
+        recovery=this.recoverStaleJournals();
+        WindowsSandboxPlatform.recoveries.set(key,recovery);
+      }
+      try{await recovery;}finally{if(WindowsSandboxPlatform.recoveries.get(key)===recovery)WindowsSandboxPlatform.recoveries.delete(key);}
       try {
         const journal = journalSchema.parse(JSON.parse(await readFile(this.journalPath, "utf8")));
         if (journal.sid !== this.identity.agentSid) throw new Error(t("sandbox.sidMismatch"));
@@ -107,12 +116,47 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
     writeFileAtomic(this.journalPath, `${JSON.stringify({ sid: this.identity!.agentSid, leases: this.leases }, null, 2)}\n`);
   }
 
+  private async recoverStaleJournals(): Promise<void> {
+    const directory=join(this.home,".clodex");
+    for(const name of await this.journalNames()){
+      const path=join(directory,name);await noReparse(path);
+      const journal=journalSchema.parse(JSON.parse(await readFile(path,"utf8")));
+      if(journal.sid===this.identity!.agentSid)continue;
+      for(const lease of [...journal.leases].reverse()){
+        validateSandboxPath(lease.path,this.home,true);
+        if(lease.gitHuman)await this.removeSafeDirectory(false,lease.path);
+        try{
+          await noReparse(lease.path);
+          await runHost(`$a=Get-Acl -LiteralPath ${psQuote(lease.path)};if($a.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne ${psQuote(this.identity!.humanSid)}){throw ${psQuote(t("sandbox.credentialMissing"))}}`);
+          const current=await this.snapshot(lease.path,undefined,journal.sid);
+          const next:Acl={...current,rules:current.rules.filter(rule=>rule.owner||rule.human)};
+          for(const field of ["owner","human"] as const){
+            const actual={...current,rules:current.rules.filter(rule=>rule[field])};
+            const expected={...lease.after,rules:lease.after.rules.filter(rule=>rule[field])};
+            if(ruleSignature(actual)===ruleSignature(expected))next.rules=[...next.rules.filter(rule=>!rule[field]),...lease.before.rules.filter(rule=>rule[field])];
+          }
+          await this.applyAcl(lease.path,current,next,journal.sid);
+        }catch(error){if(!isMissing(error))throw error;}
+        journal.leases=journal.leases.filter(entry=>entry!==lease);
+        writeFileAtomic(path,JSON.stringify(journal));
+      }
+      writeFileAtomic(path,JSON.stringify({sid:this.identity!.agentSid,leases:[]}));
+    }
+  }
+
+  private async journalNames():Promise<string[]> {
+    try{return (await readdir(join(this.home,".clodex"))).filter(name=>/^sandbox-project-[a-f0-9]{16}\.json$/.test(name));}
+    catch(error){if(isMissing(error))return [];throw error;}
+  }
+
+  private runtimeRoot(humanSid:string):string {
+    return join(process.env.ProgramData ?? "C:\\ProgramData",`Clodex-Sandbox-${humanSid}`);
+  }
+
   private async runtime(): Promise<string> {
     const identity = this.identity!;
-    const root = join(process.env.ProgramData ?? "C:\\ProgramData", `Clodex-Sandbox-${identity.humanSid}`);
-    try { await noReparse(root); } catch (error) { if (!isMissing(error)) throw error; }
-    await runHost(`$path=${psQuote(root)}; $human=[Security.Principal.SecurityIdentifier]::new(${psQuote(identity.humanSid)}); $acl=[Security.AccessControl.DirectorySecurity]::new();$acl.SetOwner($human);$acl.SetAccessRuleProtection($true,$false);foreach($sid in @($human.Value,'S-1-5-18','S-1-5-32-544')){$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid),'FullControl','ContainerInherit,ObjectInherit','None','Allow'))};$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new(${psQuote(identity.agentSid)}),'ReadAndExecute','ContainerInherit,ObjectInherit','None','Allow'));if(Test-Path -LiteralPath $path){$old=Get-Acl -LiteralPath $path;if($old.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $human.Value -or -not $old.AreAccessRulesProtected){throw ${psQuote(t("sandbox.runtimeAcl"))}};foreach($rule in $old.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])){if($rule.AccessControlType -eq 'Allow' -and $rule.IdentityReference.Value -notin @($human.Value,'S-1-5-18','S-1-5-32-544')){if($rule.IdentityReference.Value -ne ${psQuote(identity.agentSid)} -or ([int]$rule.FileSystemRights -band [int][Security.AccessControl.FileSystemRights]'Write,Delete,ChangePermissions,TakeOwnership')){throw ${psQuote(t("sandbox.runtimeAcl"))}}}}}else{[void][IO.Directory]::CreateDirectory($path,$acl)}`);
-    await noReparse(root);
+    const root = this.runtimeRoot(identity.humanSid);
+    await prepareRuntimeDirectory(root,identity.humanSid,identity.agentSid);
     const environment = buildAgentEnvironment(identity.profile, identity.machine, { USERNAME: ACCOUNT, USERDOMAIN: process.env.COMPUTERNAME, COMPUTERNAME: process.env.COMPUTERNAME });
     const environmentScript = `$env:PSModulePath="$PSHOME\\Modules";$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue'; $settings=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'environment.json') -Raw|ConvertFrom-Json; foreach($name in @([Environment]::GetEnvironmentVariables('Process').Keys)){[Environment]::SetEnvironmentVariable($name,$null,'Process')}; foreach($entry in $settings.PSObject.Properties){[Environment]::SetEnvironmentVariable($entry.Name,[string]$entry.Value,'Process')}; [Environment]::SetEnvironmentVariable('HOME',$null,'Process'); foreach($name in @('ANTHROPIC_API_KEY','ANTHROPIC_AUTH_TOKEN','OPENAI_API_KEY','CODEX_API_KEY','NODE_OPTIONS','NODE_PATH')){[Environment]::SetEnvironmentVariable($name,$null,'Process')}; [void][IO.Directory]::CreateDirectory($env:TEMP);`;
     const loginScript = `\uFEFF. (Join-Path $PSScriptRoot 'environment.ps1'); Set-Location -LiteralPath $env:USERPROFILE; Write-Host ${psQuote(t("sandbox.loginInstructions"))}`;
@@ -222,7 +266,7 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
     this.notice(t("sandbox.uninstall"));
     const account = new WindowsAccountSetup(this.home);
     const directory = join(this.home, ".clodex");
-    const journals = (await readdir(directory)).filter((name) => /^sandbox-project-[a-f0-9]{16}\.json$/.test(name));
+    const journals = await this.journalNames();
     if (await this.inspect()) await this.connect(false);
     try {
       for (const name of journals) {
@@ -243,7 +287,10 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
         }
       }
     } finally { await this.close(); }
+    const humanSid=this.identity?.humanSid ?? (await runHost("[Security.Principal.WindowsIdentity]::GetCurrent().User.Value")).trim();
+    await removeRuntimeDirectory(this.runtimeRoot(humanSid),humanSid);
     await account.uninstall();
+    for(const name of journals){const path=join(directory,name);await noReparse(path);await unlink(path);}
     this.identity = undefined;
     this.leases = [];
   }
@@ -272,7 +319,7 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
     await runHost(`$secret=Get-Content -LiteralPath ${psQuote(this.credentialPath)} -Raw|ConvertTo-SecureString;$credential=[Management.Automation.PSCredential]::new("$env:COMPUTERNAME\\${ACCOUNT}",$secret);try{(Start-Process -FilePath ${psQuote(POWERSHELL)} -ArgumentList ${psQuote(command)} -Credential $credential -LoadUserProfile -WorkingDirectory ${psQuote(this.identity.profile)} -WindowStyle Normal -PassThru).WaitForExit()}finally{$secret.Dispose()}`);
   }
 
-  private async snapshot(path: string, kind?: GrantKind): Promise<Acl> {
+  private async snapshot(path: string, kind?: GrantKind, sid=this.identity!.agentSid): Promise<Acl> {
     const rules: Record<GrantKind, string> = {
       modify: "'Modify','ContainerInherit,ObjectInherit','None','Allow'",
       "git-root": "'Delete,DeleteSubdirectoriesAndFiles,ChangePermissions,TakeOwnership','None','None','Deny'",
@@ -280,15 +327,15 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
       "git-hooks": "'Write,Delete,DeleteSubdirectoriesAndFiles,ChangePermissions,TakeOwnership','ContainerInherit,ObjectInherit','None','Deny'",
     };
     const ownerRule = kind && kind !== "modify" ? `$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($human,'FullControl','${kind === "git-hooks" ? "ContainerInherit,ObjectInherit" : "None"}','None','Allow'));foreach($r in @($acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier]))){if($r.IdentityReference.Value -eq $ownerRights.Value){[void]$acl.RemoveAccessRuleSpecific($r)}};$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($ownerRights,'ReadPermissions','${kind === "git-hooks" ? "ContainerInherit,ObjectInherit" : "None"}','None','Allow'));` : "";
-    return aclSchema.parse(JSON.parse(await runHost(`${aclPrelude(path, this.identity!.agentSid, this.identity!.humanSid)} ${kind ? `$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,${rules[kind]}));${ownerRule}` : ""} Snapshot $acl | ConvertTo-Json -Depth 5 -Compress`)));
+    return aclSchema.parse(JSON.parse(await runHost(`${aclPrelude(path, sid, this.identity!.humanSid)} ${kind ? `$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,${rules[kind]}));${ownerRule}` : ""} Snapshot $acl | ConvertTo-Json -Depth 5 -Compress`)));
   }
 
-  private async applyAcl(path: string, expected: Acl, next: Acl): Promise<void> {
+  private async applyAcl(path: string, expected: Acl, next: Acl, sid=this.identity!.agentSid): Promise<void> {
     await noReparse(path);
-    const current = await this.snapshot(path);
+    const current = await this.snapshot(path,undefined,sid);
     if (ruleSignature(current) !== ruleSignature(expected)) throw new Error(t("sandbox.aclConflict", { path: path }));
     const rules = next.rules.map((rule) => `$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(${rule.owner ? "$ownerRights" : rule.human ? "$human" : "$sid"},[Security.AccessControl.FileSystemRights]${rule.rights},[Security.AccessControl.InheritanceFlags]${rule.inheritance},[Security.AccessControl.PropagationFlags]${rule.propagation},[Security.AccessControl.AccessControlType]${rule.type}));`).join("\n");
-    await runHost(`${aclPrelude(path, this.identity!.agentSid, this.identity!.humanSid)} foreach($rule in @($acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier]))){if($rule.IdentityReference.Value -in @($sid.Value,$ownerRights.Value,$human.Value)){[void]$acl.RemoveAccessRuleSpecific($rule)}};${rules} if($directory){[IO.Directory]::SetAccessControl($path,$acl)}else{[IO.File]::SetAccessControl($path,$acl)}`);
+    await runHost(`${aclPrelude(path, sid, this.identity!.humanSid)} foreach($rule in @($acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier]))){if($rule.IdentityReference.Value -in @($sid.Value,$ownerRights.Value,$human.Value)){[void]$acl.RemoveAccessRuleSpecific($rule)}};${rules} if($directory){[IO.Directory]::SetAccessControl($path,$acl)}else{[IO.File]::SetAccessControl($path,$acl)}`);
   }
 
   private async git(agent: boolean, args: string[]): Promise<string> {

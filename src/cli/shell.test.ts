@@ -4,6 +4,9 @@ import type { AgentId, AgentStatus, PermissionLevel, TurnResult } from "../agent
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
 import { createShell, type AgentState, type ConversationList, type PendingInput, type ShellCoordinator } from "./shell.js";
 import type { ManagedProcess } from "../process/process-manager.js";
+import { startWebServer } from "../web/web-server.js";
+import { WebFeed } from "../web/web-feed.js";
+import { buildWebPage } from "../web/web-page.js";
 
 // ローカル時刻 10/05 20:26 の ISO 文字列（タイムゾーンに依存しないテストにする）
 const at = (minute: number) => new Date(2026, 9, 5, 20, minute).toISOString();
@@ -188,10 +191,28 @@ const setup = () => {
     roles: () => roles,
     saveRole: (agent, value) => { roles[agent] = value; return value; },
   });
-  return { coordinator, printed, notified, levels, shell, history, runner, saved, busy, projects, roles, background, references };
+  return { coordinator, printed, notified, levels, shell, history, runner, saved, busy, projects, roles, background, references, sandbox };
 };
 
 describe("createShell", () => {
+  it("Web の /sandbox on 失敗は表示し、入力 API は 204 を返す", async()=>{
+    const {shell,sandbox,printed}=setup();sandbox.set=async()=>{throw new Error("Invalid runtime ACL");};
+    const server=await startWebServer({port:0,token:"test-token",feed:new WebFeed(),page:buildWebPage("en"),
+      onInput:async line=>{await shell.handleLine(line);},listFiles:async()=>[],
+      preview:{file:async()=>({ok:false,status:404,message:""}),diff:async()=>({ok:false,status:404,message:""})},
+      upload:{maxBytes:0,accepts:()=>false,save:async()=>""}});
+    try{
+      const response=await fetch(`${server.url}/api/input`,{method:"POST",headers:{cookie:"clodex_token=test-token"},body:JSON.stringify({line:"/sandbox on"})});
+      expect(response.status).toBe(204);expect(printed.at(-1)).toContain("Invalid runtime ACL");
+    }finally{await server.close();}
+  });
+  it.each(["/sandbox", "/sandbox on", "/sandbox off", "/sandbox uninstall"])("%s の失敗は表示し、入力処理を reject しない", async command => {
+    const {shell,printed,sandbox}=setup();
+    const failure=async()=>{throw new Error("sandbox failed");};
+    sandbox.ready=failure;sandbox.set=failure;sandbox.uninstall=failure;
+    await expect(shell.handleLine(command)).resolves.toBe("continue");
+    expect(printed.at(-1)).toContain("sandbox failed");
+  });
   it("sandbox の状態を表示し、on の間は permission の変更と保存を拒否する", async () => {
     const { shell, coordinator, saved, printed } = setup();
     await shell.handleLine("/sandbox on");
