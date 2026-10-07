@@ -275,6 +275,7 @@ const STYLE = `
   .setting { margin-bottom: 4px; }
   .entry.question > :not(.mark) { grid-column: 2; min-width: 0; }
   .question-field { display: grid; gap: 8px; margin: 12px 0; }
+  .question-field > .kind { justify-self: start; }
   .question-text { margin: 0; white-space: pre-wrap; }
   .question-options { display: grid; gap: 6px; }
   .question-option { display: grid; gap: 4px; text-align: left; white-space: pre-wrap; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg); }
