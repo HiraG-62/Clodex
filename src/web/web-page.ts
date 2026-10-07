@@ -240,6 +240,8 @@ const STYLE = `
   .shell-badge > span::before { content: ""; width: 6px; height: 6px; border-radius: 1px; background: var(--code); }
   .shell-input .target-slot .to { visibility: hidden; }
   .shell-input .shell-badge { visibility: visible; }
+  .solo-badge { padding: 3px 8px; border-radius: var(--r-pill); box-shadow: var(--ring); color: var(--muted); font-size: 12px; }
+  .solo-badge[hidden] { display: none; }
   .input-wrap { position: relative; min-width: 0; }
   /* textarea の背後に同じ折り返しで描き、指定した語の背景だけを見せる */
   .input-highlight, .box textarea { padding: 12px 14px 4px; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-gutter: stable; }
@@ -621,7 +623,7 @@ const STYLE = `
     .box { grid-template-columns: 44px minmax(0, 1fr) 44px 44px; align-items: end; border-radius: 16px; padding: 2px; gap: 0; }
     .box > .pending, .box > .suggest { grid-column: 1 / -1; }
     .box > .pending { grid-row: 1; } .box > .suggest { grid-row: 2; }
-    .box .bar { display: contents; } .to, .target-slot { display: none; }
+    .box .bar { display: contents; } .to, .target-slot, .solo-badge { display: none; }
     .shell-input .to-mark:disabled { opacity: 1; color: var(--code); }
     .shell-input .to-mark > .i { width: 26px; height: 26px; }
     .to-mark { display: inline-grid; place-items: center; grid-column: 1; grid-row: 3; width: 44px; height: 44px; border-radius: 13px; }
@@ -740,6 +742,7 @@ ${UI_ICONS}
           <button type="button" data-agent="codex" aria-pressed="false">Codex</button>
         </div>
         <div class="shell-badge"><span>${m("web.shellInput")}</span></div></div>
+        <span class="solo-badge" id="solo-badge" hidden>${m("shell.solo")}</span>
         ${button("attach", "image-plus", "web.attach.label", "attach")}
         ${button("mobile-add", "plus", "web.mobile.add", "mobile-only mobile-add")}
         <input type="file" id="attach-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>

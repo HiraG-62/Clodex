@@ -1021,11 +1021,17 @@ export function clientMain({
     $("#agents").replaceChildren(well);
     refreshUsage();
     $("#conversations").replaceChildren(...conversationList());
-    // 送り先: 人が選んでいなければ primary に合わせる
+    // 送り先: 人が選んでいなければ primary に合わせる。solo で固定されていればその Agent にする（DESIGN.md §11 Solo）
+    const solo = state.conversations.find((conversation) => conversation.current)?.solo;
+    if (solo && solo !== "free") target = solo;
     for (const button of document.querySelectorAll<HTMLButtonElement>(".to button")) {
       const id = button.dataset.agent as AgentId;
       button.setAttribute("aria-pressed", String((target ?? state.primary) === id));
     }
+    const soloBadge = $("#solo-badge");
+    soloBadge.hidden = !solo;
+    soloBadge.textContent = !solo || solo === "free" ? t("shell.solo") : t("shell.soloAgent", { agent: AGENTS[solo].name });
+    syncTargetButtons();
     renderPending();
     refreshOpenSheet();
     syncPendingButtons();
@@ -1753,6 +1759,12 @@ export function clientMain({
       }
     }
   };
+  // コマンド入力中と、solo で送り先が固定されているときは送り先を変えられない
+  function syncTargetButtons() {
+    const solo = state?.conversations.find((conversation) => conversation.current)?.solo;
+    const disabled = isShellInput(input.value) || Boolean(solo && solo !== "free");
+    for (const button of document.querySelectorAll<HTMLButtonElement>(".to button, #target-toggle")) button.disabled = disabled;
+  }
   function onInputChanged() {
     const shell = isShellInput(input.value);
     $("#composer").classList.toggle("shell-input", shell);
@@ -1762,7 +1774,7 @@ export function clientMain({
     sendButton.replaceChildren(icon(shell ? "terminal" : "arrow-up"));
     sendButton.setAttribute("aria-label", t(shell ? "web.run" : "web.send"));
     sendButton.title = t(shell ? "web.run" : "web.send");
-    for (const button of document.querySelectorAll<HTMLButtonElement>(".to button, #target-toggle")) button.disabled = shell;
+    syncTargetButtons();
     resize();
     renderHighlight();
     updateSuggest();

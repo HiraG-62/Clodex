@@ -318,8 +318,9 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
 
   const cursor = cursorSlices(buffer);
   const frame = inputFrame(buffer.text, t("tui.shellInput"), size.columns);
-  const branch = state.conversations.find((conversation) => conversation.current)?.branch;
-  const project = `${state.project || "Clodex"}${branch ? ` · ${t("tui.branch", { branch })}` : ""}`;
+  const { branch, solo } = state.conversations.find((conversation) => conversation.current) ?? {};
+  const soloLabel = !solo ? "" : ` · ${solo === "free" ? t("shell.solo") : t("shell.soloAgent", { agent: solo === "claude" ? "Claude" : "Codex" })}`;
+  const project = `${state.project || "Clodex"}${branch ? ` · ${t("tui.branch", { branch })}` : ""}${soloLabel}`;
   return h(Box, { flexDirection: "column" },
     h(Box, { height: logHeight, flexDirection: "column", overflow: "hidden" },
       ...shown.map((line, i) => h(Text, { key: i, wrap: "truncate-end", color: line.color,

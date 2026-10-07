@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
-import { Coordinator } from "./coordinator.js";
+import { type SoloMode, Coordinator } from "./coordinator.js";
 import { EventBus, type CoordinatorEvent } from "./event-bus.js";
 
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -733,4 +733,52 @@ it("上限到達の人向けエラーだけに /limits を添える", async () =
     if (!result.ok) expect(result.error).not.toContain("/limits");
     expect(events.some((e) => e.kind === "agent" && e.event.type === "error" && e.event.message.includes("/limits messages <n>"))).toBe(true);
   } finally { await coordinator.stop(); }
+});
+
+describe("Coordinator の solo（DESIGN.md §11 Solo）", () => {
+  const withSolo = () => {
+    const claude = new FakeAgentAdapter("claude");
+    const codex = new FakeAgentAdapter("codex");
+    let solo: SoloMode | undefined = "free";
+    const coordinator = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor, solo: () => solo });
+    return { claude, codex, coordinator, setSolo: (mode: SoloMode | undefined) => { solo = mode; } };
+  };
+
+  it("solo の間は send_message を拒否し、解除すれば受け付ける", async () => {
+    const { codex, coordinator, setSolo } = withSolo();
+    const rejected = coordinator.receiveMessage("claude", reviewRequest);
+    expect(rejected).toMatchObject({ ok: false, error: expect.stringContaining("solo") });
+    await flush();
+    expect(codex.sent).toEqual([]);
+    setSolo(undefined);
+    expect(coordinator.receiveMessage("claude", reviewRequest).ok).toBe(true);
+    await coordinator.stop();
+  });
+
+  it("solo の間は人の入力に自分で作業する 1 行を足す", async () => {
+    const { claude, coordinator, setSolo } = withSolo();
+    void coordinator.sendToAgent("claude", "作業");
+    await flush();
+    expect(claude.sent[0]).toContain("Solo mode");
+    claude.completeTurn();
+    await flush();
+    setSolo(undefined);
+    void coordinator.sendToAgent("claude", "次");
+    await flush();
+    expect(claude.sent[1]).not.toContain("Solo mode");
+    claude.completeTurn();
+    await coordinator.stop();
+  });
+
+  it("idle は作業中・配送待ちが無いときだけ true", async () => {
+    const { claude, coordinator } = withSolo();
+    expect(coordinator.idle()).toBe(true);
+    void coordinator.sendToAgent("claude", "作業");
+    await flush();
+    expect(coordinator.idle()).toBe(false);
+    claude.completeTurn();
+    await flush();
+    expect(coordinator.idle()).toBe(true);
+    await coordinator.stop();
+  });
 });

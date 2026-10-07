@@ -76,6 +76,14 @@ describe("parseInput", () => {
     expect(parseInput("@claude first\nsecond", "claude")).toEqual({ kind: "send", agent: "claude", text: "first\nsecond" });
   });
 
+  it("/solo を解釈する", () => {
+    expect(parseInput("/solo", "claude")).toEqual({ kind: "solo", mode: "free" });
+    expect(parseInput("/solo enable", "claude")).toEqual({ kind: "solo", mode: "free" });
+    expect(parseInput("/solo codex", "claude")).toEqual({ kind: "solo", mode: "codex" });
+    expect(parseInput("/solo disable", "claude")).toEqual({ kind: "solo" });
+    expect(parseInput("/solo x", "claude").kind).toBe("invalid");
+  });
+
   it("!> は結果を Agent に渡す実行にし、@agent で渡し先を選ぶ", () => {
     expect(parseInput("!> pnpm test", "claude")).toEqual({ kind: "runAndSend", command: "pnpm test" });
     expect(parseInput("@codex !> pnpm test", "claude")).toEqual({ kind: "runAndSend", command: "pnpm test", agent: "codex" });

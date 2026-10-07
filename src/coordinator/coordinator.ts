@@ -35,6 +35,10 @@ const QUESTION_HEADER_LENGTH = 80;
 const INPUT_ID_PREFIX = "in";
 const PREVIEW_LENGTH = 40;
 export const RECOVERY_CONTINUE = "[Clodex] Clodex restarted and your previous turn was interrupted. Continue the task you were working on.";
+// solo: Agent 同士のやり取りを止める。"free" は人の送り先を固定しない（DESIGN.md §11 Solo）
+export type SoloMode = "free" | AgentId;
+const SOLO_REMINDER = "[Clodex] Solo mode: do not use send_message. Do all the work yourself.";
+const SOLO_REJECTED = "solo mode: the other agent is not available. Do the work yourself.";
 const preview = (text: string) => (text.length > PREVIEW_LENGTH ? `${text.slice(0, PREVIEW_LENGTH)}…` : text);
 
 export interface CoordinatorOptions {
@@ -55,6 +59,8 @@ export interface CoordinatorOptions {
   modelCatalog?: () => ModelCatalog;
   // clodex --resume: 各 Agent の最初の起動で継続する session（DESIGN.md §18）
   resumeSessionIds?: Partial<Record<AgentId, string>>;
+  // 今の会話の solo。会話の保存が持つので、毎回読む
+  solo?: () => SoloMode | undefined;
 }
 
 export class Coordinator {
@@ -178,6 +184,7 @@ export class Coordinator {
   // MCP の send_message から呼ばれる。検証・記録・配送を行い、受理結果を送信元へ返す
   receiveMessage(from: AgentId, input: unknown): CreateMessageResult {
     const { projectRoot, bus, createMessageId } = this.options;
+    if (this.options.solo?.()) return { ok: false, error: SOLO_REJECTED };
     const result = createMessage(input, {
       from, repository: projectRoot, ...(createMessageId ? { createId: createMessageId } : {}),
     });
@@ -230,12 +237,16 @@ export class Coordinator {
     return typeof language === "function" ? language() : language;
   }
 
-  // 人の入力の末尾に足す言語の 1 行（DESIGN.md §13 Language）。言語の指定が無ければ空
+  // 人の入力の末尾に足す solo と言語の行（DESIGN.md §11 Solo・§13 Language）。どちらも無ければ空
   private get reminder(): string {
     const language = this.language;
-    return language ? `
+    const lines = [...(this.options.solo?.() ? [SOLO_REMINDER] : []), ...(language ? [languageReminder(language)] : [])];
+    return lines.length ? `\n\n${lines.join("\n")}` : "";
+  }
 
-${languageReminder(language)}` : "";
+  // 作業中のターンも配送待ちの入力・message も無い（solo の切り替えの条件。DESIGN.md §11 Solo）
+  idle(): boolean {
+    return AGENT_IDS.every((id) => this.options.agents[id].status !== "busy" && this.mailboxes[id].isIdle);
   }
 
   // 送った順（ID の連番順）に並べる

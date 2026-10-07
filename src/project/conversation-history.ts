@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import type { AgentId } from "../agents/agent-adapter.js";
+import { AGENT_IDS, type AgentId } from "../agents/agent-adapter.js";
 import type { EventBus } from "../coordinator/event-bus.js";
 import { t } from "../i18n/i18n.js";
 import { writeFileAtomic } from "./atomic-write.js";
@@ -24,6 +24,8 @@ const conversationSchema = z.strictObject({
   workDir: z.string().min(1).optional(),
   branch: z.string().min(1).optional(),
   sessions: sessionsSchema,
+  // DESIGN.md §11 Solo
+  solo: z.union([z.literal("free"), z.enum(AGENT_IDS)]).optional(),
 });
 const stateSchema = z.strictObject({ conversations: z.array(conversationSchema) });
 
@@ -48,7 +50,7 @@ const loadConversations = (path: string): Conversation[] => {
   }
 };
 
-const isWorthSaving = (c: Conversation) => Boolean(c.title || c.workDir || c.sessions.claude || c.sessions.codex);
+const isWorthSaving = (c: Conversation) => Boolean(c.title || c.workDir || c.solo || c.sessions.claude || c.sessions.codex);
 const byNewest = (a: Conversation, b: Conversation) => b.updatedAt.localeCompare(a.updatedAt);
 // ピン止めした会話は先頭に並べ、最大件数の枠に数えない
 const arrange = (conversations: Conversation[]): Conversation[] => {
@@ -101,6 +103,18 @@ export class ConversationHistory {
   // /rename: 今の会話の名前を変える
   rename(title: string): void {
     this.update({ title: title.slice(0, TITLE_LENGTH) });
+  }
+
+  // /solo: 今の会話の solo を変える。undefined で解除
+  setSolo(mode: Conversation["solo"]): void {
+    const { solo: _old, ...rest } = this.currentConversation;
+    this.currentConversation = mode ? { ...rest, solo: mode } : rest;
+    this.save((list) => list);
+  }
+
+  soloOf(id: string): Conversation["solo"] {
+    if (id === this.currentConversation.id) return this.currentConversation.solo;
+    return this.conversations.find((c) => c.id === id)?.solo;
   }
 
   // /pin: ピン止めを切り替え、切り替え後の状態を返す。無い会話なら undefined

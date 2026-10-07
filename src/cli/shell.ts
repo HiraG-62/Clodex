@@ -4,6 +4,7 @@ import { getLanguage } from "../i18n/i18n.js";
 import type { Language } from "../context/language.js";
 import type { PendingQuestion } from "../protocol/questions.js";
 import { AGENT_IDS, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult } from "../agents/agent-adapter.js";
+import type { SoloMode } from "../coordinator/coordinator.js";
 import type { UsageSnapshot } from "../coordinator/usage-monitor.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
 import { t } from "../i18n/i18n.js";
@@ -41,6 +42,8 @@ export interface ShellCoordinator {
   answer(id: string, answers: unknown): string | undefined;
   cancelInput(id?: string): PendingInput | undefined;
   status(): AgentState[];
+  // 作業中のターンも配送待ちも無い（solo の切り替えの条件）
+  idle(): boolean;
 }
 
 export interface PendingInput {
@@ -58,6 +61,7 @@ export interface ConversationList {
   startNew(options?: { worktree?: boolean }): Promise<string | undefined>;
   clearSession(agent: AgentId): void;
   rename(title: string): void;
+  setSolo(mode: SoloMode | undefined): void;
   // 削除できなければ理由を返す
   remove(id: string): string | undefined;
   // 切り替え後のピン止めの状態。無い会話なら undefined
@@ -228,8 +232,23 @@ export const createShell = ({
     if (error) notify(error, "warn");
   };
 
+  const currentSolo = (): SoloMode | undefined => history().list().find((c) => c.id === history().currentId)?.solo;
+  // solo で送り先が固定されていれば、その Agent 以外への送信を拒否する（DESIGN.md §11 Solo）
+  const lockedAgent = (): AgentId | undefined => {
+    const solo = currentSolo();
+    return solo && solo !== "free" ? solo : undefined;
+  };
+  const rejectLocked = (targets: readonly AgentId[]): boolean => {
+    const locked = lockedAgent();
+    if (!locked || targets.every((agent) => agent === locked)) return false;
+    notify(t("reject.soloLocked", { agent: locked }), "warn");
+    return true;
+  };
+  const soloLabel = (mode: SoloMode | undefined) =>
+    !mode ? t("shell.soloOff") : mode === "free" ? t("shell.solo") : t("shell.soloAgent", { agent: mode });
+
   const handleLine = async (line: string): Promise<ShellOutcome> => {
-    const command = parseInput(line, primary);
+    const command = parseInput(line, lockedAgent() ?? primary);
     if (projects?.hasCurrent && !projects.hasCurrent() && !["project", "language", "help", "exit", "empty"].includes(command.kind)) {
       print(t("shell.noProjectSelected"));
       return "continue";
@@ -244,6 +263,7 @@ export const createShell = ({
       case "sendAll":
         // 送信はキューに積むだけ。ターン完了は Event Bus 経由で表示される
       {
+        if (rejectLocked(command.kind === "sendAll" ? AGENT_IDS : [command.agent])) return "continue";
         if (busyElsewhere()) notify(t("notice.sameDirBusy"), "warn");
         const resolved = await resolveReferences(command.text, resolveReference);
         const text = command.kind === "sendAll" ? `${ALL_MESSAGE_PREFIX}\n${resolved.text}` : resolved.text;
@@ -264,7 +284,8 @@ export const createShell = ({
         void runner.run(command.command);
         return "continue";
       case "runAndSend": {
-        const agent = command.agent ?? primary;
+        const agent = command.agent ?? lockedAgent() ?? primary;
+        if (rejectLocked([agent])) return "continue";
         // 終わったときに会話が切り替わっていても、実行を始めた会話に送る
         const recipient = coordinator();
         void runner.run(command.command).then((result) => {
@@ -301,6 +322,8 @@ export const createShell = ({
         {
           const { workDir, branch } = history().list().find((c) => c.id === history().currentId) ?? {};
           if (workDir && branch) print(t("shell.worktree", { workDir, branch }));
+          const solo = currentSolo();
+          if (solo) print(soloLabel(solo));
         }
         for (const { id, status, sessionId, permission, model, modelLabel, effort, usage } of coordinator().status()) {
           print(t("shell.status", {
@@ -354,6 +377,14 @@ export const createShell = ({
       case "resume":
         if (command.index === undefined) listConversations();
         else await resumeConversation(command.index);
+        return "continue";
+      case "solo":
+        if (!coordinator().idle()) {
+          notify(t("reject.soloBusy"), "warn");
+          return "continue";
+        }
+        history().setSolo(command.mode);
+        notify(soloLabel(command.mode));
         return "continue";
       case "rename":
         history().rename(command.title);

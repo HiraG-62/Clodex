@@ -310,3 +310,14 @@ it("履歴追加後も表示中の行を保ち、hasMore が false なら再取�
   expect(app.lastFrame()).toContain("過去のログ");
   expect(history).toHaveBeenCalledTimes(1);
 });
+
+it("今の会話が solo なら下の行に出す", async () => {
+  setLanguage("ja");
+  const { client, emit } = fakeClient();
+  const app = render(React.createElement(TuiApp, { client }));
+  await tick();
+  const conversation = { id: "c1", startedAt: "2026-10-08T00:00:00Z", updatedAt: "2026-10-08T00:00:00Z", sessions: {}, current: true, solo: "codex" as const };
+  emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], conversations: [conversation], pendingInputs: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
+  await tick();
+  expect(app.lastFrame()).toContain("app · solo · Codex");
+});

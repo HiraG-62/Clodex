@@ -142,6 +142,7 @@ export const openProject = async ({
       limits,
       ...(config.usageAlert ? { usageAlert: config.usageAlert } : {}),
       resumeSessionIds: conversation.sessions,
+      solo: () => history.soloOf(conversation.id),
       language,
     });
     attachEventLog(bus, {

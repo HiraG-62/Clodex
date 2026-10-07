@@ -53,6 +53,7 @@ const conversationsOf = (context: ProjectContext): ConversationList => ({
   startNew: (options) => context.workspace.startNew(options),
   clearSession: (agent) => context.history.clearSession(agent),
   rename: (title) => context.history.rename(title),
+  setSolo: (mode) => context.history.setSolo(mode),
   remove: (id) => context.history.remove(id),
   togglePin: (id) => context.history.togglePin(id),
 });

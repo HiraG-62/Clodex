@@ -31,6 +31,7 @@ const SPECS: readonly SlashCommandSpec[] = [
   { name: "primary", args: "<agent>", description: "cmd.primary" },
   { name: "resume", args: "[number]", description: "cmd.resume" },
   { name: "rename", args: "<title>", description: "cmd.rename" },
+  { name: "solo", args: "[enable|disable|claude|codex]", argumentValues: ["enable", "disable", "claude", "codex"], description: "cmd.solo" },
   { name: "delete", args: "<number>", description: "cmd.delete" },
   { name: "pin", args: "<number>", description: "cmd.pin" },
   { name: "new", args: "[worktree|agent]", description: "cmd.new" },

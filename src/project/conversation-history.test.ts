@@ -176,6 +176,22 @@ describe("ConversationHistory", () => {
   });
 });
 
+describe("ConversationHistory の solo", () => {
+  it("今の会話の solo を保存し、読み直しても残る。新しい会話は通常のモード", () => {
+    const { history, path } = setup();
+    history.setSolo("codex");
+    const id = history.currentId;
+    expect(history.soloOf(id)).toBe("codex");
+    expect(new ConversationHistory(path, { resumeLatest: true }).current.solo).toBe("codex");
+    history.setSolo(undefined);
+    expect(history.soloOf(id)).toBeUndefined();
+    history.setSolo("free");
+    history.startNew();
+    expect(history.current.solo).toBeUndefined();
+    expect(history.soloOf(id)).toBe("free");
+  });
+});
+
 describe("ConversationHistory のリネーム・削除・ピン止め", () => {
   it("今の会話の名前を変え、以後の入力で上書きしない", () => {
     const { history, human } = setup();

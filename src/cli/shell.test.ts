@@ -2,6 +2,7 @@ import { DEFAULT_LIMITS, LIMIT_KEYS } from "../coordinator/budget-manager.js";
 import { describe, expect, it } from "vitest";
 import type { AgentId, AgentStatus, PermissionLevel, TurnResult } from "../agents/agent-adapter.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
+import type { SoloMode } from "../coordinator/coordinator.js";
 import { createShell, type AgentState, type ConversationList, type PendingInput, type ShellCoordinator } from "./shell.js";
 import type { CommandResult } from "./command-runner.js";
 
@@ -37,6 +38,12 @@ class FakeHistory implements ConversationList {
   }
   readonly renamed: string[] = [];
   rename(title: string) { this.renamed.push(title); }
+  setSolo(mode: SoloMode | undefined) {
+    const current = this.conversations.find((c) => c.id === this.currentId);
+    if (!current) return;
+    if (mode) current.solo = mode;
+    else delete current.solo;
+  }
   readonly removed: string[] = [];
   remove(id: string) {
     if (id === this.currentId) return "cannot delete the current conversation";
@@ -62,6 +69,8 @@ class FakeCoordinator implements ShellCoordinator {
   pendingQuestions() { return this.questions; }
   answer(id: string, value: unknown) { this.answers.push({ id, value }); return this.answerError; }
   readonly sent: Array<{ agent: AgentId; text: string }> = [];
+  isIdle = true;
+  idle() { return this.isIdle; }
   readonly interrupted: Array<AgentId | undefined> = [];
   readonly permissions: Array<{ level: PermissionLevel; agent: AgentId | undefined }> = [];
   readonly models: Array<{ model: string; agent: AgentId }> = [];
@@ -371,6 +380,34 @@ describe("createShell", () => {
     runner.finish[2]!({ code: 0, stopped: false, output: [] });
     await flush();
     expect(coordinator.sent[1]).toMatchObject({ agent: "claude" });
+  });
+
+  it("/solo は作業中でなければ今の会話に保存し、作業中なら拒否する", async () => {
+    const { coordinator, history, notified, shell } = setup();
+    const solo = () => history.conversations.find((c) => c.id === history.currentId)?.solo;
+    await shell.handleLine("/solo");
+    expect(solo()).toBe("free");
+    await shell.handleLine("/solo codex");
+    expect(solo()).toBe("codex");
+    coordinator.isIdle = false;
+    await shell.handleLine("/solo disable");
+    expect(solo()).toBe("codex");
+    expect(notified.at(-1)).toMatch(/作業中|working/);
+    coordinator.isIdle = true;
+    await shell.handleLine("/solo disable");
+    expect(solo()).toBeUndefined();
+  });
+
+  it("送り先を固定した solo では、ほかの Agent への送信と @all を拒否する", async () => {
+    const { coordinator, history, shell } = setup();
+    history.setSolo("codex");
+    await shell.handleLine("@claude 作業");
+    await shell.handleLine("@all 作業");
+    await shell.handleLine("@claude !> pnpm test");
+    expect(coordinator.sent).toEqual([]);
+    await shell.handleLine("@codex 作業");
+    await shell.handleLine("作業");
+    expect(coordinator.sent.map((s) => s.agent)).toEqual(["codex", "codex"]);
   });
 
   it("/status は各 Agent の状態を表示する", async () => {

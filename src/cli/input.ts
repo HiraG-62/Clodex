@@ -2,6 +2,7 @@
 import { LIMIT_NAMES, isLimitValue, type LimitName } from "../coordinator/budget-manager.js";
 import { t } from "../i18n/i18n.js";
 import { AGENT_IDS, CLAUDE_EFFORT_LEVELS, COMMON_EFFORT_LEVELS, PERMISSION_LEVELS, isAgentId, type AgentId, type PermissionLevel } from "../agents/agent-adapter.js";
+import type { SoloMode } from "../coordinator/coordinator.js";
 
 import { LANGUAGES, type Language } from "../context/language.js";
 
@@ -29,6 +30,7 @@ export type ShellCommand =
   | { kind: "answer"; id: string; text: string }
   | { kind: "cancel"; id?: string }
   | { kind: "rename"; title: string }
+  | { kind: "solo"; mode?: SoloMode }
   | { kind: "delete"; index: number }
   | { kind: "pin"; index: number }
   | { kind: "run"; command: string }
@@ -170,6 +172,10 @@ const parseCommand = (name: string, arg: string): ShellCommand => {
       return isConversationNumber(arg) ? { kind: "resume", index: Number(arg) } : usage("/resume [number]");
     case "rename":
       return arg ? { kind: "rename", title: arg } : usage("/rename <title>");
+    case "solo":
+      if (!arg || arg === "enable") return { kind: "solo", mode: "free" };
+      if (arg === "disable") return { kind: "solo" };
+      return isAgentId(arg) ? { kind: "solo", mode: arg } : usage("/solo [enable|disable|claude|codex]");
     case "delete":
     case "pin":
       return isConversationNumber(arg) ? { kind: name, index: Number(arg) } : usage(`/${name} <number>`);
