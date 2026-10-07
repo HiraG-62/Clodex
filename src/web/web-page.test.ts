@@ -10,6 +10,13 @@ import { ja } from "../i18n/messages.js";
 const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1] ?? "");
 
 describe("buildWebPage", () => {
+  it("広い画面の利用状況領域と共通の寸法を埋め込む", () => {
+    const html = buildWebPage("ja").html;
+    expect(html).toContain('id="usage-side"');
+    expect(html).toContain('"wideUsageMinWidth":1700');
+    expect(html).toContain('width > 1360px');
+    expect(html).toContain('min-width: 1700px');
+  });
   it("コマンド印を送り先と同じ場所に置き、利用状況のパネルを持つ", () => {
     const html = buildWebPage("ja").html;
     expect(html).not.toContain('id="shell-input-label"');

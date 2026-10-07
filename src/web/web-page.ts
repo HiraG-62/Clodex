@@ -1,3 +1,4 @@
+import { WEB_LAYOUT } from "./layout.js";
 import { resolvePendingSettings, isNavigationCommand, nextCommandStarts } from "./client/pending.js";
 import { UI_ICONS } from "./web-icons.js";
 // Web UI の画面（DESIGN.md §17 Web UI）。HTML 1 枚に CSS と JS を inline で持つ。
@@ -314,7 +315,7 @@ const STYLE = `
   .working-entry .plan { color: var(--muted); overflow-wrap: anywhere; }
   .working-entry .elapsed { color: var(--muted); font-family: var(--font-mono); }
 
-  .app { display: grid; height: 100%; max-width: 1360px; margin: 0 auto; min-width: 0;
+  .app { display: grid; height: 100%; max-width: ${WEB_LAYOUT.sideWidth + WEB_LAYOUT.chatMaxWidth}px; margin: 0 auto; min-width: 0;
     grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto;
     grid-template-areas: "top" "conn" "status" "log" "compose"; }
   .topbar { grid-area: top; } .conn { grid-area: conn; } .status { grid-area: status; } .log-wrap { grid-area: log; } .composer { grid-area: compose; }
@@ -322,7 +323,7 @@ const STYLE = `
     .sheet { align-items: center; justify-items: center; }
     .sheet-panel { border-radius: 14px; max-height: 85vh; max-width: 640px; padding-bottom: 20px; }
     .sheet-panel.wide { max-width: 960px; }
-    .app { grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+    .app { grid-template-columns: ${WEB_LAYOUT.sideWidth}px minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto;
       grid-template-areas: "top top" "conn conn" "side agents" "side log" "side compose"; border-inline: 1px solid var(--line); }
     .side { grid-area: side; display: flex; border-right: 1px solid var(--line); overflow-y: auto; }
     .status { display: none; }
@@ -525,6 +526,20 @@ const STYLE = `
   .usage-popover .gauge { font-size: 12px; }
   .usage-popover .gauge .k { overflow: visible; }
   .usage-popover .gauge .track { grid-column: 1 / -1; }
+  .usage-side { display: none; }
+  .usage-side h2 { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 0 0 18px; }
+  .usage-side section { padding: 20px 16px; border-bottom: 1px solid var(--line); }
+  .usage-side .usage-details { display: grid; gap: 16px; }
+  .usage-side .gauge-reset { display: inline; margin-right: 8px; color: var(--muted); }
+  .usage-side .gauge { font-size: 11.5px; }
+  @media (width > ${WEB_LAYOUT.sideWidth + WEB_LAYOUT.chatMaxWidth}px) and (hover: hover) and (pointer: fine) {
+    .app { max-width: none; border: 0; grid-template-columns: max(${WEB_LAYOUT.sideWidth}px, calc((100vw - ${WEB_LAYOUT.chatMaxWidth}px) / 2)) ${WEB_LAYOUT.chatMaxWidth}px minmax(0, 1fr); grid-template-areas: "top top top" "conn conn conn" "side agents ." "side log ." "side compose ."; }
+    .side { width: ${WEB_LAYOUT.sideWidth}px; justify-self: start; background: var(--bg); }
+  }
+  @media (min-width: ${WEB_LAYOUT.wideUsageMinWidth}px) and (hover: hover) and (pointer: fine) {
+    .usage-side { display: block; position: fixed; right: 0; top: 0; bottom: 0; width: ${WEB_LAYOUT.sideWidth}px; overflow-y: auto; border-left: 1px solid var(--line); background: var(--bg); }
+    .topbar, .conn { margin-right: ${WEB_LAYOUT.sideWidth}px; }
+  }
   .mobile-only, .grab { display: none; }
   .code-block { min-width: 0; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; margin: 12px 0; }
   .code-head { display: flex; justify-content: flex-end; border-bottom: 1px solid var(--line); padding-inline: 4px; background: var(--sunken); }
@@ -726,6 +741,7 @@ ${UI_ICONS}
     <div id="sheet-body"></div>
   </div>
 </div>
+<aside class="usage-side" id="usage-side" aria-label="${m("web.usage.title")}"></aside>
 <div class="usage-popover" id="usage-popover" role="dialog" aria-label="${m("web.usage.title")}" hidden></div>
 <div class="toast" id="toast" role="status"></div>
 `;
@@ -774,6 +790,7 @@ export const buildWebPage = (language: Language): WebPage => {
   const messages = MESSAGES[language];
   const html = body(messages);
   const deps = `${FUNCTIONS}
+  layout: ${json(WEB_LAYOUT)},
   commands: ${json(slashCommands())},
   messages: ${json(messages)},`;
   const version = createHash("sha256").update(STYLE).update(html).update(MARKED_UMD).update(CLIENT_SOURCE).update(deps)

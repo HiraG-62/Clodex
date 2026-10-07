@@ -1,3 +1,4 @@
+import type { WEB_LAYOUT } from "../layout.js";
 import type { CommandStarts, PendingDeadlines, PendingSettings, resolvePendingSettings as ResolvePendingSettings, isNavigationCommand as IsNavigationCommand, nextCommandStarts as NextCommandStarts } from "./pending.js";
 // Web UI の画面の振る舞い（DESIGN.md §17 Web UI）。
 // ブラウザ側にそのまま埋め込むため、外部のものを参照しない 1 つの関数として書く（型の import のみ）。
@@ -17,6 +18,7 @@ import type { chooseProjectPath as ChooseProjectPath } from "./project-picker.js
 import type { DesktopNotification, DesktopNotifyState, updateDesktopNotify as UpdateDesktopNotify } from "./desktop-notify.js";
 
 export interface ClientDeps {
+  layout: typeof WEB_LAYOUT;
   withStartingTurns: typeof WithStartingTurns;
   resolvePendingSettings: typeof ResolvePendingSettings;
   isNavigationCommand: typeof IsNavigationCommand;
@@ -38,7 +40,7 @@ export interface ClientDeps {
 }
 
 export function clientMain({
-  withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, composeInputLine, createInputAssist, collectArtifacts, findImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
+  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, composeInputLine, createInputAssist, collectArtifacts, findImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -60,6 +62,7 @@ export function clientMain({
   const TURN_LABEL: Record<"working" | TurnResult["status"], MessageKey | undefined> = { working: "web.status.busy", interrupted: "web.turn.interrupted", failed: "web.turn.failed", completed: undefined };
   const MOBILE_QUERY = "(max-width: 899px), (pointer: coarse)";
   const mobile = window.matchMedia(MOBILE_QUERY);
+  const wideUsage = window.matchMedia(`(min-width: ${layout.wideUsageMinWidth}px) and (hover: hover) and (pointer: fine)`);
   const SWIPE_CLOSE_PX = 72;
   const KEYBOARD_THRESHOLD_PX = 120;
   const CODE_FOLD_LINES = 8;
@@ -832,22 +835,19 @@ export function clientMain({
   const positionUsage = () => {
     if (!usageAgent || usagePopover.hidden) return;
     const card = document.querySelector<HTMLElement>(`#agents [data-agent="${usageAgent}"]`);
-    if (!card || mobile.matches) return closeUsage();
+    if (!card || mobile.matches || wideUsage.matches) return closeUsage();
     const rect = card.getBoundingClientRect();
     usagePopover.style.left = `${rect.left}px`;
     usagePopover.style.top = `${rect.bottom + USAGE_POPOVER_GAP_PX}px`;
     usagePopover.style.width = `${rect.width}px`;
   };
-  const refreshUsage = () => {
-    if (!usageAgent) return;
-    const agent = state?.agents.find((entry) => entry.id === usageAgent);
-    if (!agent || mobile.matches) return closeUsage();
-    if (usagePopover.dataset.agent !== agent.id) {
-      usagePopover.replaceChildren(...gaugeValues(agent.usage).map((g) => gauge(g.label, g.value, g.percent, agent.id, g.over, g.tick, g.reset)));
-      usagePopover.dataset.agent = agent.id;
+  const syncUsageDetails = (container: HTMLElement, agent: AgentState) => {
+    if (container.dataset.agent !== agent.id) {
+      container.replaceChildren(...gaugeValues(agent.usage).map((g) => gauge(g.label, g.value, g.percent, agent.id, g.over, g.tick, g.reset)));
+      container.dataset.agent = agent.id;
     }
     gaugeValues(agent.usage).forEach((g, index) => {
-      const node = usagePopover.children[index] as HTMLElement;
+      const node = container.children[index] as HTMLElement;
       const value = g.label === t("web.gauge.context") && agent.usage.contextWindow && agent.usage.contextTokens !== undefined
         ? `${g.value} · ${Math.round(g.percent ?? 0)}%` : g.value;
       syncGauge(node, g.label, value, g.percent, g.over, g.tick, g.reset);
@@ -855,6 +855,32 @@ export function clientMain({
       node.querySelector<HTMLElement>(".track")!.hidden = g.value === "—";
       node.querySelector<HTMLElement>(".gauge-reset")!.hidden = g.value === "—";
     });
+  };
+  const refreshUsageSide = () => {
+    const side = $("#usage-side");
+    if (!wideUsage.matches) return;
+    for (const id of AGENT_IDS) {
+      const agent = state?.agents.find((entry) => entry.id === id);
+      let section = side.querySelector<HTMLElement>(`section[data-agent="${id}"]`);
+      if (!agent) { section?.remove(); continue; }
+      if (!section) {
+        section = el("section");
+        section.dataset.agent = id;
+        const heading = el("h2");
+        heading.append(mark(id), el("span", "", AGENTS[id].name));
+        section.append(heading, el("div", "usage-details"));
+        side.append(section);
+      }
+      syncUsageDetails(section.querySelector<HTMLElement>(".usage-details")!, agent);
+    }
+  };
+  const refreshUsage = () => {
+    refreshUsageSide();
+    if (wideUsage.matches) return closeUsage();
+    if (!usageAgent) return;
+    const agent = state?.agents.find((entry) => entry.id === usageAgent);
+    if (!agent || mobile.matches) return closeUsage();
+    syncUsageDetails(usagePopover, agent);
     usagePopover.hidden = false;
     for (const button of document.querySelectorAll("#agents button.mini-gauges")) button.setAttribute("aria-expanded", String(button.closest<HTMLElement>(".agent")?.dataset.agent === agent.id));
     positionUsage();
@@ -949,17 +975,20 @@ export function clientMain({
       }
       who.append(h2, summary);
       const controls = agentControls(agent);
-      const miniButton = el("button", "mini-gauges") as HTMLButtonElement;
-      miniButton.type = "button";
-      miniButton.title = t("web.usage.title");
-      miniButton.setAttribute("aria-label", t("web.usage.title"));
-      miniButton.setAttribute("aria-expanded", String(usageAgent === agent.id));
-      miniButton.setAttribute("aria-controls", "usage-popover");
+      const miniButton = el(wideUsage.matches ? "div" : "button", "mini-gauges");
+      if (miniButton instanceof HTMLButtonElement) {
+        miniButton.type = "button";
+        miniButton.title = t("web.usage.title");
+        miniButton.setAttribute("aria-label", t("web.usage.title"));
+        miniButton.setAttribute("aria-expanded", String(usageAgent === agent.id));
+        miniButton.setAttribute("aria-controls", "usage-popover");
+        miniButton.addEventListener("click", () => {
+          if (wideUsage.matches) return;
+          if (usageAgent === agent.id) closeUsage();
+          else { usageAgent = agent.id; refreshUsage(); }
+        });
+      }
       miniButton.append(...controls.querySelector(".mini-gauges")!.childNodes);
-      miniButton.addEventListener("click", () => {
-        if (usageAgent === agent.id) closeUsage();
-        else { usageAgent = agent.id; refreshUsage(); }
-      });
       section.append(mark(agent.id), who, miniButton, controls.querySelector(".links")!);
       return section;
     }));
@@ -975,6 +1004,8 @@ export function clientMain({
     refreshOpenSheet();
     syncPendingButtons();
   };
+
+  wideUsage.addEventListener("change", () => { closeUsage(); renderState(); });
 
   // ---- 送信待ちの入力（取り消し・編集。DESIGN.md §28 v0.3 A） ----
   const renderPending = () => {
