@@ -95,6 +95,15 @@ describe("buildWebPage", () => {
     expect(html).not.toContain("working-entry");
   });
 
+  it("GUI の中の画面は GUI の版を添えてつなぎ、更新の依頼を Tauri の command で行う", () => {
+    const { html } = buildWebPage("ja");
+    expect(html).toContain("new EventSource(guiVersion ? `/events?gui=${encodeURIComponent(guiVersion)}` : \"/events\")");
+    expect(html).toContain('invoke("install_update")');
+    expect(html).toContain('invoke("check_update")');
+    expect(html).toContain('postJson("/api/gui/update", { action })');
+    expect(html).toContain(".gui-update[hidden] { display: none; }");
+  });
+
   it("コマンド入力の色・ラベル・切り替え処理をページに含める", () => {
     const { html } = buildWebPage("ja");
     expect(html).not.toContain('id="shell-input-label"');

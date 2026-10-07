@@ -4,7 +4,7 @@ import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { PreviewResult } from "../project/file-preview.js";
-import type { FeedItem, WebFeed } from "./web-feed.js";
+import { GUI_ACTIONS, type FeedItem, type GuiAction, type GuiInfo, type GuiUpdate, type WebFeed } from "./web-feed.js";
 import { ICON_SVG, MANIFEST, type WebPage } from "./web-page.js";
 import { APPLE_TOUCH_ICON_PNG_BASE64 } from "./apple-touch-icon.js";
 
@@ -15,7 +15,7 @@ const KEEPALIVE_MS = 25_000;
 const MAX_BODY_BYTES = 64 * 1024;
 const APPLE_TOUCH_ICON_PNG = Buffer.from(APPLE_TOUCH_ICON_PNG_BASE64, "base64");
 const HTTP = {
-  ok: 200, noContent: 204, found: 302, badRequest: 400, unauthorized: 401, notFound: 404, tooLarge: 413, unsupported: 415, serverError: 500,
+  ok: 200, noContent: 204, found: 302, badRequest: 400, unauthorized: 401, notFound: 404, conflict: 409, tooLarge: 413, unsupported: 415, serverError: 500,
 } as const;
 
 export interface WebServerOptions {
@@ -79,6 +79,29 @@ const parseLine = (body: string): string | undefined => {
   }
 };
 
+const parseJson = (body: string): Record<string, unknown> | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(body);
+    return typeof parsed === "object" && parsed !== null ? parsed as Record<string, unknown> : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const parseGuiAction = (body: string): GuiAction | undefined => {
+  const action = parseJson(body)?.action;
+  return GUI_ACTIONS.find((candidate) => candidate === action);
+};
+
+const parseGuiUpdate = (body: string): GuiUpdate | undefined => {
+  const value = parseJson(body);
+  const status = value?.status;
+  if (status === "checking" || status === "latest" || status === "installing") return { status };
+  if (status === "available" && typeof value?.version === "string") return { status, version: value.version };
+  if (status === "error" && typeof value?.message === "string") return { status, message: value.message };
+  return undefined;
+};
+
 const sendItem = (res: ServerResponse, item: FeedItem) => res.write(`data: ${JSON.stringify(item)}\n\n`);
 
 const sendJson = (res: ServerResponse, value: unknown) => {
@@ -94,24 +117,60 @@ const sendPreview = (res: ServerResponse, result: PreviewResult) => {
 
 export const startWebServer = async ({ port, token, feed, page, onInput, listFiles, preview, upload, onError }: WebServerOptions): Promise<WebServerHandle> => {
   const streams = new Set<ServerResponse>();
+  // GUI の中の画面の接続（DESIGN.md §28 Web UI の設定からの更新）
+  let guiStream: ServerResponse | undefined;
+  let gui: GuiInfo | null = null;
+  const setGui = (next: GuiInfo | null) => {
+    gui = next;
+    for (const res of streams) sendItem(res, { type: "gui", gui });
+  };
 
-  const handleEvents = (req: IncomingMessage, res: ServerResponse) => {
+  const handleEvents = (req: IncomingMessage, res: ServerResponse, guiVersion: string | null) => {
     res.writeHead(HTTP.ok, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
     // 接続（再接続を含む）のたびに画面の版、直近の履歴、最新の状態を送る
     sendItem(res, { type: "version", version: page.version });
     for (const item of feed.recent()) sendItem(res, item);
     const state = feed.latestState();
     if (state) sendItem(res, { type: "state", state });
+    if (gui) sendItem(res, { type: "gui", gui });
     const unsubscribe = feed.subscribe((item) => sendItem(res, item));
     // プロキシ等に切られないよう、定期的に comment を送る
     const keepalive = setInterval(() => res.write(": keepalive\n\n"), KEEPALIVE_MS);
     keepalive.unref();
     streams.add(res);
+    if (guiVersion) {
+      guiStream = res;
+      setGui({ version: guiVersion });
+    }
     req.on("close", () => {
       unsubscribe();
       clearInterval(keepalive);
       streams.delete(res);
+      if (guiStream !== res) return;
+      guiStream = undefined;
+      setGui(null);
     });
+  };
+
+  const handleGuiUpdate = async (req: IncomingMessage, res: ServerResponse) => {
+    const body = await readBody(req);
+    if (body === undefined) return void res.writeHead(HTTP.tooLarge).end();
+    const action = parseGuiAction(body);
+    if (!action) return void res.writeHead(HTTP.badRequest).end();
+    if (!guiStream || !gui) return void res.writeHead(HTTP.conflict).end();
+    setGui({ ...gui, update: { status: action === "check" ? "checking" : "installing" } });
+    sendItem(guiStream, { type: "gui_command", action });
+    res.writeHead(HTTP.noContent).end();
+  };
+
+  const handleGuiStatus = async (req: IncomingMessage, res: ServerResponse) => {
+    const body = await readBody(req);
+    if (body === undefined) return void res.writeHead(HTTP.tooLarge).end();
+    const update = parseGuiUpdate(body);
+    if (!update) return void res.writeHead(HTTP.badRequest).end();
+    if (!gui) return void res.writeHead(HTTP.conflict).end();
+    setGui({ ...gui, update });
+    res.writeHead(HTTP.noContent).end();
   };
 
   const handleInput = async (req: IncomingMessage, res: ServerResponse) => {
@@ -160,7 +219,7 @@ export const startWebServer = async ({ port, token, feed, page, onInput, listFil
       res.writeHead(HTTP.ok, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
       return void res.end(page.html);
     }
-    if (req.method === "GET" && url.pathname === "/events") return handleEvents(req, res);
+    if (req.method === "GET" && url.pathname === "/events") return handleEvents(req, res, url.searchParams.get("gui"));
     if (req.method === "GET" && url.pathname === "/api/state") return sendJson(res, feed.latestState() ?? null);
     if (req.method === "GET" && url.pathname === "/api/files") return sendJson(res, await listFiles());
     if (req.method === "GET" && url.pathname === "/api/history") {
@@ -174,6 +233,8 @@ export const startWebServer = async ({ port, token, feed, page, onInput, listFil
     if (req.method === "GET" && url.pathname === "/api/diff" && previewPath) return sendPreview(res, await preview.diff(previewPath));
     if (req.method === "POST" && url.pathname === "/api/input") return handleInput(req, res);
     if (req.method === "POST" && url.pathname === "/api/upload") return handleUpload(req, res);
+    if (req.method === "POST" && url.pathname === "/api/gui/update") return handleGuiUpdate(req, res);
+    if (req.method === "POST" && url.pathname === "/api/gui/status") return handleGuiStatus(req, res);
     res.writeHead(HTTP.notFound).end();
   };
 

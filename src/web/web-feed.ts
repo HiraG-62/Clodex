@@ -47,7 +47,18 @@ export type FeedItem =
   | { type: "toast"; text: string; level: "info" | "warn" }
   | { type: "reset" }
   // 接続のたびに最初に送る。画面の版が違えば再読み込みする
-  | { type: "version"; version: string };
+  | { type: "version"; version: string }
+  // GUI の有無と更新の状態（DESIGN.md §28 Web UI の設定からの更新）。gui_command は GUI の接続にだけ送る
+  | { type: "gui"; gui: GuiInfo | null }
+  | { type: "gui_command"; action: GuiAction };
+
+export const GUI_ACTIONS = ["check", "install"] as const;
+export type GuiAction = (typeof GUI_ACTIONS)[number];
+export type GuiUpdate =
+  | { status: "checking" | "latest" | "installing" }
+  | { status: "available"; version: string }
+  | { status: "error"; message: string };
+export interface GuiInfo { version: string; update?: GuiUpdate }
 
 export type HistoryItem = Extract<FeedItem, { type: "event" | "output" }>;
 export interface HistoryPage { items: HistoryItem[]; hasMore: boolean; }

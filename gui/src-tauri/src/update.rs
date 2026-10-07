@@ -33,6 +33,23 @@ pub fn check(app: AppHandle, trigger: Trigger) {
     });
 }
 
+// Web UI の設定から呼ぶ。新しい版があればその版を返す
+#[tauri::command]
+pub async fn check_update(app: AppHandle) -> Result<Option<String>, String> {
+    let update = find_update(&app).await.map_err(|error| error.to_string())?;
+    Ok(update.map(|update| update.version))
+}
+
+// Web UI の設定から呼ぶ。人は画面で確認済みなのでダイアログは出さない
+#[tauri::command]
+pub async fn install_update(app: AppHandle) -> Result<(), String> {
+    let update = find_update(&app)
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| UP_TO_DATE_MESSAGE.to_string())?;
+    install(&app, update).await.map_err(|error| error.to_string())
+}
+
 fn endpoint_for(user_config: Option<&str>) -> &'static str {
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]

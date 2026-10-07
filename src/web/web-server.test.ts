@@ -230,3 +230,57 @@ it("履歴を認証付きで分割取得し、不正な before は 400", async (
   }
   expect((await fetch(`${base}/api/history?before=5`)).status).toBe(401);
 });
+
+describe("GUI の更新の中継", () => {
+  const post = (base: string, path: string, body: unknown, cookie = COOKIE) =>
+    fetch(`${base}${path}`, { method: "POST", headers: { cookie }, body: JSON.stringify(body) });
+  const events = (base: string, query = "") => fetch(`${base}/events${query}`, { headers: { cookie: COOKIE } });
+
+  it("GUI の接続を全画面に知らせ、確認の依頼を GUI へ、結果を全画面へ送る", async () => {
+    const { base } = await setup();
+    const phone = await events(base);
+    const gui = await events(base, "?gui=0.1.2-dev.3");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect((await post(base, "/api/gui/update", { action: "check" })).status).toBe(204);
+    expect((await post(base, "/api/gui/status", { status: "available", version: "0.1.2-dev.4" })).status).toBe(204);
+    expect((await readEvents(phone, 4)).slice(1)).toEqual([
+      { type: "gui", gui: { version: "0.1.2-dev.3" } },
+      { type: "gui", gui: { version: "0.1.2-dev.3", update: { status: "checking" } } },
+      { type: "gui", gui: { version: "0.1.2-dev.3", update: { status: "available", version: "0.1.2-dev.4" } } },
+    ]);
+    expect(await readEvents(await events(base), 2)).toEqual([
+      { type: "version", version: PAGE.version },
+      { type: "gui", gui: { version: "0.1.2-dev.3", update: { status: "available", version: "0.1.2-dev.4" } } },
+    ]);
+    expect((await readEvents(gui, 4)).slice(0, 4)).toEqual([
+      { type: "version", version: PAGE.version },
+      { type: "gui", gui: { version: "0.1.2-dev.3" } },
+      { type: "gui", gui: { version: "0.1.2-dev.3", update: { status: "checking" } } },
+      { type: "gui_command", action: "check" },
+    ]);
+  });
+
+  it("GUI の接続が切れたら全画面に知らせ、GUI が無ければ依頼は 409", async () => {
+    const { base } = await setup();
+    const phone = await events(base);
+    const controller = new AbortController();
+    await fetch(`${base}/events?gui=0.1.2`, { headers: { cookie: COOKIE }, signal: controller.signal });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    controller.abort();
+    expect((await readEvents(phone, 3)).slice(1)).toEqual([
+      { type: "gui", gui: { version: "0.1.2" } },
+      { type: "gui", gui: null },
+    ]);
+    expect((await post(base, "/api/gui/update", { action: "install" })).status).toBe(409);
+  });
+
+  it("不正な依頼・結果は 400、token が無ければ 401", async () => {
+    const { base } = await setup();
+    await events(base, "?gui=0.1.2");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect((await post(base, "/api/gui/update", { action: "remove" })).status).toBe(400);
+    expect((await post(base, "/api/gui/status", { status: "available" })).status).toBe(400);
+    expect((await post(base, "/api/gui/status", { status: "error" })).status).toBe(400);
+    expect((await post(base, "/api/gui/update", { action: "check" }, "clodex_token=wrong")).status).toBe(401);
+  });
+});

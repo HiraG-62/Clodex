@@ -180,7 +180,7 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
     let unsubscribe: (() => void) | undefined;
     let toastTimer: ReturnType<typeof setTimeout> | undefined;
     void client.connect((item) => {
-      if (closed) return;
+      if (closed || item.type === "gui" || item.type === "gui_command") return;
       if (item.type === "version") {
         if (receivedVersion) return;
         receivedVersion = true;

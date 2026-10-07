@@ -6,7 +6,7 @@ import type { CommandStarts, PendingDeadlines, PendingSettings, resolvePendingSe
 import type { AgentId, AgentStatus, TurnResult } from "../../agents/agent-adapter.js";
 import type { AgentState } from "../../cli/shell.js";
 import type { isShellInput as IsShellInput } from "./shell-input.js";
-import type { FeedItem, HistoryItem, HistoryPage, WebState } from "../web-feed.js";
+import type { FeedItem, GuiAction, GuiInfo, GuiUpdate, HistoryItem, HistoryPage, WebState } from "../web-feed.js";
 import type { renderMarkdown as RenderMarkdown } from "./markdown.js";
 import type { TimelineItem, DisplayTimelineItem, withStartingTurns as WithStartingTurns, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline, workingFeed as WorkingFeed } from "./timeline.js";
 import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
@@ -1573,8 +1573,62 @@ export function clientMain({
     const sendKeyChoice = choice("sendKey", t("web.settings.sendKey"), SEND_KEYS, sendKey,
       value => t(value === "enter" ? "web.settings.sendEnter" : "web.settings.sendCtrlEnter"),
       value => { sendKey = value; storage.set(SEND_KEY_KEY, value); });
-    openSheet(t("web.settings.title"), mobile.matches ? [sandbox, limits, language] : [sandbox, limits, language, sendKeyChoice]);
+    openSheet(t("web.settings.title"), [sandbox, limits, language, ...(mobile.matches ? [] : [sendKeyChoice]), guiUpdateSection()]);
     refreshOpenSheet();
+  };
+
+  // ---- GUI の更新（DESIGN.md §28 Web UI の設定からの更新）----
+  type TauriApi = { app?: { getVersion(): Promise<string> }; core?: { invoke<T>(command: string): Promise<T> } };
+  const tauriApi = (window as Window & { __TAURI__?: TauriApi }).__TAURI__;
+  let guiVersion: string | undefined;
+  let gui: GuiInfo | null = null;
+  const postJson = (path: string, value: unknown) => fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(value) });
+  const runGuiCommand = async (action: GuiAction) => {
+    const invoke = tauriApi?.core?.invoke;
+    if (!invoke) return;
+    try {
+      if (action === "install") return void await invoke<void>("install_update");
+      const version = await invoke<string | null>("check_update");
+      await postJson("/api/gui/status", version ? { status: "available", version } : { status: "latest" });
+    } catch (error) {
+      await postJson("/api/gui/status", { status: "error", message: String(error) } satisfies GuiUpdate);
+    }
+  };
+  const requestGuiUpdate = (action: GuiAction, button: HTMLButtonElement) =>
+    void withPending(button, () => postJson("/api/gui/update", { action }));
+  const guiUpdateSection = () => {
+    const section = el("section", "setting gui-update");
+    section.append(el("div", "eyebrow", t("web.settings.app")));
+    const row = el("div", "gui-update-row");
+    const check = el("button", "btn gui-check", t("web.settings.checkUpdate")) as HTMLButtonElement;
+    check.type = "button";
+    check.addEventListener("click", () => requestGuiUpdate("check", check));
+    const install = el("button", "btn gui-install", t("web.settings.update")) as HTMLButtonElement;
+    install.type = "button";
+    install.addEventListener("click", () => {
+      if (gui?.update?.status !== "available" || !window.confirm(t("web.settings.updateConfirm", { version: gui.update.version }))) return;
+      requestGuiUpdate("install", install);
+    });
+    row.append(el("span", "muted small gui-version"), check, el("span", "small gui-status"), install);
+    section.append(row);
+    return section;
+  };
+  const guiStatusText = (update: GuiUpdate | undefined): string => {
+    if (!update) return "";
+    if (update.status === "available") return t("web.settings.updateAvailable", { version: update.version });
+    if (update.status === "error") return t("web.settings.updateFailed", { message: update.message });
+    return t(update.status === "checking" ? "web.settings.updateChecking" : update.status === "latest" ? "web.settings.updateLatest" : "web.settings.updateInstalling");
+  };
+  const refreshGuiUpdate = (body: HTMLElement) => {
+    const section = body.querySelector<HTMLElement>(".gui-update");
+    if (!section) return;
+    section.hidden = !gui;
+    if (!gui) return;
+    const busy = gui.update?.status === "checking" || gui.update?.status === "installing";
+    section.querySelector<HTMLElement>(".gui-version")!.textContent = t("web.settings.version", { version: gui.version });
+    section.querySelector<HTMLButtonElement>(".gui-check")!.disabled = busy;
+    section.querySelector<HTMLElement>(".gui-status")!.textContent = guiStatusText(gui.update);
+    section.querySelector<HTMLButtonElement>(".gui-install")!.hidden = gui.update?.status !== "available";
   };
 
   const refreshOpenSheet = () => {
@@ -1647,6 +1701,7 @@ export function clientMain({
       }
       const ready = body.querySelector<HTMLElement>(".sandbox-ready");
       if (ready) ready.textContent = t(state.sandbox.ready ? "web.settings.ready" : "web.settings.notReady");
+      refreshGuiUpdate(body);
       body.querySelector(".limits-settings")?.classList.toggle("unlimited", state.limitsUnlimited);
       body.querySelector(".limits-unlimited")?.setAttribute("aria-pressed", String(state.limitsUnlimited));
       for (const row of body.querySelectorAll<HTMLElement>("[data-limit]")) {
@@ -2103,7 +2158,7 @@ export function clientMain({
   };
   $("#reload").addEventListener("click", () => location.reload());
   const connect = () => {
-    const events = new EventSource("/events");
+    const events = new EventSource(guiVersion ? `/events?gui=${encodeURIComponent(guiVersion)}` : "/events");
     events.onopen = () => {
       notificationState = { live: false, working: false };
       replaying = true;
@@ -2164,6 +2219,8 @@ export function clientMain({
         return;
       }
       if (item.type === "toast") { showToast(item.text, item.level); return; }
+      if (item.type === "gui") { gui = item.gui; refreshOpenSheet(); return; }
+      if (item.type === "gui_command") { void runGuiCommand(item.action); return; }
       if (item.type === "reset") {
         incomingHistory = [];
         historyGeneration++;
@@ -2192,5 +2249,9 @@ export function clientMain({
       $("#conn-spinner").hidden = closed;
     };
   };
-  connect();
+  // GUI の中の画面は、GUI の版を添えてつなぐ（Hub が更新の依頼をこの接続へ送る）
+  void (tauriApi?.app?.getVersion() ?? Promise.resolve(undefined)).catch(() => undefined).then((version) => {
+    guiVersion = version;
+    connect();
+  });
 }

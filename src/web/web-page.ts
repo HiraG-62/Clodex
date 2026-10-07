@@ -580,6 +580,8 @@ const STYLE = `
   .limit-default { grid-column: 1; grid-row: 2; }
   .limit-changed { color: var(--accent); margin-left: 6px; }
   .limits-actions { display: flex; gap: 8px; justify-self: start; }
+  .gui-update-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .gui-update[hidden] { display: none; }
   .limits-unlimited[aria-pressed="true"] { color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .limits-settings.unlimited .limit-row { opacity: .45; }
   .code-more { display: none; }

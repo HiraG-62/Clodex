@@ -2068,12 +2068,19 @@ GUI の自動更新（D3 の後）:
   - 版に `-` を含むもの（dev の build）は prerelease として公開する。それ以外は通常の Release
   - workflow は、どの Release でも `latest.json` を固定の prerelease `dev`（無ければ作る）に上書きで上げる。`dev` のチャンネルは正式版も含めた最新の版を受け取る
   - 版の順序は semver（`0.1.0 < 0.1.1-dev.1 < 0.1.1-dev.2 < 0.1.1`）。本番を出したら、その後の dev は自動で次のパッチ（`0.1.2-dev.N`）になる
-- 確認は GUI（Rust）が行う。Web UI には足さない
+- 確認と入れ替えは GUI（Rust）が行う
   - 起動時に 1 回、ウィンドウを出した後にバックグラウンドで確認する。新しい版が無いか、確認に失敗したら何も出さない
   - トレイのメニューに「更新を確認」を足す。新しい版が無ければ「最新版」、失敗したらエラーをダイアログで出す
   - 新しい版があれば、ダイアログで「Clodex <version> に更新しますか？作業中のターンは止まります」と聞く（「更新」「後で」）
 - 入れ替え: 「更新」でダウンロードし署名を検証する。GUI が起動した Hub を止めてから（同梱の `node.exe` を使っているため。updater はインストーラーを起動するとプロセスを即座に終えるので、終了時の処理には頼らない）インストーラーを passive で起動し、入れ替え後に GUI を起動し直す。止めた Hub の会話は §Hub の再起動からの復旧 で戻る
 - GUI が起動していない Hub（CLI の `clodex serve`）は止めない。その Hub は入れ替えの対象外
+- Web UI の設定からの更新: スマホ等の Web UI からも、GUI に確認と入れ替えをさせる。Hub が中継する
+  - GUI の中の Web UI（`window.__TAURI__` がある画面）は `/events?gui=<GUI の版>`（`core:app:allow-version` で取得）でつなぐ。Hub はこの接続を GUI として覚える（複数あれば最後のもの。切れたら外す）
+  - Hub は GUI の有無と更新の状態を feed の `{ type: "gui", gui: { version, update } | null }` で全画面に送る（接続時と変わったとき）。`update` は `checking` / `latest` / `available`（`version`）/ `installing` / `error`（`message`）。GUI がつながっていなければ状態は消す
+  - 設定画面の「Clodex」の節に、GUI の版と「更新を確認」を出す。GUI がつながっていないときは節ごと出さない。状態は「確認中…」「最新版」「<version> あり」と「更新」ボタン、「更新中…」、「失敗: <message>」。「更新」は確認（「Clodex <version> に更新しますか？作業中のターンは止まります」）の後に送る
+  - 画面は `POST /api/gui/update`（`{ action: "check" | "install" }`）を送る。Hub は状態を `checking` / `installing` にし、GUI の接続へ `{ type: "gui_command", action }` を送る。GUI が無ければ 409
+  - GUI の画面は Tauri command（`check_update` / `install_update`）を呼び、結果を `POST /api/gui/status` で Hub に返す。`install_update` はダイアログを出さずに入れ替える（上の入れ替えと同じく Hub を止めてからインストーラーを起動する）。入れ替え後に GUI と Hub が起動し直し、各画面は再接続で新しい版の画面を読み込む
+  - Tauri 2.11.1 以降は、外部 URL の画面（Hub の `http://127.0.0.1`）から app の command を呼ぶには ACL の許可が要る。`build.rs` の `AppManifest` に command を並べ、capability `main` で `allow-check-update` / `allow-install-update` を許可する（`check_update` は新しい版の版か `null` を返す）
 
 
 D4 の詳細（TUI。D2b と一緒に行う）:
