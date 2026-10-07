@@ -1,0 +1,1292 @@
+<!doctype html>
+<!--
+  Clodex Web UI 改善モック — Claude 案「浮き上がる部品」
+  狙い: 送り先切り替え .to の作り（くぼんだ --sunken の下地 + 選んだものが --panel で浮く + 1px ring + 色は 6px の点だけ）を
+        ヘッダのトレイ・設定チップ・セグメント・会話行・質問の選択肢まで全部品に広げ、画面全体の質感を 1 つにそろえる。
+  主な変更: ヘッダは icon-only + くぼんだトレイ（tooltip 400ms）。project は folder + 名前 + chevron の pill で .path を廃止。
+        Agent パネルはカード化（状態 pill・アイコン付きチップ・4px ゲージ・下段のアイコン操作）。送信は送り先の色の arrow-up。
+        ロード表示はトップの 2px バー、ボタン内スピナー（.is-loading の CSS だけで幅を保つ）、skeleton、起動中の仮ターン、再接続の帯。
+  スマホ: 48px の 1 行ヘッダ（≡・会話名・Agent ピル 2 つ・⋯）に状態行を統合し、ログを全幅に。入力欄は 44px の 1 行（送り先 mark・textarea・＋・送信）。
+        作業中・質問は入力欄の上の pill、会話は左ドロワー、Agent 操作はつまみ付きシートの 44px ボタン。キーボード表示中はヘッダを隠す。
+  トレードオフ: icon-only は初見の学習コストがある（tooltip と aria-label で補う）。PC とスマホでヘッダの DOM を 2 組持つ。
+        ボタンの状態クラス（is-loading）と CSS 変数が増える。カードの ring は情報の密度をわずかに下げる。
+  再現: ?theme=dark|light &demo=loading,starting,reconnect,closed,older,upload,pending,modelwait,stopped &open=sheet|drawer|settings|artifacts|working|menu|states &kbd=1 &to=codex &toast=1 &panel=0|open
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Clodex — UI モック（Claude 案）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+  /* ---- テーマ: src/web/web-page.ts の :root をそのまま ---- */
+  :root {
+    --bg: #fafafa; --panel: #ffffff; --sunken: #f2f2f3; --line: #e6e6e8; --line-strong: #d4d4d8;
+    --fg: #111113; --fg-2: #3f3f46; --muted: #80808a;
+    --claude: #b4793f; --codex: #4b6fa5; --code: #6f9a5a;
+    --invert-bg: #111113; --invert-fg: #fafafa;
+    --warn: #b7791f; --crit: #d14343; --scrim: rgba(17, 17, 19, .32);
+    --font-ui: "Geist", "Zen Kaku Gothic New", system-ui, sans-serif;
+    --font-mono: "Geist Mono", "Zen Kaku Gothic New", ui-monospace, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #0b0b0c; --panel: #111113; --sunken: #18181b; --line: #232326; --line-strong: #2f2f34;
+    --fg: #f4f4f5; --fg-2: #c8c8cd; --muted: #7c7c86;
+    --claude: #d7a26d; --codex: #8aa9d8;
+    --invert-bg: #f4f4f5; --invert-fg: #0b0b0c;
+    --warn: #e0a84a; --crit: #ef6b6b; --scrim: rgba(0, 0, 0, .55); color-scheme: dark;
+  } }
+  :root[data-theme="dark"] {
+    --bg: #0b0b0c; --panel: #111113; --sunken: #18181b; --line: #232326; --line-strong: #2f2f34;
+    --fg: #f4f4f5; --fg-2: #c8c8cd; --muted: #7c7c86;
+    --claude: #d7a26d; --codex: #8aa9d8;
+    --invert-bg: #f4f4f5; --invert-fg: #0b0b0c;
+    --warn: #e0a84a; --crit: #ef6b6b; --scrim: rgba(0, 0, 0, .55); color-scheme: dark;
+  }
+
+  /* ---- 部品のトークン（新規） ---- */
+  body {
+    --r-outer: 8px; --r: 6px; --r-inner: 4px;
+    --ring: 0 0 0 1px var(--line); --ring-strong: 0 0 0 1px var(--line-strong);
+    --hover-bg: color-mix(in srgb, var(--fg) 6%, transparent);
+    --press-bg: color-mix(in srgb, var(--fg) 10%, transparent);
+    --accent: var(--claude);
+    --accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
+    --shadow-pop: 0 12px 32px rgba(0, 0, 0, .18), 0 2px 6px rgba(0, 0, 0, .08), 0 0 0 1px var(--line);
+    --ease: 120ms cubic-bezier(.2, .7, .3, 1);
+    --track: color-mix(in srgb, var(--fg) 10%, transparent);
+  }
+  body[data-to="codex"] { --accent: var(--codex); --accent-soft: color-mix(in srgb, var(--codex) 18%, transparent); }
+  [data-agent="claude"] { --agent: var(--claude); } [data-agent="codex"] { --agent: var(--codex); }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 14.5px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; overflow: hidden; }
+  button, select, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; background: none; border: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  button:disabled { cursor: default; }
+  :focus-visible, .is-focus { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); }
+  .c-claude { color: var(--claude); } .c-codex { color: var(--codex); }
+  .i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+  .i.sm { width: 14px; height: 14px; } .i.xs { width: 12px; height: 12px; }
+
+  .mark { width: 22px; height: 22px; border-radius: 5px; display: inline-grid; place-items: center; flex: none;
+    font: 600 11px/1 var(--font-mono); color: var(--invert-fg); }
+  .mark.sm { width: 18px; height: 18px; font-size: 10px; border-radius: 4px; }
+  .mark.claude { background: var(--claude); } .mark.codex { background: var(--codex); } .mark.you { background: var(--fg); }
+
+  @keyframes rot { to { transform: rotate(360deg); } }
+  @keyframes sweep { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--agent, var(--fg)) 60%, transparent); } 100% { box-shadow: 0 0 0 6px transparent; } }
+  @keyframes shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+  @keyframes indet { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(-8px) scale(.98); } }
+
+  /* ---- 共通の操作部品: 6 状態（hover / press / selected / disabled / focus-visible / loading） ---- */
+  .ib { position: relative; display: inline-grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: var(--r);
+    color: var(--muted); transition: background-color var(--ease), color var(--ease), box-shadow var(--ease), transform var(--ease), opacity var(--ease); }
+  .ib:hover:not(:disabled), .ib.is-hover { background: var(--hover-bg); color: var(--fg); }
+  .ib:active:not(:disabled), .ib.is-press { background: var(--press-bg); color: var(--fg); transform: scale(.97); }
+  .ib[aria-pressed="true"], .ib[aria-expanded="true"] { background: var(--panel); color: var(--fg); box-shadow: var(--ring); }
+  .ib:disabled { opacity: .38; }
+  .ib.danger:hover:not(:disabled), .ib.danger.is-hover { color: var(--crit); background: color-mix(in srgb, var(--crit) 10%, transparent); }
+  .count { position: absolute; top: 1px; right: 0; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px;
+    font: 600 10px/15px var(--font-mono); text-align: center; background: var(--invert-bg); color: var(--invert-fg); box-shadow: 0 0 0 2px var(--panel); }
+  .count.q { background: var(--crit); color: #fff; }
+
+  .btn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 34px; padding: 0 14px;
+    border-radius: var(--r); background: var(--panel); color: var(--fg); box-shadow: var(--ring-strong); font-size: 13px; font-weight: 500; white-space: nowrap;
+    transition: background-color var(--ease), color var(--ease), box-shadow var(--ease), transform var(--ease); }
+  .btn:hover:not(:disabled), .btn.is-hover { background: color-mix(in srgb, var(--fg) 4%, var(--panel)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 30%, var(--line-strong)); }
+  .btn:active:not(:disabled), .btn.is-press { transform: scale(.97); background: color-mix(in srgb, var(--fg) 8%, var(--panel)); }
+  .btn:disabled { color: var(--muted); box-shadow: var(--ring); background: transparent; }
+  .btn.primary { background: var(--invert-bg); color: var(--invert-fg); box-shadow: none; --spin: var(--invert-fg); }
+  .btn.primary:hover:not(:disabled), .btn.primary.is-hover { background: color-mix(in srgb, var(--invert-bg) 86%, var(--bg)); box-shadow: none; }
+  .btn.primary:disabled { background: var(--sunken); color: var(--muted); }
+  .btn.danger { color: var(--crit); }
+  .btn.danger:hover:not(:disabled), .btn.danger.is-hover { background: color-mix(in srgb, var(--crit) 9%, var(--panel)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--crit) 55%, transparent); }
+  .btn.danger:disabled { color: var(--muted); }
+  .btn.sm { height: 26px; padding: 0 9px; font-size: 12px; border-radius: var(--r-inner); }
+  .btn.block { width: 100%; }
+
+  /* ボタン内スピナー: 中身を透明にして幅を保ち、同じ場所に回転する輪を描く */
+  .is-loading { color: transparent !important; pointer-events: none; }
+  .is-loading > * { visibility: hidden; }
+  .is-loading::after { content: ""; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px; border-radius: 50%;
+    border: 1.75px solid var(--spin, var(--fg-2)); border-right-color: transparent; animation: rot .7s linear infinite; visibility: visible; }
+  .spin { display: inline-block; width: 13px; height: 13px; flex: none; border-radius: 50%; border: 1.75px solid currentColor; border-right-color: transparent; animation: rot .7s linear infinite; }
+
+  /* くぼんだトレイ = .to の下地 */
+  .tray { display: inline-flex; gap: 2px; padding: 2px; background: var(--sunken); border-radius: var(--r); }
+  .tray .ib { width: 30px; height: 28px; border-radius: var(--r-inner); }
+
+  /* セグメント（.to と同じ作り） */
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; padding: 2px; background: var(--sunken); border-radius: var(--r); }
+  .seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 0 8px; border-radius: var(--r-inner);
+    font-size: 12.5px; color: var(--muted); transition: background-color var(--ease), color var(--ease), box-shadow var(--ease), transform var(--ease); }
+  .seg button:hover:not(:disabled):not([aria-pressed="true"]), .seg button.is-hover { color: var(--fg); background: var(--hover-bg); }
+  .seg button:active:not(:disabled), .seg button.is-press { transform: scale(.97); }
+  .seg button[aria-pressed="true"] { background: var(--panel); color: var(--fg); box-shadow: var(--ring); }
+  .seg button:disabled { opacity: .38; }
+  .seg .warn-ico { color: var(--warn); }
+
+  /* 設定チップ: 頭に小アイコン、hover で ring-strong に浮く */
+  .chip { position: relative; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 7px 0 5px; border-radius: var(--r-inner); max-width: 100%;
+    background: var(--sunken); color: var(--fg-2); font: 11px/1 var(--font-mono); white-space: nowrap; overflow: hidden;
+    transition: background-color var(--ease), box-shadow var(--ease), color var(--ease), transform var(--ease); }
+  .chip .i { width: 13px; height: 13px; color: var(--muted); }
+  .chip:hover:not(:disabled), .chip.is-hover { background: var(--panel); box-shadow: var(--ring-strong); color: var(--fg); }
+  .chip:active:not(:disabled), .chip.is-press { transform: scale(.97); }
+  .chip[aria-pressed="true"] { background: var(--panel); box-shadow: var(--ring); color: var(--fg); }
+  .chip:disabled { opacity: .38; }
+  .chip.full { padding: 0 6px; } .chip.full .i { color: var(--warn); width: 14px; height: 14px; }
+
+  /* ---- レイアウト ---- */
+  .app { display: grid; height: 100dvh; min-width: 0; }
+  .topbar { grid-area: top; position: relative; display: flex; align-items: center; gap: 8px; background: var(--panel); border-bottom: 1px solid var(--line); min-width: 0; z-index: 5; }
+  .conn { grid-area: conn; } .side { grid-area: side; } .log-wrap { grid-area: log; } .composer { grid-area: compose; }
+
+  /* トップの不確定プログレスバー */
+  .progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; display: none; }
+  .progress::before { content: ""; position: absolute; inset: 0; width: 40%; background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: indet 1.1s cubic-bezier(.4, 0, .2, 1) infinite; }
+  .d-loading .progress, .d-pending .progress { display: block; }
+
+  .brand { font-weight: 600; letter-spacing: -.01em; font-size: 15px; }
+  .proj { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 8px 0 9px; border-radius: var(--r);
+    box-shadow: var(--ring); font-size: 13px; color: var(--fg); max-width: 280px; min-width: 0;
+    transition: background-color var(--ease), box-shadow var(--ease), transform var(--ease); }
+  .proj .i { color: var(--muted); }
+  .proj .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .proj:hover, .proj.is-hover { background: var(--hover-bg); box-shadow: var(--ring-strong); }
+  .proj:active, .proj.is-press { transform: scale(.97); }
+  .proj:focus-within { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .proj select { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+  .spacer { flex: 1; }
+
+  /* 再接続の帯 */
+  .conn { display: none; align-items: center; justify-content: center; gap: 10px; min-height: 34px; padding: 4px 16px; font-size: 12.5px;
+    background: color-mix(in srgb, var(--warn) 12%, var(--panel)); color: var(--fg); border-bottom: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line)); }
+  .conn .spin { color: var(--warn); }
+  .conn .el { color: var(--muted); }
+  .d-reconnect .conn.re, .d-closed .conn.closed { display: flex; }
+  .conn.closed .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--crit); }
+
+  /* ---- Agent カード ---- */
+  .side { display: flex; flex-direction: column; gap: 12px; padding: 16px; overflow-y: auto; border-right: 1px solid var(--line); background: var(--bg); }
+  .agent { display: grid; gap: 10px; padding: 12px 12px 6px; background: var(--panel); border-radius: var(--r-outer); box-shadow: var(--ring); min-width: 0; }
+  .agent-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .agent-head b { font-size: 13.5px; font-weight: 600; }
+  .agent .role { margin: -6px 0 0 30px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .st { margin-left: auto; position: relative; display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px 0 8px; border-radius: 999px;
+    background: var(--sunken); font-size: 11.5px; color: var(--fg-2); white-space: nowrap; overflow: hidden; flex: none; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--agent, var(--muted)); flex: none; }
+  [data-state="busy"] .dot { animation: pulse 1.4s ease-out infinite; }
+  [data-state="idle"] .dot { opacity: .55; }
+  [data-state="starting"] .dot { width: 9px; height: 9px; background: none; border: 1.5px dashed var(--agent); animation: rot 1.4s linear infinite; }
+  [data-state="stopped"] .dot { background: var(--line-strong); }
+  .st[data-state="busy"] { color: var(--fg); }
+  .st[data-state="busy"]::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: 2px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--agent), transparent); background-size: 200% 100%; animation: sweep 1.6s linear infinite; }
+  .st[data-state="stopped"] { color: var(--muted); }
+  .gauges { display: grid; gap: 9px; }
+  .g { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 4px 8px; font-size: 12px; }
+  .g .k { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .g .v { color: var(--fg-2); font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .g .v small { color: var(--muted); font-size: 10.5px; margin-right: 6px; }
+  .g .v.over { color: var(--warn); }
+  .track { grid-column: 1 / -1; position: relative; height: 4px; border-radius: 4px; background: var(--track); }
+  .track > i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--agent); }
+  .track .tick { position: absolute; top: -2px; width: 2px; height: 8px; margin-left: -1px; border-radius: 1px; background: var(--fg-2); }
+  .g-empty { display: none; font-size: 12px; color: var(--muted); }
+  .agent.no-usage .gauges { display: none; } .agent.no-usage .g-empty { display: block; }
+  .agent-actions { display: flex; align-items: center; gap: 2px; margin: 0 -6px; padding: 5px 6px 0; border-top: 1px solid var(--line); }
+
+  /* skeleton */
+  .sk { display: block; height: 10px; border-radius: 4px; background: linear-gradient(90deg, var(--track) 0%, color-mix(in srgb, var(--fg) 17%, transparent) 50%, var(--track) 100%);
+    background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+  .app .skel { display: none; }
+  .d-loading .app .real { display: none !important; }
+  .d-loading .app .skel { display: grid; }
+  .agent .skel { gap: 10px; padding-bottom: 8px; }
+  .sk-row { display: flex; gap: 8px; align-items: center; }
+
+  /* ---- 会話一覧 ---- */
+  .side-head { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+  .eyebrow { font-size: 11px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+  .convs { display: grid; gap: 2px; }
+  .conv-row { position: relative; display: flex; align-items: center; min-width: 0; border-radius: var(--r); transition: background-color var(--ease), box-shadow var(--ease); }
+  .conv-row:hover, .conv-row.is-hover { background: var(--hover-bg); }
+  .conv-row.current { background: var(--panel); box-shadow: var(--ring); }
+  .conv { flex: 1; min-width: 0; display: grid; gap: 1px; padding: 8px 4px 8px 10px; text-align: left; font-size: 13px; border-radius: var(--r); transition: transform var(--ease); }
+  .conv:active, .conv.is-press { transform: scale(.985); }
+  .conv .t { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .conv .t span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv .m { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv-row.current .conv .t { font-weight: 500; }
+  .conv .live { width: 6px; height: 6px; border-radius: 50%; background: var(--agent); flex: none; animation: pulse 1.4s ease-out infinite; }
+  .conv-row .ib { margin-right: 4px; opacity: 0; }
+  .conv-row:hover .ib, .conv-row:focus-within .ib, .conv-row .ib[aria-expanded="true"], .conv-row .ib.is-hover { opacity: 1; }
+  .conv-row.loading-row .conv { opacity: .6; }
+
+  /* ---- ログ ---- */
+  .log-wrap { position: relative; min-height: 0; display: grid; }
+  .log { overflow-y: auto; overscroll-behavior: contain; display: grid; align-content: start; min-width: 0; }
+  .older { display: none; align-items: center; justify-content: center; gap: 8px; padding: 10px 0; font-size: 12px; color: var(--muted); }
+  .d-older .older { display: flex; }
+  .entry { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 6px 12px; padding: 16px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+  .entry > :not(.mark) { grid-column: 2; min-width: 0; }
+  .entry .head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; min-height: 22px; }
+  .entry .head b { font-weight: 600; }
+  .entry .head time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .entry .body { color: var(--fg-2); overflow-wrap: anywhere; }
+  .entry.you .body { color: var(--fg); }
+  .to-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 12.5px; }
+  .tstate { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12px; color: var(--muted); }
+  .plan { color: var(--muted); font-size: 13.5px; margin: 0; overflow-wrap: anywhere; }
+  .md > * { margin: 0 0 8px; } .md > *:last-child { margin-bottom: 0; }
+  .md ul { padding-left: 1.3em; }
+  code { font-family: var(--font-mono); font-size: .92em; padding: 1px 5px; border-radius: 4px; background: var(--sunken); color: var(--code); }
+
+  details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }
+  .fold > summary { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px 0 4px; margin-left: -4px; border-radius: var(--r);
+    cursor: pointer; font-size: 12px; color: var(--muted); transition: background-color var(--ease), color var(--ease); }
+  .fold > summary:hover { background: var(--hover-bg); color: var(--fg); }
+  .fold > summary .i { transition: transform var(--ease); }
+  .fold[open] > summary .i { transform: rotate(90deg); }
+  .steps ol { list-style: none; margin: 6px 0 4px; padding: 0; display: grid; gap: 4px; }
+  .steps li { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 8px; font-size: 12.5px; }
+  .steps .k { color: var(--muted); font: 11px/1.9 var(--font-mono); }
+  .steps .run { font: 12px/1.7 var(--font-mono); color: var(--fg-2); overflow-wrap: anywhere; }
+
+  .now { position: relative; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 10px; border-radius: var(--r);
+    background: var(--sunken); font-size: 12.5px; color: var(--fg-2); overflow: hidden; }
+  .now .spin { color: var(--agent); width: 12px; height: 12px; }
+  .now .k { color: var(--muted); flex: none; }
+  .now .what { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .now .el { flex: none; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  .now::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--agent), transparent);
+    background-size: 200% 100%; animation: sweep 1.6s linear infinite; }
+
+  /* コードブロック */
+  .codeblock { border-radius: var(--r-outer); background: var(--sunken); overflow: hidden; position: relative; }
+  .code-head { display: flex; align-items: center; gap: 8px; padding: 3px 4px 3px 12px; font: 11.5px var(--font-mono); color: var(--muted); border-bottom: 1px solid var(--line); }
+  .code-head span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .codeblock pre { margin: 0; padding: 10px 12px; font: 12.5px/1.6 var(--font-mono); color: var(--fg-2); white-space: pre; overflow-x: auto; }
+  .codeblock pre code { padding: 0; background: none; color: inherit; font-size: inherit; }
+  .code-more { display: none; }
+
+  /* 表: 端の影で横スクロールを示す */
+  .tbl { overflow-x: auto; max-width: 100%; border-radius: var(--r); box-shadow: var(--ring);
+    background: linear-gradient(to right, var(--bg) 30%, transparent) left / 32px 100% no-repeat local,
+      linear-gradient(to left, var(--bg) 30%, transparent) right / 32px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, rgba(0, 0, 0, .28), transparent) left / 10px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, .28), transparent) right / 10px 100% no-repeat scroll; }
+  .tbl table { border-collapse: collapse; font-size: 12.5px; min-width: 100%; }
+  .tbl th, .tbl td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .tbl tr:last-child td { border-bottom: 0; }
+  .tbl th { color: var(--muted); font-weight: 500; font-size: 11.5px; }
+  .tbl td.num { text-align: right; font-family: var(--font-mono); }
+  .ok { color: var(--code); } .ng { color: var(--crit); }
+
+  /* Agent 間の message */
+  .handoff { display: grid; gap: 8px; padding: 14px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+  .route { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 13px; }
+  .route .i { color: var(--muted); }
+  .kind { font: 500 11px/1 var(--font-mono); letter-spacing: .04em; padding: 4px 6px; border-radius: var(--r-inner); background: var(--sunken); color: var(--fg-2); }
+  .route .task { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .handoff .text { color: var(--fg); overflow-wrap: anywhere; }
+  .refs { display: flex; flex-wrap: wrap; gap: 4px; }
+  .ref { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px 0 6px; border-radius: var(--r-inner); background: var(--sunken);
+    font: 11.5px var(--font-mono); color: var(--fg-2); transition: background-color var(--ease), box-shadow var(--ease); max-width: 100%; }
+  .ref:hover { background: var(--panel); box-shadow: var(--ring-strong); color: var(--fg); }
+  .ref .i { color: var(--muted); }
+  .envelope pre { margin: 6px 0 0; padding: 10px 12px; border-radius: var(--r); background: var(--sunken); font: 12px/1.6 var(--font-mono); color: var(--fg-2); white-space: pre-wrap; }
+
+  /* ask_user のカード */
+  .ask { display: grid; gap: 10px; padding: 12px; border-radius: var(--r-outer); background: var(--panel); box-shadow: var(--ring); }
+  .ask-head { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); }
+  .ask-head .i { color: var(--agent); }
+  .ask-q { margin: 0; color: var(--fg); font-weight: 500; }
+  .opts { display: grid; gap: 2px; padding: 2px; background: var(--sunken); border-radius: var(--r); }
+  .opt { display: grid; grid-template-columns: 6px minmax(0, 1fr); align-items: baseline; gap: 2px 10px; padding: 8px 10px; border-radius: var(--r-inner); text-align: left;
+    color: var(--muted); font-size: 13px; transition: background-color var(--ease), color var(--ease), box-shadow var(--ease), transform var(--ease); }
+  .opt::before { content: ""; width: 6px; height: 6px; border-radius: 1px; background: currentColor; opacity: .5; transform: translateY(-2px); }
+  .opt small { grid-column: 2; font-size: 12px; color: var(--muted); }
+  .opt:hover:not([aria-pressed="true"]) { background: var(--hover-bg); color: var(--fg); }
+  .opt:active { transform: scale(.99); }
+  .opt[aria-pressed="true"] { background: var(--panel); color: var(--fg); box-shadow: var(--ring); }
+  .opt[aria-pressed="true"]::before { background: var(--agent); opacity: 1; }
+  .ask-foot { display: flex; gap: 8px; }
+  .field { flex: 1; min-width: 0; height: 34px; padding: 0 10px; border: 0; border-radius: var(--r); background: var(--panel); box-shadow: var(--ring-strong); outline: none; color: var(--fg);
+    transition: box-shadow var(--ease); }
+  .field:focus { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, var(--line-strong)), 0 0 0 3px var(--accent-soft); }
+
+  /* 起動中の仮ターン */
+  .turn-starting { display: none; }
+  .d-starting .turn-starting { display: grid; }
+  .d-starting .turn-live { display: none; }
+  .pending-turn { position: relative; display: grid; gap: 8px; padding: 10px 12px; border-radius: var(--r); background: var(--sunken); overflow: hidden; }
+  .pending-turn::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--agent), transparent);
+    background-size: 200% 100%; animation: sweep 1.6s linear infinite; }
+  .log-skel { display: none; }
+  .d-loading .log-skel { display: grid; }
+  .log-skel .entry { border-bottom-color: transparent; }
+  .log-skel .mark { background: var(--track); }
+
+  .newer { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px;
+    border-radius: 999px; font-size: 12.5px; font-weight: 500; background: var(--panel); box-shadow: var(--shadow-pop); }
+
+  /* ---- 入力欄 ---- */
+  .composer { margin: 0; background: var(--bg); }
+  .box { position: relative; display: grid; border-radius: 12px; background: var(--panel); box-shadow: var(--ring-strong); transition: box-shadow var(--ease); }
+  .box:focus-within, .box.is-focus { outline: none; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 65%, var(--line-strong)), 0 0 0 3px var(--accent-soft); }
+  .queue { list-style: none; margin: 0; padding: 6px 6px 6px 12px; border-bottom: 1px solid var(--line); display: grid; gap: 4px; }
+  .queue li { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; }
+  .queue .who { flex: none; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+  .queue .text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .uploads { display: none; gap: 6px; padding: 8px 8px 0; }
+  .d-upload .uploads { display: flex; }
+  .thumb { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 4px 4px 4px 4px; border-radius: var(--r-outer); background: var(--sunken); font-size: 12px; color: var(--fg-2); max-width: 260px; }
+  .thumb .img { position: relative; width: 36px; height: 36px; border-radius: var(--r-inner); flex: none; overflow: hidden;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--codex) 55%, var(--sunken)), color-mix(in srgb, var(--claude) 45%, var(--sunken))); }
+  .thumb .img::after { content: ""; position: absolute; inset: 0; background: rgba(0, 0, 0, .35); }
+  .thumb .img .spin { position: absolute; inset: 0; margin: auto; z-index: 1; color: #fff; }
+  .thumb .meta { display: grid; line-height: 1.3; min-width: 0; }
+  .thumb .meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .thumb .meta small { color: var(--muted); }
+  .input-wrap { min-width: 0; }
+  .box textarea { display: block; width: 100%; border: 0; background: transparent; resize: none; color: var(--fg); outline: none; overflow-y: hidden; font: inherit; }
+  .box textarea::placeholder { color: var(--muted); }
+  .bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px 8px 8px; }
+  .to { display: inline-flex; gap: 2px; padding: 2px; background: var(--sunken); border-radius: var(--r); }
+  .to button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: var(--r-inner); font-size: 12.5px; color: var(--muted);
+    transition: background-color var(--ease), color var(--ease), box-shadow var(--ease), transform var(--ease); }
+  .to button::before { content: ""; width: 6px; height: 6px; border-radius: 1px; background: currentColor; opacity: .5; }
+  .to button:hover:not([aria-pressed="true"]) { color: var(--fg); background: var(--hover-bg); }
+  .to button:active { transform: scale(.97); }
+  .to button[aria-pressed="true"] { background: var(--panel); color: var(--fg); box-shadow: var(--ring); }
+  .to button[data-agent][aria-pressed="true"]::before { background: var(--agent); opacity: 1; }
+  .send { position: relative; display: inline-grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: var(--r); background: var(--accent); color: var(--invert-fg);
+    --spin: var(--invert-fg); transition: background-color var(--ease), transform var(--ease), filter var(--ease); }
+  .send .i { stroke-width: 2.25; }
+  .send:hover:not(:disabled), .send.is-hover { filter: brightness(1.08) saturate(1.05); }
+  .send:active:not(:disabled), .send.is-press { transform: scale(.94); }
+  .send:disabled { background: var(--sunken); color: var(--muted); }
+  .d-upload .send { background: var(--sunken); color: var(--muted); pointer-events: none; }
+  .to-mark { display: none; } .plus { display: none; }
+
+  /* 作業中・質問のポップオーバー（PC） */
+  .pop { position: fixed; z-index: 22; min-width: 220px; padding: 4px; border-radius: var(--r-outer); background: var(--panel); box-shadow: var(--shadow-pop);
+    opacity: 0; transform: translateY(-4px) scale(.98); transform-origin: top right; pointer-events: none; transition: opacity 150ms, transform 150ms cubic-bezier(.2, .7, .3, 1); }
+  .pop.open { opacity: 1; transform: none; pointer-events: auto; }
+  .menu-item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 0 10px; border-radius: var(--r-inner); font-size: 13px; text-align: left; color: var(--fg);
+    transition: background-color var(--ease); }
+  .menu-item .i { color: var(--muted); }
+  .menu-item:hover { background: var(--hover-bg); }
+  .menu-item.danger { color: var(--crit); } .menu-item.danger .i { color: currentColor; }
+  .menu-item .check { margin-left: auto; color: var(--fg); }
+  .menu-sep { height: 1px; margin: 4px 6px; background: var(--line); }
+  .working-pop { width: 340px; padding: 10px; display: grid; gap: 8px; }
+  .working-pop h3 { margin: 2px 4px 2px; font-size: 13px; }
+  .work-entry { display: grid; gap: 6px; padding: 10px; border-radius: var(--r); background: var(--sunken); text-align: left; font-size: 12.5px; transition: box-shadow var(--ease), background-color var(--ease); }
+  .work-entry:hover { background: var(--panel); box-shadow: var(--ring-strong); }
+  .work-entry .row { display: flex; align-items: center; gap: 8px; }
+  .work-entry .el { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .work-entry .what { color: var(--fg-2); font: 12px var(--font-mono); overflow-wrap: anywhere; }
+
+  /* ---- シート ---- */
+  .sheet { position: fixed; inset: 0; z-index: 20; display: grid; visibility: hidden; transition: visibility 0s 240ms; }
+  .sheet.open { visibility: visible; transition: none; }
+  .sheet-backdrop { position: absolute; inset: 0; background: var(--scrim); opacity: 0; transition: opacity 200ms; cursor: default; }
+  .sheet.open .sheet-backdrop { opacity: 1; }
+  .sheet-panel { position: relative; display: flex; flex-direction: column; width: 100%; background: var(--panel); min-height: 0; }
+  .sheet-head { display: flex; align-items: center; gap: 10px; padding: 0 0 4px; }
+  .sheet-head h2 { margin: 0; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .sheet-body { overflow-y: auto; min-height: 0; }
+  .grab { display: none; }
+  .sec { display: grid; gap: 8px; padding: 14px 0; border-top: 1px solid var(--line); }
+  .sec:first-child { border-top: 0; padding-top: 6px; }
+  .sec-title { font-size: 11px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+  .ops { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+  .role-editor { width: 100%; min-height: 96px; resize: vertical; border: 0; border-radius: var(--r); background: var(--panel); box-shadow: var(--ring-strong); color: var(--fg);
+    padding: 10px 12px; font: 13.5px/1.6 var(--font-ui); outline: none; transition: box-shadow var(--ease); }
+  .role-editor:focus { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, var(--line-strong)), 0 0 0 3px var(--accent-soft); }
+  .row-end { display: flex; align-items: center; gap: 10px; }
+  .note { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+  .note .spin { width: 11px; height: 11px; }
+  .note.wait { display: none; }
+  .d-modelwait .note.wait { display: inline-flex; }
+  .model-form { display: flex; gap: 8px; }
+  .select { position: relative; flex: 1; min-width: 0; }
+  .select select { width: 100%; height: 34px; appearance: none; border: 0; border-radius: var(--r); background: var(--panel); box-shadow: var(--ring-strong); padding: 0 32px 0 10px;
+    font: 13px var(--font-mono); color: var(--fg); cursor: pointer; transition: box-shadow var(--ease); }
+  .select select:hover { box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 30%, var(--line-strong)); }
+  .select .i { position: absolute; right: 9px; top: 50%; margin-top: -8px; width: 16px; height: 16px; color: var(--muted); pointer-events: none; }
+  .art { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 0 8px; border-radius: var(--r); text-align: left; font: 12.5px var(--font-mono); transition: background-color var(--ease); }
+  .art:hover { background: var(--hover-bg); }
+  .art .kind { flex: none; font-family: var(--font-ui); }
+  .art .kind.changed { background: color-mix(in srgb, var(--claude) 22%, transparent); }
+  .art .kind.image { background: color-mix(in srgb, var(--warn) 24%, transparent); }
+  .states { display: grid; grid-template-columns: 110px repeat(7, minmax(0, 1fr)); gap: 12px 10px; align-items: center; font-size: 12px; }
+  .states .h { color: var(--muted); font-size: 11px; text-align: center; }
+  .states .l { color: var(--fg-2); }
+  .states .c { display: flex; justify-content: center; }
+
+  /* ---- 会話ドロワー（スマホ） ---- */
+  .drawer { position: fixed; inset: 0; z-index: 24; visibility: hidden; transition: visibility 0s 240ms; }
+  .drawer.open { visibility: visible; transition: none; }
+  .drawer .scrim { position: absolute; inset: 0; background: var(--scrim); opacity: 0; transition: opacity 200ms; }
+  .drawer.open .scrim { opacity: 1; }
+  .drawer-panel { position: absolute; inset: 0 auto 0 0; width: 86%; max-width: 380px; display: flex; flex-direction: column; background: var(--bg);
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); transform: translateX(-100%); transition: transform 240ms cubic-bezier(.2, .7, .3, 1);
+    box-shadow: 1px 0 0 var(--line), 12px 0 40px rgba(0, 0, 0, .2); }
+  .drawer.open .drawer-panel { transform: none; }
+  .drawer-head { display: flex; align-items: center; gap: 4px; height: 52px; padding: 0 4px 0 16px; }
+  .drawer-head h2 { margin: 0; font-size: 16px; flex: 1; }
+  .drawer .new { margin: 4px 12px 8px; height: 44px; width: auto; }
+  .drawer .convs { padding: 2px 8px; overflow-y: auto; }
+  .drawer .conv-row { min-height: 56px; }
+  .drawer .conv { padding: 8px 4px 8px 12px; font-size: 14px; }
+  .drawer .conv .m { font-size: 12px; }
+  .drawer .conv-row .ib { width: 44px; height: 44px; opacity: 1; margin-right: 2px; }
+  .drawer-foot { margin-top: auto; padding: 8px 12px; border-top: 1px solid var(--line); }
+  .drawer-foot .proj { width: 100%; height: 44px; max-width: none; }
+
+  /* ---- トースト ---- */
+  .toasts { position: fixed; z-index: 30; display: grid; gap: 8px; right: 16px; top: 64px; width: min(380px, calc(100% - 24px)); }
+  .toast-item { display: flex; align-items: center; gap: 10px; padding: 6px 4px 6px 12px; border-radius: var(--r-outer); background: var(--panel); box-shadow: var(--shadow-pop);
+    font-size: 13px; color: var(--fg); animation: toast-in 180ms cubic-bezier(.2, .7, .3, 1); }
+  .toast-item > span { flex: 1; min-width: 0; }
+  .toast-item .kind-ok { color: var(--code); } .toast-item .kind-warn { color: var(--warn); } .toast-item .kind-err { color: var(--crit); }
+  .toast-item.out { opacity: 0; transform: translateY(-6px); transition: opacity 160ms, transform 160ms; }
+
+  /* ---- tooltip ---- */
+  .tip { position: fixed; z-index: 50; padding: 4px 8px; border-radius: var(--r-inner); background: var(--invert-bg); color: var(--invert-fg); font-size: 12px; line-height: 1.4;
+    pointer-events: none; white-space: nowrap; opacity: 0; transform: translateY(-2px); transition: opacity 100ms, transform 100ms; }
+  .tip.show { opacity: 1; transform: none; }
+
+  /* ---- デモ用パネル（モックだけ） ---- */
+  .demo { position: fixed; right: 12px; bottom: 12px; z-index: 40; display: grid; justify-items: end; gap: 8px; font-size: 12px; }
+  .demo-body { display: none; width: 300px; max-height: 70vh; overflow-y: auto; padding: 12px; border-radius: var(--r-outer); background: var(--panel); box-shadow: var(--shadow-pop); gap: 10px; }
+  .demo.open .demo-body { display: grid; }
+  .demo-toggle { width: auto; padding: 0 12px 0 10px; height: 32px; display: inline-flex; gap: 6px; background: var(--panel); box-shadow: var(--shadow-pop); color: var(--fg-2); font-size: 12px; }
+  .demo h4 { margin: 0; font-size: 11px; color: var(--muted); font-weight: 500; letter-spacing: .06em; }
+  .demo .opts-row { display: flex; flex-wrap: wrap; gap: 4px; }
+  .demo .chip { font-family: var(--font-ui); font-size: 12px; height: 26px; padding: 0 9px; }
+  .demo .chip[aria-pressed="true"] { color: var(--fg); }
+  .demo .chip[aria-pressed="true"]::before { content: ""; width: 6px; height: 6px; border-radius: 1px; background: var(--accent); }
+  .no-panel .demo { display: none; }
+
+  /* キーボードの再現（モックだけ） */
+  .kbd-fake { display: none; }
+
+  /* ===================== PC ===================== */
+  @media (min-width: 900px) and (hover: hover) and (pointer: fine) {
+    .m-only { display: none !important; }
+    .app { max-width: 1240px; margin: 0 auto; border-inline: 1px solid var(--line);
+      grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto;
+      grid-template-areas: "top top" "conn conn" "side log" "side compose"; }
+    .topbar { height: 52px; padding: 0 12px 0 16px; }
+    .brand { margin-right: 6px; }
+    .log { padding: 8px 32px 28px; }
+    .composer { padding: 6px 32px 16px; }
+    .box textarea { min-height: 48px; max-height: 40vh; padding: 12px 14px 4px; }
+    .sheet { place-items: center; }
+    .sheet-panel { width: min(600px, calc(100% - 48px)); max-height: 85vh; border-radius: 12px; padding: 14px 18px 18px; box-shadow: var(--shadow-pop);
+      opacity: 0; transform: scale(.97); transition: opacity 150ms, transform 150ms cubic-bezier(.2, .7, .3, 1); }
+    .sheet-panel.wide { width: min(960px, calc(100% - 48px)); }
+    .sheet.open .sheet-panel { opacity: 1; transform: none; }
+    .drawer { display: none; }
+  }
+
+  /* ===================== スマホ ===================== */
+  @media (max-width: 899px), (pointer: coarse) {
+    .pc-only { display: none !important; }
+    .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-areas: "top" "conn" "log" "compose"; }
+    .side { display: none; }
+    .topbar { height: calc(48px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 2px 0; gap: 0; }
+    .ib.t44 { width: 44px; height: 44px; }
+    .m-title { flex: 1; min-width: 0; display: grid; line-height: 1.25; padding: 0 4px; }
+    .m-title b { font-size: 14.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .m-title small { font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 4px; min-width: 0; }
+    .m-title small span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .apill { position: relative; display: inline-grid; place-items: center; height: 44px; padding: 0 2px; flex: none; border-radius: var(--r); transition: transform var(--ease); }
+    .apill:active { transform: scale(.95); }
+    .apill .in { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 6px 0 9px; border-radius: 999px; background: var(--sunken);
+      transition: box-shadow var(--ease), background-color var(--ease); }
+    .apill:hover .in, .apill[aria-expanded="true"] .in { background: var(--panel); box-shadow: var(--ring-strong); }
+    .apill .dot { width: 8px; height: 8px; border-radius: 2px; }
+    .apill[data-state="busy"] .dot { border-radius: 50%; }
+    .apill[data-state="starting"] .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .apill .shield { width: 12px; height: 12px; color: var(--warn); margin-left: -2px; }
+    .ring { width: 20px; height: 20px; }
+    .ring circle { fill: none; stroke-width: 2.6; }
+    .ring .bg { stroke: var(--track); }
+    .ring .fg { stroke: var(--agent); stroke-linecap: round; }
+    .apill[data-state="stopped"] .ring .fg { stroke: var(--muted); }
+    .d-loading .apill .in { background: var(--track); }
+    .d-loading .apill .in > * { visibility: hidden; }
+
+    .conn { font-size: 13px; min-height: 40px; }
+    .log { padding: 0 14px 64px; }
+    .entry { grid-template-columns: 20px minmax(0, 1fr); gap: 6px 8px; padding: 14px 0; }
+    .entry > :not(.mark):not(.head) { grid-column: 1 / -1; }
+    .entry .mark { width: 20px; height: 20px; font-size: 10px; border-radius: 5px; }
+    .entry .body { font-size: 15px; }
+    .fold > summary { height: 44px; padding: 0 12px 0 6px; margin-left: -6px; font-size: 12.5px; }
+    .code-head .ib { width: 44px; height: 44px; }
+    .codeblock.long pre { max-height: 168px; overflow: hidden; -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
+    .codeblock.long.expanded pre { max-height: none; overflow-x: auto; -webkit-mask-image: none; mask-image: none; }
+    .code-more { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 44px; border-top: 1px solid var(--line); font-size: 13px; color: var(--fg-2); }
+    .code-more:active { background: var(--press-bg); }
+    .codeblock.expanded .code-more .i { transform: rotate(180deg); }
+    .ref { position: relative; height: 34px; font-size: 12px; }
+    .ref::after { content: ""; position: absolute; inset: -5px 0; }
+    .opt { min-height: 48px; padding: 10px 12px; font-size: 14px; }
+    .field { height: 44px; font-size: 16px; }
+    .ask-foot .btn { height: 44px; padding: 0 18px; }
+    .newer { bottom: 60px; }
+
+    /* 入力欄の上に浮く pill */
+    .fabs { position: absolute; left: 12px; bottom: 10px; display: flex; gap: 8px; z-index: 3; }
+    .fab { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 13px 0 11px; border-radius: 999px; background: var(--panel); box-shadow: var(--shadow-pop);
+      font-size: 13px; color: var(--fg); transition: transform var(--ease); }
+    .fab::after { content: ""; position: absolute; inset: -4px 0; }
+    .fab:active { transform: scale(.96); }
+    .fab .n { font: 600 12px var(--font-mono); color: var(--muted); }
+    .fab.ask .i { color: var(--crit); } .fab.ask .n { color: var(--crit); }
+
+    .composer { padding: 6px 8px max(8px, env(safe-area-inset-bottom)); }
+    .box { grid-template-columns: 44px minmax(0, 1fr) 44px 44px; align-items: end; border-radius: 16px; padding: 2px; gap: 0; }
+    .box > .queue { grid-column: 1 / -1; grid-row: 1; } .box > .uploads { grid-column: 1 / -1; grid-row: 2; }
+    .queue { padding: 4px 4px 4px 10px; }
+    .queue .ib { width: 44px; height: 44px; }
+    .to, .bar .attach, .bar .spacer { display: none; }
+    .bar { display: contents; }
+    .to-mark { display: inline-grid; grid-column: 1; grid-row: 3; width: 44px; height: 44px; border-radius: 13px; }
+    .to-mark .mark { width: 26px; height: 26px; font-size: 12px; border-radius: 7px; transition: background-color 160ms, transform 160ms; }
+    .to-mark:active .mark { transform: scale(.9) rotate(-8deg); }
+    .input-wrap { grid-column: 2; grid-row: 3; }
+    .box textarea { font-size: 16px; min-height: 44px; max-height: 30dvh; padding: 10px 4px 10px 6px; line-height: 1.5; }
+    .plus { display: inline-grid; grid-column: 3; grid-row: 3; width: 44px; height: 44px; border-radius: 13px; }
+    .send { grid-column: 4; grid-row: 3; width: 44px; height: 44px; border-radius: 13px; }
+    .send .i { width: 20px; height: 20px; }
+    .plus-pop { min-width: 200px; transform-origin: bottom right; }
+    .plus-pop .menu-item, .more-pop .menu-item { min-height: 44px; font-size: 14px; }
+    .more-pop { transform-origin: top right; min-width: 220px; }
+
+    .sheet { align-items: end; }
+    .sheet-panel { max-height: 80dvh; border-radius: 16px 16px 0 0; padding: 0 16px max(16px, env(safe-area-inset-bottom)); box-shadow: 0 -8px 32px rgba(0, 0, 0, .2);
+      transform: translateY(100%); transition: transform 260ms cubic-bezier(.2, .7, .3, 1); }
+    .sheet.open .sheet-panel { transform: none; }
+    .grab { display: block; width: 100%; height: 24px; flex: none; position: relative; touch-action: none; }
+    .grab::before { content: ""; position: absolute; left: 50%; top: 9px; width: 36px; height: 5px; margin-left: -18px; border-radius: 3px; background: var(--line-strong); }
+    .sheet-head .ib { width: 44px; height: 44px; margin-right: -10px; }
+    .ops .btn, .sheet .btn { height: 44px; font-size: 14px; }
+    .seg button { min-height: 44px; font-size: 13px; }
+    .select select { height: 44px; font-size: 16px; }
+    .role-editor { font-size: 16px; }
+    .chip { height: 32px; font-size: 12.5px; padding: 0 10px 0 8px; }
+    .toasts { top: calc(56px + env(safe-area-inset-top)); left: 12px; right: 12px; width: auto; }
+    .toast-item .ib { width: 44px; height: 44px; }
+
+    .demo { right: 8px; bottom: auto; top: 30%; }
+    .demo-toggle { padding: 0 10px; }
+    .demo-toggle span { display: none; }
+
+    /* キーボード表示中: ヘッダを隠し、ログを最大化 */
+    body.kbd .app { height: 55dvh; grid-template-areas: "conn" "log" "compose"; grid-template-rows: auto minmax(0, 1fr) auto; }
+    body.kbd .topbar { display: none; }
+    body.kbd .fabs { display: none; }
+    body.kbd .composer { padding-bottom: 6px; }
+    body.kbd .kbd-fake { display: grid; position: fixed; left: 0; right: 0; bottom: 0; height: 45dvh; background: color-mix(in srgb, var(--fg) 14%, var(--bg));
+      padding: 8px 4px 24px; gap: 8px; grid-template-rows: 28px repeat(4, 1fr); }
+    .kbd-fake .lab { font-size: 11px; color: var(--muted); text-align: center; align-self: center; }
+    .kbd-fake .r { display: flex; gap: 5px; padding: 0 2px; }
+    .kbd-fake .r i { flex: 1; border-radius: 5px; background: var(--panel); box-shadow: 0 1px 0 rgba(0, 0, 0, .25); }
+    .kbd-fake .r i.w { flex: 1.6; } .kbd-fake .r i.sp { flex: 5; }
+  }
+  @media (pointer: coarse) { .conv-row .ib { opacity: 1; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0s !important; animation-iteration-count: 1 !important; transition-duration: 0s !important; }
+    .progress::before { width: 100%; transform: none; opacity: .6; }
+  }
+</style>
+</head>
+<body data-to="claude">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="i-folder-open" viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="i-list-tree" viewBox="0 0 24 24"><path d="M21 12h-8"/><path d="M21 6H8"/><path d="M21 18h-8"/><path d="M3 6v4c0 1.1.9 2 2 2h3"/><path d="M3 10v6c0 1.1.9 2 2 2h3"/></symbol>
+  <symbol id="i-files" viewBox="0 0 24 24"><path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z"/><path d="M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-messages" viewBox="0 0 24 24"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></symbol>
+  <symbol id="i-square-pen" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/></symbol>
+  <symbol id="i-square" viewBox="0 0 24 24"><rect width="14" height="14" x="5" y="5" rx="2"/></symbol>
+  <symbol id="i-fold" viewBox="0 0 24 24"><path d="M12 22v-6"/><path d="M12 8V2"/><path d="M4 12H2"/><path d="M10 12H8"/><path d="M16 12h-2"/><path d="M22 12h-2"/><path d="m15 19-3-3-3 3"/><path d="m15 5-3 3-3-3"/></symbol>
+  <symbol id="i-ellipsis" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
+  <symbol id="i-image-plus" viewBox="0 0 24 24"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/><circle cx="9" cy="9" r="2"/></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+  <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></symbol>
+  <symbol id="i-question" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
+  <symbol id="i-shield-alert" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></symbol>
+  <symbol id="i-flask" viewBox="0 0 24 24"><path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/></symbol>
+</svg>
+
+<div class="app">
+  <header class="topbar">
+    <!-- PC -->
+    <span class="brand pc-only">Clodex</span>
+    <label class="proj pc-only" title="E:\dev\Clodex">
+      <svg class="i sm"><use href="#i-folder"/></svg><span class="name">Clodex</span><svg class="i sm"><use href="#i-chevron-down"/></svg>
+      <select aria-label="プロジェクト"><option>E:\dev\Clodex</option><option>E:\dev\TypeSafe</option><option>E:\dev\sandbox-lab</option></select>
+    </label>
+    <button class="ib pc-only" type="button" aria-label="プロジェクトを開く" title="プロジェクトを開く"><svg class="i"><use href="#i-folder-open"/></svg></button>
+    <span class="spacer pc-only"></span>
+    <button class="ib pc-only" type="button" id="working-toggle" aria-label="作業中 1 件" title="作業中" aria-expanded="false"><svg class="i"><use href="#i-activity"/></svg><span class="count">1</span></button>
+    <button class="ib pc-only" type="button" id="question-toggle" aria-label="質問 1 件" title="質問"><svg class="i"><use href="#i-question"/></svg><span class="count q">1</span></button>
+    <div class="tray pc-only">
+      <button class="ib" type="button" id="detail" aria-pressed="false" aria-label="詳細" title="詳細: 作業と全文を開いて表示"><svg class="i"><use href="#i-list-tree"/></svg></button>
+      <button class="ib" type="button" data-open="artifacts" aria-label="成果物" title="成果物"><svg class="i"><use href="#i-files"/></svg></button>
+      <button class="ib" type="button" data-open="settings" aria-label="設定" title="設定"><svg class="i"><use href="#i-settings"/></svg></button>
+    </div>
+    <!-- スマホ -->
+    <button class="ib t44 m-only" type="button" data-open="drawer" aria-label="会話" title="会話"><svg class="i" style="width:22px;height:22px"><use href="#i-menu"/></svg></button>
+    <div class="m-title m-only"><b>ロード表示の整理</b><small><svg class="i xs"><use href="#i-folder"/></svg><span>Clodex</span></small></div>
+    <button class="apill m-only" type="button" data-agent="claude" data-state-of="claude" data-state="idle" data-sheet="claude" aria-label="Claude 待機中 · コンテキスト 4% · 権限 full" title="Claude">
+      <span class="in"><span class="dot"></span><svg class="i shield"><use href="#i-shield-alert"/></svg><svg class="ring" viewBox="0 0 20 20"><circle class="bg" cx="10" cy="10" r="7.5"/><circle class="fg" cx="10" cy="10" r="7.5" pathLength="100" stroke-dasharray="4 100" transform="rotate(-90 10 10)"/></svg></span>
+    </button>
+    <button class="apill m-only" type="button" data-agent="codex" data-state-of="codex" data-state="busy" data-sheet="codex" aria-label="Codex 作業中 · コンテキスト 32%" title="Codex">
+      <span class="in"><span class="dot"></span><svg class="ring" viewBox="0 0 20 20"><circle class="bg" cx="10" cy="10" r="7.5"/><circle class="fg" cx="10" cy="10" r="7.5" pathLength="100" stroke-dasharray="32 100" transform="rotate(-90 10 10)"/></svg></span>
+    </button>
+    <button class="ib t44 m-only" type="button" id="more-toggle" aria-label="その他" title="その他" aria-expanded="false"><svg class="i"><use href="#i-ellipsis"/></svg></button>
+    <div class="progress" role="progressbar" aria-label="読み込み中"></div>
+  </header>
+
+  <div class="conn re" role="status"><span class="spin"></span><span>再接続中…</span><span class="el mono" id="conn-el">12秒</span></div>
+  <div class="conn closed" role="status"><span class="dot"></span><span>Hub との接続なし</span><button class="btn sm" type="button"><svg class="i sm"><use href="#i-refresh"/></svg><span>再読み込み</span></button></div>
+
+  <aside class="side">
+    <section class="agent" data-agent="claude">
+      <div class="skel"><div class="sk-row"><span class="sk" style="width:22px;height:22px;border-radius:5px"></span><span class="sk" style="width:70px"></span><span class="sk" style="width:56px;height:20px;border-radius:999px;margin-left:auto"></span></div>
+        <div class="sk-row"><span class="sk" style="width:80px;height:22px"></span><span class="sk" style="width:60px;height:22px"></span></div>
+        <span class="sk" style="width:100%;height:6px;margin-top:6px"></span><span class="sk" style="width:100%;height:6px;margin-top:8px"></span><span class="sk" style="width:100%;height:6px;margin-top:8px"></span></div>
+      <div class="agent-head real"><span class="mark claude">C</span><b>Claude</b><span class="st" data-state-of="claude" data-state="idle"><span class="dot"></span><span class="lbl">待機中</span></span></div>
+      <div class="role real" title="設計・レビュー・コミット">設計・レビュー・コミット</div>
+      <div class="chips real">
+        <button class="chip" type="button" data-sheet="claude" aria-label="Model Opus 5.5" title="Model"><svg class="i"><use href="#i-cpu"/></svg>Opus 5.5</button>
+        <button class="chip" type="button" data-sheet="claude" aria-label="Effort high" title="Effort"><svg class="i"><use href="#i-gauge"/></svg>high</button>
+        <button class="chip full" type="button" data-sheet="claude" aria-label="権限 full" title="権限 full"><svg class="i"><use href="#i-shield-alert"/></svg></button>
+      </div>
+      <div class="gauges real">
+        <div class="g"><span class="k">5 時間</span><span class="v"><small>20:20</small>18%</span><span class="track"><i style="width:18%"></i></span></div>
+        <div class="g"><span class="k">週 · ペース −12</span><span class="v"><small>10/09 14:00</small>62%</span><span class="track" title="今の時点での目安"><i style="width:62%"></i><span class="tick" style="left:74%"></span></span></div>
+        <div class="g"><span class="k">コンテキスト</span><span class="v">43k / 1000k</span><span class="track"><i style="width:4.3%"></i></span></div>
+      </div>
+      <div class="agent-actions real">
+        <button class="ib" type="button" data-sheet="claude" aria-label="Claude の設定" title="Claude の設定"><svg class="i"><use href="#i-sliders"/></svg></button>
+        <span class="spacer"></span>
+        <button class="ib" type="button" aria-label="Compact" title="Compact"><svg class="i"><use href="#i-fold"/></svg></button>
+        <button class="ib danger" type="button" disabled aria-label="中断" title="中断"><svg class="i"><use href="#i-square"/></svg></button>
+      </div>
+    </section>
+
+    <section class="agent" data-agent="codex" id="card-codex">
+      <div class="skel"><div class="sk-row"><span class="sk" style="width:22px;height:22px;border-radius:5px"></span><span class="sk" style="width:60px"></span><span class="sk" style="width:56px;height:20px;border-radius:999px;margin-left:auto"></span></div>
+        <div class="sk-row"><span class="sk" style="width:96px;height:22px"></span><span class="sk" style="width:60px;height:22px"></span></div>
+        <span class="sk" style="width:100%;height:6px;margin-top:6px"></span><span class="sk" style="width:100%;height:6px;margin-top:8px"></span></div>
+      <div class="agent-head real"><span class="mark codex">X</span><b>Codex</b><span class="st" data-state-of="codex" data-state="busy"><span class="dot"></span><span class="lbl">作業中</span></span></div>
+      <div class="role real" title="実装・テスト">実装・テスト</div>
+      <div class="chips real">
+        <button class="chip" type="button" data-sheet="codex" aria-label="Model GPT-6-Astra" title="Model"><svg class="i"><use href="#i-cpu"/></svg>GPT-6-Astra</button>
+        <button class="chip" type="button" data-sheet="codex" aria-label="Effort medium" title="Effort"><svg class="i"><use href="#i-gauge"/></svg>medium</button>
+        <button class="chip" type="button" data-sheet="codex" aria-label="権限 edit" title="権限"><svg class="i"><use href="#i-shield"/></svg>edit</button>
+      </div>
+      <div class="gauges real">
+        <div class="g"><span class="k">5 時間</span><span class="v"><small>21:05</small>31%</span><span class="track"><i style="width:31%"></i></span></div>
+        <div class="g"><span class="k">週 · ペース +6</span><span class="v over"><small>10/10 09:00</small>44%</span><span class="track" title="今の時点での目安"><i style="width:44%"></i><span class="tick" style="left:38%"></span></span></div>
+        <div class="g"><span class="k">コンテキスト</span><span class="v">128k / 400k</span><span class="track"><i style="width:32%"></i></span></div>
+      </div>
+      <div class="g-empty real">利用枠 —</div>
+      <div class="agent-actions real">
+        <button class="ib" type="button" data-sheet="codex" aria-label="Codex の設定" title="Codex の設定"><svg class="i"><use href="#i-sliders"/></svg></button>
+        <span class="spacer"></span>
+        <button class="ib" type="button" aria-label="Compact" title="Compact"><svg class="i"><use href="#i-fold"/></svg></button>
+        <button class="ib danger pend" type="button" aria-label="中断" title="中断" id="codex-interrupt"><svg class="i"><use href="#i-square"/></svg></button>
+      </div>
+    </section>
+
+    <div class="side-head"><span class="eyebrow">会話</span><button class="ib pend" type="button" aria-label="新しい会話" title="新しい会話"><svg class="i"><use href="#i-square-pen"/></svg></button></div>
+    <div class="convs skel" style="gap:14px;padding:6px 10px">
+      <div style="display:grid;gap:6px"><span class="sk" style="width:80%"></span><span class="sk" style="width:50%;height:8px"></span></div>
+      <div style="display:grid;gap:6px"><span class="sk" style="width:65%"></span><span class="sk" style="width:40%;height:8px"></span></div>
+      <div style="display:grid;gap:6px"><span class="sk" style="width:72%"></span><span class="sk" style="width:46%;height:8px"></span></div>
+    </div>
+    <div class="convs real" id="conv-list"></div>
+  </aside>
+
+  <div class="log-wrap">
+    <main class="log" id="log" aria-label="ログ" aria-live="polite">
+      <div class="older" role="status"><span class="spin"></span>前の履歴を読み込み中…</div>
+
+      <div class="log-skel" aria-hidden="true">
+        <div class="entry"><span class="mark"></span><div style="display:grid;gap:8px"><span class="sk" style="width:120px"></span><span class="sk" style="width:92%"></span><span class="sk" style="width:64%"></span></div></div>
+        <div class="entry"><span class="mark"></span><div style="display:grid;gap:8px"><span class="sk" style="width:90px"></span><span class="sk" style="width:84%"></span><span class="sk" style="width:96%"></span><span class="sk" style="width:40%"></span></div></div>
+        <div class="entry"><span class="mark"></span><div style="display:grid;gap:8px"><span class="sk" style="width:140px"></span><span class="sk" style="width:70%"></span></div></div>
+        <div class="entry"><span class="mark"></span><div style="display:grid;gap:8px"><span class="sk" style="width:100px"></span><span class="sk" style="width:88%"></span><span class="sk" style="width:56%"></span></div></div>
+      </div>
+
+      <div class="real" style="display:contents">
+      <article class="entry you">
+        <span class="mark you">Y</span>
+        <div class="head"><b>あなた</b><span class="to-tag c-claude">→ Claude</span><time>18:02</time></div>
+        <div class="body md"><p>ロード中が分かるように、ボタン内スピナーと skeleton を足したい。設計を決めて、実装は codex に任せて。</p></div>
+      </article>
+
+      <article class="entry turn" data-agent="claude">
+        <span class="mark claude">C</span>
+        <div class="head"><b class="c-claude">Claude</b><time>18:03</time><span class="tstate">完了 · 1分48秒</span></div>
+        <p class="plan">client-main.ts の pending 処理を確認し、DESIGN.md §17 に withPending を追記してから codex に渡します。</p>
+        <details class="fold steps"><summary><svg class="i sm"><use href="#i-chevron-right"/></svg>作業 6 件</summary>
+          <ol>
+            <li><span class="k">read</span><span class="run">src/web/client/client-main.ts</span></li>
+            <li><span class="k">grep</span><span class="run">pendingPrimary src/web/client</span></li>
+            <li><span class="k">read</span><span class="run">docs/DESIGN.md §17</span></li>
+            <li><span class="k">edit</span><span class="run">docs/DESIGN.md (+18 −2)</span></li>
+            <li><span class="k">run</span><span class="run">pnpm typecheck</span></li>
+            <li><span class="k">mcp</span><span class="run">send_message → codex (DELEGATE)</span></li>
+          </ol>
+        </details>
+        <div class="body md">
+          <p><code>withPending</code> で、押したボタンを state が変わるまで pending にします。二度押しを止め、中身は CSS のスピナーに置き換えます。</p>
+          <div class="codeblock long">
+            <div class="code-head"><span>ts · src/web/client/pending.ts</span><button class="ib" type="button" aria-label="コピー" title="コピー"><svg class="i sm"><use href="#i-copy"/></svg></button></div>
+<pre><code>export const withPending = async &lt;T&gt;(
+  button: HTMLButtonElement,
+  run: () =&gt; Promise&lt;T&gt;,
+): Promise&lt;T | undefined&gt; =&gt; {
+  if (button.dataset.pending === PENDING) return undefined;
+  button.dataset.pending = PENDING;
+  button.classList.add("is-loading");
+  button.setAttribute("aria-busy", "true");
+  try {
+    return await run();
+  } finally {
+    delete button.dataset.pending;
+    button.classList.remove("is-loading");
+    button.removeAttribute("aria-busy");
+  }
+};</code></pre>
+            <button class="code-more" type="button"><svg class="i sm"><use href="#i-chevron-down"/></svg>全文</button>
+          </div>
+          <p>DESIGN.md §17 に追記済み。実装は codex に DELEGATE します。</p>
+        </div>
+      </article>
+
+      <article class="handoff">
+        <div class="route"><span class="mark sm claude">C</span><b>Claude</b><svg class="i sm"><use href="#i-arrow-right"/></svg><span class="mark sm codex">X</span><b>Codex</b><span class="kind">DELEGATE</span><span class="task mono">T-14 · 18:04</span></div>
+        <div class="text">withPending を src/web/client/pending.ts に実装し、中断・ピン・削除・/new のボタンに適用。テストは pending.test.ts に。</div>
+        <div class="refs">
+          <button class="ref" type="button"><svg class="i xs"><use href="#i-file"/></svg>docs/DESIGN.md §17</button>
+          <button class="ref" type="button"><svg class="i xs"><use href="#i-file"/></svg>src/web/client/client-main.ts</button>
+        </div>
+        <details class="fold envelope"><summary><svg class="i sm"><use href="#i-chevron-right"/></svg>Codex に送った全文</summary>
+<pre>[DELEGATE T-14 from claude]
+withPending を src/web/client/pending.ts に実装する。
+- 対象: 中断・ピン・削除・/new
+- state が変わるまで二度押し不可
+- テスト: src/web/client/pending.test.ts</pre>
+        </details>
+      </article>
+
+      <article class="entry turn" data-agent="codex">
+        <span class="mark codex">X</span>
+        <div class="head"><b class="c-codex">Codex</b><time>18:11</time><span class="tstate">完了 · 6分52秒</span></div>
+        <details class="fold steps"><summary><svg class="i sm"><use href="#i-chevron-right"/></svg>作業 14 件</summary>
+          <ol><li><span class="k">edit</span><span class="run">src/web/client/pending.ts (+31)</span></li><li><span class="k">run</span><span class="run">pnpm test</span></li></ol>
+        </details>
+        <div class="body md">
+          <p>実装しました。<code>pnpm test</code> の結果です。</p>
+          <div class="tbl"><table>
+            <thead><tr><th>ファイル</th><th>テスト</th><th>結果</th><th>時間</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">src/web/client/pending.test.ts</td><td class="num">12</td><td class="ok">12 passed</td><td class="num">184ms</td></tr>
+              <tr><td class="mono">src/web/client/timeline.test.ts</td><td class="num">31</td><td class="ok">31 passed</td><td class="num">402ms</td></tr>
+              <tr><td class="mono">src/coordinator/budget.test.ts</td><td class="num">18</td><td><span class="ok">17 passed</span> · <span class="ng">1 failed</span></td><td class="num">96ms</td></tr>
+            </tbody>
+          </table></div>
+          <p>budget.test.ts の 1 件は既存の失敗で、今回の変更とは無関係です。</p>
+        </div>
+      </article>
+
+      <article class="entry turn" data-agent="claude">
+        <span class="mark claude">C</span>
+        <div class="head"><b class="c-claude">Claude</b><time>18:12</time></div>
+        <div class="ask">
+          <div class="ask-head"><svg class="i sm"><use href="#i-question"/></svg>質問</div>
+          <p class="ask-q">ボタン内スピナーを出すまでの遅延は？</p>
+          <div class="opts" role="radiogroup" aria-label="回答">
+            <button class="opt" type="button" aria-pressed="false">なし<small>押した直後に出す</small></button>
+            <button class="opt" type="button" aria-pressed="true">150ms（推奨）<small>速い応答ではちらつかない</small></button>
+            <button class="opt" type="button" aria-pressed="false">400ms<small>tooltip と同じ遅延</small></button>
+          </div>
+          <div class="ask-foot"><input class="field" placeholder="その他" aria-label="その他"><button class="btn primary" type="button">回答</button></div>
+        </div>
+      </article>
+
+      <article class="entry you">
+        <span class="mark you">Y</span>
+        <div class="head"><b>あなた</b><span class="to-tag c-codex">→ Codex</span><time>18:14</time></div>
+        <div class="body md"><p>budget.test.ts の失敗も直して</p></div>
+      </article>
+
+      <article class="entry turn turn-live" data-agent="codex">
+        <span class="mark codex">X</span>
+        <div class="head"><b class="c-codex">Codex</b><time>18:14</time><span class="tstate">作業中</span></div>
+        <p class="plan">失敗している 1 件の期待値を確認し、Budget の丸めを直します。</p>
+        <details class="fold steps"><summary><svg class="i sm"><use href="#i-chevron-right"/></svg>作業 3 件</summary>
+          <ol><li><span class="k">read</span><span class="run">src/coordinator/budget.ts</span></li><li><span class="k">edit</span><span class="run">src/coordinator/budget.ts (+2 −2)</span></li><li><span class="k">run</span><span class="run">pnpm test src/coordinator/budget.test.ts</span></li></ol>
+        </details>
+        <div class="now"><span class="spin"></span><span class="k">実行</span><span class="what">pnpm test src/coordinator/budget.test.ts</span><span class="el" id="now-el">42秒</span></div>
+      </article>
+
+      <article class="entry turn turn-starting" data-agent="codex">
+        <span class="mark codex">X</span>
+        <div class="head"><b class="c-codex">Codex</b><span class="st" data-state="starting" style="margin-left:0"><span class="dot"></span>起動中…</span><span class="tstate mono">3秒</span></div>
+        <div class="pending-turn"><span class="sk" style="width:72%"></span><span class="sk" style="width:48%"></span></div>
+      </article>
+      </div>
+    </main>
+    <div class="fabs m-only">
+      <button class="fab" type="button" data-agent="codex" data-open="working" aria-label="作業中 1 件" title="作業中"><span class="dot" style="animation:pulse 1.4s ease-out infinite"></span>作業中<span class="n">1</span></button>
+      <button class="fab ask" type="button" aria-label="質問 1 件" title="質問"><svg class="i sm"><use href="#i-question"/></svg>質問<span class="n">1</span></button>
+    </div>
+    <button class="newer" type="button" hidden><svg class="i sm"><use href="#i-arrow-down"/></svg>新着</button>
+  </div>
+
+  <form class="composer" onsubmit="return false">
+    <div class="box" id="box">
+      <ul class="queue" aria-label="送信待ち">
+        <li><span class="who"><span class="dot" data-agent="codex" style="border-radius:1px"></span>Codex · 送信待ち</span><span class="text">終わったら DESIGN.md の §17 と差分がないか確認して</span>
+          <button class="btn sm pc-only" type="button">編集</button><button class="ib m-only" type="button" aria-label="編集" title="編集" style="width:44px;height:44px"><svg class="i sm"><use href="#i-square-pen"/></svg></button>
+          <button class="ib" type="button" aria-label="取り消し" title="取り消し"><svg class="i sm"><use href="#i-x"/></svg></button></li>
+      </ul>
+      <div class="uploads">
+        <div class="thumb"><span class="img"><span class="spin"></span></span><span class="meta"><span>screenshot-loading.png</span><small>アップロード中… 64%</small></span>
+          <button class="ib" type="button" aria-label="添付を取り消し" title="添付を取り消し"><svg class="i sm"><use href="#i-x"/></svg></button></div>
+      </div>
+      <div class="input-wrap"><textarea id="input" rows="1" aria-label="メッセージ" placeholder="メッセージ" enterkeyhint="enter"></textarea></div>
+      <div class="bar">
+        <div class="to" role="group" aria-label="送り先">
+          <button type="button" data-agent="claude" aria-pressed="true">Claude</button>
+          <button type="button" data-agent="codex" aria-pressed="false">Codex</button>
+        </div>
+        <button class="to-mark ib" type="button" id="to-mark" aria-label="送り先: Claude" title="送り先を切り替え"><span class="mark claude">C</span></button>
+        <span class="spacer"></span>
+        <button class="ib attach" type="button" aria-label="画像を添付" title="画像を添付"><svg class="i"><use href="#i-image-plus"/></svg></button>
+        <button class="ib plus" type="button" id="plus-toggle" aria-label="画像・コマンド" title="画像・コマンド" aria-expanded="false"><svg class="i" style="width:22px;height:22px"><use href="#i-plus"/></svg></button>
+        <button class="send" type="submit" aria-label="送信" title="送信"><svg class="i"><use href="#i-arrow-up"/></svg></button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- ポップオーバー -->
+<div class="pop working-pop" id="working-pop" role="dialog" aria-label="作業中">
+  <h3>作業中</h3>
+  <button class="work-entry" type="button" data-agent="codex"><span class="row"><span class="dot" style="animation:pulse 1.4s ease-out infinite"></span><b>Codex</b><span class="el mono">2分04秒</span></span>
+    <span class="what">pnpm test src/coordinator/budget.test.ts</span><span class="muted">失敗している 1 件の期待値を確認し、Budget の丸めを直します。</span></button>
+</div>
+<div class="pop more-pop" id="more-pop" role="menu" aria-label="その他">
+  <button class="menu-item" type="button" data-open="artifacts"><svg class="i"><use href="#i-files"/></svg>成果物</button>
+  <button class="menu-item" type="button" data-open="settings"><svg class="i"><use href="#i-settings"/></svg>設定</button>
+  <button class="menu-item" type="button" id="detail-m"><svg class="i"><use href="#i-list-tree"/></svg>詳細<svg class="i sm check" hidden><use href="#i-check"/></svg></button>
+  <div class="menu-sep"></div>
+  <button class="menu-item" type="button"><svg class="i"><use href="#i-folder"/></svg>プロジェクト: Clodex</button>
+  <button class="menu-item" type="button"><svg class="i"><use href="#i-folder-open"/></svg>プロジェクトを開く</button>
+</div>
+<div class="pop plus-pop" id="plus-pop" role="menu" aria-label="画像・コマンド">
+  <button class="menu-item" type="button"><svg class="i"><use href="#i-image-plus"/></svg>画像</button>
+  <button class="menu-item" type="button"><svg class="i"><use href="#i-terminal"/></svg>コマンド</button>
+</div>
+
+<!-- 会話ドロワー（スマホ） -->
+<div class="drawer" id="drawer">
+  <div class="scrim" data-close></div>
+  <nav class="drawer-panel" aria-label="会話">
+    <div class="drawer-head"><h2>会話</h2><button class="ib t44" type="button" data-close aria-label="閉じる" title="閉じる"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <button class="btn new pend" type="button"><svg class="i"><use href="#i-square-pen"/></svg><span>新しい会話</span></button>
+    <div class="convs" id="conv-list-m"></div>
+    <div class="drawer-foot"><label class="proj" title="E:\dev\Clodex"><svg class="i sm"><use href="#i-folder"/></svg><span class="name">Clodex</span><span class="spacer"></span><svg class="i sm"><use href="#i-chevron-down"/></svg>
+      <select aria-label="プロジェクト"><option>E:\dev\Clodex</option><option>E:\dev\TypeSafe</option></select></label></div>
+  </nav>
+</div>
+
+<!-- シート -->
+<div class="sheet" id="sheet">
+  <button class="sheet-backdrop" type="button" data-close aria-label="閉じる" tabindex="-1"></button>
+  <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="grab" aria-hidden="true"></div>
+    <div class="sheet-head"><h2 id="sheet-title"></h2><button class="ib" type="button" data-close aria-label="閉じる" title="閉じる"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="sheet-body" id="sheet-body"></div>
+  </div>
+</div>
+
+<template id="tpl-agent">
+  <div class="sec">
+    <div class="row-end"><span class="st" data-state-of="{id}" data-state="{state}" data-agent="{id}" style="margin-left:0"><span class="dot"></span><span class="lbl">{stateLabel}</span></span><span class="spacer"></span>{fullBadge}</div>
+    <div class="gauges" data-agent="{id}">{gauges}</div>
+    <div class="ops"><button class="btn danger pend" type="button" {intDisabled}><svg class="i sm"><use href="#i-square"/></svg><span>中断</span></button><button class="btn" type="button"><svg class="i sm"><use href="#i-fold"/></svg><span>Compact</span></button></div>
+  </div>
+  <div class="sec">
+    <div class="sec-title">{name} の役割</div>
+    <textarea class="role-editor" aria-label="{name} の役割">{role}</textarea>
+    <div class="row-end"><button class="btn primary" type="button"><span>役割を保存</span></button><span class="note">/new {id} の後に反映</span></div>
+  </div>
+  <div class="sec">
+    <div class="sec-title">権限</div>
+    <div class="seg" role="group" aria-label="権限">{perm}</div>
+  </div>
+  <div class="sec">
+    <div class="sec-title">Model</div>
+    <div class="model-form"><span class="select"><select aria-label="{name} の model">{models}</select><svg class="i"><use href="#i-chevron-down"/></svg></span><button class="btn mw" type="button"><span>変更</span></button></div>
+    <span class="note wait"><span class="spin"></span>ターン終了後に反映</span>
+  </div>
+  <div class="sec">
+    <div class="sec-title">Effort</div>
+    <div class="seg" role="group" aria-label="Effort">{effort}</div>
+  </div>
+  <div class="sec"><button class="btn block" type="button"><svg class="i sm"><use href="#i-refresh"/></svg><span>session を始め直す</span></button></div>
+</template>
+
+<div class="toasts" id="toasts" role="status"></div>
+<div class="tip" id="tip" role="tooltip"></div>
+
+<div class="kbd-fake" aria-hidden="true"><div class="lab">キーボード（再現）</div>
+  <div class="r"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div class="r" style="padding:0 18px"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div class="r"><i class="w"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="w"></i></div>
+  <div class="r"><i class="w"></i><i class="w"></i><i class="sp"></i><i class="w"></i></div>
+</div>
+
+<div class="demo" id="demo">
+  <div class="demo-body" id="demo-body"></div>
+  <button class="ib demo-toggle" type="button" id="demo-toggle" aria-expanded="false" aria-label="デモ" title="デモの切り替え"><svg class="i sm"><use href="#i-flask"/></svg><span>デモ</span></button>
+</div>
+
+<script>
+(() => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const params = new URLSearchParams(location.search);
+  const DEMOS = [
+    ["loading", "初回ロード"], ["starting", "起動中"], ["reconnect", "再接続"], ["closed", "切断"],
+    ["older", "前ページ"], ["upload", "画像アップロード"], ["pending", "ボタン内スピナー"], ["modelwait", "model 適用待ち"], ["stopped", "Codex 停止"],
+  ];
+  const OPENS = [["sheet", "Agent シート"], ["drawer", "会話ドロワー"], ["settings", "設定"], ["artifacts", "成果物"], ["working", "作業中"], ["states", "状態一覧"]];
+  const STATE_LABEL = { busy: "作業中", idle: "待機中", starting: "起動中", stopped: "停止中" };
+  const state = {
+    theme: params.get("theme") || "dark",
+    demo: new Set((params.get("demo") || "").split(",").filter(Boolean)),
+    open: params.get("open") || "",
+    kbd: params.get("kbd") === "1",
+    to: params.get("to") || "claude",
+    panel: params.get("panel") || "closed",
+    sheetAgent: params.get("agent") || "codex",
+  };
+
+  const CONVS = [
+    { t: "ロード表示の整理", m: "作業中 · 10/07 18:14 · claude, codex", current: true, live: "codex" },
+    { t: "UI の監査とモックのコンペ", m: "待機中 · 10/07 16:40 · claude, codex" },
+    { t: "sandbox uninstall の修正", m: "10/07 11:02 · claude" },
+    { t: "アプリのアイコン", m: "10/06 23:04 · claude, codex" },
+    { t: "利用枠ゲージのペース表示", m: "10/06 20:15 · codex" },
+    { t: "Windows で Codex の起動が遅い", m: "10/05 09:30 · claude, codex" },
+  ];
+  const convHtml = (c) => `<div class="conv-row${c.current ? " current" : ""}">
+    <button class="conv" type="button"${c.current ? ' aria-current="true"' : ""}><span class="t">${c.live ? `<i class="live" data-agent="${c.live}"></i>` : ""}<span>${c.t}</span></span><span class="m">${c.m}</span></button>
+    <button class="ib" type="button" aria-label="会話の操作" title="会話の操作"><svg class="i sm"><use href="#i-ellipsis"/></svg></button></div>`;
+  $("#conv-list").innerHTML = CONVS.map(convHtml).join("");
+  $("#conv-list-m").innerHTML = CONVS.map(convHtml).join("");
+
+  const AGENTS = {
+    claude: { name: "Claude", mark: "C", state: "idle", role: "設計・レビュー・コミットを担当する。実装は codex に DELEGATE し、結果は差分とテストで確認する。", perm: "full", effort: "high",
+      models: ["Opus 5.5", "Sonnet 5", "Haiku 4.5"], gauges: [["5 時間", "18%", "20:20", 18], ["週 · ペース −12", "62%", "10/09 14:00", 62, 74], ["コンテキスト", "43k / 1000k", "", 4.3]] },
+    codex: { name: "Codex", mark: "X", state: "busy", role: "実装とテストを担当する。DELEGATE を受けたら、テストを書いてから最小実装する。", perm: "edit", effort: "medium",
+      models: ["GPT-6-Astra", "GPT-6-Astra-mini"], gauges: [["5 時間", "31%", "21:05", 31], ["週 · ペース +6", "44%", "10/10 09:00", 44, 38], ["コンテキスト", "128k / 400k", "", 32]] },
+  };
+  const segHtml = (values, current, extra = {}) => values.map((v) => `<button type="button" aria-pressed="${v === current}">${extra[v] || ""}${v}</button>`).join("");
+  const renderAgentSheet = (id) => {
+    const a = AGENTS[id];
+    const g = a.gauges.map(([k, v, r, p, tick]) => `<div class="g"><span class="k">${k}</span><span class="v">${r ? `<small>${r}</small>` : ""}${v}</span><span class="track"><i style="width:${p}%"></i>${tick ? `<span class="tick" style="left:${tick}%"></span>` : ""}</span></div>`).join("");
+    const html = $("#tpl-agent").innerHTML
+      .replaceAll("{id}", id).replaceAll("{name}", a.name).replaceAll("{state}", a.state).replaceAll("{stateLabel}", STATE_LABEL[a.state])
+      .replace("{fullBadge}", a.perm === "full" ? `<span class="note" style="color:var(--warn)"><svg class="i sm"><use href="#i-shield-alert"/></svg>full</span>` : "")
+      .replace("{gauges}", g).replace("{intDisabled}", a.state === "busy" ? "" : "disabled").replace("{role}", a.role)
+      .replace("{perm}", segHtml(["read-only", "edit", "full"], a.perm, { full: '<svg class="i sm warn-ico"><use href="#i-shield-alert"/></svg>' }))
+      .replace("{models}", a.models.map((m) => `<option>${m}</option>`).join("") + "<option>その他（入力）</option>")
+      .replace("{effort}", segHtml(["low", "medium", "high", "xhigh", "max"], a.effort));
+    $("#sheet-title").innerHTML = `<span class="mark ${id}">${a.mark}</span>${a.name} の設定`;
+    $("#sheet-body").innerHTML = html;
+    $(".sheet-panel").classList.remove("wide");
+  };
+  const renderSettings = () => {
+    $("#sheet-title").textContent = "設定";
+    $("#sheet-body").innerHTML = `<div class="sec"><div class="sec-title">テーマ</div><div class="seg">${segHtml(["システム", "ライト", "ダーク"], state.theme === "light" ? "ライト" : "ダーク")}</div></div>
+      <div class="sec"><div class="sec-title">送り先</div><div class="seg"><button type="button" aria-pressed="true"><span class="dot" data-agent="claude" style="border-radius:1px"></span>Claude</button><button type="button" aria-pressed="false"><span class="dot" data-agent="codex" style="border-radius:1px;opacity:.5"></span>Codex</button></div></div>
+      <div class="sec"><div class="sec-title">作業と全文</div><div class="seg">${segHtml(["開いて表示", "畳んで表示"], "畳んで表示")}</div></div>`;
+    $(".sheet-panel").classList.remove("wide");
+  };
+  const renderArtifacts = () => {
+    $("#sheet-title").textContent = "成果物";
+    const rows = [["changed", "変更", "src/web/client/pending.ts"], ["changed", "変更", "docs/DESIGN.md"], ["", "参照", "src/web/client/client-main.ts"], ["image", "画像", "screenshot-loading.png"]];
+    $("#sheet-body").innerHTML = `<div class="sec">${rows.map(([c, k, p]) => `<button class="art" type="button"><span class="kind ${c}">${k}</span><span>${p}</span></button>`).join("")}
+      <div class="row-end" style="margin-top:6px"><span class="note"><span class="spin"></span>読み込み中…</span></div></div>`;
+    $(".sheet-panel").classList.remove("wide");
+  };
+  // 部品 × 6 状態の一覧（モックで状態を確認するため）
+  const renderStates = () => {
+    $("#sheet-title").textContent = "部品の状態";
+    const cols = ["通常", "hover", "press", "selected", "disabled", "focus", "loading"];
+    const mods = ["", "is-hover", "is-press", "SEL", "DIS", "is-focus", "is-loading"];
+    const parts = [
+      ["アイコンボタン", (m) => `<button class="ib ${m}" type="button" aria-label="設定" title="設定"><svg class="i"><use href="#i-settings"/></svg></button>`],
+      ["トレイ", (m) => `<span class="tray"><button class="ib ${m}" type="button" aria-label="詳細" title="詳細"><svg class="i"><use href="#i-list-tree"/></svg></button></span>`],
+      ["危険", (m) => `<button class="ib danger ${m}" type="button" aria-label="中断" title="中断"><svg class="i"><use href="#i-square"/></svg></button>`],
+      ["チップ", (m) => `<button class="chip ${m}" type="button"><svg class="i"><use href="#i-cpu"/></svg>Opus 5.5</button>`],
+      ["セグメント", (m) => `<span class="seg" style="width:96px"><button type="button" class="${m}">low</button></span>`],
+      ["ボタン", (m) => `<button class="btn ${m}" type="button"><span>変更</span></button>`],
+      ["主ボタン", (m) => `<button class="btn primary ${m}" type="button"><span>保存</span></button>`],
+      ["送信", (m) => `<button class="send ${m}" type="button" aria-label="送信" title="送信"><svg class="i"><use href="#i-arrow-up"/></svg></button>`],
+    ];
+    const cell = (fn, mod) => {
+      let html = fn(mod === "SEL" || mod === "DIS" ? "" : mod);
+      if (mod === "SEL") html = html.replace(/<button /, '<button aria-pressed="true" ');
+      if (mod === "DIS") html = html.replace(/<button /, "<button disabled ");
+      return `<span class="c">${html}</span>`;
+    };
+    $("#sheet-body").innerHTML = `<div class="states"><span></span>${cols.map((c) => `<span class="h">${c}</span>`).join("")}
+      ${parts.map(([l, fn]) => `<span class="l">${l}</span>${mods.map((m) => cell(fn, m)).join("")}`).join("")}</div>`;
+    $(".sheet-panel").classList.add("wide");
+  };
+
+  // ---- 状態の反映 ----
+  const isMobile = () => matchMedia("(max-width: 899px), (pointer: coarse)").matches;
+  const setAgentState = (id, s) => {
+    AGENTS[id].state = s;
+    $$(`[data-state-of="${id}"]`).forEach((el) => {
+      el.dataset.state = s;
+      const lbl = el.querySelector(".lbl");
+      if (lbl) lbl.textContent = STATE_LABEL[s];
+    });
+    $("#codex-interrupt").disabled = AGENTS.codex.state !== "busy";
+  };
+  const closeAllPops = () => $$(".pop").forEach((p) => p.classList.remove("open"));
+  const placePop = (pop, anchor, above = false) => {
+    const r = anchor.getBoundingClientRect();
+    pop.classList.add("open");
+    const w = pop.offsetWidth, h = pop.offsetHeight;
+    pop.style.left = `${Math.max(8, Math.min(innerWidth - w - 8, r.right - w))}px`;
+    pop.style.top = above ? `${r.top - h - 8}px` : `${r.bottom + 6}px`;
+  };
+
+  const apply = () => {
+    const root = document.documentElement;
+    root.dataset.theme = state.theme;
+    document.body.dataset.to = state.to;
+    for (const [k] of DEMOS) document.body.classList.toggle(`d-${k}`, state.demo.has(k));
+    document.body.classList.toggle("kbd", state.kbd);
+    document.body.classList.toggle("no-panel", state.panel === "0");
+    $("#demo").classList.toggle("open", state.panel === "open");
+    $("#demo-toggle").setAttribute("aria-expanded", String(state.panel === "open"));
+    setAgentState("codex", state.demo.has("starting") ? "starting" : state.demo.has("stopped") ? "stopped" : "busy");
+    $("#card-codex").classList.toggle("no-usage", state.demo.has("stopped"));
+    $$(".pend").forEach((b) => b.classList.toggle("is-loading", state.demo.has("pending")));
+    $$(".to button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.agent === state.to)));
+    const tm = $("#to-mark");
+    tm.innerHTML = `<span class="mark ${state.to}">${AGENTS[state.to].mark}</span>`;
+    tm.setAttribute("aria-label", `送り先: ${AGENTS[state.to].name}`);
+    $("#box").classList.toggle("is-focus", state.kbd);
+    if (state.kbd && !$("#input").value) { $("#input").value = "budget の丸めは切り捨てで統一して"; }
+
+    // 開いているもの
+    $("#sheet").classList.toggle("open", ["sheet", "settings", "artifacts", "states"].includes(state.open));
+    if (state.open === "sheet") renderAgentSheet(state.sheetAgent);
+    if (state.open === "settings") renderSettings();
+    if (state.open === "artifacts") renderArtifacts();
+    if (state.open === "states") renderStates();
+    $$(".mw").forEach((b) => b.classList.toggle("is-loading", state.demo.has("modelwait")));
+    $$("#sheet .pend").forEach((b) => b.classList.toggle("is-loading", state.demo.has("pending")));
+    $("#drawer").classList.toggle("open", state.open === "drawer");
+    closeAllPops();
+    if (state.open === "working") {
+      if (isMobile()) placePop($("#working-pop"), $(".fab"), true);
+      else placePop($("#working-pop"), $("#working-toggle"));
+    }
+    $("#working-toggle").setAttribute("aria-expanded", String(state.open === "working"));
+    $$("[data-sheet]").forEach((b) => b.setAttribute("aria-expanded", String(state.open === "sheet" && b.dataset.sheet === state.sheetAgent && b.classList.contains("apill"))));
+
+    renderDemo();
+    const q = new URLSearchParams();
+    q.set("theme", state.theme);
+    if (state.demo.size) q.set("demo", [...state.demo].join(","));
+    if (state.open) q.set("open", state.open);
+    if (state.open === "sheet" && state.sheetAgent !== "codex") q.set("agent", state.sheetAgent);
+    if (state.kbd) q.set("kbd", "1");
+    if (state.to !== "claude") q.set("to", state.to);
+    if (state.panel !== "closed") q.set("panel", state.panel);
+    history.replaceState(null, "", `?${q}`);
+  };
+
+  const renderDemo = () => {
+    const chip = (key, label, on) => `<button class="chip" type="button" data-k="${key}" aria-pressed="${on}">${label}</button>`;
+    $("#demo-body").innerHTML = `
+      <h4>テーマ</h4><div class="seg">${["dark", "light"].map((t) => `<button type="button" data-theme="${t}" aria-pressed="${state.theme === t}">${t === "dark" ? "ダーク" : "ライト"}</button>`).join("")}</div>
+      <h4>ロード・待ち</h4><div class="opts-row">${DEMOS.map(([k, l]) => chip(`demo:${k}`, l, state.demo.has(k))).join("")}</div>
+      <h4>開く</h4><div class="opts-row">${OPENS.map(([k, l]) => chip(`open:${k}`, l, state.open === k)).join("")}</div>
+      <h4>その他</h4><div class="opts-row">${chip("kbd", "キーボード表示", state.kbd)}${chip("toast", "トースト", false)}</div>`;
+  };
+  $("#demo-body").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.theme) state.theme = b.dataset.theme;
+    const k = b.dataset.k || "";
+    if (k.startsWith("demo:")) { const d = k.slice(5); state.demo.has(d) ? state.demo.delete(d) : state.demo.add(d); }
+    if (k.startsWith("open:")) { const o = k.slice(5); state.open = state.open === o ? "" : o; }
+    if (k === "kbd") state.kbd = !state.kbd;
+    if (k === "toast") { toast("ok", "Codex 完了 · T-14"); return; }
+    apply();
+  });
+  $("#demo-toggle").addEventListener("click", () => { state.panel = state.panel === "open" ? "closed" : "open"; apply(); });
+
+  // ---- 操作 ----
+  document.addEventListener("click", (e) => {
+    const t = e.target;
+    const opener = t.closest("[data-open]");
+    if (opener && !opener.closest(".demo")) { state.open = opener.dataset.open === state.open ? "" : opener.dataset.open; apply(); return; }
+    const sheetBtn = t.closest("[data-sheet]");
+    if (sheetBtn) { state.sheetAgent = sheetBtn.dataset.sheet; state.open = "sheet"; apply(); return; }
+    if (t.closest("[data-close]")) { state.open = ""; apply(); return; }
+    const to = t.closest(".to button");
+    if (to) { state.to = to.dataset.agent; apply(); return; }
+    if (t.closest("#to-mark")) { state.to = state.to === "claude" ? "codex" : "claude"; apply(); return; }
+    if (t.closest("#working-toggle")) { state.open = state.open === "working" ? "" : "working"; apply(); return; }
+    if (t.closest("#more-toggle")) { const p = $("#more-pop"); const on = !p.classList.contains("open"); closeAllPops(); if (on) placePop(p, t.closest("#more-toggle")); $("#more-toggle").setAttribute("aria-expanded", String(on)); return; }
+    if (t.closest("#plus-toggle")) { const p = $("#plus-pop"); const on = !p.classList.contains("open"); closeAllPops(); if (on) placePop(p, t.closest("#plus-toggle"), true); $("#plus-toggle").setAttribute("aria-expanded", String(on)); return; }
+    const detail = t.closest("#detail, #detail-m");
+    if (detail) {
+      const on = $("#detail").getAttribute("aria-pressed") !== "true";
+      $("#detail").setAttribute("aria-pressed", String(on));
+      $("#detail-m .check").hidden = !on;
+      $$("details.fold").forEach((d) => (d.open = on));
+      return;
+    }
+    const opt = t.closest(".opt");
+    if (opt) { $$(".opt", opt.parentElement).forEach((o) => o.setAttribute("aria-pressed", String(o === opt))); return; }
+    const seg = t.closest(".sheet .seg button");
+    if (seg) { $$("button", seg.parentElement).forEach((o) => o.setAttribute("aria-pressed", String(o === seg))); return; }
+    const more = t.closest(".code-more");
+    if (more) { more.parentElement.classList.toggle("expanded"); more.lastChild.textContent = more.parentElement.classList.contains("expanded") ? "畳む" : "全文"; return; }
+    const conv = t.closest(".conv");
+    if (conv && !conv.closest(".conv-row.current")) {
+      $$(".conv-row").forEach((r) => r.classList.remove("current"));
+      conv.parentElement.classList.add("current", "loading-row");
+      document.body.classList.add("d-pending");
+      setTimeout(() => { conv.parentElement.classList.remove("loading-row"); document.body.classList.remove("d-pending"); }, 900);
+      return;
+    }
+    if (!t.closest(".pop")) { closeAllPops(); $$("#more-toggle, #plus-toggle").forEach((b) => b.setAttribute("aria-expanded", "false")); }
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.open) { state.open = ""; apply(); } });
+
+  const input = $("#input");
+  const grow = () => { input.style.height = "auto"; input.style.height = `${input.scrollHeight}px`; };
+  input.addEventListener("input", grow);
+
+  // ---- トースト ----
+  const TOAST_ICON = { ok: "i-check-circle", warn: "i-alert", err: "i-alert" };
+  const toast = (kind, text) => {
+    const item = document.createElement("div");
+    item.className = "toast-item";
+    item.innerHTML = `<svg class="i kind-${kind}"><use href="#${TOAST_ICON[kind]}"/></svg><span>${text}</span><button class="ib" type="button" aria-label="閉じる" title="閉じる"><svg class="i sm"><use href="#i-x"/></svg></button>`;
+    const close = () => { item.classList.add("out"); setTimeout(() => item.remove(), 170); };
+    item.querySelector("button").addEventListener("click", close);
+    $("#toasts").append(item);
+  };
+  if (params.get("toast") === "1") toast("ok", "Codex 完了 · T-14");
+
+  // ---- tooltip: 400ms 遅らせて出す。表示中は title を退避して標準の tooltip と重ねない ----
+  const TIP_DELAY = 400;
+  const tip = $("#tip");
+  let tipEl = null, tipTimer = 0;
+  const hideTip = () => {
+    clearTimeout(tipTimer);
+    if (tipEl && tipEl.dataset.title) { tipEl.title = tipEl.dataset.title; delete tipEl.dataset.title; }
+    tipEl = null;
+    tip.classList.remove("show");
+  };
+  const showTip = (el) => {
+    tip.textContent = el.dataset.title;
+    tip.classList.add("show");
+    const r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+    const below = r.bottom + 6 + h < innerHeight;
+    tip.style.left = `${Math.max(6, Math.min(innerWidth - w - 6, r.left + r.width / 2 - w / 2))}px`;
+    tip.style.top = `${below ? r.bottom + 6 : r.top - h - 6}px`;
+  };
+  const armTip = (el) => {
+    if (el === tipEl) return;
+    hideTip();
+    if (!el || !el.title) return;
+    tipEl = el;
+    el.dataset.title = el.title;
+    el.removeAttribute("title");
+    tipTimer = setTimeout(() => showTip(el), TIP_DELAY);
+  };
+  document.addEventListener("mouseover", (e) => armTip(e.target.closest("[title], [data-title]")));
+  document.addEventListener("focusin", (e) => { if (e.target.matches(":focus-visible")) armTip(e.target.closest("[title]")); });
+  document.addEventListener("focusout", hideTip);
+  document.addEventListener("pointerdown", hideTip);
+
+  // 経過時間（待っていることが分かるように動かす）
+  let sec = 42, conn = 12;
+  setInterval(() => {
+    sec += 1; conn += 1;
+    $("#now-el").textContent = sec >= 60 ? `${Math.floor(sec / 60)}分${String(sec % 60).padStart(2, "0")}秒` : `${sec}秒`;
+    $("#conn-el").textContent = `${conn}秒`;
+  }, 1000);
+
+  apply();
+  grow();
+  const log = $("#log");
+  log.scrollTop = params.get("scroll") === "top" ? 0 : log.scrollHeight;
+})();
+</script>
+</body>
+</html>
