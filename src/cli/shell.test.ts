@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import type { AgentId, AgentStatus, PermissionLevel, TurnResult } from "../agents/agent-adapter.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
 import { createShell, type AgentState, type ConversationList, type PendingInput, type ShellCoordinator } from "./shell.js";
+import type { CommandResult } from "./command-runner.js";
+
+const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
 import type { ManagedProcess } from "../process/process-manager.js";
 import { startWebServer } from "../web/web-server.js";
 import { WebFeed } from "../web/web-feed.js";
@@ -136,11 +139,13 @@ class FakeCoordinator implements ShellCoordinator {
 
 class FakeRunner {
   readonly commands: string[] = [];
+  readonly finish: Array<(result: CommandResult) => void> = [];
   running = 0;
   stops = 0;
-  run(command: string): Promise<void> {
+  run(command: string): Promise<CommandResult> {
     this.commands.push(command);
-    return new Promise(() => {}); // 終了を待たずに次の入力を受け付けることを確認する
+    // 終了を待たずに次の入力を受け付けることを確認する。終了はテストが finish で起こす
+    return new Promise((resolve) => this.finish.push(resolve));
   }
   stopAll(): number {
     this.stops++;
@@ -347,6 +352,25 @@ describe("createShell", () => {
     await expect(shell.handleLine("!git status")).resolves.toBe("continue");
     expect(runner.commands).toEqual(["git status"]);
     expect(coordinator.sent).toEqual([]);
+  });
+
+  it("!> は終わったら結果を送り先の Agent に送り、止めたときは送らない", async () => {
+    const { coordinator, runner, shell } = setup();
+    await expect(shell.handleLine("@codex !> pnpm test")).resolves.toBe("continue");
+    expect(runner.commands).toEqual(["pnpm test"]);
+    expect(coordinator.sent).toEqual([]);
+    runner.finish[0]!({ code: 1, stopped: false, output: ["FAIL"] });
+    await flush();
+    expect(coordinator.sent).toHaveLength(1);
+    expect(coordinator.sent[0]).toMatchObject({ agent: "codex", text: expect.stringContaining("FAIL") });
+    await shell.handleLine("!> pnpm build");
+    runner.finish[1]!({ code: null, stopped: true, output: [] });
+    await flush();
+    expect(coordinator.sent).toHaveLength(1);
+    await shell.handleLine("!> pnpm lint");
+    runner.finish[2]!({ code: 0, stopped: false, output: [] });
+    await flush();
+    expect(coordinator.sent[1]).toMatchObject({ agent: "claude" });
   });
 
   it("/status は各 Agent の状態を表示する", async () => {

@@ -32,6 +32,7 @@ export type ShellCommand =
   | { kind: "delete"; index: number }
   | { kind: "pin"; index: number }
   | { kind: "run"; command: string }
+  | { kind: "runAndSend"; command: string; agent?: AgentId }
   | { kind: "background"; command: string }
   | { kind: "processes"; id?: number }
   | { kind: "kill"; id: number }
@@ -87,6 +88,14 @@ const isConversationNumber = (arg: string) => /^[1-9]\d*$/.test(arg);
 // @agent! は実行中のターンへの割り込み（DESIGN.md §28 v0.3 C）
 const STEER_SUFFIX = "!";
 
+const RUN_AND_SEND_PREFIX = "!>";
+
+const parseRunAndSend = (input: string, agent?: AgentId): ShellCommand => {
+  const command = input.slice(RUN_AND_SEND_PREFIX.length).trim();
+  if (!command) return usage("!> <command>");
+  return agent ? { kind: "runAndSend", command, agent } : { kind: "runAndSend", command };
+};
+
 const parseMention = (mention: string, text: string): ShellCommand | undefined => {
   const steer = mention.endsWith(STEER_SUFFIX);
   const name = steer ? mention.slice(0, -STEER_SUFFIX.length) : mention;
@@ -95,6 +104,7 @@ const parseMention = (mention: string, text: string): ShellCommand | undefined =
     return steer ? { kind: "sendAll", text, steer: true } : { kind: "sendAll", text };
   }
   if (!isAgentId(name)) return undefined;
+  if (!steer && text.startsWith(RUN_AND_SEND_PREFIX)) return parseRunAndSend(text, name);
   if (!text) return { kind: "invalid", message: t("input.empty", { agent: name }) };
   return steer ? { kind: "send", agent: name, text, steer: true } : { kind: "send", agent: name, text };
 };
@@ -180,6 +190,7 @@ export const parseInput = (line: string, primary: AgentId): ShellCommand => {
   const input = line.trim();
   if (!input) return { kind: "empty" };
   if (input.startsWith("/") && /[\r\n]/.test(line)) return { kind: "invalid", message: t("input.oneLine") };
+  if (input.startsWith(RUN_AND_SEND_PREFIX)) return parseRunAndSend(input);
   if (input.startsWith("!&")) {
     const command = input.slice(2).trim();
     return command ? { kind: "background", command } : usage("!& <command>");

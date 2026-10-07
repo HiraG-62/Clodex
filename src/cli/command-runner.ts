@@ -14,6 +14,17 @@ export const EXIT_CODE_SUFFIX = "\nif (-not $?) { if ($LASTEXITCODE) { exit $LAS
 const ANSI_ESCAPE = /\u001b\[[0-9;?]*[A-Za-z]/g;
 const LINE_BREAK = /\r?\n/;
 const MS_PER_SECOND = 1000;
+// !> で Agent に渡す出力の元。終わらないコマンドでも際限なく溜めない
+const KEPT_OUTPUT_LINES = 1000;
+
+export interface CommandResult {
+  code: number | null;
+  stopped: boolean;
+  error?: string;
+  // 出力の末尾の行。KEPT_OUTPUT_LINES を超えた分は捨て、その数を droppedLines に入れる
+  output: string[];
+  droppedLines?: number;
+}
 
 export interface CommandProcess {
   readonly pid?: number | undefined;
@@ -129,16 +140,23 @@ export const createCommandRunner = ({ cwd, print, now = Date.now, ...options }: 
   let nextId = 1;
 
   // 終了（または起動の失敗）で resolve する。reject しない
-  const run = (command: string): Promise<void> => {
+  const run = (command: string): Promise<CommandResult> => {
     const id = nextId++;
     print(`$ ${command}`, { id, phase: "start" });
     const startedAt = now();
+    const output: string[] = [];
+    let droppedLines = 0;
+    const record = (line: string) => {
+      output.push(line);
+      if (output.length > KEPT_OUTPUT_LINES) { output.shift(); droppedLines++; }
+      print(line);
+    };
     return new Promise((resolve) => {
-      const handle = execute(command, typeof cwd === "function" ? cwd() : cwd, print, ({ code, stopped, error }) => {
+      const handle = execute(command, typeof cwd === "function" ? cwd() : cwd, record, ({ code, stopped, error }) => {
         for (const entry of running) if (!entry.running) running.delete(entry);
         const elapsed = `${((now() - startedAt) / MS_PER_SECOND).toFixed(1)}s`;
         print(error ? `error: ${error}` : stopped ? `stopped (${elapsed})` : `exit ${code} (${elapsed})`, { id, phase: "exit" });
-        resolve();
+        resolve({ code, stopped, ...(error ? { error } : {}), output, ...(droppedLines ? { droppedLines } : {}) });
       });
       if (handle.running) running.add(handle);
     });

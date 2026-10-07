@@ -10,6 +10,8 @@ import { t } from "../i18n/i18n.js";
 import { commandUsage, slashCommands } from "./commands.js";
 import { resolveReferences } from "./file-references.js";
 import { parseInput } from "./input.js";
+import { commandResultMessage } from "./command-result.js";
+import type { CommandResult } from "./command-runner.js";
 import type { ModelOption } from "../agents/startup-probe.js";
 import type { ProcessManager } from "../process/process-manager.js";
 
@@ -64,7 +66,7 @@ export interface ConversationList {
 
 export interface CommandRunner {
   readonly running: number;
-  run(command: string): Promise<void>;
+  run(command: string): Promise<CommandResult>;
   // 実行中の command を止め、止めた数を返す
   stopAll(): number;
 }
@@ -123,6 +125,7 @@ const HELP_LINES = (primary: AgentId) => [
   helpLine("@<agent>! <text>", t("help.steer")),
   helpLine("!<command>", t("help.run")),
   helpLine("!& <command>", t("help.background")),
+  helpLine("!> <command>", t("help.runAndSend")),
   ...slashCommands().map((command) => helpLine(commandUsage(command), command.description)),
   helpLine("Ctrl+C", t("help.ctrlC")),
 ];
@@ -260,6 +263,16 @@ export const createShell = ({
         // 終了を待たずに次の入力を受け付ける。出力は runner が表示する
         void runner.run(command.command);
         return "continue";
+      case "runAndSend": {
+        const agent = command.agent ?? primary;
+        // 終わったときに会話が切り替わっていても、実行を始めた会話に送る
+        const recipient = coordinator();
+        void runner.run(command.command).then((result) => {
+          if (result.stopped) return;
+          void recipient.sendToAgent(agent, commandResultMessage(command.command, result));
+        });
+        return "continue";
+      }
       case "background":
         processes.start(command.command);
         return "continue";

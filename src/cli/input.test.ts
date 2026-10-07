@@ -76,6 +76,13 @@ describe("parseInput", () => {
     expect(parseInput("@claude first\nsecond", "claude")).toEqual({ kind: "send", agent: "claude", text: "first\nsecond" });
   });
 
+  it("!> は結果を Agent に渡す実行にし、@agent で渡し先を選ぶ", () => {
+    expect(parseInput("!> pnpm test", "claude")).toEqual({ kind: "runAndSend", command: "pnpm test" });
+    expect(parseInput("@codex !> pnpm test", "claude")).toEqual({ kind: "runAndSend", command: "pnpm test", agent: "codex" });
+    expect(parseInput("!>", "claude").kind).toBe("invalid");
+    expect(parseInput("@codex !>", "claude").kind).toBe("invalid");
+  });
+
   it("background process の操作を解釈する", () => {
     expect(parseInput("!& pnpm dev", "claude")).toEqual({ kind: "background", command: "pnpm dev" });
     expect(parseInput("/processes", "claude")).toEqual({ kind: "processes" });

@@ -62,6 +62,19 @@ describe("createCommandRunner", () => {
     expect(lifecycle).toEqual([{ id: 1, phase: "start" }, { id: 2, phase: "start" }, { id: 2, phase: "exit" }, { id: 1, phase: "exit" }]);
   });
 
+  it("終了時に終了コード・停止の有無・出力の行を返す", async () => {
+    const { runner, processes } = setup();
+    const done = runner.run("pnpm test");
+    processes[0]!.stdout.write("line 1\nline 2\n");
+    processes[0]!.close(1);
+    await expect(done).resolves.toEqual({ code: 1, stopped: false, output: ["line 1", "line 2"] });
+    const stopped = setup();
+    const long = stopped.runner.run("long");
+    stopped.runner.stopAll();
+    stopped.processes[0]!.close(1);
+    await expect(long).resolves.toMatchObject({ stopped: true });
+  });
+
   it("起動失敗・停止でも開始時と同じ ID で終了を通知する", async () => {
     const failed = setup(["pwsh", "powershell"]);
     await failed.runner.run("missing");
