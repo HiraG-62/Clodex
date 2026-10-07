@@ -18,6 +18,7 @@ import { renderMarkdown } from "./client/markdown.js";
 import { applyFeedItem, rebuildTimeline, withStartingTurns } from "./client/timeline.js";
 import { composeInputLine } from "./client/compose-input.js";
 import { isSendKey } from "./client/send-key.js";
+import { fitView, zoomView } from "./client/image-zoom.js";
 import { isShellInput } from "./client/shell-input.js";
 import { chooseProjectPath } from "./client/project-picker.js";
 import { updateDesktopNotify } from "./client/desktop-notify.js";
@@ -164,6 +165,8 @@ const STYLE = `
   .md pre { padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; font: 12.5px/1.6 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--sunken); }
   .md pre code { padding: 0; background: none; }
   code { font-family: var(--font-mono); font-size: .92em; padding: 1px 5px; border-radius: 4px; background: var(--sunken); color: var(--code); overflow-wrap: anywhere; }
+  /* 絶対パスは本文より目立たせない */
+  code.path { font-size: .78em; padding: 0; background: none; color: var(--muted); }
 
   .steps { grid-column: 2; margin: 2px 0 6px; min-width: 0; }
   .steps summary, .envelope summary { list-style: none; cursor: pointer; font-size: 12px; color: var(--muted); display: inline-flex; gap: 6px; padding: 2px 0; }
@@ -189,7 +192,19 @@ const STYLE = `
   .entry .image-previews { grid-column: 2; }
   .image-previews:empty { display: none; }
   .image-preview { max-width: 100%; min-width: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--sunken); }
-  .image-preview img { display: block; max-height: 160px; max-width: 100%; object-fit: contain; }
+  .image-preview { cursor: zoom-in; }
+  .image-preview img { display: block; max-height: min(320px, 40vh); max-width: 100%; object-fit: contain; }
+  .lightbox { position: fixed; inset: 0; z-index: 25; display: grid; grid-template-rows: auto minmax(0, 1fr); background: #0c0c0e; color: #f4f4f5; }
+  .lightbox[hidden] { display: none; }
+  .lb-bar { display: flex; align-items: center; gap: 8px; padding: max(6px, env(safe-area-inset-top)) 8px 6px 14px; }
+  .lb-name { flex: 1; min-width: 0; font-size: 12px; color: rgba(244, 244, 245, .6); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-tools { display: flex; align-items: center; gap: 2px; }
+  .lightbox .icon-btn { color: inherit; }
+  .lb-scale { min-width: 52px; padding: 6px; border: 0; border-radius: var(--r); background: none; color: inherit; font: 12px var(--font-mono); cursor: pointer; }
+  .lb-scale:hover { background: rgba(255, 255, 255, .1); }
+  .lb-stage { position: relative; overflow: hidden; touch-action: none; cursor: grab; }
+  .lb-stage.dragging { cursor: grabbing; }
+  .lb-stage img { position: absolute; left: 0; top: 0; max-width: none; transform-origin: 0 0; user-select: none; -webkit-user-drag: none; }
   .artifact { display: flex; align-items: baseline; gap: 10px; width: 100%; border: 0; background: transparent; padding: 9px 4px; border-bottom: 1px solid var(--line); text-align: left; min-width: 0; }
   .artifact:hover { background: var(--sunken); }
   .artifact .kind { flex: none; font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--sunken); color: var(--fg-2); }
@@ -197,7 +212,6 @@ const STYLE = `
   .artifact .kind.image { background: color-mix(in srgb, var(--warn) 24%, transparent); }
   .artifact .path { font-size: 12.5px; overflow-wrap: anywhere; min-width: 0; }
   .viewer { margin-top: 10px; min-width: 0; }
-  .viewer img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; }
   .viewer .code { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; font: 12px/1.55 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--sunken); }
   .viewer .diff .add { color: #1a7f37; } .viewer .diff .del { color: var(--crit); } .viewer .diff .hunk { color: var(--muted); }
   .ref::before { content: "↳ "; color: var(--muted); }
@@ -765,6 +779,20 @@ ${UI_ICONS}
     <div id="sheet-body"></div>
   </div>
 </div>
+<div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="${m("web.image.title")}">
+  <div class="lb-bar">
+    <span class="lb-name" id="lb-name"></span>
+    <div class="lb-tools">
+      ${button("lb-zoom-out", "zoom-out", "web.image.zoomOut")}
+      <button class="lb-scale" id="lb-scale" type="button" aria-label="${m("web.image.actual")}" title="${m("web.image.actual")}">100%</button>
+      ${button("lb-zoom-in", "zoom-in", "web.image.zoomIn")}
+      ${button("lb-fit", "maximize", "web.image.fit")}
+      <a class="icon-btn" id="lb-open" target="_blank" rel="noopener noreferrer" aria-label="${m("web.image.open")}" title="${m("web.image.open")}">${icon("external-link")}</a>
+      ${button("lb-close", "x", "web.sheet.close")}
+    </div>
+  </div>
+  <div class="lb-stage" id="lb-stage"><img id="lb-image" alt="" draggable="false"></div>
+</div>
 <aside class="usage-side" id="usage-side" aria-label="${m("web.usage.title")}"></aside>
 <div class="usage-popover" id="usage-popover" role="dialog" aria-label="${m("web.usage.title")}" hidden></div>
 <div class="toast" id="toast" role="status"></div>
@@ -788,6 +816,8 @@ const FUNCTIONS = `
   nextCommandStarts: ${inlineScript(nextCommandStarts.toString())},
   composeInputLine: ${inlineScript(composeInputLine.toString())},
   isSendKey: ${inlineScript(isSendKey.toString())},
+  fitView: ${inlineScript(fitView.toString())},
+  zoomView: ${inlineScript(zoomView.toString())},
   createInputAssist: ${inlineScript(createInputAssist.toString())},
   collectArtifacts: ${inlineScript(collectArtifacts.toString())},
   findImagePaths: ${inlineScript(findImagePaths.toString())},

@@ -64,7 +64,19 @@ describe("buildWebPage", () => {
     expect(html).toContain('image.src = fileUrl("file", path)');
     expect(html).toContain('image.addEventListener("error", () => button.remove())');
     expect(html).toMatch(/\.image-previews\s*\{[^}]*flex-wrap:\s*wrap/);
-    expect(html).toMatch(/\.image-preview img\s*\{[^}]*max-height:\s*160px/);
+    expect(html).toMatch(/\.image-preview img\s*\{[^}]*max-height:\s*min\(320px, 40vh\)/);
+  });
+  it("画像は全画面のビューアで開き、拡大縮小の計算を自己完結した関数として埋め込む", () => {
+    const { html } = buildWebPage("ja");
+    expect(html).toContain('id="lightbox"');
+    expect(html).toContain('aria-label="拡大"');
+    expect(html).toContain('aria-label="新しいタブで開く"');
+    expect(html).toContain('button.addEventListener("click", () => openImage(path))');
+    const script = scriptsOf(html)[1]!;
+    const deps = script.slice(script.lastIndexOf("fitView:"), script.lastIndexOf("createInputAssist:"));
+    const { fitView, zoomView } = runInNewContext(`({${deps}})`) as { fitView: (a: object, b: object) => { scale: number }; zoomView: (v: object, f: number, p: object) => { scale: number } };
+    expect(fitView({ width: 2000, height: 1000 }, { width: 1000, height: 1000 }).scale).toBe(0.5);
+    expect(zoomView({ scale: 1, x: 0, y: 0 }, 2, { x: 0, y: 0 }).scale).toBe(2);
   });
 
   it("コマンド入力の色・ラベル・切り替え処理をページに含める", () => {

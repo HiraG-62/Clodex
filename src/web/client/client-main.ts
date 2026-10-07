@@ -11,6 +11,7 @@ import type { renderMarkdown as RenderMarkdown } from "./markdown.js";
 import type { TimelineItem, DisplayTimelineItem, withStartingTurns as WithStartingTurns, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline } from "./timeline.js";
 import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
 import type { isSendKey as IsSendKey, SendKey } from "./send-key.js";
+import type { fitView as FitView, zoomView as ZoomView } from "./image-zoom.js";
 import type { SlashCommand } from "../../cli/commands.js";
 import type { Suggestion, createInputAssist as CreateInputAssist } from "./input-assist.js";
 import type { collectArtifacts as CollectArtifacts, displayPath as DisplayPath, findImagePaths as FindImagePaths } from "./artifacts.js";
@@ -30,6 +31,8 @@ export interface ClientDeps {
   rebuildTimeline: typeof RebuildTimeline;
   composeInputLine: typeof ComposeInputLine;
   isSendKey: typeof IsSendKey;
+  fitView: typeof FitView;
+  zoomView: typeof ZoomView;
   createInputAssist: typeof CreateInputAssist;
   collectArtifacts: typeof CollectArtifacts;
   findImagePaths: typeof FindImagePaths;
@@ -42,7 +45,7 @@ export interface ClientDeps {
 }
 
 export function clientMain({
-  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, composeInputLine, isSendKey, createInputAssist, collectArtifacts, findImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
+  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -340,7 +343,7 @@ export function clientMain({
       image.loading = "lazy";
       image.addEventListener("error", () => button.remove());
       image.src = fileUrl("file", path);
-      button.addEventListener("click", () => void openViewer(path));
+      button.addEventListener("click", () => openImage(path));
       button.append(image);
       previews.append(button);
     }
@@ -1190,18 +1193,127 @@ export function clientMain({
     });
     openSheet(t("web.artifacts.title"), rows.length ? rows : [el("p", "muted small", t("web.artifacts.empty"))]);
   };
+  // ---- 画像のビューア（DESIGN.md §28 成果物）: 全画面で拡大縮小・移動する ----
+  const lightbox = $("#lightbox");
+  const lbStage = $("#lb-stage");
+  const lbImage = $("#lb-image") as HTMLImageElement;
+  const LB_STEP = 1.25;
+  const LB_WHEEL_RATE = 0.0015;
+  const LB_DRAG_THRESHOLD = 3;
+  const LB_DOUBLE_TAP_MS = 300;
+  let lbView = { scale: 1, x: 0, y: 0 };
+  let lbFitScale = 1;
+  const lbPointers = new Map<number, { x: number; y: number }>();
+  let lbPinch: { distance: number; view: typeof lbView } | undefined;
+  let lbMoved = false;
+  let lbLastTap = 0;
+  const lbLocal = (event: { clientX: number; clientY: number }) => {
+    const rect = lbStage.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  };
+  const lbCenter = () => ({ x: lbStage.clientWidth / 2, y: lbStage.clientHeight / 2 });
+  const applyImageView = (view: typeof lbView) => {
+    lbView = view;
+    lbImage.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
+    $("#lb-scale").textContent = `${Math.round(view.scale * 100)}%`;
+  };
+  const fitImage = () => {
+    if (!lbImage.naturalWidth) return;
+    const view = fitView({ width: lbImage.naturalWidth, height: lbImage.naturalHeight }, { width: lbStage.clientWidth, height: lbStage.clientHeight });
+    lbFitScale = view.scale;
+    applyImageView(view);
+  };
+  const zoomImage = (factor: number, point = lbCenter()) => applyImageView(zoomView(lbView, factor, point));
+  // 全体表示と等倍を切り替える（全体表示が等倍なら等倍のまま）
+  const toggleActualSize = (point = lbCenter()) => {
+    if (Math.abs(lbView.scale - 1) < 0.01 && lbFitScale < 1) fitImage();
+    else zoomImage(1 / lbView.scale, point);
+  };
+  const openImage = (path: string) => {
+    const shown = displayPath(path, state?.project ?? "");
+    $("#lb-name").textContent = shown.split(/[\/]/).at(-1) ?? shown;
+    $("#lb-name").title = path;
+    ($("#lb-open") as HTMLAnchorElement).href = fileUrl("file", path);
+    lbImage.alt = shown;
+    lbImage.style.transform = "";
+    lbImage.onload = fitImage;
+    lbImage.src = fileUrl("file", path);
+    lightbox.hidden = false;
+    $("#lb-close").focus();
+  };
+  const closeImage = () => {
+    lightbox.hidden = true;
+    lbImage.removeAttribute("src");
+  };
+  $("#lb-close").addEventListener("click", closeImage);
+  $("#lb-zoom-in").addEventListener("click", () => zoomImage(LB_STEP));
+  $("#lb-zoom-out").addEventListener("click", () => zoomImage(1 / LB_STEP));
+  $("#lb-fit").addEventListener("click", fitImage);
+  $("#lb-scale").addEventListener("click", () => toggleActualSize());
+  lbStage.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    zoomImage(Math.exp(-event.deltaY * LB_WHEEL_RATE), lbLocal(event));
+  }, { passive: false });
+  lbStage.addEventListener("pointerdown", (event) => {
+    // 画面の外へドラッグしても移動を続ける。捕まえられないポインターでも操作は続ける
+    try { lbStage.setPointerCapture(event.pointerId); } catch { /* 捕まえなくても動く */ }
+    lbPointers.set(event.pointerId, lbLocal(event));
+    if (lbPointers.size === 1) lbMoved = false;
+    if (lbPointers.size === 2) {
+      const [a, b] = [...lbPointers.values()];
+      lbPinch = { distance: Math.hypot(a!.x - b!.x, a!.y - b!.y) || 1, view: lbView };
+    }
+    lbStage.classList.add("dragging");
+  });
+  lbStage.addEventListener("pointermove", (event) => {
+    const previous = lbPointers.get(event.pointerId);
+    if (!previous) return;
+    const now = lbLocal(event);
+    lbPointers.set(event.pointerId, now);
+    if (lbPointers.size === 2 && lbPinch) {
+      const [a, b] = [...lbPointers.values()];
+      const middle = { x: (a!.x + b!.x) / 2, y: (a!.y + b!.y) / 2 };
+      lbMoved = true;
+      return applyImageView(zoomView(lbPinch.view, Math.hypot(a!.x - b!.x, a!.y - b!.y) / lbPinch.distance, middle));
+    }
+    const dx = now.x - previous.x;
+    const dy = now.y - previous.y;
+    if (Math.abs(dx) + Math.abs(dy) >= LB_DRAG_THRESHOLD) lbMoved = true;
+    applyImageView({ ...lbView, x: lbView.x + dx, y: lbView.y + dy });
+  });
+  const releasePointer = (event: PointerEvent) => {
+    const point = lbLocal(event);
+    lbPointers.delete(event.pointerId);
+    if (lbPointers.size < 2) lbPinch = undefined;
+    if (lbPointers.size) return;
+    lbStage.classList.remove("dragging");
+    if (lbMoved || event.type === "pointercancel") return;
+    // ダブルクリック・ダブルタップで全体と等倍を切り替え、背景の 1 回のクリックで閉じる
+    const now = Date.now();
+    if (now - lbLastTap < LB_DOUBLE_TAP_MS) {
+      lbLastTap = 0;
+      return toggleActualSize(point);
+    }
+    lbLastTap = now;
+    if (event.target === lbStage) setTimeout(() => { if (lbLastTap === now) closeImage(); }, LB_DOUBLE_TAP_MS);
+  };
+  lbStage.addEventListener("pointerup", releasePointer);
+  lbStage.addEventListener("pointercancel", releasePointer);
+  window.addEventListener("resize", () => { if (!lightbox.hidden) fitImage(); });
+  document.addEventListener("keydown", (event) => {
+    if (lightbox.hidden) return;
+    if (event.key === "Escape") { event.stopImmediatePropagation(); return closeImage(); }
+    if (event.key === "+" || event.key === "=") return zoomImage(LB_STEP);
+    if (event.key === "-") return zoomImage(1 / LB_STEP);
+    if (event.key === "0") return fitImage();
+  }, true);
+
   const openViewer = async (path: string) => {
+    if (/\.(png|jpe?g|gif|webp)$/i.test(path)) return openImage(path);
     sheetKind = "viewer";
     sheetAgent = undefined;
-    const isImage = /\.(png|jpe?g|gif|webp)$/i.test(path);
     const view = el("div", "viewer");
     const show = async (api: "file" | "diff") => {
-      if (isImage) {
-        const image = el("img") as HTMLImageElement;
-        image.src = fileUrl("file", path);
-        image.alt = path;
-        return view.replaceChildren(image);
-      }
       view.replaceChildren(el("p", "muted small", t("web.viewer.loading")));
       try {
         const response = await fetch(fileUrl(api, path));
@@ -1223,12 +1335,8 @@ export function clientMain({
         view.replaceChildren(el("p", "muted small", t("web.viewer.failed")));
       }
     };
-    const content: HTMLElement[] = [];
-    if (!isImage) {
-      content.push(choice("view", t("web.viewer.view"), ["file", "diff"] as const, "file", (v) => t(v === "file" ? "web.viewer.content" : "web.viewer.diff"), (v) => void show(v)));
-    }
-    content.push(view);
-    openSheet(displayPath(path, state?.project ?? ""), content);
+    const tabs = choice("view", t("web.viewer.view"), ["file", "diff"] as const, "file", (v) => t(v === "file" ? "web.viewer.content" : "web.viewer.diff"), (v) => void show(v));
+    openSheet(displayPath(path, state?.project ?? ""), [tabs, view]);
     await show("file");
   };
 
