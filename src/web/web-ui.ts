@@ -7,7 +7,7 @@ import type { HistoryItem, WebFeed, WebState } from "./web-feed.js";
 
 // 短い間隔の変化はまとめて送る
 const STATE_THROTTLE_MS = 200;
-const FEED_AGENT_EVENTS: ReadonlySet<AgentEvent["type"]> = new Set(["turn_started", "text", "tool", "turn", "error", "compacted"]);
+const FEED_AGENT_EVENTS: ReadonlySet<AgentEvent["type"]> = new Set(["turn_started", "text", "tool", "turn", "error", "compacted", "steer_delivered"]);
 // 保存した feed を読み込むときに通し番号を振り直すので、保存時の番号は使わない
 const UNNUMBERED = 0;
 

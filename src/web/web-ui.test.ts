@@ -85,6 +85,10 @@ describe("historyItemOf", () => {
     expect(historyItemOf({ kind: "message", message, at: "x" })).toMatchObject({ type: "event", seq: 0, envelope: expect.stringContaining("msg_1") });
     expect(historyItemOf({ kind: "agent", agent: "claude", event: { type: "context", tokens: 1 }, at: "x" })).toBeUndefined();
   });
+
+  it("割り込みが届いた event は feed に保存する", () => {
+    expect(historyItemOf({ kind: "agent", agent: "claude", event: { type: "steer_delivered", steerId: "s-1" }, at: "x" })).toMatchObject({ type: "event" });
+  });
 });
 
 it("question と answer を feed の履歴項目にする", () => {
