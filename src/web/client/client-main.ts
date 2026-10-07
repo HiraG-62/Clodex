@@ -1684,14 +1684,12 @@ export function clientMain({
   const PUSH_ID_KEY = "clodex-push-id";
   const pushSupported = "serviceWorker" in navigator && "PushManager" in window && !tauriApi;
   let pushId = storage.get(PUSH_ID_KEY) || undefined;
-  let pushDenied = false;
-  let pushError: string | undefined;
   const base64Bytes = (value: string) => {
     const padded = `${value}${"=".repeat((4 - (value.length % 4)) % 4)}`.replace(/-/g, "+").replace(/_/g, "/");
     return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
   };
   const enablePush = async () => {
-    if (await Notification.requestPermission() !== "granted") { pushDenied = true; return; }
+    if (await Notification.requestPermission() !== "granted") return showToast(t("web.push.denied"), "warn");
     const registration = await navigator.serviceWorker.register("/sw.js");
     await navigator.serviceWorker.ready;
     const { key } = await (await fetch("/api/push/key")).json() as { key: string };
@@ -1711,30 +1709,24 @@ export function clientMain({
     await postJson("/api/push/unsubscribe", { id });
   };
   const pushSection = () => {
-    const section = el("section", "setting push-settings");
-    section.append(el("div", "eyebrow", t("web.settings.push")));
-    const row = el("div", "gui-update-row");
-    const enable = el("button", "btn push-enable", t("web.push.enable")) as HTMLButtonElement;
-    enable.type = "button";
-    enable.addEventListener("click", () => {
-      pushError = undefined;
-      void withPending(enable, enablePush).catch((error: unknown) => { pushError = String(error); }).finally(refreshOpenSheet);
+    const section = choice("push", t("web.settings.push"), ["off", "on"] as const, pushId ? "on" : "off", (value) => value, (value, button) => {
+      const segment = button.parentElement!;
+      for (const control of segment.querySelectorAll<HTMLButtonElement>("button")) control.disabled = true;
+      void (value === "on" ? enablePush() : disablePush())
+        .catch((error: unknown) => showToast(String(error), "warn"))
+        .finally(() => {
+          for (const control of segment.querySelectorAll<HTMLButtonElement>("button")) control.disabled = false;
+          refreshOpenSheet();
+        });
     });
-    const disable = el("button", "btn push-disable", t("web.push.disable")) as HTMLButtonElement;
-    disable.type = "button";
-    disable.addEventListener("click", () => void withPending(disable, disablePush).finally(refreshOpenSheet));
-    row.append(el("span", "small push-status"), enable, disable);
-    section.append(row);
+    section.classList.add("push-settings");
     section.hidden = !pushSupported;
     return section;
   };
   const refreshPush = (body: HTMLElement) => {
-    const section = body.querySelector<HTMLElement>(".push-settings");
-    if (!section || !pushSupported) return;
-    section.querySelector<HTMLElement>(".push-status")!.textContent = pushId ? t("web.push.enabled")
-      : pushError ? t("web.settings.updateFailed", { message: pushError }) : pushDenied ? t("web.push.denied") : "";
-    section.querySelector<HTMLButtonElement>(".push-enable")!.hidden = Boolean(pushId);
-    section.querySelector<HTMLButtonElement>(".push-disable")!.hidden = !pushId;
+    for (const button of body.querySelectorAll<HTMLButtonElement>('[data-choice="push"] button')) {
+      button.setAttribute("aria-pressed", String(button.dataset.value === (pushId ? "on" : "off")));
+    }
   };
   document.addEventListener("visibilitychange", () => {
     if (pushId) void postJson("/api/push/visibility", { id: pushId, visible: document.visibilityState === "visible" });

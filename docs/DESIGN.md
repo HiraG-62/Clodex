@@ -2072,7 +2072,7 @@ D3 の詳細（Tauri GUI。Windows）:
   - API（token で認証）: `GET /api/push/key`（公開鍵）、`POST /api/push/subscribe`（購読。`id` を返す）、`POST /api/push/unsubscribe`（`{ id }`）、`POST /api/push/visibility`（`{ id, visible }`）。Service Worker の `/sw.js` は秘密を含まないので token なしで返す
   - 見えているか: 購読した端末の画面は `/events?push=<id>&visible=<0|1>` でつなぎ、`visibilitychange` で `/api/push/visibility` を送る。Hub は id ごとに、つながっていて見えている接続があれば送らない。接続が切れたら見えていない扱い
   - Service Worker: `push` で通知を出す（タイトルと本文）。通知を押したら開いている画面を前に出し、無ければ `/` を開く
-  - 設定画面の「通知」の節: 「この端末で受け取る」（権限を求めて購読）と、購読中は「受け取り中」と「止める」。Push を使えない画面（`PushManager` が無い。iOS の Safari でホーム画面に追加していないときなど）と GUI の中の画面では節を出さない。権限が拒否されたら「通知が許可されていない」
+  - 設定画面の「通知」: `off` / `on` のトグル（`on` で権限を求めて購読、`off` で解除）。Push を使えない画面（`PushManager` が無い。iOS の Safari でホーム画面に追加していないときなど）と GUI の中の画面では出さない。権限が拒否されたり失敗したりしたら toast を出して `off` のままにする
 - Tauri のメニューの文言は GUI（Rust）の定数に置く（Web UI の文言カタログの外）
 - ウィンドウの位置・大きさ・最大化の状態を覚え、次に起動したときに戻す（`tauri-plugin-window-state`）。トレイの「終了」・ウィンドウを隠したときに保存する。保存した位置の画面が無くなっていれば、見える位置に戻す
 
