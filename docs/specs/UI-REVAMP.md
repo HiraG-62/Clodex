@@ -18,7 +18,7 @@ DESIGN.md §17「画面」（レイアウト・部品・待ちの表示・使い
 - ボタンの 6 状態（hover / 押下 / 選択中 / 押せない / focus-visible / 処理中）を共通のクラスで持つ（例: `.icon-btn`、`.btn`、`.is-loading`）。処理中のスピナーは段階 2 で使うが、見た目はここで作る
 - ヘッダ（PC）: project の pill（folder + 名前 + chevron。native の `select` を透明にして重ねる方式でよい）と「project を開く」、右のアイコントレイ（作業中・質問の badge、詳細のトグル、成果物、設定）。`.path` を本文から外す。tooltip は PC だけ、400ms の遅延
 - Agent ストリップ（PC）: ログの上にカード 2 枚。状態 pill（作業中は点のパルス + 下線の sweep、起動中は点線の回転、停止は灰）、model / effort / 権限のチップ（`full` は警告色の盾）、コンテキスト / 5 時間 / 週のミニゲージ（4px、角丸、reset 時刻は値の側か `title`）、中断 / Compact / 設定のアイコン。中断は busy のときだけ押せ、hover で `--crit`
-- 左の列は会話の一覧だけにする。行全体に背景、今の会話は浮き、⋯ は hover で濃く、作業中の点はその Agent の色
+- 左の列は会話の一覧だけにする。行全体に背景、今の会話は浮き、⋯ は hover で濃く、作業中の点は、今の会話なら busy の Agent の色（両方なら primary の色）、別の会話は中立色（state に別の会話の Agent が無いため）
 - 入力欄: focus の縁と送信ボタンを `--accent` に。送信と画像はアイコン
 - シート: PC は scale + fade の 150ms、閉じるは × アイコン。`.seg` を `.to` と同じ「くぼみ + 浮き」に。主ボタンの白黒反転は 1 画面 1 つ
 - トースト: 種類のアイコン・影・出入りの動き・×
@@ -63,6 +63,7 @@ DESIGN.md §17 のスマホの項目どおり。モックは `claude.html` の `
 - `web-page.test.ts` には、アイコンのボタンに `aria-label` と `title` があること、`maximum-scale` が無いこと（段階 3）など、HTML の構造で確かめられるものを足す
 - 見た目は Playwright で確かめる。**稼働中の Hub（127.0.0.1:4319）にはコマンドを送らない**（人が使っている）。撮るなら、テスト用の web server を別ポートで立てる（`web-server.test.ts` などの仕組みを使う）か、POST を route で止めて読むだけにする
 - 各段階の RESULT に、撮ったスクリーンショット（`C:\Users\Horry\.clodex\artifacts\E--dev-Clodex-ce95cf0d\revamp-<段階>-*.png`。PC 1440 のダーク / ライト、スマホ 390、段階 2 は待ちの状態）のパスを書く
+- **モックとの一致を完了条件にする**: 各段階の RESULT の前に、実装とモックを同じ幅・テーマ・状態で撮って並べ、寸法・色と ring・アイコン・hover / 押下 / 選択中・文言の差異を直す。RESULT にはスクショのペアと、残した差異とその理由を書く
 - 各段階で `pnpm test` と `pnpm typecheck` を通す。文言を足すときは `src/i18n/messages.ts` の en / ja 両方
 
 ## 範囲外
