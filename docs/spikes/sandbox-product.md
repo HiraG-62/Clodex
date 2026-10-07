@@ -183,3 +183,16 @@ agent の応答には analyticsDisabled=false、projectsDirectory=`C:\Users\clod
 認証修正後の再有効化 probe でも未処理例外は0件。未認証の on は probe がセットアップ前に止めるため、UAC とログイン画面を起動しない。元のクラッシュ原因の特定、およびログイン後の on → off → on の確認は未完了。
 
 検証: pnpm test は763件成功・5件skip、pnpm typecheck 成功、GUI の cargo test --lib は2件成功。コミットを分ける場合、Hub 診断は src/hub/runtime-errors*・src/index.ts・gui/src-tauri/src/lib.rs・spikes/sandbox-reenable-probe.ts、認証判定は src/sandbox/authentication*・controller*・windows-platform*・spikes/sandbox-auth-probe.ts。記録の本ファイルは各節で分ける。
+
+## 実 CLI での確認（2026-10-07、deny-only の構成）
+
+人が GUI で `E:\dev\clodex-hybrid-test` を sandbox on にし、Claude と Codex に同じ操作を依頼した。どちらも `clodex-agent` として動いた。
+
+| 操作 | Claude | Codex |
+|---|---|---|
+| project 内にファイルを作る | 成功 | 成功 |
+| `E:\dev\Clodex\sandbox-ng.txt` を作る | `Access to the path ... is denied.` | 同じ（`UnauthorizedAccessException`） |
+| `C:\Users\Horry\.ssh` を一覧する | 「存在しない」（親の `C:\Users\Horry` の中を見ると Access denied） | 同じ（`ItemNotFoundException`） |
+| `git init` → commit | init は成功。commit は `Author identity unknown` で失敗 | init は成功。commit は役割の指示で試していない |
+
+- commit の失敗は sandbox の制限ではなく、`clodex-agent` の git に `user.name` / `user.email` が無いため
