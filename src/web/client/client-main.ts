@@ -8,6 +8,8 @@ import type { AgentState } from "../../cli/shell.js";
 import type { isShellInput as IsShellInput } from "./shell-input.js";
 import type { FeedItem, GuiAction, GuiInfo, GuiUpdate, HistoryItem, HistoryPage, WebState } from "../web-feed.js";
 import type { renderMarkdown as RenderMarkdown } from "./markdown.js";
+import type { nextUnanswered as NextUnanswered, questionAnswers as QuestionAnswers } from "./question-flow.js";
+import type { PendingQuestion } from "../../protocol/questions.js";
 import type { TimelineItem, DisplayTimelineItem, withStartingTurns as WithStartingTurns, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline, workingFeed as WorkingFeed } from "./timeline.js";
 import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
 import type { isSendKey as IsSendKey, SendKey } from "./send-key.js";
@@ -30,6 +32,8 @@ export interface ClientDeps {
   applyFeedItem: typeof ApplyFeedItem;
   rebuildTimeline: typeof RebuildTimeline;
   workingFeed: typeof WorkingFeed;
+  nextUnanswered: typeof NextUnanswered;
+  questionAnswers: typeof QuestionAnswers;
   composeInputLine: typeof ComposeInputLine;
   isSendKey: typeof IsSendKey;
   fitView: typeof FitView;
@@ -47,7 +51,7 @@ export interface ClientDeps {
 }
 
 export function clientMain({
-  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
+  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -146,7 +150,7 @@ export function clientMain({
   let historyHasMore = true;
   let historyLoading = false;
   let historyGeneration = 0;
-  const questionDrafts = new Map<string, { selected: Set<number>[]; other: string[] }>();
+  const questionDrafts = new Map<string, { selected: Set<number>[]; other: string[]; step: number }>();
   let state: WebState | undefined;
   let pendingSettings: PendingSettings = {};
   let pendingDeadlines: PendingDeadlines = {};
@@ -472,83 +476,151 @@ export function clientMain({
   const renderQuestion = (item: Extract<TimelineItem, { kind: "question" }>): HTMLElement => {
     const node = el("article", `entry question ${item.agent}`);
     const head = el("div", "head");
-    head.append(el("b", `c-${item.agent}`, AGENTS[item.agent].name), el("time", "mono", clock(item.at)));
+    head.append(el("b", `c-${item.agent}`, AGENTS[item.agent].name), el("time", "mono", clock(item.at)),
+      el("span", "kind", t(item.answers ? "web.question.answered" : "web.question.waiting")));
     node.append(mark(item.agent), head);
-    const card = el("div", "question-card");
-    const heading = el("div", "question-card-title");
-    heading.append(icon("question"), el("span", "", t(item.answers ? "web.question.answered" : "web.question.title")));
-    card.append(heading);
-    node.append(card);
-    const draft = questionDrafts.get(item.id) ?? { selected: item.questions.map(() => new Set<number>()), other: item.questions.map(() => "") };
-    if (!item.answers) questionDrafts.set(item.id, draft);
-    else questionDrafts.delete(item.id);
-    const submit = el("button", "question-submit", t(item.answers ? "web.question.answered" : "web.question.answer")) as HTMLButtonElement;
-    submit.type = "button";
-    const answers = () => item.questions.map((question, index) => [
-      ...question.options.filter((_option, optionIndex) => draft.selected[index]!.has(optionIndex)).map((option) => option.label),
-      ...(draft.other[index]?.trim() ? [draft.other[index]!.trim()] : []),
-    ]);
-    let submitting = false;
-    const refreshSubmit = () => { submit.disabled = submitting || Boolean(item.answers) || answers().some((answer) => !answer.length); };
-    for (const [index, question] of item.questions.entries()) {
-      const field = el("div", "question-field");
-      if (question.header) field.append(el("span", "kind", question.header));
-      field.append(el("p", "question-text", question.question));
-      const options = el("div", "question-options");
-      const other = el("input", "question-other") as HTMLInputElement;
-      other.type = "text";
-      other.placeholder = t("web.question.other");
-      other.setAttribute("aria-label", t("web.question.other"));
-      other.disabled = Boolean(item.answers);
-      other.value = item.answers ? (item.answers[index] ?? []).filter((answer) => !question.options.some((option) => option.label === answer)).join(", ") : draft.other[index] ?? "";
-      const buttons: HTMLButtonElement[] = [];
-      const refreshOptions = () => {
-        buttons.forEach((button, optionIndex) => {
-          const selected = item.answers ? item.answers[index]?.includes(question.options[optionIndex]!.label) : draft.selected[index]!.has(optionIndex);
-          button.classList.toggle("selected", Boolean(selected));
-          button.setAttribute("aria-pressed", String(Boolean(selected)));
-        });
-        refreshSubmit();
-      };
-      question.options.forEach((option, optionIndex) => {
-        const button = el("button", "question-option") as HTMLButtonElement;
-        button.type = "button";
-        button.disabled = Boolean(item.answers);
-        button.append(el("span", "", option.label));
-        if (option.description) button.append(el("small", "muted", option.description));
-        button.addEventListener("click", () => {
-          const selected = draft.selected[index]!;
-          const wasSelected = selected.has(optionIndex);
-          if (!question.multiSelect) { selected.clear(); draft.other[index] = ""; other.value = ""; }
-          if (wasSelected) selected.delete(optionIndex); else selected.add(optionIndex);
-          refreshOptions();
-        });
-        buttons.push(button);
-        options.append(button);
-      });
-      other.addEventListener("input", () => {
-        draft.other[index] = other.value;
-        if (!question.multiSelect && other.value.trim()) draft.selected[index]!.clear();
-        refreshOptions();
-      });
-      refreshOptions();
-      const footer = el("div", "question-footer");
-      footer.append(other);
-      field.append(options, footer);
-      if (item.answers) field.append(el("p", "question-answered", (item.answers[index] ?? []).join(", ")));
-      card.append(field);
-    }
-    submit.addEventListener("click", async () => {
-      submitting = true;
-      refreshSubmit();
-      await send(`/answer ${item.id} ${JSON.stringify(answers())}`, submit);
-      submitting = false;
-      refreshSubmit();
-    });
-    refreshSubmit();
-    const footer = [...card.querySelectorAll(".question-footer")].at(-1);
-    (footer ?? card).append(submit);
+    if (!item.answers) return node;
+    const record = el("dl", "question-record");
+    item.questions.forEach((question, index) => record.append(el("dt", "", question.question), el("dd", "", (item.answers?.[index] ?? []).join(", "))));
+    node.append(record);
     return node;
+  };
+
+  // ---- 質問欄（入力欄の上。未回答の質問を 1 問ずつ出す）----
+  const questionDock = $("#question-dock");
+  let dockId: string | undefined;
+  let dockCollapsed = false;
+  let dockSubmitting = false;
+  const draftOf = (pending: PendingQuestion) => {
+    const saved = questionDrafts.get(pending.id);
+    if (saved) return saved;
+    const draft = { selected: pending.questions.map(() => new Set<number>()), other: pending.questions.map(() => ""), step: 0 };
+    questionDrafts.set(pending.id, draft);
+    return draft;
+  };
+  const renderQuestionDock = (force = false) => {
+    const pending = state?.questions ?? [];
+    for (const id of questionDrafts.keys()) if (!pending.some((entry) => entry.id === id)) questionDrafts.delete(id);
+    const current = pending[0];
+    questionDock.hidden = !current;
+    if (!current) {
+      dockId = undefined;
+      questionDock.replaceChildren();
+      return;
+    }
+    const more = pending.length - 1;
+    if (!force && dockId === current.id) {
+      const moreLabel = questionDock.querySelector<HTMLElement>(".question-more");
+      if (moreLabel) { moreLabel.hidden = more === 0; moreLabel.textContent = t("web.question.more", { count: more }); }
+      return;
+    }
+    if (dockId !== current.id) dockSubmitting = false;
+    dockId = current.id;
+    const draft = draftOf(current);
+    const total = current.questions.length;
+    const index = draft.step;
+    const question = current.questions[index]!;
+    questionDock.className = `question-dock ${current.agent}`;
+    questionDock.classList.toggle("collapsed", dockCollapsed);
+    const go = (step: number) => { draft.step = step; renderQuestionDock(true); };
+
+    const header = el("button", "question-dock-head") as HTMLButtonElement;
+    header.type = "button";
+    header.setAttribute("aria-expanded", String(!dockCollapsed));
+    const moreLabel = el("span", "muted small question-more", t("web.question.more", { count: more }));
+    moreLabel.hidden = more === 0;
+    header.append(icon("question"), el("b", `c-${current.agent}`, AGENTS[current.agent].name), el("span", "", t("web.question.title")),
+      el("span", "mono muted question-step", `${index + 1}/${total}`), moreLabel, icon("chevron-down"));
+    header.addEventListener("click", () => { dockCollapsed = !dockCollapsed; renderQuestionDock(true); });
+    if (dockCollapsed) return void questionDock.replaceChildren(header);
+
+    const body = el("div", "question-dock-body");
+    const dots = el("div", "question-dots");
+    const answered = (step: number) => Boolean(draft.selected[step]?.size || draft.other[step]?.trim());
+    const refreshDots = () => [...dots.children].forEach((dot, step) => dot.classList.toggle("answered", answered(step)));
+    if (total > 1) {
+      current.questions.forEach((entry, step) => {
+        const dot = el("button", step === index ? "question-dot current" : "question-dot") as HTMLButtonElement;
+        dot.type = "button";
+        dot.setAttribute("aria-label", `${step + 1}/${total} ${entry.header ?? entry.question}`);
+        dot.addEventListener("click", () => go(step));
+        dots.append(dot);
+      });
+    }
+    const field = el("div", "question-field");
+    if (question.header) field.append(el("span", "kind", question.header));
+    field.append(el("p", "question-text", question.question));
+    const options = el("div", "question-options");
+    const other = el("input", "question-other") as HTMLInputElement;
+    other.type = "text";
+    other.placeholder = t("web.question.other");
+    other.setAttribute("aria-label", t("web.question.other"));
+    other.value = draft.other[index] ?? "";
+    const prev = el("button", "btn question-prev", t("web.question.prev")) as HTMLButtonElement;
+    prev.type = "button";
+    prev.disabled = index === 0;
+    prev.addEventListener("click", () => go(index - 1));
+    const next = el("button", "btn question-next", t("web.question.next")) as HTMLButtonElement;
+    next.type = "button";
+    next.hidden = index === total - 1;
+    next.addEventListener("click", () => go(index + 1));
+    const submit = el("button", "question-submit", t("web.question.answer")) as HTMLButtonElement;
+    submit.type = "button";
+    const buttons: HTMLButtonElement[] = [];
+    const refresh = () => {
+      buttons.forEach((button, optionIndex) => {
+        const selected = draft.selected[index]!.has(optionIndex);
+        button.classList.toggle("selected", selected);
+        button.setAttribute("aria-pressed", String(selected));
+      });
+      refreshDots();
+      submit.disabled = dockSubmitting || !answered(index) || nextUnanswered(current.questions, draft, index) !== undefined;
+    };
+    const advance = () => {
+      const target = nextUnanswered(current.questions, draft, index);
+      if (target === undefined) return refresh();
+      go(target);
+    };
+    question.options.forEach((option, optionIndex) => {
+      const button = el("button", "question-option") as HTMLButtonElement;
+      button.type = "button";
+      button.append(el("span", "", option.label));
+      if (option.description) button.append(el("small", "muted", option.description));
+      button.addEventListener("click", () => {
+        const selected = draft.selected[index]!;
+        const wasSelected = selected.has(optionIndex);
+        if (!question.multiSelect) { selected.clear(); draft.other[index] = ""; other.value = ""; }
+        if (wasSelected) selected.delete(optionIndex); else selected.add(optionIndex);
+        if (!question.multiSelect && !wasSelected) return advance();
+        refresh();
+      });
+      buttons.push(button);
+      options.append(button);
+    });
+    other.addEventListener("input", () => {
+      draft.other[index] = other.value;
+      if (!question.multiSelect && other.value.trim()) draft.selected[index]!.clear();
+      refresh();
+    });
+    other.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.isComposing || !other.value.trim()) return;
+      event.preventDefault();
+      advance();
+    });
+    submit.addEventListener("click", async () => {
+      dockSubmitting = true;
+      refresh();
+      const ok = await send(`/answer ${current.id} ${JSON.stringify(questionAnswers(current.questions, draft))}`, submit);
+      if (ok) return;
+      dockSubmitting = false;
+      refresh();
+    });
+    const nav = el("div", "question-nav");
+    nav.append(prev, next, submit);
+    field.append(options, other);
+    body.append(...(total > 1 ? [dots] : []), field, nav);
+    questionDock.replaceChildren(header, body);
+    refresh();
   };
 
   const renderItem = (item: DisplayTimelineItem): HTMLElement => {
@@ -597,17 +669,6 @@ export function clientMain({
 
   const workingPanel = $("#working-panel");
   const workingToggle = $("#working-toggle");
-  const questionToggle = $("#question-toggle");
-  const renderQuestionCount = () => {
-    const count = state?.questions.length ?? 0;
-    questionToggle.hidden = count === 0;
-    questionToggle.replaceChildren(icon("question"), ...(mobile.matches ? [el("span", "mobile-tab-label", t("web.question.title"))] : []), el("span", "count", String(count)));
-    questionToggle.setAttribute("aria-label", `${t("web.question.title")} ${count}`);
-  };
-  questionToggle.addEventListener("click", () => {
-    const oldest = state?.questions[0];
-    if (oldest) rendered.get(oldest.id)?.node.scrollIntoView({ behavior: "smooth", block: "center" });
-  });
   const renderWorking = () => {
     const active = items.filter((item): item is Extract<TimelineItem, { kind: "turn" }> => item.kind === "turn" && item.status === "working");
     $("#working-count").textContent = String(active.length);
@@ -970,7 +1031,7 @@ export function clientMain({
   mobile.addEventListener("change", positionUsage);
 
   const renderState = () => {
-    renderQuestionCount();
+    renderQuestionDock();
     if (!state) return;
     $("#project-name").textContent = state.project.split(/[\\/]/).filter(Boolean).at(-1) || t("web.top.noProject");
     $("#project-pill").title = state.project || t("web.top.noProject");
@@ -1770,7 +1831,7 @@ export function clientMain({
   const tabHome = tabs.parentElement!;
   const adaptTabs = () => {
     (mobile.matches ? $("#composer") : tabHome).prepend(tabs);
-    for (const [id, key] of [["working-toggle", "web.working.title"], ["question-toggle", "web.question.title"]] as const) {
+    for (const [id, key] of [["working-toggle", "web.working.title"]] as const) {
       const button = $("#" + id);
       button.querySelector(".mobile-tab-label")?.remove();
       if (mobile.matches) button.querySelector(".i")?.after(el("span", "mobile-tab-label", t(key)));

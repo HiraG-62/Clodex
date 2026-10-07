@@ -95,6 +95,19 @@ describe("buildWebPage", () => {
     expect(html).not.toContain("working-entry");
   });
 
+  it("未回答の質問は入力欄の上の質問欄に 1 問ずつ出し、件数の pill は出さない", () => {
+    const { html } = buildWebPage("ja");
+    const composer = html.slice(html.indexOf('<form class="composer"'), html.indexOf('<div class="box">'));
+    expect(composer).toContain('id="question-dock"');
+    expect(html).not.toContain("question-toggle");
+    const script = scriptsOf(html)[1]!;
+    const deps = script.slice(script.lastIndexOf("nextUnanswered:"), script.lastIndexOf("withStartingTurns:"));
+    const { nextUnanswered } = runInNewContext(`({${deps}})`) as { nextUnanswered: (q: object[], d: object, c: number) => number | undefined };
+    expect(nextUnanswered([{ options: [] }, { options: [] }], { selected: [new Set([0]), new Set()], other: ["", ""] }, 0)).toBe(1);
+    expect(html).toContain("if (!question.multiSelect && !wasSelected) return advance();");
+    expect(html).toMatch(/\.question-dock-body\s*\{[^}]*max-height:\s*50vh;\s*overflow-y:\s*auto/);
+  });
+
   it("GUI の中の画面は GUI の版を添えてつなぎ、更新の依頼を Tauri の command で行う", () => {
     const { html } = buildWebPage("ja");
     expect(html).toContain("new EventSource(guiVersion ? `/events?gui=${encodeURIComponent(guiVersion)}` : \"/events\")");

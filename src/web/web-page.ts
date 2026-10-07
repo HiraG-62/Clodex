@@ -16,6 +16,7 @@ import { createInputAssist } from "./client/input-assist.js";
 import { collectArtifacts, displayPath, findImagePaths, splitImagePaths } from "./client/artifacts.js";
 import { renderMarkdown } from "./client/markdown.js";
 import { applyFeedItem, rebuildTimeline, withStartingTurns, workingFeed } from "./client/timeline.js";
+import { nextUnanswered, questionAnswers } from "./client/question-flow.js";
 import { composeInputLine } from "./client/compose-input.js";
 import { isSendKey } from "./client/send-key.js";
 import { fitView, zoomView } from "./client/image-zoom.js";
@@ -319,7 +320,6 @@ const STYLE = `
   .question-other { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg); }
   .question-submit { justify-self: start; padding: 8px 16px; border: 0; border-radius: 6px; background: var(--invert-bg); color: var(--invert-fg); }
   .question-submit:disabled { opacity: .5; }
-  .question-answered { margin: 0; white-space: pre-wrap; }
   .working-tabs { position: fixed; right: 0; top: 42%; z-index: 12; display: flex; gap: 6px; }
   .working-tab { writing-mode: vertical-rl; border: 1px solid var(--line-strong);
     border-radius: 8px 0 0 8px; background: var(--panel); color: var(--fg-2); padding: 12px 7px; font-size: 12px; box-shadow: 0 3px 14px rgba(0,0,0,.08); }
@@ -489,7 +489,6 @@ const STYLE = `
   @keyframes shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
 
   .count { background: var(--fg); color: var(--bg); box-shadow: 0 0 0 2px var(--panel); font-weight: 600; }
-  #question-toggle .count { background: var(--crit); color: #fff; }
   .strip-well { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-column: 1 / -1; gap: 2px; padding: 2px; background: var(--sunken); border-radius: 12px; min-width: 0; }
   .agent-strip .agent { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) 136px auto; grid-template-areas: none; gap: 10px; padding: 7px 8px 7px 10px; align-items: center; min-height: 52px; border-radius: 10px; background: transparent; box-shadow: none; }
   .agent-strip .agent.busy { background: var(--panel); box-shadow: var(--ring); }
@@ -511,18 +510,30 @@ const STYLE = `
   .agent-strip .gauge .track { grid-column: 2; grid-row: 1; }
   .agent-strip .track > i { background: var(--fg-2); }
   .question.claude { --accent: var(--claude); } .question.codex { --accent: var(--codex); }
-  .question-card { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
-  .question-card-title { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
-  .question-card-title .i { width: 14px; height: 14px; color: var(--warn); }
+  .question-dock { --accent: var(--agent-color); margin-bottom: 8px; border: 1px solid var(--line-strong); border-top: 2px solid var(--accent);
+    border-radius: 10px; background: var(--panel); box-shadow: 0 -4px 18px rgba(0,0,0,.06); }
+  .question-dock.claude { --agent-color: var(--claude); } .question-dock.codex { --agent-color: var(--codex); }
+  .question-dock-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; border: 0; background: transparent; color: var(--fg); font-size: 12.5px; text-align: left; }
+  .question-dock-head > .i:first-child { width: 15px; height: 15px; color: var(--warn); }
+  .question-dock-head > .i:last-child { width: 15px; height: 15px; margin-left: auto; color: var(--muted); transition: transform .15s; }
+  .question-dock.collapsed .question-dock-head > .i:last-child { transform: rotate(180deg); }
+  .question-dock-body { display: grid; gap: 10px; padding: 0 12px 12px; max-height: 50vh; overflow-y: auto; }
+  .question-dock .question-field { margin: 0; }
+  .question-dots { display: flex; gap: 6px; }
+  .question-dot { width: 22px; height: 6px; padding: 0; border: 0; border-radius: 3px; background: var(--line-strong); }
+  .question-dot.answered { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+  .question-dot.current { background: var(--accent); }
+  .question-nav { display: flex; gap: 8px; align-items: center; }
+  .question-nav .question-submit { margin-left: auto; }
+  .question-record { display: grid; gap: 2px 0; margin: 4px 0 0; font-size: 13px; }
+  .question-record dt { color: var(--muted); }
+  .question-record dd { margin: 0 0 6px; white-space: pre-wrap; }
   .question-text { font-weight: 600; }
   .question-option { display: grid; grid-template-columns: 6px minmax(0, 1fr); column-gap: 10px; }
   .question-option::before { content: ""; width: 6px; height: 6px; border-radius: 1px; background: var(--muted); opacity: .5; grid-column: 1; grid-row: 1; align-self: center; }
   .question-option > * { grid-column: 2; }
   .question-option.selected::before { background: var(--accent); opacity: 1; }
   .question-option.selected > :first-child::before { display: none; }
-  .question-footer { display: flex; gap: 8px; align-items: stretch; }
-  .question-footer .question-other { flex: 1; min-width: 0; }
-  .question-footer .question-submit { flex: none; }
 
   .strip-skeleton { display: grid; grid-template-columns: 22px minmax(0, 1fr) 136px; align-items: center; gap: 10px; min-height: 56px; padding: 8px 10px; background: var(--panel); border-radius: 10px; }
   .sk-identity { display: grid; gap: 8px; }
@@ -631,13 +642,14 @@ const STYLE = `
     .code-block.expanded .code-more .i { transform: rotate(180deg); }
     .question-option { min-height: 48px; }
     input, textarea, select, .question-other, .role-editor, .model-custom { font-size: 16px !important; }
-    .question-footer input, .question-footer button { min-height: 44px; }
+    .question-other, .question-nav button { min-height: 44px; }
+    .question-dock { margin-bottom: 6px; }
+    .question-dock-body { max-height: 45vh; }
     .composer { position: relative; padding: 6px 8px max(8px, env(safe-area-inset-bottom)); }
     .working-tabs { position: absolute; top: auto; left: 12px; bottom: calc(100% + 10px); right: auto; display: flex; gap: 8px; }
     .working-tab { display: inline-flex; align-items: center; gap: 7px; width: auto; height: 36px; min-width: 80px; padding: 0 13px 0 11px; border-radius: 999px; box-shadow: var(--shadow-pop); background: var(--panel); color: var(--fg); }
     .working-tab::after { content: ""; position: absolute; inset: -4px 0; }
     .working-tab .count { position: static; background: none; color: var(--muted); width: auto; height: auto; }
-    #question-toggle .count, #question-toggle .i { color: var(--crit); background: none; }
     #working-toggle .i { display: none; }
     #working-toggle::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--agent, var(--accent)); animation: state-pulse 1.4s infinite; }
     .mobile-tab-label { font-size: 13px; }
@@ -723,7 +735,7 @@ ${UI_ICONS}
     <div class="project-pill" id="project-pill">${icon("folder")}<span id="project-name"></span>${icon("chevron-down")}<select id="projects" aria-label="${m("web.top.projects")}"></select></div>
     ${button("open-project", "folder-open", "web.top.openProject")}
     <div class="header-tray tray">
-      <div class="working-tabs"><button class="icon-btn working-tab" id="working-toggle" type="button" aria-expanded="false" aria-label="${m("web.working.title")}" title="${m("web.working.title")}" hidden>${icon("activity")}<span class="count" id="working-count">0</span></button>${button("question-toggle", "question", "web.question.title", "working-tab", 'hidden')}</div>
+      <div class="working-tabs"><button class="icon-btn working-tab" id="working-toggle" type="button" aria-expanded="false" aria-label="${m("web.working.title")}" title="${m("web.working.title")}" hidden>${icon("activity")}<span class="count" id="working-count">0</span></button></div>
       ${button("detail", "list-tree", "web.top.detailTitle", "", 'aria-pressed="false"')}
       ${button("open-artifacts", "files", "web.top.artifacts")}
       ${button("open-conversations", "messages", "web.top.conversations")}
@@ -748,6 +760,7 @@ ${UI_ICONS}
     <button class="newer" type="button" id="newer" hidden>${m("web.newer")}</button>
   </div>
   <form class="composer" id="composer">
+    <section class="question-dock" id="question-dock" aria-label="${m("web.question.title")}" hidden></section>
     <div class="upload-status" id="upload-status" role="status" hidden><span class="spin"></span>${m("web.upload.loading")}</div>
     <div class="box">
       <ul class="pending" id="pending" aria-label="${m("web.pending.label")}" hidden></ul>
@@ -816,6 +829,8 @@ const FUNCTIONS = `
   applyFeedItem: ${inlineScript(applyFeedItem.toString())},
   rebuildTimeline: ${inlineScript(rebuildTimeline.toString())},
   workingFeed: ${inlineScript(workingFeed.toString())},
+  nextUnanswered: ${inlineScript(nextUnanswered.toString())},
+  questionAnswers: ${inlineScript(questionAnswers.toString())},
   withStartingTurns: ${inlineScript(withStartingTurns.toString())},
   resolvePendingSettings: ${inlineScript(resolvePendingSettings.toString())},
   isNavigationCommand: ${inlineScript(isNavigationCommand.toString())},
