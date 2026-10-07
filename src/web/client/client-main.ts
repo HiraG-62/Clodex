@@ -1380,10 +1380,18 @@ export function clientMain({
     const focused = document.activeElement?.matches("input, textarea, select");
     const keyboard = mobile.matches && focused && viewport && viewport.scale === 1 && window.innerHeight - viewport.height > KEYBOARD_THRESHOLD_PX;
     document.body.classList.toggle("kbd", Boolean(keyboard));
-    if (mobile.matches && viewport?.scale === 1) document.documentElement.style.setProperty("--viewport-height", `${viewport.height}px`);
-    else document.documentElement.style.removeProperty("--viewport-height");
+    const root = document.documentElement.style;
+    if (mobile.matches && viewport?.scale === 1) {
+      // iOS はキーボードを出すとページを offsetTop だけスクロールするので、固定した .app を見えている領域に合わせる
+      root.setProperty("--viewport-height", `${viewport.height}px`);
+      root.setProperty("--viewport-top", `${viewport.offsetTop}px`);
+    } else {
+      root.removeProperty("--viewport-height");
+      root.removeProperty("--viewport-top");
+    }
   };
   window.visualViewport?.addEventListener("resize", syncViewport);
+  window.visualViewport?.addEventListener("scroll", syncViewport);
   window.addEventListener("resize", syncViewport);
   document.addEventListener("focusin", syncViewport);
   document.addEventListener("focusout", () => requestAnimationFrame(syncViewport));

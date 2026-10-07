@@ -522,7 +522,8 @@ const STYLE = `
   .sheet-backdrop:hover:not(:disabled), .sheet-backdrop:active:not(:disabled) { background: var(--scrim); transform: none; }
   @media (max-width: 899px), (pointer: coarse) {
     .mobile-only { display: flex; }
-    .app { height: var(--viewport-height, 100dvh); grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-areas: "top" "conn" "log" "compose"; padding-inline: env(safe-area-inset-left) env(safe-area-inset-right); }
+    html, body { overflow: hidden; }
+    .app { position: fixed; top: var(--viewport-top, 0px); left: 0; right: 0; height: var(--viewport-height, 100dvh); grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-areas: "top" "conn" "log" "compose"; padding-inline: env(safe-area-inset-left) env(safe-area-inset-right); }
     .topbar { height: calc(48px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 2px 0; gap: 0; flex-wrap: nowrap; }
     .topbar > .brand, .topbar > .project-pill, .topbar > #open-project, .header-tray, .side, .agent-strip { display: none; }
     .topbar > .icon-btn { width: 44px; height: 44px; flex: none; }
