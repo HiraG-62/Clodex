@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, join, resolve, win32 } from "node:path";
@@ -230,6 +231,13 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
 
   async saveSetupComplete(authenticated: boolean): Promise<void> {
     writeFileAtomic(join(this.home, ".clodex", "sandbox-setup.json"), `${JSON.stringify({ authenticated, agentSid: this.identity?.agentSid ?? "" })}\n`);
+  }
+
+  setupRecorded(): boolean {
+    try {
+      const record = z.object({ authenticated: z.literal(true), agentSid: z.string().min(1) });
+      return record.safeParse(JSON.parse(readFileSync(join(this.home, ".clodex", "sandbox-setup.json"), "utf8"))).success;
+    } catch { return false; }
   }
 
   async ready(): Promise<boolean> { return setupComplete(await this.setupStatus()); }

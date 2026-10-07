@@ -121,8 +121,6 @@ export const openProject = async ({
   });
   if (savedSettings.sandbox ?? config.sandbox ?? false) await sandbox.initialize();
 
-  if (!sandbox.enabled) await sandbox.ready().catch(() => false);
-
   const createRuntime = async (conversation: Conversation): Promise<ConversationRuntime> => {
     const bus = new EventBus();
     const workDir = conversation.workDir ?? projectRoot;

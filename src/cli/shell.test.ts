@@ -180,9 +180,10 @@ const setup = () => {
   const languages: string[] = [];
   let sandboxEnabled = false;
   const sandbox = { enabled: () => sandboxEnabled, ready: async () => true, set: async (enabled: boolean) => { sandboxEnabled = enabled; }, uninstall: async () => { sandboxEnabled = false; } };
+  const languageSettings = { get: () => language, set: (value: "ja" | "en") => { language = value; languages.push(value); } };
   const shell = createShell({
     sandbox,
-    language: { get: () => language, set: (value) => { language = value; languages.push(value); } },
+    language: languageSettings,
     coordinator: () => coordinator, primary: "claude", notify: (text, level) => { notified.push(text); levels.push(level); }, busyElsewhere: () => busy.value, print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history, runner,
     limits: { get: () => limits, set: (name, value) => { limits[LIMIT_KEYS[name]] = value; }, reset: () => { limits = { ...DEFAULT_LIMITS }; } },
     saveSettings: (agents, change) => saved.push({ agents, change }),
@@ -194,7 +195,7 @@ const setup = () => {
     roles: () => roles,
     saveRole: (agent, value) => { roles[agent] = value; return value; },
   });
-  return { languages, coordinator, printed, notified, levels, shell, history, runner, saved, busy, projects, roles, background, references, sandbox };
+  return { languageSettings, languages, coordinator, printed, notified, levels, shell, history, runner, saved, busy, projects, roles, background, references, sandbox };
 };
 
 it("/language は現在値を表示し、正しい値だけ保存する", async () => {
@@ -614,4 +615,21 @@ it("/limits の表示・変更・リセットを project の操作に渡す", as
   expect(printed.at(-1)).toBe("limits: reset to defaults");
   await shell.handleLine("/limits");
   expect(printed.slice(-4)).toEqual(["messages 8", "reviews 3", "delegations 4", "depth 2"]);
+});
+
+it("/language の保存失敗は表示し、Web は 204 を返して言語を保持する", async () => {
+  const { shell, languageSettings, printed } = setup();
+  const path = "C:/home/.clodex/config.json";
+  languageSettings.set = () => { throw new Error(`${path}: EACCES`); };
+  const server = await startWebServer({ port: 0, token: "test-token", feed: new WebFeed(), page: buildWebPage("en"),
+    onInput: async line => { await shell.handleLine(line); }, listFiles: async () => [],
+    preview: { file: async () => ({ ok: false, status: 404, message: "" }), diff: async () => ({ ok: false, status: 404, message: "" }) },
+    upload: { maxBytes: 0, accepts: () => false, save: async () => "" } });
+  try {
+    const response = await fetch(`${server.url}/api/input`, { method: "POST", headers: { cookie: "clodex_token=test-token" }, body: JSON.stringify({ line: "/language en" }) });
+    expect(response.status).toBe(204);
+    expect(printed.at(-1)).toContain(path);
+    expect(printed.at(-1)).toContain("EACCES");
+    expect(languageSettings.get()).toBe("ja");
+  } finally { await server.close(); }
 });

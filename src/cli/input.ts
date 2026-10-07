@@ -3,7 +3,7 @@ import { LIMIT_NAMES, isLimitValue, type LimitName } from "../coordinator/budget
 import { t } from "../i18n/i18n.js";
 import { AGENT_IDS, CLAUDE_EFFORT_LEVELS, COMMON_EFFORT_LEVELS, PERMISSION_LEVELS, isAgentId, type AgentId, type PermissionLevel } from "../agents/agent-adapter.js";
 
-import type { Language } from "../context/language.js";
+import { LANGUAGES, type Language } from "../context/language.js";
 
 export type ShellCommand =
   | { kind: "language"; value?: Language }
@@ -103,7 +103,7 @@ const parseCommand = (name: string, arg: string): ShellCommand => {
   switch (name) {
     case "language":
       if (!arg) return { kind: "language" };
-      return arg === "ja" || arg === "en" ? { kind: "language", value: arg } : usage("/language [ja|en]");
+      return (LANGUAGES as readonly string[]).includes(arg) ? { kind: "language", value: arg as Language } : usage("/language [ja|en]");
     case "sandbox":
       if (!arg) return { kind: "sandbox" };
       return arg === "on" || arg === "off" || arg === "uninstall" ? { kind: "sandbox", action: arg } : usage("/sandbox [on|off|uninstall]");

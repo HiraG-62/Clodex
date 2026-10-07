@@ -113,3 +113,25 @@ it("project の上限を保存し、既存・新規の会話と再起動に反�
     expect(context.settingsStore.load().limits).toBeUndefined();
   } finally { await context.close(); }
 });
+
+it("sandbox off の project を開いても実機の検査や broker 接続をしない", async () => {
+  const homeDir = mkdtempSync(join(tmpdir(), "clodex-no-sandbox-probe-"));
+  const projectRoot = join(homeDir, "project");
+  mkdirSync(projectRoot);
+  const ready = vi.fn(async () => false);
+  const inspect = vi.fn(async () => false);
+  const connect = vi.fn(async () => {});
+  const context = await openProject({
+    projectRoot, homeDir, args: { models: {}, resume: false, web: false, serve: false }, language: "ja",
+    printTerminal: () => {}, notify: () => {}, displayMode: () => "normal", isCurrent: () => true,
+    modelCatalog: EMPTY_MODEL_CATALOG, registerCoordinator: () => () => {},
+    sandboxPlatform: { ready, inspect, connect, setupRecorded: () => true, grant: async () => {}, release: async () => {}, close: async () => {}, spawn: vi.fn() },
+    createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") }),
+  });
+  try {
+    expect(ready).not.toHaveBeenCalled();
+    expect(inspect).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
+    expect(context.sandbox.setupReady).toBe(true);
+  } finally { await context.close(); }
+});

@@ -18,6 +18,13 @@ const setup = (files: { user?: unknown; project?: unknown } = {}) => {
 };
 
 describe("saveUserLanguage", () => {
+  it("書き込み失敗にも config.json のフルパスを付ける", () => {
+    const { homeDir } = setup();
+    const blocked = join(homeDir, "file");
+    writeFileSync(blocked, "file");
+    expect(() => saveUserLanguage(blocked, "en")).toThrow(join(blocked, ".clodex", "config.json"));
+    expect(readFileSync(blocked, "utf8")).toBe("file");
+  });
   it("他のキーと空の役割を保持し、不正な言語は保存しない", () => {
     const user = { primary: "codex", roles: { claude: "", codex: "実装" }, web: { port: 5000 } };
     const paths = setup({ user });
@@ -124,4 +131,10 @@ describe("ensureUserConfigTemplate", () => {
     writeFileSync(blockedHome, "file");
     expect(() => ensureUserConfigTemplate(blockedHome)).not.toThrow();
   });
+});
+
+it.each(["{ broken", '{/* comment */"language":"ja"}', '{"unknown":true}'])("言語保存の読み込みエラーに設定ファイルのパスを付ける: %s", user => {
+  const paths = setup({ user });
+  expect(() => saveUserLanguage(paths.homeDir, "en")).toThrow(join(paths.homeDir, ".clodex", "config.json"));
+  expect(readFileSync(join(paths.homeDir, ".clodex", "config.json"), "utf8")).toBe(user);
 });

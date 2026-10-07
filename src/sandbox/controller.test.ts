@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { SandboxController, type SandboxPlatform } from "./controller.js";
+import { SandboxController, uninstallSandboxes, type SandboxPlatform } from "./controller.js";
 
 function fixture() {
   const events: string[] = [];
@@ -141,4 +141,37 @@ it("uninstall は Agent 停止後に実行し、成功後だけ off を保存す
   await controller.uninstall();
   expect(events).toEqual(["stop", "uninstall", "save:false", "restart:false"]);
   expect(controller.enabled).toBe(false);
+});
+
+it("uninstall の成功で全 project のセットアップ状態を破棄する", async () => {
+  const first = fixture();
+  const second = fixture();
+  first.platform.uninstall = vi.fn(async () => {});
+  await first.controller.ready();
+  await second.controller.ready();
+  await uninstallSandboxes(first.controller, [first.controller, second.controller]);
+  expect(first.controller.setupReady).toBe(false);
+  expect(second.controller.setupReady).toBe(false);
+});
+it("uninstall の失敗では他の project のセットアップ状態を破棄しない", async () => {
+  const first = fixture();
+  const second = fixture();
+  first.platform.uninstall = vi.fn(async () => { throw new Error("失敗"); });
+  await first.controller.ready();
+  await second.controller.ready();
+  await expect(uninstallSandboxes(first.controller, [first.controller, second.controller])).rejects.toThrow("失敗");
+  expect(second.controller.setupReady).toBe(true);
+});
+
+it("uninstall 後の再起動に失敗しても全 project のセットアップ状態を破棄する", async () => {
+  const second = fixture();
+  const first = new SandboxController({ ...second.platform, uninstall: async () => {} }, {
+    paths: () => ({ projects: [], artifacts: "artifacts" }), stop: async () => {}, save: () => {},
+    restart: async () => { throw new Error("再起動失敗"); },
+  });
+  await first.ready();
+  await second.controller.ready();
+  await expect(uninstallSandboxes(first, [first, second.controller])).rejects.toThrow("再起動失敗");
+  expect(first.setupReady).toBe(false);
+  expect(second.controller.setupReady).toBe(false);
 });

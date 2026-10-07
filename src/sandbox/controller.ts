@@ -4,6 +4,7 @@ import { t } from "../i18n/i18n.js";
 export interface SandboxPlatform {
   setup?(): Promise<void>;
   ready?(): Promise<boolean>;
+  setupRecorded?(): boolean;
   uninstall?(): Promise<void>;
   inspect(): Promise<boolean>;
   connect(): Promise<void>;
@@ -29,7 +30,11 @@ export class SandboxController {
   get setupReady(): boolean { return this.setupComplete; }
   get enabled(): boolean { return this.active; }
   get usable(): boolean { return !this.active || this.available; }
-  constructor(readonly platform: SandboxPlatform, private readonly lifecycle: SandboxLifecycle) {}
+  constructor(readonly platform: SandboxPlatform, private readonly lifecycle: SandboxLifecycle) {
+    this.setupComplete = platform.setupRecorded?.() ?? false;
+  }
+
+  invalidateSetup(): void { this.setupComplete = false; }
 
   async prepare(): Promise<void> {
     if (!await this.platform.inspect()) throw new Error(t("sandbox.incomplete"));
@@ -97,13 +102,15 @@ export class SandboxController {
     return this.setupComplete;
   }
 
-  async uninstall(): Promise<void> {
+  async uninstall(onRemoved: () => void = () => {}): Promise<void> {
     if (this.changing) throw new Error(t("sandbox.changing"));
     if (!this.platform.uninstall) throw new Error(t("sandbox.incomplete"));
     this.changing = true;
     try {
       await this.lifecycle.stop();
       await this.platform.uninstall();
+      this.invalidateSetup();
+      onRemoved();
       this.active = false;
       this.lifecycle.save(false);
       await this.lifecycle.restart();
@@ -113,4 +120,15 @@ export class SandboxController {
   async allowWorktree(path: string): Promise<void> {
     if (this.active && this.available) await this.platform.grant(path, true);
   }
+}
+
+export async function uninstallSandboxes(selected: SandboxController, controllers: readonly SandboxController[]): Promise<void> {
+  for (const controller of controllers) {
+    if (controller === selected) continue;
+    if (controller.enabled) await controller.setEnabled(false);
+    await controller.platform.close();
+  }
+  await selected.uninstall(() => {
+    for (const controller of controllers) controller.invalidateSetup();
+  });
 }

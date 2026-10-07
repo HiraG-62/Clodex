@@ -2,6 +2,7 @@
 // Hub の入口。project ごとの初期化は ProjectContext に任せる（DESIGN.md §28 D2a）
 import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
+import { uninstallSandboxes } from "./sandbox/controller.js";
 import { resetSandboxSettings } from "./sandbox/reset-settings.js";
 import { createInterface } from "node:readline";
 import { AGENT_IDS, type AgentId } from "./agents/agent-adapter.js";
@@ -164,12 +165,7 @@ const main = async (): Promise<void> => {
       set: (enabled) => current().sandbox.setEnabled(enabled),
       uninstall: async () => {
         const selected = current();
-        for (const context of hub.allProjects()) {
-          if (context === selected) continue;
-          if (context.sandbox.enabled) await context.sandbox.setEnabled(false);
-          await context.sandbox.platform.close();
-        }
-        await selected.sandbox.uninstall();
+        await uninstallSandboxes(selected.sandbox, hub.allProjects().map(context => context.sandbox));
         resetSandboxSettings(homeDir);
       },
     },

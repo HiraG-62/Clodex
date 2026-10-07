@@ -76,8 +76,15 @@ export const loadConfig = ({ homeDir, projectRoot }: ConfigPaths): ClodexConfig 
 });
 
 export const saveUserLanguage = (homeDir: string, language: Language): void => {
-  const next = z.enum(LANGUAGES).parse(language);
   const path = join(homeDir, USER_CONFIG_PATH);
-  const config = existsSync(path) ? configSchema.parse(JSON.parse(readFileSync(path, "utf8").replace(/^\uFEFF/, ""))) : {};
-  writeFileAtomic(path, `${JSON.stringify({ ...config, language: next }, null, 2)}\n`);
+  try {
+    const next = z.enum(LANGUAGES).parse(language);
+    const config = existsSync(path) ? configSchema.parse(JSON.parse(readFileSync(path, "utf8").replace(/^\uFEFF/, ""))) : {};
+    writeFileAtomic(path, `${JSON.stringify({ ...config, language: next }, null, 2)}\n`);
+  } catch (error) {
+    const detail = error instanceof z.ZodError
+      ? error.issues.map(issue => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ")
+      : error instanceof Error ? error.message : String(error);
+    throw new Error(`${path}: ${detail}`, { cause: error });
+  }
 };

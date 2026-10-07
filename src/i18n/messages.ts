@@ -3,6 +3,7 @@
 export const en = {
   "cmd.language": "show or change language",
   "shell.language": "Language: {language}",
+  "shell.languageFailed": "Language change failed: {message}",
   "web.settings.themeCurrent": "Theme: {theme}",
   "web.settings.sandbox": "Sandbox · this project",
   "web.settings.limits": "Limits · this project",
@@ -339,6 +340,7 @@ export type Messages = Record<MessageKey, string>;
 export const ja: Messages = {
   "cmd.language": "言語を表示・変更",
   "shell.language": "言語: {language}",
+  "shell.languageFailed": "言語の変更失敗: {message}",
   "web.settings.themeCurrent": "テーマ: {theme}",
   "web.settings.sandbox": "sandbox · この project",
   "web.settings.limits": "上限 · この project",

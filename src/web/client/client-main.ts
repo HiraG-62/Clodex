@@ -1338,10 +1338,10 @@ export function clientMain({
       const segment = button.parentElement!;
       settingsRequests.add(key);
       for (const control of segment.querySelectorAll<HTMLButtonElement>("button")) control.disabled = true;
-      void send(`/${key} ${value}`, button).then(ok => {
+      void send(`/${key} ${value}`, button).then(() => {
         settingsRequests.delete(key);
         for (const control of document.querySelectorAll<HTMLButtonElement>(`[data-choice="${key}"] button`)) { setPending(control, false); control.disabled = false; }
-        if (!ok) refreshOpenSheet();
+        refreshOpenSheet();
       });
     });
   const openSettings = () => {
@@ -1382,6 +1382,7 @@ export function clientMain({
           settingsRequests.delete(name);
           const activeField = document.querySelector<HTMLInputElement>(`#limit-${name}`);
           if (activeField) activeField.disabled = false;
+          refreshOpenSheet();
         });
       });
       limits.append(row);

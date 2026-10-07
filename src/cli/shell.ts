@@ -366,8 +366,10 @@ export const createShell = ({
         HELP_LINES(primary).forEach((l) => print(l));
         return "continue";
       case "language":
-        if (command.value) await language?.set(command.value);
-        print(t("shell.language", { language: language?.get() ?? getLanguage() }));
+        try {
+          if (command.value) await language?.set(command.value);
+          print(t("shell.language", { language: language?.get() ?? getLanguage() }));
+        } catch (error) { print(t("shell.languageFailed", { message: error instanceof Error ? error.message : String(error) })); }
         return "continue";
       case "sandbox":
         try {

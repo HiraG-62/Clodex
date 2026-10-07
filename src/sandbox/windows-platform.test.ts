@@ -154,3 +154,18 @@ it("off の再実行で消えた worktree の safe.directory と lease を解除
   expect(vi.mocked(runHost).mock.calls.some(([script])=>script.includes("--unset-all"))).toBe(true);
   expect(JSON.parse(await readFile(journal,"utf8"))).toMatchObject({leases:[]});
 });
+
+it("セットアップの保存記録だけを読み、検査や接続を起動しない", async () => {
+  const home = await mkdtemp(join(tmpdir(), "clodex-setup-record-"));
+  await mkdir(join(home, ".clodex"));
+  const platform = new WindowsSandboxPlatform(home, "project");
+  const inspect = vi.spyOn(platform, "setupStatus");
+  expect(platform.setupRecorded()).toBe(false);
+  for (const record of ["broken", '{}', '{"authenticated":false,"agentSid":"S-1"}', '{"authenticated":true,"agentSid":""}']) {
+    await writeFile(join(home, ".clodex", "sandbox-setup.json"), record);
+    expect(platform.setupRecorded()).toBe(false);
+  }
+  await writeFile(join(home, ".clodex", "sandbox-setup.json"), JSON.stringify({ authenticated: true, agentSid: "S-1" }));
+  expect(platform.setupRecorded()).toBe(true);
+  expect(inspect).not.toHaveBeenCalled();
+});
