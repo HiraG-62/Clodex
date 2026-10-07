@@ -69,7 +69,7 @@ $State|ConvertTo-Json -Compress
   }
 
   async initializeProfile(): Promise<void> {
-    await this.host(`$Secret=Get-Content -LiteralPath ${psQuote(join(this.home, ".clodex", "agent-credential"))} -Raw|ConvertTo-SecureString;$Credential=[Management.Automation.PSCredential]::new("$env:COMPUTERNAME\\clodex-agent",$Secret);try{$Process=Start-Process -FilePath ${psQuote(POWERSHELL)} -ArgumentList '-NoLogo -NoProfile -NonInteractive -Command exit' -WorkingDirectory $env:SystemRoot -Credential $Credential -LoadUserProfile -WindowStyle Hidden -PassThru -Wait;if($Process.ExitCode -and $Process.ExitCode -ne 0){throw '専用ユーザーのプロファイルを作成不可'}}finally{$Secret.Dispose()}`);
+    await this.host(`$Secret=Get-Content -LiteralPath ${psQuote(join(this.home, ".clodex", "agent-credential"))} -Raw|ConvertTo-SecureString;$Credential=[Management.Automation.PSCredential]::new("$env:COMPUTERNAME\\clodex-agent",$Secret);try{$Process=Start-Process -FilePath ${psQuote(POWERSHELL)} -ArgumentList '-NoLogo -NoProfile -NonInteractive -Command exit' -WorkingDirectory $env:SystemRoot -Credential $Credential -LoadUserProfile -WindowStyle Hidden -PassThru;$Process.WaitForExit()}finally{$Secret.Dispose()}`);
   }
 
   async uninstall(): Promise<void> {

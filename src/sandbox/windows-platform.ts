@@ -269,7 +269,7 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
     if (!this.runtimeDir || !this.identity) throw new Error(t("sandbox.disconnected"));
     const command = `-NoLogo -NoProfile -NoExit -ExecutionPolicy Bypass -File "${join(this.runtimeDir, "login.ps1")}"`;
     if (POWERSHELL.length + command.length + 3 > MAX_LOGON_COMMAND) throw new Error(t("sandbox.argumentsLong"));
-    await runHost(`$secret=Get-Content -LiteralPath ${psQuote(this.credentialPath)} -Raw|ConvertTo-SecureString;$credential=[Management.Automation.PSCredential]::new("$env:COMPUTERNAME\\${ACCOUNT}",$secret);try{Start-Process -FilePath ${psQuote(POWERSHELL)} -ArgumentList ${psQuote(command)} -Credential $credential -LoadUserProfile -WorkingDirectory ${psQuote(this.identity.profile)} -WindowStyle Normal -Wait}finally{$secret.Dispose()}`);
+    await runHost(`$secret=Get-Content -LiteralPath ${psQuote(this.credentialPath)} -Raw|ConvertTo-SecureString;$credential=[Management.Automation.PSCredential]::new("$env:COMPUTERNAME\\${ACCOUNT}",$secret);try{(Start-Process -FilePath ${psQuote(POWERSHELL)} -ArgumentList ${psQuote(command)} -Credential $credential -LoadUserProfile -WorkingDirectory ${psQuote(this.identity.profile)} -WindowStyle Normal -PassThru).WaitForExit()}finally{$secret.Dispose()}`);
   }
 
   private async snapshot(path: string, kind?: GrantKind): Promise<Acl> {

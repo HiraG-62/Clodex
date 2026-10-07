@@ -111,3 +111,8 @@ git の保護対象には agent の書き込み・削除に加え ACL 変更・�
 残りの回帰確認はユニットテストで実施。初期化失敗時の起動禁止と off 復帰、削除済み worktree のスキップと lease 解除、off 失敗時の sandbox 再起動、prepare 後の停止失敗の後片付け、会話タイトル保持、認証後の待受終了、git の fsmonitor・hook・外部 diff の無効化を含む。
 
 broker の配置先は `%ProgramData%\Clodex-Sandbox-<human SID>\<content hash>`。コード・Node・環境設定・ログインスクリプトのハッシュで再利用し、親ディレクトリは作成時に保護した DACL を指定する。agent の bootstrap は native helper に置き換え、接続 token は人が開いた stdin から渡す。
+
+## 実機の確認で見つかった問題（2026-10-07）
+
+- Windows PowerShell 5.1 の `Start-Process -Credential` に `-Wait` を付けると、`Access is denied`（5）で起動に失敗する。`-Wait` は子プロセスを Job object に入れて待つため、別ユーザーのプロセスでは失敗すると見られる。`-Wait` を外して `-PassThru` の `WaitForExit()` で待てば起動できる。ただし、別ユーザーのプロセスの終了コードは取れない（`ExitCode` が空になる）
+- `CreateProcessWithLogonW` を直接呼ぶ場合は、ドメインの指定（`.` か PC 名か）、環境変数のブロック、`lpDesktop` によらず成功した
