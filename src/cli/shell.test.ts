@@ -164,7 +164,7 @@ class FakeRunner {
   }
 }
 
-const setup = () => {
+const setup = ({ withoutProject = false } = {}) => {
   const coordinator = new FakeCoordinator();
   const runner = new FakeRunner();
   const background = {
@@ -185,10 +185,14 @@ const setup = () => {
   const saved: Array<{ agents: readonly AgentId[]; change: object }> = [];
   const roles: Partial<Record<AgentId, string>> = { claude: "設計" };
   const references: string[] = [];
+  let hasProject = !withoutProject;
   const projects = {
     list: () => [{ projectRoot: "C:\\dev\\one", open: true, current: true }, { projectRoot: "C:\\dev\\two", open: false, current: false }],
-    open: async (path: string) => ({ projectRoot: path, primary: "codex" as AgentId }),
+    open: async (path: string) => { hasProject = true; return { projectRoot: path, primary: "codex" as AgentId }; },
+    hasCurrent: () => hasProject,
   };
+  // 本物と同じく、project を開く前に会話を求めると例外にする
+  const historyOf = () => { if (!hasProject) throw new Error("no project"); return history; };
   let limits = { ...DEFAULT_LIMITS };
   let language: "ja" | "en" = "ja";
   const languages: string[] = [];
@@ -198,7 +202,7 @@ const setup = () => {
   const shell = createShell({
     sandbox,
     language: languageSettings,
-    coordinator: () => coordinator, primary: "claude", notify: (text, level) => { notified.push(text); levels.push(level); }, busyElsewhere: () => busy.value, print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history, runner,
+    coordinator: () => coordinator, primary: "claude", notify: (text, level) => { notified.push(text); levels.push(level); }, busyElsewhere: () => busy.value, print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history: historyOf, runner,
     limits: { get: () => limits, set: (name, value) => { limits[LIMIT_KEYS[name]] = value; }, reset: () => { limits = { ...DEFAULT_LIMITS }; } },
     saveSettings: (agents, change) => saved.push({ agents, change }),
     resolveReference: async (path) => {
@@ -380,6 +384,12 @@ describe("createShell", () => {
     runner.finish[2]!({ code: 0, stopped: false, output: [] });
     await flush();
     expect(coordinator.sent[1]).toMatchObject({ agent: "claude" });
+  });
+
+  it("project を開く前でも /project を実行できる", async () => {
+    const { shell, notified } = setup({ withoutProject: true });
+    await expect(shell.handleLine("/project C:\\dev\\one")).resolves.toBe("continue");
+    expect(notified.at(-1)).toContain("C:\\dev\\one");
   });
 
   it("/solo は作業中でなければ今の会話に保存し、作業中なら拒否する", async () => {

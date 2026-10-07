@@ -232,7 +232,11 @@ export const createShell = ({
     if (error) notify(error, "warn");
   };
 
-  const currentSolo = (): SoloMode | undefined => history().list().find((c) => c.id === history().currentId)?.solo;
+  // project を開く前は会話が無い（history() が例外になる）ので、solo も無い
+  const currentSolo = (): SoloMode | undefined => {
+    if (projects?.hasCurrent && !projects.hasCurrent()) return undefined;
+    return history().list().find((c) => c.id === history().currentId)?.solo;
+  };
   // solo で送り先が固定されていれば、その Agent 以外への送信を拒否する（DESIGN.md §11 Solo）
   const lockedAgent = (): AgentId | undefined => {
     const solo = currentSolo();
