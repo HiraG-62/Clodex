@@ -301,7 +301,8 @@ pub fn run() {
             if let Some(message) = take_previous_failure(&home) {
                 app.dialog().message(message).title(APP_NAME).kind(MessageDialogKind::Error).show(|_| {});
             }
-            let resource_dir = app.path().resource_dir()?;
+            // 同梱の node（22.23 で確認）は \\?\ 付きの entry を解決できず起動に失敗する。
+            let resource_dir = dunce::simplified(&app.path().resource_dir()?).to_path_buf();
             let (lock, child) = ensure_hub(&home, &resource_dir)?;
             let token = fs::read_to_string(home.join(".clodex/web-token"))?;
             *app.state::<SharedHub>().lock().expect("Hub の状態をロックできません") =
