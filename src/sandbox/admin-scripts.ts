@@ -1,3 +1,5 @@
+import { profileRemovalSource } from "./profile-removal.js";
+
 export const accountSetupSource = String.raw`
 param([Parameter(Mandatory=$true)][string]$HumanSid,[Parameter(Mandatory=$true)][string]$HomePath,[Parameter(Mandatory=$true)][string]$SecretFile)
 $ErrorActionPreference='Stop'
@@ -54,6 +56,7 @@ try {
 
 export const accountUninstallSource = String.raw`
 param([Parameter(Mandatory=$true)][string]$HumanSid,[Parameter(Mandatory=$true)][string]$HomePath)
+${profileRemovalSource}
 $ErrorActionPreference='Stop'
 $env:PSModulePath="$env:ProgramFiles\WindowsPowerShell\Modules;$PSHOME\Modules"
 function Assert-LocalPath([string]$Path) {
@@ -125,7 +128,9 @@ if($State){
     [IO.Directory]::SetAccessControl($RuntimeRoot,$Acl)
   }
 }
+$AgentSid=if($User){$User.SID.Value}elseif($State){$State.agentSid}else{$null}
 if($User){Remove-LocalUser -SID $User.SID}
+Remove-AgentProfiles $AgentSid $HumanSid
 $Key='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\SpecialAccounts\UserList'
 if(Get-ItemProperty -LiteralPath $Key -Name 'clodex-agent' -ErrorAction SilentlyContinue){Remove-ItemProperty -LiteralPath $Key -Name 'clodex-agent'}
 `;

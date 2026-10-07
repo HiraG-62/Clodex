@@ -600,7 +600,7 @@ Agent は常にフル権限で動かし、project の外への書き込み・削
 | `/sandbox` | 今の状態（on / off、セットアップ済みか） |
 | `/sandbox on` | この project で sandbox を使う。未セットアップならセットアップを始める。両 Agent を止めて、sandbox の中で新しい session として起動し直す |
 | `/sandbox off` | この project で sandbox を使わない。project に付けた ACL を外し、両 Agent を人のユーザーで新しい session として起動し直す |
-| `/sandbox uninstall` | `clodex-agent` を消し、付けた ACL をすべて外す（管理者権限。UAC の確認が出る） |
+| `/sandbox uninstall` | `clodex-agent` とそのプロファイル（CLI とログイン情報）を消し、付けた ACL をすべて外す（管理者権限。UAC の確認が出る）。プロファイルが読み込み中ならエラーにし、プロセスが終わってから再実行する |
 
 - on / off は project ごとに保存する（`.settings.json` の `sandbox`）。設定ファイルの `sandbox: true` でも既定を変えられる。優先順位は Permission と同じ
 - on の間は権限を `full` に固定する（`/permission` は「sandbox 中は full 固定」と返す）。off に戻すと、保存した権限レベルに戻す
