@@ -5,7 +5,8 @@ import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { resolveProjectRoot } from "./project-root.js";
 
-const makeTempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "clodex-root-")));
+// Windows の runner の一時フォルダは 8.3 形式（RUNNER~1）。git が返す長い形式にそろえるため native で解決する
+const makeTempDir = (): string => realpathSync.native(mkdtempSync(join(tmpdir(), "clodex-root-")));
 
 describe("resolveProjectRoot", () => {
   it("--project が指定されていればそれを最優先する", () => {
