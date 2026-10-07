@@ -22,9 +22,5 @@ export function buildAgentEnvironment(profile: string, machine: NodeJS.ProcessEn
   env.PSMODULEPATH = `${win32.join(profile, "Documents", "WindowsPowerShell", "Modules")};${env.PROGRAMFILES ?? "C:\\Program Files"}\\WindowsPowerShell\\Modules;${env.SYSTEMROOT ?? "C:\\Windows"}\\System32\\WindowsPowerShell\\v1.0\\Modules`;
   for (const key of ["USERNAME", "USERDOMAIN", "COMPUTERNAME"]) if (identity[key]) env[key] = identity[key];
   delete env.HOME;
-  delete env.NPM_CONFIG_PACKAGE_IMPORT_METHOD;
-  env.npm_config_package_import_method = "copy";
-  delete env.PNPM_CONFIG_PACKAGE_IMPORT_METHOD;
-  env.pnpm_config_package_import_method = "copy";
   return env;
 }

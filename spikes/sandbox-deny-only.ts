@@ -74,7 +74,7 @@ try {
   runtime=join(dirname(original),`deny-only-${runId}`);
   await mkdir(runtime);
   for(const file of ["node.exe","environment.json","broker.cjs"])await copyFile(join(original,file),join(runtime,file));
-  await writeFile(join(runtime,"token-helper.cs"),denyOnlySource());
+  await writeFile(join(runtime,"token-helper.cs"),denyOnlySource(process.argv.includes("--interactive")));
   await runHost(`& "$env:SystemRoot\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe" /nologo /reference:System.Web.Extensions.dll ${psQuote(`/out:${join(runtime,"token-helper.exe")}`)} ${psQuote(join(runtime,"token-helper.cs"))};if($LASTEXITCODE -ne 0){throw 'compile'}`);
   const diagnosticRuntime=runtime;
   Object.defineProperty(platform,"runtime",{value:async()=>diagnosticRuntime});

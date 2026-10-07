@@ -577,20 +577,19 @@ Adapter の必須処理:
 
 ## Sandbox
 
-Agent は常にフル権限で動かし、project の外への書き込み・削除を OS で止める（docs/spikes/sandbox-hybrid.md の Spike M、docs/spikes/sandbox-product.md）。ネットワーク・プロセスの実行は止めない。読み取りは `clodex-agent` に許された範囲（人のプロファイルは読めない）。既定は off で、使う人だけが `/sandbox on` にする。
+Agent は常にフル権限で動かし、project の外への書き込み・削除を OS で止める（docs/spikes/sandbox-hybrid.md の Spike M、docs/spikes/sandbox-deny-only.md の Spike N、docs/spikes/sandbox-product.md）。ネットワーク・プロセスの実行は止めない。読み取りは `clodex-agent` に許された範囲（人のプロファイルは読めない）。既定は off で、使う人だけが `/sandbox on` にする。
 
 仕組み:
 
 - Agent 専用のローカルユーザー `clodex-agent`（Users グループのみ。サインイン画面に出さない）を作り、Agent はそのユーザーで動かす
-- そのユーザーの中で、さらに restricted token（restricting SID は {`clodex-agent`, logon SID, `Everyone`, `BUILTIN\Users`}。`Authenticated Users` を外す）で起動する。システム以外のドライブは既定で `Authenticated Users` に Modify が付いているが、これで効かなくなる。ドライブの ACL は変更しない
-  - `WRITE_RESTRICTED` は使わない。書き込み以外の権利（スレッドの impersonation、token の複製）が照合されず、制限のない broker に成りすませるため
-  - 代わりに、`Authenticated Users` にだけ読み取りが許された場所は読めない。`E:` などのドライブとシステムのディレクトリは `Users` に読み取りが許されているので読める
-  - pnpm の store からの hard link の作成が拒否されるので、sandbox の Agent には `npm_config_package_import_method=copy` を渡す
+- そのユーザーの中で、さらに `Authenticated Users`（S-1-5-11）と `INTERACTIVE`（S-1-5-4）を deny-only にしたトークン（UAC の filtered token と同じ仕組み）で起動する（docs/spikes/sandbox-deny-only.md の Spike N）。システム以外のドライブは既定で `Authenticated Users` に、`C:\Users\Public` は `INTERACTIVE` に Modify が付いているが、これで効かなくなる。ドライブの ACL は変更しない
+  - restricted token（restricting SID）は使わない。LSA が資格情報の取得を拒否し、Schannel の TLS（Codex の通信、PowerShell 5.1 の HTTPS）が失敗するため（docs/spikes/sandbox-schannel.md）。`WRITE_RESTRICTED` は、書き込み以外の権利（スレッドの impersonation、token の複製）が照合されず、制限のない broker に成りすませるため使わない
+  - `Authenticated Users`・`INTERACTIVE` にだけ読み取りが許された場所は読めない。`E:` などのドライブとシステムのディレクトリは `Users` に読み取りが許されているので読める
 - 書き込みを許すのは、project（と会話の worktree）、`~/.clodex/artifacts/<project>`、`clodex-agent` 自身のプロファイルだけ。project には `clodex-agent` の Modify（継承あり）を付ける。人が所有するディレクトリなので管理者権限は要らない。付ける時間は project の大きさに比例する（`E:\dev\Clodex` で約 15 秒）
 - `C:\ProgramData`・`C:\Windows\Temp` には新規作成だけできる（既存のファイルの削除はできない）。Windows の通常のユーザーと同じ
 - Agent のプロセスは、Hub が起動する **broker**（`clodex-agent` として常駐する小さなプロセス）が起動し、stdio を localhost で中継する。別ユーザーとしての起動は環境変数を引き継ぎ、コマンドラインが 1024 文字までなので、Agent を直接は起動しない。broker には、`clodex-agent` のプロファイルから組み立てた環境変数（`USERPROFILE`・`APPDATA`・Machine の PATH の前に agent 側の CLI の場所、Windows PowerShell の `PSModulePath`。`HOME` は消す）を渡す
 - 人のユーザーからは `clodex-agent` のプロセスを `taskkill` できないので、Agent の停止は broker に頼む
-- broker と token の helper は制限のない `clodex-agent` として動く。sandbox の中の Agent がこれらのプロセスを開いて乗っ取れないよう、起動直後に自分のプロセスとスレッドの DACL を絞る（所有者の暗黙の権利を `OWNER RIGHTS` で制限し、権利は restricting SID に無い `Authenticated Users` にだけ与える）。Agent からの `OpenProcess`・`OpenThread`（impersonation を含む）・token の取得が拒否されることを実測で確かめた
+- broker と token の helper は制限のない `clodex-agent` として動く。sandbox の中の Agent がこれらのプロセスを開いて乗っ取れないよう、起動直後に自分のプロセスとスレッドの DACL を絞る（所有者の暗黙の権利を `OWNER RIGHTS` で制限し、権利は Agent のトークンで deny-only の `Authenticated Users` にだけ与える）。Agent からの `OpenProcess`・`OpenThread`（impersonation を含む）・token の取得が拒否されることを実測で確かめた
 - broker のコードと Node は `%ProgramData%\Clodex-Sandbox-<人の SID>\` に置く（人・SYSTEM・Administrators は Full Control、`clodex-agent` は RX）。ディレクトリは ACL を付けた security descriptor で作成する（作ってから ACL を付けない）。中身のハッシュが同じなら使い回す
 - Agent は既存の `SpawnAgentProcess` を差し替えて起動する（Adapter は変えない）。MCP は今どおり `127.0.0.1` の Hub に届く
 
@@ -627,7 +626,6 @@ git:
 制約（v1 では扱わない）:
 
 - 人の `~/.claude`（CLAUDE.md・settings・skill・MCP）と `~/.codex` の設定は `clodex-agent` には無い。必要なら人が `clodex-agent` 側に用意する
-- restricted token の中では、Windows PowerShell 5.1 の HTTPS（`Invoke-WebRequest`・`Invoke-RestMethod` など）が失敗する。Node・git の HTTPS は動く。CLI のインストールに npm を使うのはこのため。Agent が PowerShell で HTTPS を使う作業も失敗する
 - `clodex-agent` 側の CLI の更新は、Claude は自動更新、Codex と pnpm は人が `/sandbox` の案内に従って行う
 - ネットワークは止めない
 

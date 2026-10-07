@@ -9,6 +9,7 @@ import { POWERSHELL, psArgs, psQuote, runHost } from "../src/sandbox/powershell.
 import type { BrokerConnection } from "../src/sandbox/broker.js";
 
 const TIMEOUT_MS = 30_000;
+if (!nativeSource.includes("(uint)entries.Count,entries.ToArray(),out restricted")) throw new Error("この比較は通常の restricted token 版の helper が必要");
 const TRACE_PDB_KEY = "3EDD48FFBFD3AE1FDDE522AB7C3F659D1";
 async function account(broker: BrokerConnection, cwd: string): Promise<unknown> {
   const proc = broker.spawn("codex", ["app-server"], {cwd,env:{CLODEX_AGENT:"codex"}});

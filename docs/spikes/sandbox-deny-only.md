@@ -67,3 +67,27 @@ Windows Temp は人の非管理者プロセスから DACL を読めず、許可�
 - project / artifacts の追加 agent ACE は解除済み。runtime の診断用ディレクトリ、境界検証ファイル、HKCU の検証キーは除去済み。project 内の計測用プログラム・package・一時 git repo は保持。
 - 製品コード変更・Clodex リポジトリのコミットなし。git commit は計測用 repo だけで実行。
 - 検証: `pnpm test` 764 passed / 5 skipped、`pnpm typecheck`、spike 自体の strict 型チェック、`git diff --check` 成功。
+
+## AU + INTERACTIVE の追加計測と製品化
+
+2026-10-07。`--interactive` で AU と INTERACTIVE の2 SID を deny-only にした。同じ run で全項目を再計測し、両 SID の attributes=16、restrictingSids=[] を確認した。
+
+| 項目 | AU のみ | AU + INTERACTIVE |
+|---|---|---|
+| Public 新規作成 / 既存 fixture の DELETE open / DeleteFileW | すべて成功 | すべて error 5 |
+| E: / D: / 別 project / 人の home | 作成・削除拒否 | 同左 |
+| 許可 project / artifacts / agent home | 作成・削除成功 | 同左 |
+| ProgramData / Windows Temp | 新規作成成功・既存削除拒否 | 同左 |
+| broker / helper / bootstrap のプロセス・スレッド取得 | 全指定権限で拒否 | 同左。token複製・NtImpersonateThread は前提ハンドル拒否で未到達 |
+| Codex account/read / Claude auth status | chatgpt / claude.ai | 同左 |
+| PS5.1 HTTPS / Node HTTPS | 200 / 200 | 同左 |
+| PS5.1 / PS7 / Node 子プロセス / HKCU | 成功 | 同左 |
+| pnpm hardlink install / fs.linkSync / git commit / MCP | 成功 | 同左 |
+
+ログは `C:\Users\Horry\.clodex\sandbox-deny-only-c521025b-a018-42be-8cd8-d81028818439.json`。製品もこの2 SID の deny-only を採用し、restricting SID は使わない。pnpm の copy 強制を外し、認証判定の条件は維持する。
+
+製品 helper の配列マーシャリングへ変更後も全項目を再計測し、結果は同じだった。ログは `C:\Users\Horry\.clodex\sandbox-deny-only-51a29e71-9e0d-4779-a77b-28c80baa5143.json`。pnpm の copy 環境変数なしで install 成功、明示 hardlink と fs.linkSync も成功。CLI のパイプ経由のコンソール入出力・起動を確認し、対話 GUI やログインウィンドウは実行していない。
+
+`spikes/sandbox-auth-probe.ts` は `authentication={claude:true,codex:true}`、`authenticate=true`、`setupStatus.authenticated=true`。`authentication.ts` の変更なし。`pnpm test` 766 passed / 5 skipped、`pnpm typecheck` と spike strict 型チェック成功。
+
+DESIGN.md の変更案: 「専用ユーザー + AU / INTERACTIVE の deny-only、restricting SID なし」に置換する。broker 等の AU Allow は agent の deny-only グループでは利用できない。pnpm copy 固定・Schannel HTTPS 不可・AU のみの許可先は読み取り不可という旧制約は削除し、「AU / INTERACTIVE だけが読み取りを許す場所は読めない」「Users 等が作成を許す ProgramData / Windows Temp は引き続き作成可能」を記載する。過去の Schannel 比較スクリプトは通常の restricted token 版を前提とするため、現在の製品 helper で誤計測しないガードを追加した。

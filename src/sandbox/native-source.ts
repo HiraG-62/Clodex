@@ -11,7 +11,8 @@ using System.IO;
 using System.Diagnostics;
 using System.Web.Script.Serialization;
 public static class TokenLauncher {
-  const uint RESTRICTED_TOKEN_FLAGS=0, TOKEN_ASSIGN_PRIMARY=1, TOKEN_DUPLICATE=2, TOKEN_QUERY=8, TOKEN_ADJUST_DEFAULT=0x80, SE_GROUP_LOGON_ID=0xc0000000;
+  static readonly string[] DISABLED_GROUPS={"S-1-5-11","S-1-5-4"};
+  const uint RESTRICTED_TOKEN_FLAGS=0, TOKEN_ASSIGN_PRIMARY=1, TOKEN_DUPLICATE=2, TOKEN_QUERY=8, TOKEN_ADJUST_DEFAULT=0x80, SE_GROUP_LOGON_ID=0xc0000000, SE_GROUP_USE_FOR_DENY_ONLY=0x10;
   const int TOKEN_GROUPS=2, TOKEN_DEFAULT_DACL=6, TOKEN_RESTRICTED_SIDS=11;
   const uint DUPLICATE_SAME_ACCESS=2, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE=0x2000, RESUME_FAILED=0xffffffff;
   const int STARTF_USESTDHANDLES=0x100, CREATE_SUSPENDED=4, CREATE_NO_WINDOW=0x08000000, JOB_EXTENDED_LIMIT=9, STD_INPUT_HANDLE=-10;
@@ -25,7 +26,7 @@ public static class TokenLauncher {
   [StructLayout(LayoutKind.Sequential)] struct Io { public ulong a,b,c,d,e,f; }
   [StructLayout(LayoutKind.Sequential)] struct Limit { public BasicLimit basic; public Io io; public UIntPtr processMemory,jobMemory,peakProcess,peakJob; }
   [DllImport("advapi32.dll",SetLastError=true)] static extern bool OpenProcessToken(IntPtr process,uint access,out IntPtr token);
-  [DllImport("advapi32.dll",SetLastError=true)] static extern bool CreateRestrictedToken(IntPtr token,uint flags,uint disabled,IntPtr disabledSids,uint privileges,IntPtr deletedPrivileges,uint count,[In] SidEntry[] restricting,out IntPtr result);
+  [DllImport("advapi32.dll",SetLastError=true)] static extern bool CreateRestrictedToken(IntPtr token,uint flags,uint disabled,[In] SidEntry[] disabledSids,uint privileges,IntPtr deletedPrivileges,uint count,[In] SidEntry[] restricting,out IntPtr result);
   [DllImport("advapi32.dll",SetLastError=true)] static extern bool GetTokenInformation(IntPtr token,int kind,IntPtr buffer,int size,out int needed);
   [DllImport("advapi32.dll",SetLastError=true)] static extern bool SetTokenInformation(IntPtr token,int kind,IntPtr buffer,int size);
   [DllImport("advapi32.dll",SetLastError=true)] static extern bool IsTokenRestricted(IntPtr token);
@@ -122,16 +123,15 @@ public static class TokenLauncher {
     var handles=new IntPtr[3]; var info=new ProcessInfo();
     try {
       Check(OpenProcessToken(GetCurrentProcess(),TOKEN_ASSIGN_PRIMARY|TOKEN_DUPLICATE|TOKEN_QUERY|TOKEN_ADJUST_DEFAULT|WRITE_DAC,out original),"OpenProcessToken");
-      if(IsTokenRestricted(original)) throw new Exception("caller already restricted; SID intersection requires separate investigation");
+      if(IsTokenRestricted(original) || Groups(original,TOKEN_GROUPS).Any(group=>DISABLED_GROUPS.Contains(group.Item1)&&(group.Item2&SE_GROUP_USE_FOR_DENY_ONLY)!=0)) throw new Exception("caller already filtered");
       string human=Environment.GetEnvironmentVariable("CLODEX_HUMAN_SID");
       if(String.IsNullOrEmpty(human))throw new Exception("human SID missing");
       ProtectSelf(original,human);
       if(restrict){
       var logon=Groups(original,TOKEN_GROUPS).Single(group=>(group.Item2&SE_GROUP_LOGON_ID)==SE_GROUP_LOGON_ID);
-      var sidTexts=new List<string>{sidText,logon.Item1,"S-1-1-0","S-1-5-32-545"};
       var entries=new List<SidEntry>();
-      foreach(string text in sidTexts){IntPtr sid;Check(ConvertStringSidToSid(text,out sid),"ConvertStringSidToSid");allocatedSids.Add(sid);var entry=new SidEntry();entry.sid=sid;entries.Add(entry);}
-      Check(CreateRestrictedToken(original,RESTRICTED_TOKEN_FLAGS,0,IntPtr.Zero,0,IntPtr.Zero,(uint)entries.Count,entries.ToArray(),out restricted),"CreateRestrictedToken");
+      foreach(string text in DISABLED_GROUPS){IntPtr sid;Check(ConvertStringSidToSid(text,out sid),"ConvertStringSidToSid");allocatedSids.Add(sid);var entry=new SidEntry();entry.sid=sid;entries.Add(entry);}
+      Check(CreateRestrictedToken(original,RESTRICTED_TOKEN_FLAGS,(uint)entries.Count,entries.ToArray(),0,IntPtr.Zero,0,new SidEntry[0],out restricted),"CreateRestrictedToken");
       SetDefaultDacl(restricted,sidText,logon.Item1);
       }
       for(int i=0;i<handles.Length;i++) Check(DuplicateHandle(GetCurrentProcess(),GetStdHandle(STD_INPUT_HANDLE-i),GetCurrentProcess(),out handles[i],0,true,DUPLICATE_SAME_ACCESS),"DuplicateHandle");

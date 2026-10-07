@@ -13,8 +13,10 @@ it("agent のプロファイルと Machine PATH で環境を構築し、人の H
   expect(env.HOME).toBeUndefined();
   expect(env.OPENAI_API_KEY).toBeUndefined();
   expect(env.USERNAME).toBe("clodex-agent");
-  expect(env.npm_config_package_import_method).toBe("copy");
-  expect(env.pnpm_config_package_import_method).toBe("copy");
+  expect(env.npm_config_package_import_method).toBeUndefined();
+  expect(env.pnpm_config_package_import_method).toBeUndefined();
+  expect(env.NPM_CONFIG_PACKAGE_IMPORT_METHOD).toBeUndefined();
+  expect(env.PNPM_CONFIG_PACKAGE_IMPORT_METHOD).toBeUndefined();
 });
 
 it("取得できなかったプロファイルを人のプロファイルで代用しない", () => {
