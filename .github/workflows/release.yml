@@ -52,7 +52,7 @@ jobs:
           args: --config ${{ github.workspace }}\gui\src-tauri\tauri.release.conf.json
           tagName: v${{ steps.version.outputs.version }}
           releaseName: Clodex v${{ steps.version.outputs.version }}
-          commitish: ${{ github.sha }}
+          releaseCommitish: ${{ github.sha }}
           prerelease: ${{ contains(steps.version.outputs.version, '-') }}
       - name: dev のチャンネルに latest.json を上げる
         shell: bash
