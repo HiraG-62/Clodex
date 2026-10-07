@@ -2,6 +2,7 @@
 // Hub の入口。project ごとの初期化は ProjectContext に任せる（DESIGN.md §28 D2a）
 import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { uninstallSandboxes } from "./sandbox/controller.js";
 import { resetSandboxSettings } from "./sandbox/reset-settings.js";
 import { createInterface } from "node:readline";
@@ -22,7 +23,9 @@ import { clearHubLock, isHubAlive, readHubLock, writeHubLock } from "./hub/hub-l
 import { LIMIT_KEYS, LIMIT_NAMES } from "./coordinator/budget-manager.js";
 import { openProject, type ProjectContext } from "./hub/project-context.js";
 import { selectProject } from "./hub/project-selection.js";
-import { setLanguage, t } from "./i18n/i18n.js";
+import { MESSAGES, setLanguage, t } from "./i18n/i18n.js";
+import { PushService } from "./web/push.js";
+import { updateDesktopNotify, type DesktopNotifyState } from "./web/client/desktop-notify.js";
 import { defaultLogPath, type DisplayMode } from "./logging/event-log.js";
 import { pruneLogs } from "./logging/log-retention.js";
 import { listProjectFiles } from "./project/project-files.js";
@@ -99,6 +102,14 @@ const main = async (): Promise<void> => {
     if (context) context.saveFeedItem(context.history.currentId, item);
   });
   const notify = (text: string, level: "info" | "warn" = "info") => { feed.publishToast(text, level); printTerminal(text); };
+  // スマホへの通知は、GUI の通知と同じ条件で Hub が決める（DESIGN.md §28 スマホへの通知（Web Push））
+  const push = new PushService(join(homeDir, ".clodex", "push"));
+  let pushState: DesktopNotifyState = { live: false, working: false };
+  feed.subscribe((item) => {
+    const update = updateDesktopNotify(pushState, item, MESSAGES[language]);
+    pushState = update.state;
+    if (update.notification) push.notify(update.notification).catch((error: unknown) => reportRuntimeError(errorMessage(error)));
+  });
   reportRuntimeError = message => { const text = t("error.generic", { message }); feed.publishOutput(text); printTerminal(text); };
   hub = new Hub({ homeDir, cwd, openProject: async (projectRoot) => {
     let context: ProjectContext;
@@ -225,6 +236,7 @@ const main = async (): Promise<void> => {
     upload: { maxBytes: MAX_UPLOAD_BYTES, accepts: isUploadType,
       save: (contentType, body) => saveUpload(current().uploadsDir, contentType, body) },
     onError: (error) => print(t("error.generic", { message: errorMessage(error) })),
+    push,
   }) : undefined;
   if (args.serve && web) {
     const port = Number(new URL(web.url).port);

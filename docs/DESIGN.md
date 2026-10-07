@@ -2057,6 +2057,14 @@ D3 の詳細（Tauri GUI。Windows）:
   - `notice`（利用枠など）・`toast`（ほかの会話の完了など）と `error`
   - 画面を開いたときや会話を切り替えたときの feed の読み込み（再生）では出さない
   - 音は Windows の既定の通知音（plugin は `sound` を指定しないと無音にする）
+- **スマホへの通知（Web Push）**: 上と同じ通知を、登録した端末（ホーム画面に追加した PWA。iOS 16.4 以降）に Web Push で届ける。画面を開いていなくても届く
+  - 通知を出すかは Hub が決める。Hub は feed を購読し、上の通知と同じ関数（`updateDesktopNotify`）で通知を作る。会話の切り替えなどの再生は feed の購読に流れないので、通知しない
+  - 送り先から外す: その端末の画面が見えている間（下の `visible`）は送らない。iOS は Push を受けて通知を出さないと購読を取り消すことがあるので、Service Worker では間引かず、Hub が送る前に間引く
+  - 鍵: VAPID の鍵は初回に作り `~/.clodex/push/vapid.json` に置く（subject は `https://github.com/HiraG-62/Clodex`）。購読は `~/.clodex/push/subscriptions.json`（`{ id, endpoint, keys }[]`。`id` は endpoint の SHA-256 の先頭 16 文字）。送信が 404 / 410 なら購読を消す
+  - API（token で認証）: `GET /api/push/key`（公開鍵）、`POST /api/push/subscribe`（購読。`id` を返す）、`POST /api/push/unsubscribe`（`{ id }`）、`POST /api/push/visibility`（`{ id, visible }`）。Service Worker の `/sw.js` は秘密を含まないので token なしで返す
+  - 見えているか: 購読した端末の画面は `/events?push=<id>&visible=<0|1>` でつなぎ、`visibilitychange` で `/api/push/visibility` を送る。Hub は id ごとに、つながっていて見えている接続があれば送らない。接続が切れたら見えていない扱い
+  - Service Worker: `push` で通知を出す（タイトルと本文）。通知を押したら開いている画面を前に出し、無ければ `/` を開く
+  - 設定画面の「通知」の節: 「この端末で受け取る」（権限を求めて購読）と、購読中は「受け取り中」と「止める」。Push を使えない画面（`PushManager` が無い。iOS の Safari でホーム画面に追加していないときなど）と GUI の中の画面では節を出さない。権限が拒否されたら「通知が許可されていない」
 - Tauri のメニューの文言は GUI（Rust）の定数に置く（Web UI の文言カタログの外）
 - ウィンドウの位置・大きさ・最大化の状態を覚え、次に起動したときに戻す（`tauri-plugin-window-state`）。トレイの「終了」・ウィンドウを隠したときに保存する。保存した位置の画面が無くなっていれば、見える位置に戻す
 

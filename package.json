@@ -21,6 +21,7 @@
     "@tauri-apps/cli": "^2.12.1",
     "@types/node": "^22.20.5",
     "@types/react": "^19.3.0",
+    "@types/web-push": "^3.6.4",
     "ink-testing-library": "^4.0.0",
     "node-pty": "^1.1.0",
     "tsx": "^4.23.15",
@@ -32,6 +33,7 @@
     "ink": "^8.0.0",
     "marked": "^18.1.0",
     "react": "^19.3.0",
+    "web-push": "^3.6.7",
     "zod": "^4.6.5"
   },
   "pnpm": {

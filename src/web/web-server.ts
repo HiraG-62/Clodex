@@ -7,6 +7,7 @@ import type { PreviewResult } from "../project/file-preview.js";
 import { GUI_ACTIONS, type FeedItem, type GuiAction, type GuiInfo, type GuiUpdate, type WebFeed } from "./web-feed.js";
 import { ICON_SVG, MANIFEST, type WebPage } from "./web-page.js";
 import { APPLE_TOUCH_ICON_PNG_BASE64 } from "./apple-touch-icon.js";
+import { SERVICE_WORKER } from "./service-worker.js";
 
 const HOST = "127.0.0.1";
 const COOKIE_NAME = "clodex_token";
@@ -34,6 +35,16 @@ export interface WebServerOptions {
   // 貼り付けた画像を保存し、フルパスを返す（DESIGN.md §28 v0.3 C）
   upload: { maxBytes: number; accepts(contentType: string): boolean; save(contentType: string, body: Buffer): Promise<string> };
   onError?: (error: unknown) => void;
+  // スマホへの通知（DESIGN.md §28 スマホへの通知（Web Push））
+  push?: PushEndpoints;
+}
+
+export interface PushEndpoints {
+  publicKey(): string;
+  subscribe(input: unknown): string | undefined;
+  unsubscribe(id: string): void;
+  setVisible(id: string, visible: boolean): void;
+  connect(id: string, visible: boolean): { close(): void };
 }
 
 export interface WebServerHandle {
@@ -115,7 +126,7 @@ const sendPreview = (res: ServerResponse, result: PreviewResult) => {
   res.end(result.body);
 };
 
-export const startWebServer = async ({ port, token, feed, page, onInput, listFiles, preview, upload, onError }: WebServerOptions): Promise<WebServerHandle> => {
+export const startWebServer = async ({ port, token, feed, page, onInput, listFiles, preview, upload, onError, push }: WebServerOptions): Promise<WebServerHandle> => {
   const streams = new Set<ServerResponse>();
   // GUI の中の画面の接続（DESIGN.md §28 Web UI の設定からの更新）
   let guiStream: ServerResponse | undefined;
@@ -125,7 +136,10 @@ export const startWebServer = async ({ port, token, feed, page, onInput, listFil
     for (const res of streams) sendItem(res, { type: "gui", gui });
   };
 
-  const handleEvents = (req: IncomingMessage, res: ServerResponse, guiVersion: string | null) => {
+  const handleEvents = (req: IncomingMessage, res: ServerResponse, url: URL) => {
+    const guiVersion = url.searchParams.get("gui");
+    const pushId = url.searchParams.get("push");
+    const pushStream = pushId ? push?.connect(pushId, url.searchParams.get("visible") === "1") : undefined;
     res.writeHead(HTTP.ok, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
     // 接続（再接続を含む）のたびに画面の版、直近の履歴、最新の状態を送る
     sendItem(res, { type: "version", version: page.version });
@@ -146,10 +160,27 @@ export const startWebServer = async ({ port, token, feed, page, onInput, listFil
       unsubscribe();
       clearInterval(keepalive);
       streams.delete(res);
+      pushStream?.close();
       if (guiStream !== res) return;
       guiStream = undefined;
       setGui(null);
     });
+  };
+
+  const handlePush = async (req: IncomingMessage, res: ServerResponse, pathname: string, endpoints: PushEndpoints) => {
+    const body = await readBody(req);
+    if (body === undefined) return void res.writeHead(HTTP.tooLarge).end();
+    const value = parseJson(body);
+    if (pathname === "/api/push/subscribe") {
+      const id = endpoints.subscribe(value);
+      return id ? sendJson(res, { id }) : void res.writeHead(HTTP.badRequest).end();
+    }
+    const id = value?.id;
+    if (typeof id !== "string") return void res.writeHead(HTTP.badRequest).end();
+    if (pathname === "/api/push/unsubscribe") endpoints.unsubscribe(id);
+    else if (typeof value?.visible === "boolean") endpoints.setVisible(id, value.visible);
+    else return void res.writeHead(HTTP.badRequest).end();
+    res.writeHead(HTTP.noContent).end();
   };
 
   const handleGuiUpdate = async (req: IncomingMessage, res: ServerResponse) => {
@@ -210,6 +241,9 @@ export const startWebServer = async ({ port, token, feed, page, onInput, listFil
     if (req.method === "GET" && url.pathname === "/icon.svg") {
       return void res.writeHead(HTTP.ok, { "content-type": "image/svg+xml" }).end(ICON_SVG);
     }
+    if (req.method === "GET" && url.pathname === "/sw.js") {
+      return void res.writeHead(HTTP.ok, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" }).end(SERVICE_WORKER);
+    }
     if (req.method === "GET" && url.pathname === "/apple-touch-icon.png") {
       return void res.writeHead(HTTP.ok, { "content-type": "image/png" }).end(APPLE_TOUCH_ICON_PNG);
     }
@@ -219,7 +253,11 @@ export const startWebServer = async ({ port, token, feed, page, onInput, listFil
       res.writeHead(HTTP.ok, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
       return void res.end(page.html);
     }
-    if (req.method === "GET" && url.pathname === "/events") return handleEvents(req, res, url.searchParams.get("gui"));
+    if (req.method === "GET" && url.pathname === "/events") return handleEvents(req, res, url);
+    if (push && req.method === "GET" && url.pathname === "/api/push/key") return sendJson(res, { key: push.publicKey() });
+    if (push && req.method === "POST" && ["/api/push/subscribe", "/api/push/unsubscribe", "/api/push/visibility"].includes(url.pathname)) {
+      return handlePush(req, res, url.pathname, push);
+    }
     if (req.method === "GET" && url.pathname === "/api/state") return sendJson(res, feed.latestState() ?? null);
     if (req.method === "GET" && url.pathname === "/api/files") return sendJson(res, await listFiles());
     if (req.method === "GET" && url.pathname === "/api/history") {

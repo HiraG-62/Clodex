@@ -1640,7 +1640,7 @@ export function clientMain({
     const sendKeyChoice = choice("sendKey", t("web.settings.sendKey"), SEND_KEYS, sendKey,
       value => t(value === "enter" ? "web.settings.sendEnter" : "web.settings.sendCtrlEnter"),
       value => { sendKey = value; storage.set(SEND_KEY_KEY, value); });
-    openSheet(t("web.settings.title"), [sandbox, limits, language, ...(mobile.matches ? [] : [sendKeyChoice]), guiUpdateSection()]);
+    openSheet(t("web.settings.title"), [sandbox, limits, language, ...(mobile.matches ? [] : [sendKeyChoice]), pushSection(), guiUpdateSection()]);
     refreshOpenSheet();
   };
 
@@ -1680,6 +1680,65 @@ export function clientMain({
     section.append(row);
     return section;
   };
+  // ---- スマホへの通知（DESIGN.md §28 スマホへの通知（Web Push））----
+  const PUSH_ID_KEY = "clodex-push-id";
+  const pushSupported = "serviceWorker" in navigator && "PushManager" in window && !tauriApi;
+  let pushId = storage.get(PUSH_ID_KEY) || undefined;
+  let pushDenied = false;
+  let pushError: string | undefined;
+  const base64Bytes = (value: string) => {
+    const padded = `${value}${"=".repeat((4 - (value.length % 4)) % 4)}`.replace(/-/g, "+").replace(/_/g, "/");
+    return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+  };
+  const enablePush = async () => {
+    if (await Notification.requestPermission() !== "granted") { pushDenied = true; return; }
+    const registration = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
+    const { key } = await (await fetch("/api/push/key")).json() as { key: string };
+    const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64Bytes(key) });
+    const response = await postJson("/api/push/subscribe", subscription.toJSON());
+    if (!response.ok) return;
+    pushId = (await response.json() as { id: string }).id;
+    storage.set(PUSH_ID_KEY, pushId);
+  };
+  const disablePush = async () => {
+    const id = pushId;
+    if (!id) return;
+    pushId = undefined;
+    storage.set(PUSH_ID_KEY, "");
+    const registration = await navigator.serviceWorker.getRegistration("/sw.js");
+    await (await registration?.pushManager.getSubscription())?.unsubscribe();
+    await postJson("/api/push/unsubscribe", { id });
+  };
+  const pushSection = () => {
+    const section = el("section", "setting push-settings");
+    section.append(el("div", "eyebrow", t("web.settings.push")));
+    const row = el("div", "gui-update-row");
+    const enable = el("button", "btn push-enable", t("web.push.enable")) as HTMLButtonElement;
+    enable.type = "button";
+    enable.addEventListener("click", () => {
+      pushError = undefined;
+      void withPending(enable, enablePush).catch((error: unknown) => { pushError = String(error); }).finally(refreshOpenSheet);
+    });
+    const disable = el("button", "btn push-disable", t("web.push.disable")) as HTMLButtonElement;
+    disable.type = "button";
+    disable.addEventListener("click", () => void withPending(disable, disablePush).finally(refreshOpenSheet));
+    row.append(el("span", "small push-status"), enable, disable);
+    section.append(row);
+    section.hidden = !pushSupported;
+    return section;
+  };
+  const refreshPush = (body: HTMLElement) => {
+    const section = body.querySelector<HTMLElement>(".push-settings");
+    if (!section || !pushSupported) return;
+    section.querySelector<HTMLElement>(".push-status")!.textContent = pushId ? t("web.push.enabled")
+      : pushError ? t("web.settings.updateFailed", { message: pushError }) : pushDenied ? t("web.push.denied") : "";
+    section.querySelector<HTMLButtonElement>(".push-enable")!.hidden = Boolean(pushId);
+    section.querySelector<HTMLButtonElement>(".push-disable")!.hidden = !pushId;
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (pushId) void postJson("/api/push/visibility", { id: pushId, visible: document.visibilityState === "visible" });
+  });
   const guiStatusText = (update: GuiUpdate | undefined): string => {
     if (!update) return "";
     if (update.status === "available") return t("web.settings.updateAvailable", { version: update.version });
@@ -1769,6 +1828,7 @@ export function clientMain({
       const ready = body.querySelector<HTMLElement>(".sandbox-ready");
       if (ready) ready.textContent = t(state.sandbox.ready ? "web.settings.ready" : "web.settings.notReady");
       refreshGuiUpdate(body);
+      refreshPush(body);
       body.querySelector(".limits-settings")?.classList.toggle("unlimited", state.limitsUnlimited);
       body.querySelector(".limits-unlimited")?.setAttribute("aria-pressed", String(state.limitsUnlimited));
       for (const row of body.querySelectorAll<HTMLElement>("[data-limit]")) {
@@ -2225,7 +2285,10 @@ export function clientMain({
   };
   $("#reload").addEventListener("click", () => location.reload());
   const connect = () => {
-    const events = new EventSource(guiVersion ? `/events?gui=${encodeURIComponent(guiVersion)}` : "/events");
+    const query = new URLSearchParams();
+    if (guiVersion) query.set("gui", guiVersion);
+    if (pushId) { query.set("push", pushId); query.set("visible", document.visibilityState === "visible" ? "1" : "0"); }
+    const events = new EventSource(query.toString() ? `/events?${query}` : "/events");
     events.onopen = () => {
       notificationState = { live: false, working: false };
       replaying = true;

@@ -231,6 +231,59 @@ it("履歴を認証付きで分割取得し、不正な before は 400", async (
   expect((await fetch(`${base}/api/history?before=5`)).status).toBe(401);
 });
 
+describe("Web Push", () => {
+  const setupPush = async () => {
+    const calls: string[] = [];
+    const feed = new WebFeed();
+    server = await startWebServer({
+      port: 0, token: TOKEN, feed, page: PAGE, onInput: async () => {},
+      listFiles: async () => [],
+      preview: { file: async () => ({ ok: false as const, status: 404, message: "" }), diff: async () => ({ ok: false as const, status: 404, message: "" }) },
+      upload: { maxBytes: 4, accepts: () => false, save: async () => "" },
+      push: {
+        publicKey: () => "KEY",
+        subscribe: (input) => ((input as { endpoint?: string }).endpoint ? "id1" : undefined),
+        unsubscribe: (id) => void calls.push(`unsubscribe ${id}`),
+        setVisible: (id, visible) => void calls.push(`visible ${id} ${visible}`),
+        connect: (id, visible) => { calls.push(`connect ${id} ${visible}`); return { close: () => void calls.push(`close ${id}`) }; },
+      },
+    });
+    return { base: server.url, calls };
+  };
+  const post = (base: string, path: string, body: unknown) =>
+    fetch(`${base}${path}`, { method: "POST", headers: { cookie: COOKIE }, body: JSON.stringify(body) });
+
+  it("Service Worker は token なしで返す", async () => {
+    const { base } = await setupPush();
+    const response = await fetch(`${base}/sw.js`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("javascript");
+    expect(await response.text()).toContain("showNotification");
+  });
+
+  it("公開鍵・購読・解除・見えているかの API", async () => {
+    const { base, calls } = await setupPush();
+    expect(await (await fetch(`${base}/api/push/key`, { headers: { cookie: COOKIE } })).json()).toEqual({ key: "KEY" });
+    expect(await (await post(base, "/api/push/subscribe", { endpoint: "https://x" })).json()).toEqual({ id: "id1" });
+    expect((await post(base, "/api/push/subscribe", {})).status).toBe(400);
+    expect((await post(base, "/api/push/visibility", { id: "id1", visible: false })).status).toBe(204);
+    expect((await post(base, "/api/push/visibility", { id: "id1" })).status).toBe(400);
+    expect((await post(base, "/api/push/unsubscribe", { id: "id1" })).status).toBe(204);
+    expect((await fetch(`${base}/api/push/key`)).status).toBe(401);
+    expect(calls).toEqual(["visible id1 false", "unsubscribe id1"]);
+  });
+
+  it("push の id 付きの接続を見えているかとともに知らせ、切れたら閉じる", async () => {
+    const { base, calls } = await setupPush();
+    const controller = new AbortController();
+    await fetch(`${base}/events?push=id1&visible=1`, { headers: { cookie: COOKIE }, signal: controller.signal });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    controller.abort();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(calls).toEqual(["connect id1 true", "close id1"]);
+  });
+});
+
 describe("GUI の更新の中継", () => {
   const post = (base: string, path: string, body: unknown, cookie = COOKIE) =>
     fetch(`${base}${path}`, { method: "POST", headers: { cookie }, body: JSON.stringify(body) });

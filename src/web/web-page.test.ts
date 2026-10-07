@@ -95,6 +95,14 @@ describe("buildWebPage", () => {
     expect(html).not.toContain("working-entry");
   });
 
+  it("Push を使える画面だけ設定に通知の節を出し、購読した端末は見えているかを Hub に知らせる", () => {
+    const { html } = buildWebPage("ja");
+    expect(html).toContain('const pushSupported = "serviceWorker" in navigator && "PushManager" in window && !tauriApi;');
+    expect(html).toContain('applicationServerKey: base64Bytes(key)');
+    expect(html).toContain('query.set("push", pushId)');
+    expect(html).toContain('postJson("/api/push/visibility"');
+  });
+
   it("割り込みが届いたらチェックマークのアイコンを出し、文言は title に持たせる", () => {
     const { html } = buildWebPage("ja");
     expect(html).toContain('const delivered = el("span", "steer-delivered");');
@@ -117,7 +125,7 @@ describe("buildWebPage", () => {
 
   it("GUI の中の画面は GUI の版を添えてつなぎ、更新の依頼を Tauri の command で行う", () => {
     const { html } = buildWebPage("ja");
-    expect(html).toContain("new EventSource(guiVersion ? `/events?gui=${encodeURIComponent(guiVersion)}` : \"/events\")");
+    expect(html).toContain('if (guiVersion) query.set("gui", guiVersion);');
     expect(html).toContain('invoke("install_update")');
     expect(html).toContain('invoke("check_update")');
     expect(html).toContain('postJson("/api/gui/update", { action })');
