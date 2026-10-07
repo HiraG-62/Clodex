@@ -255,6 +255,57 @@ describe("Coordinator", () => {
     }));
   });
 
+  describe("利用枠の上限での停止と自動再開", () => {
+    const setupLimit = () => {
+      const claude = new FakeAgentAdapter("claude");
+      const codex = new FakeAgentAdapter("codex");
+      const bus = new EventBus(() => new Date(NOW));
+      const events: CoordinatorEvent[] = [];
+      bus.subscribe((e) => events.push(e));
+      const coordinator = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus, mcpUrlFor, limitResumeMarginMs: 0 });
+      return { claude, events, coordinator };
+    };
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    it("上限の枠があるときに失敗したら配送を止め、リセット後に続きを送ってから残りを送る", async () => {
+      const { claude, events, coordinator } = setupLimit();
+      void coordinator.sendToAgent("claude", "first");
+      void coordinator.sendToAgent("claude", "second");
+      await flush();
+      claude.emit({ type: "rate_limit", fiveHour: { usedPercent: 100, resetsAt: Date.now() / 1000 + 0.1 } });
+      claude.completeTurn({ status: "failed", text: "limit" });
+      await flush();
+      expect(claude.sent).toEqual(["first"]);
+      expect(coordinator.recoveryState().interrupted).toEqual(["claude"]);
+      expect(events).toContainEqual(expect.objectContaining({ kind: "notice", text: expect.stringContaining("claude") }));
+      await wait(200);
+      expect(claude.sent).toHaveLength(2);
+      expect(claude.sent[1]).toContain("usage limit has reset");
+      claude.completeTurn();
+      await flush();
+      expect(claude.sent[2]).toBe("second");
+    });
+
+    it("上限の枠が無い失敗では止めず、/interrupt で待つのをやめる", async () => {
+      const { claude, coordinator } = setupLimit();
+      void coordinator.sendToAgent("claude", "first");
+      void coordinator.sendToAgent("claude", "second");
+      await flush();
+      claude.emit({ type: "rate_limit", fiveHour: { usedPercent: 80, resetsAt: Date.now() / 1000 + 3600 } });
+      claude.completeTurn({ status: "failed", text: "boom" });
+      await flush();
+      expect(claude.sent).toEqual(["first", "second"]);
+      claude.emit({ type: "rate_limit", weekly: { usedPercent: 100, resetsAt: Date.now() / 1000 + 3600 } });
+      void coordinator.sendToAgent("claude", "third");
+      claude.completeTurn({ status: "failed", text: "limit" });
+      await flush();
+      expect(claude.sent).toHaveLength(2);
+      await coordinator.interrupt("claude");
+      await flush();
+      expect(claude.sent).toEqual(["first", "second", "third"]);
+    });
+  });
+
   describe("作業を頼む message の配送の失敗", () => {
     const setupRetry = () => {
       const claude = new FakeAgentAdapter("claude");
@@ -298,6 +349,18 @@ describe("Coordinator", () => {
       expect(claude.sent[0]).toContain("server overloaded");
       expect(claude.sent[0]).toContain("Do not send it again");
       expect(events).toContainEqual(expect.objectContaining({ kind: "notice", text: expect.stringContaining("DELEGATE") }));
+    });
+
+    it("宛先が上限で待っているなら送り直さない", async () => {
+      const { claude, codex, coordinator } = setupRetry();
+      coordinator.receiveMessage("claude", delegate);
+      await flush();
+      codex.emit({ type: "rate_limit", fiveHour: { usedPercent: 100, resetsAt: Date.now() / 1000 + 3600 } });
+      codex.completeTurn({ status: "failed", text: "limit" });
+      await flush(); await flush();
+      expect(codex.sent).toHaveLength(1);
+      expect(claude.sent).toEqual([]);
+      await coordinator.stop();
     });
 
     it("RESULT・取り消し・停止は再送しない", async () => {

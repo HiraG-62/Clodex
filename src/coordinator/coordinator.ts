@@ -11,7 +11,7 @@ import { languageReminder, type Language } from "../context/language.js";
 import { createMessage, type AgentMessage, type CreateMessageResult } from "../protocol/messages.js";
 import { AgentMailbox } from "./agent-mailbox.js";
 import { BudgetManager, humanBudgetError, type BudgetLimits } from "./budget-manager.js";
-import { DEFAULT_USAGE_ALERT, UsageMonitor, type UsageAlert, type UsageSnapshot } from "./usage-monitor.js";
+import { DEFAULT_USAGE_ALERT, UsageMonitor, limitResetAt, type UsageAlert, type UsageSnapshot } from "./usage-monitor.js";
 import type { EventBus } from "./event-bus.js";
 import { modelLabel, type ModelCatalog, type StartupProbe } from "../agents/startup-probe.js";
 import type { ConversationRecovery } from "../project/recovery-store.js";
@@ -42,6 +42,9 @@ const SOLO_REJECTED = "solo mode: the other agent is not available. Do the work 
 // 作業を頼む message は、配送したターンが失敗したら一度だけ送り直し、それでも失敗したら送信元に引き取らせる（DESIGN.md §12 配送ルール）
 const RETRIED_TYPES: ReadonlySet<AgentMessage["type"]> = new Set(["DELEGATE", "REVIEW_REQUEST", "QUESTION"]);
 const DEFAULT_RETRY_DELAY_MS = 30_000;
+const DEFAULT_LIMIT_RESUME_MARGIN_MS = 60_000;
+const MS_PER_SECOND = 1000;
+const LIMIT_CONTINUE = "[Clodex] Your usage limit has reset. Continue the task you were working on.";
 const MAX_DELIVERY_ATTEMPTS = 2;
 const ERROR_LINE_LENGTH = 200;
 const HANDOFF_ACTION: Partial<Record<AgentMessage["type"], string>> = {
@@ -76,6 +79,8 @@ export interface CoordinatorOptions {
   solo?: () => SoloMode | undefined;
   // 作業を頼む message の配送が失敗してから送り直すまでの待ち（テスト用に短くできる）
   retryDelayMs?: number;
+  // 上限で止まった後、リセット時刻からどれだけ待って再開するか（テスト用に短くできる）
+  limitResumeMarginMs?: number;
 }
 
 export class Coordinator {
@@ -102,7 +107,7 @@ export class Coordinator {
     if (this.stoppingRecovery) return this.stoppingRecovery;
     return {
       questions: this.pendingQuestions(),
-      interrupted: AGENT_IDS.filter((id) => this.mailboxes[id].activeSending || this.options.agents[id].status === "busy"),
+      interrupted: AGENT_IDS.filter((id) => this.mailboxes[id].activeSending || this.mailboxes[id].holding || this.options.agents[id].status === "busy"),
       queue: { claude: this.mailboxes.claude.recoveryQueue, codex: this.mailboxes.codex.recoveryQueue },
     };
   }
@@ -159,9 +164,19 @@ export class Coordinator {
         (message) => bus.publish({ kind: "agent", agent: id, event: { type: "error", message } }),
         () => this.notifyRecoveryChange(),
         () => { if (this.options.canStart?.() === false) throw new Error(t("sandbox.incomplete")); },
+        () => this.limitHold(id),
       );
     };
     this.mailboxes = { claude: createMailbox("claude"), codex: createMailbox("codex") };
+  }
+
+  private limitHold(id: AgentId): { resumeAt: number; text: string } | undefined {
+    const resetAt = limitResetAt(this.usage.snapshot(id));
+    if (resetAt === undefined) return undefined;
+    const resumeAt = resetAt * MS_PER_SECOND + (this.options.limitResumeMarginMs ?? DEFAULT_LIMIT_RESUME_MARGIN_MS);
+    const time = new Date(resumeAt).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    this.options.bus.publish({ kind: "notice", text: t("notice.limitHold", { agent: id, time }) });
+    return { resumeAt, text: `${LIMIT_CONTINUE}${this.reminder}` };
   }
 
   setLimits(limits: BudgetLimits): void {
@@ -229,7 +244,8 @@ export class Coordinator {
     const steerable = message.interrupt && mailbox.current?.from === message.from;
     if (steerable && await this.options.agents[message.to].steer(envelope, message.id)) return;
     const result = await mailbox.enqueue(envelope, { message });
-    if (result.status !== "failed" || !RETRIED_TYPES.has(message.type) || mailbox.isClosed) return;
+    // 上限で待っている宛先は、リセット後に続きを送るので送り直さない
+    if (result.status !== "failed" || !RETRIED_TYPES.has(message.type) || mailbox.isClosed || mailbox.holding) return;
     if (attempt < MAX_DELIVERY_ATTEMPTS) {
       await new Promise((resolve) => setTimeout(resolve, this.options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS).unref?.());
       if (!mailbox.isClosed) await this.deliver(message, attempt + 1);
@@ -327,6 +343,7 @@ export class Coordinator {
   async interrupt(id?: AgentId): Promise<void> {
     if (!id) this.stopExchanges();
     const targets = id ? [id] : AGENT_IDS;
+    for (const target of targets) this.mailboxes[target].releaseHold();
     await Promise.all(targets.map((target) => this.options.agents[target].interrupt()));
   }
 

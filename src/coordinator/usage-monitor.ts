@@ -45,6 +45,16 @@ interface Windows {
 
 const peerOf = (agent: AgentId): AgentId => AGENT_IDS.find((id) => id !== agent)!;
 
+// 使用率が 100% 以上でリセット前の枠があれば、そのリセット時刻（epoch 秒。複数なら遅いほう）
+export const limitResetAt = (snapshot: UsageSnapshot): number | undefined => {
+  const LIMIT_PERCENT = 100;
+  const resets = [
+    snapshot.fiveHourPercent !== undefined && snapshot.fiveHourPercent >= LIMIT_PERCENT ? snapshot.fiveHourResetsAt : undefined,
+    snapshot.weeklyPercent !== undefined && snapshot.weeklyPercent >= LIMIT_PERCENT ? snapshot.weeklyResetsAt : undefined,
+  ].filter((value): value is number => value !== undefined);
+  return resets.length ? Math.max(...resets) : undefined;
+};
+
 export class UsageMonitor {
   private readonly windows = new Map<AgentId, Windows>();
   private readonly contexts = new Map<AgentId, ContextSize>();

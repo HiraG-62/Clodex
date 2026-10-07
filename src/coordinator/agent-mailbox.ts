@@ -23,6 +23,9 @@ export interface EnqueueOptions {
   suffix?: string;
 }
 
+// 上限で止まったときに配送を止めて待つ（DESIGN.md 上限での停止と自動再開）
+export interface LimitHold { resumeAt: number; text: string }
+
 export class AgentMailbox {
   private readonly queue: QueueItem[] = [];
   private draining = false;
@@ -34,6 +37,7 @@ export class AgentMailbox {
   // 配送中のターンが処理している message。Budget の chain 追跡に使う（DESIGN.md §14）
   current: AgentMessage | undefined;
   private activeSend = false;
+  private holdTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     private readonly agent: AgentAdapter,
@@ -42,6 +46,8 @@ export class AgentMailbox {
     private readonly onError: (message: string) => void,
     private readonly onChange: () => void = () => {},
     private readonly assertStart: () => void = () => {},
+    // 送ったターンが失敗したときに呼ぶ。上限で止まったなら再開の時刻と続きの指示を返す
+    private readonly limitHold: () => LimitHold | undefined = () => undefined,
   ) {}
 
   // 失敗しても reject せず failed の TurnResult を返す（呼び出し側は待たずに投げてよい）
@@ -68,6 +74,27 @@ export class AgentMailbox {
   get activeSending(): boolean { return this.activeSend; }
 
   get isClosed(): boolean { return this.closed; }
+
+  get holding(): boolean { return this.holdTimer !== undefined; }
+
+  // 待つのをやめて配送を再開する（続きの指示は積まない）
+  releaseHold(): void {
+    if (!this.holdTimer) return;
+    clearTimeout(this.holdTimer);
+    this.holdTimer = undefined;
+    this.resume();
+  }
+
+  private hold({ resumeAt, text }: LimitHold): void {
+    this.paused = true;
+    this.holdTimer = setTimeout(() => {
+      this.holdTimer = undefined;
+      if (this.closed) return;
+      this.queue.unshift({ kind: "send", text, message: undefined, resolve: () => {} });
+      this.resume();
+    }, Math.max(0, resumeAt - Date.now()));
+    this.holdTimer.unref?.();
+  }
 
   // 配送待ちの人間の入力を取り消し、本文を返す。配送済み・無いなら undefined
   cancel(inputId: string): string | undefined {
@@ -143,6 +170,8 @@ export class AgentMailbox {
   // 未配送分を破棄し、以後は Agent を起動しない（停止中の再起動を防ぐ）
   close(): void {
     this.closed = true;
+    clearTimeout(this.holdTimer);
+    this.holdTimer = undefined;
     for (const item of this.queue.splice(0)) item.resolve(CLOSED_RESULT);
     if (!this.draining) for (const resolve of this.idleWaiters.splice(0)) resolve();
   }
@@ -160,6 +189,8 @@ export class AgentMailbox {
             : item.kind === "model" || item.kind === "effort" ? await this.setting(item.kind, item.text)
               : await this.deliver(`${item.text}${item.suffix ?? ""}`, item.images);
           item.resolve(result);
+          const hold = item.kind === "send" && result.status === "failed" ? this.limitHold() : undefined;
+          if (hold) this.hold(hold);
         } finally {
           this.current = undefined;
           this.activeSend = false;
