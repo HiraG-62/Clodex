@@ -22,4 +22,6 @@ GUI は起動時とトレイの「更新を確認」で、GitHub Releases の `l
 2. `git tag v<version>` を作り、commit と tag を push する
 3. `.github/workflows/release.yml` が Windows でビルドし、インストーラー・`.sig`・`latest.json` を Release に上げる
 
+自分の環境だけで試す版は、`0.1.1-dev.1` のように版に `-` を付けて同じ手順で公開する。この版は prerelease になり、公開版の GUI には届かない。`~/.clodex/config.json` に `"updateChannel": "dev"` を書いた GUI は、prerelease の `dev` にある `latest.json` を見て、dev 版と正式版のうち最新のものを受け取る。
+
 署名の秘密鍵は GitHub の Secret の `TAURI_SIGNING_PRIVATE_KEY`（パスワードは `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）に置く。公開鍵は `tauri.conf.json` の `plugins.updater.pubkey`。更新用の成果物は `tauri.release.conf.json` を渡したときだけ作るため、手元の `pnpm gui:build` に秘密鍵は要らない。

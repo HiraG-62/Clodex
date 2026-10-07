@@ -944,6 +944,7 @@ AGENTS.md → Codex
 ```
 
 - `permission` は起動時の権限レベル（§9 Permission）。両 Agent に同じレベルを使う
+- `updateChannel`（`stable` / `dev`、既定 `stable`）は GUI の更新の取得先（§28 GUI の自動更新）。GUI はユーザーの設定だけを読む
 - `~/.clodex/config.json` が無ければ、起動時に役割を空にしたひな形を作る（`{ "roles": { "claude": "", "codex": "" } }`）。役割の文章は書かない（書くのは人）。既にあれば触らない。作れなくても起動は続ける
 - 役割の空文字は未設定として扱う（ひな形のままでも、役割が無いのと同じ）
 - UTF-8（BOM の有無は問わない。Windows PowerShell 5.1 は BOM 付きで書く）
@@ -2006,7 +2007,12 @@ GUI の自動更新（D3 の後）:
 - 版の元は `package.json` の `version` だけにする。`tauri.conf.json` の `version` は `../../package.json` を指す。tag は `v<version>`
 - 公開: tag `v*` の push で GitHub Actions（`.github/workflows/release.yml`、Windows の runner）が `pnpm build` と同梱物の組み立ての後に `tauri-apps/tauri-action` で build し、NSIS のインストーラー・署名（`.sig`）・`latest.json` を Release に上げる。tag と `package.json` の版が違えば失敗させる
 - 署名: 鍵は `tauri signer generate` で作る。公開鍵は `tauri.conf.json` の `plugins.updater.pubkey`、秘密鍵とパスワードは GitHub の Secret（`TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）にだけ置く。更新用の成果物（`createUpdaterArtifacts`）は CI 用の設定（`gui/src-tauri/tauri.release.conf.json`）でだけ有効にし、手元の `pnpm gui:build` は秘密鍵なしで今どおり動かす
-- 取得先: `https://github.com/HiraG-62/Clodex/releases/latest/download/latest.json`
+- チャンネル: 公開用の `stable` と自分用の `dev`。`~/.clodex/config.json` の `updateChannel` で選ぶ（既定 `stable`。読めない・知らない値も `stable`）
+  - `stable` の取得先: `https://github.com/HiraG-62/Clodex/releases/latest/download/latest.json`（GitHub の latest は prerelease を含まない）
+  - `dev` の取得先: `https://github.com/HiraG-62/Clodex/releases/download/dev/latest.json`
+  - tag の版に `-` を含む（`v0.1.1-dev.1` など）ものは prerelease として公開する。それ以外は通常の Release
+  - workflow は、どの Release でも `latest.json` を固定の prerelease `dev`（無ければ作る）に上書きで上げる。`dev` のチャンネルは正式版も含めた最新の版を受け取る
+  - 版の順序は semver（`0.1.0 < 0.1.1-dev.1 < 0.1.1-dev.2 < 0.1.1`）
 - 確認は GUI（Rust）が行う。Web UI には足さない
   - 起動時に 1 回、ウィンドウを出した後にバックグラウンドで確認する。新しい版が無いか、確認に失敗したら何も出さない
   - トレイのメニューに「更新を確認」を足す。新しい版が無ければ「最新版」、失敗したらエラーをダイアログで出す

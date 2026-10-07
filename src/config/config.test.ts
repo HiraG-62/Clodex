@@ -84,6 +84,11 @@ describe("loadConfig", () => {
     expect(() => loadConfig(setup({ user: { permission: "admin" } }))).toThrow(/permission/);
   });
 
+  it("updateChannel を読み、未知のチャンネルは拒否する", () => {
+    expect(loadConfig(setup({ user: { updateChannel: "dev" } })).updateChannel).toBe("dev");
+    expect(() => loadConfig(setup({ user: { updateChannel: "beta" } }))).toThrow("updateChannel");
+  });
+
   it("web の port を読み、範囲外は拒否する", () => {
     expect(loadConfig(setup({ user: { web: { port: 5000 } } }))).toEqual({ web: { port: 5000 } });
     expect(loadConfig(setup({ user: { web: {} } }))).toEqual({ web: {} });

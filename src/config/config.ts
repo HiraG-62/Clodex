@@ -9,6 +9,8 @@ import { writeFileAtomic } from "../project/atomic-write.js";
 const USER_CONFIG_PATH = join(".clodex", "config.json");
 const PROJECT_CONFIG_FILE = ".clodex.json";
 
+const UPDATE_CHANNELS = ["stable", "dev"] as const;
+
 const nonNegativeInt = z.number().int().nonnegative();
 const role = z.string();
 
@@ -17,6 +19,7 @@ const configSchema = z.strictObject({
   primary: z.enum(AGENT_IDS).optional(),
   language: z.enum(LANGUAGES).optional(),
   permission: z.enum(PERMISSION_LEVELS).optional(),
+  updateChannel: z.enum(UPDATE_CHANNELS).optional(),
   roles: z.strictObject({ claude: role.optional(), codex: role.optional() }).optional(),
   limits: z.strictObject({
     maxMessagesPerChain: nonNegativeInt.optional(),

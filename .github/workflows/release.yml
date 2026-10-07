@@ -43,3 +43,12 @@ jobs:
           args: --config ${{ github.workspace }}\gui\src-tauri\tauri.release.conf.json
           tagName: ${{ github.ref_name }}
           releaseName: Clodex ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
+      - name: dev のチャンネルに latest.json を上げる
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --pattern latest.json --dir dev-channel
+          gh release view dev > /dev/null 2>&1 || gh release create dev --prerelease --title "Clodex dev" --notes "dev チャンネルの latest.json"
+          gh release upload dev dev-channel/latest.json --clobber

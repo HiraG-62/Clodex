@@ -135,7 +135,7 @@ struct HubLock {
     url: String,
 }
 
-fn home_dir() -> Result<PathBuf, Box<dyn Error>> {
+pub(crate) fn home_dir() -> Result<PathBuf, Box<dyn Error>> {
     std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
         .map(PathBuf::from)
