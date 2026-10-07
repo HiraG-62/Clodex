@@ -14,7 +14,7 @@ import type { isSendKey as IsSendKey, SendKey } from "./send-key.js";
 import type { fitView as FitView, zoomView as ZoomView } from "./image-zoom.js";
 import type { SlashCommand } from "../../cli/commands.js";
 import type { Suggestion, createInputAssist as CreateInputAssist } from "./input-assist.js";
-import type { collectArtifacts as CollectArtifacts, displayPath as DisplayPath, findImagePaths as FindImagePaths } from "./artifacts.js";
+import type { collectArtifacts as CollectArtifacts, displayPath as DisplayPath, findImagePaths as FindImagePaths, splitImagePaths as SplitImagePaths } from "./artifacts.js";
 import type { MessageKey, Messages } from "../../i18n/messages.js";
 import type { chooseProjectPath as ChooseProjectPath } from "./project-picker.js";
 import type { DesktopNotification, DesktopNotifyState, updateDesktopNotify as UpdateDesktopNotify } from "./desktop-notify.js";
@@ -36,6 +36,7 @@ export interface ClientDeps {
   createInputAssist: typeof CreateInputAssist;
   collectArtifacts: typeof CollectArtifacts;
   findImagePaths: typeof FindImagePaths;
+  splitImagePaths: typeof SplitImagePaths;
   displayPath: typeof DisplayPath;
   commands: readonly SlashCommand[];
   messages: Messages;
@@ -45,7 +46,7 @@ export interface ClientDeps {
 }
 
 export function clientMain({
-  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
+  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -331,9 +332,48 @@ export function clientMain({
     return node;
   };
 
+  const imageKey = (path: string) => path.replace(/\\/g, "/").toLowerCase();
+  // 本文の画像のパスをクリックでビューアを開ける要素にする（リンクの中は除く）
+  const linkImagePaths = (root: HTMLElement) => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const texts: Text[] = [];
+    while (walker.nextNode()) texts.push(walker.currentNode as Text);
+    for (const text of texts) {
+      if (text.parentElement?.closest("a, .image-link")) continue;
+      const parts = splitImagePaths(text.data);
+      if (!parts.some((part) => part.path)) continue;
+      text.replaceWith(...parts.map((part) => {
+        if (!part.path) return document.createTextNode(part.text);
+        const link = el("span", "image-link", part.text);
+        link.dataset.path = part.path;
+        link.setAttribute("role", "button");
+        link.tabIndex = 0;
+        return link;
+      }));
+    }
+  };
+  // 読めなかった画像のパスは普通の文字に戻す
+  const unlinkImagePath = (root: HTMLElement, path: string) => {
+    for (const link of root.querySelectorAll<HTMLElement>(".image-link")) {
+      if (imageKey(link.dataset.path ?? "") === imageKey(path)) link.replaceWith(link.textContent ?? "");
+    }
+  };
+  document.addEventListener("click", (event) => {
+    const link = (event.target as Element | null)?.closest?.<HTMLElement>(".image-link");
+    if (link?.dataset.path) openImage(link.dataset.path);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    const link = (event.target as Element | null)?.closest?.<HTMLElement>(".image-link");
+    if (!link?.dataset.path) return;
+    event.preventDefault();
+    openImage(link.dataset.path);
+  });
+
   const appendImagePreviews = (node: HTMLElement, text: string) => {
     const paths = findImagePaths(text);
     if (!paths.length) return;
+    linkImagePaths(node);
     const previews = el("div", "image-previews");
     for (const path of paths) {
       const button = el("button", "image-preview") as HTMLButtonElement;
@@ -341,7 +381,7 @@ export function clientMain({
       const image = document.createElement("img");
       image.alt = displayPath(path, state?.project ?? "");
       image.loading = "lazy";
-      image.addEventListener("error", () => button.remove());
+      image.addEventListener("error", () => { button.remove(); unlinkImagePath(node, path); });
       image.src = fileUrl("file", path);
       button.addEventListener("click", () => openImage(path));
       button.append(image);

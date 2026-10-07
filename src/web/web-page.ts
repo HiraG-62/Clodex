@@ -13,7 +13,7 @@ import { MESSAGES } from "../i18n/i18n.js";
 import type { MessageKey, Messages } from "../i18n/messages.js";
 import { clientMain } from "./client/client-main.js";
 import { createInputAssist } from "./client/input-assist.js";
-import { collectArtifacts, displayPath, findImagePaths } from "./client/artifacts.js";
+import { collectArtifacts, displayPath, findImagePaths, splitImagePaths } from "./client/artifacts.js";
 import { renderMarkdown } from "./client/markdown.js";
 import { applyFeedItem, rebuildTimeline, withStartingTurns } from "./client/timeline.js";
 import { composeInputLine } from "./client/compose-input.js";
@@ -193,7 +193,9 @@ const STYLE = `
   .image-previews:empty { display: none; }
   .image-preview { max-width: 100%; min-width: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--sunken); }
   .image-preview { cursor: zoom-in; }
-  .image-preview img { display: block; max-height: min(320px, 40vh); max-width: 100%; object-fit: contain; }
+  .image-link { cursor: zoom-in; text-decoration: underline dotted; text-underline-offset: 3px; border-radius: 2px; }
+  .image-link:hover { text-decoration-style: solid; }
+  .image-preview img { display: block; max-height: 96px; max-width: 160px; object-fit: contain; }
   .lightbox { position: fixed; inset: 0; z-index: 25; display: grid; grid-template-rows: auto minmax(0, 1fr); background: #0c0c0e; color: #f4f4f5; }
   .lightbox[hidden] { display: none; }
   .lb-bar { display: flex; align-items: center; gap: 8px; padding: max(6px, env(safe-area-inset-top)) 8px 6px 14px; }
@@ -821,6 +823,7 @@ const FUNCTIONS = `
   createInputAssist: ${inlineScript(createInputAssist.toString())},
   collectArtifacts: ${inlineScript(collectArtifacts.toString())},
   findImagePaths: ${inlineScript(findImagePaths.toString())},
+  splitImagePaths: ${inlineScript(splitImagePaths.toString())},
   displayPath: ${inlineScript(displayPath.toString())},
   chooseProjectPath: ${inlineScript(chooseProjectPath.toString())},
   updateDesktopNotify: ${inlineScript(updateDesktopNotify.toString())},`;

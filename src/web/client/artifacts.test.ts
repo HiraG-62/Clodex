@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "../../protocol/messages.js";
-import { collectArtifacts, displayPath, findImagePaths } from "./artifacts.js";
+import { collectArtifacts, displayPath, findImagePaths, splitImagePaths } from "./artifacts.js";
 import type { TimelineItem } from "./timeline.js";
 
 const message = (files: string[], body: string): AgentMessage => ({
@@ -61,4 +61,16 @@ describe("displayPath", () => {
 it("spec を参照として集める", () => {
   expect(collectArtifacts([{ kind: "message", id: "m", at: "1", message: { ...message([], "依頼"), spec: "docs/specs/T.md" } }]))
     .toEqual([{ path: "docs/specs/T.md", kind: "referenced", at: "1" }]);
+});
+
+describe("splitImagePaths", () => {
+  it("本文を画像のパスとそれ以外に分ける", () => {
+    expect(splitImagePaths("見て C:/out/a.png と b.ts と ./x.JPG")).toEqual([
+      { text: "見て " }, { text: "C:/out/a.png", path: "C:/out/a.png" }, { text: " と b.ts と " }, { text: "./x.JPG", path: "./x.JPG" },
+    ]);
+  });
+
+  it("画像のパスが無ければ 1 つのまま返す", () => {
+    expect(splitImagePaths("パスなし")).toEqual([{ text: "パスなし" }]);
+  });
 });

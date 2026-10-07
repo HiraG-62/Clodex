@@ -52,6 +52,21 @@ export function findImagePaths(text: string): string[] {
   return [...found.values()];
 }
 
+// 本文を画像のパス（findImagePaths と同じ判定）とそれ以外に分ける。本文のパスをクリックで開けるようにするため
+export function splitImagePaths(text: string): Array<{ text: string; path?: string }> {
+  const IMAGE_PATH = /(?:[A-Za-z]:)?[\w.~\\/-]*[\w-]\.(?:png|jpe?g|gif|webp)(?![\w])/gi;
+  const parts: Array<{ text: string; path?: string }> = [];
+  let last = 0;
+  for (const match of text.matchAll(IMAGE_PATH)) {
+    const start = match.index ?? 0;
+    if (start > last) parts.push({ text: text.slice(last, start) });
+    parts.push({ text: match[0], path: match[0] });
+    last = start + match[0].length;
+  }
+  if (last < text.length || !parts.length) parts.push({ text: text.slice(last) });
+  return parts;
+}
+
 // project の中なら相対パスで見せる
 export function displayPath(path: string, projectRoot: string): string {
   const normalized = path.replace(/\\/g, "/");

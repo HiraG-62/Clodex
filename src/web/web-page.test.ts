@@ -62,9 +62,13 @@ describe("buildWebPage", () => {
     expect(html).not.toContain("appendImagePreviews(node, step.text)");
     expect(html).toContain('image.loading = "lazy"');
     expect(html).toContain('image.src = fileUrl("file", path)');
-    expect(html).toContain('image.addEventListener("error", () => button.remove())');
+    expect(html).toContain("unlinkImagePath(node, path)");
+    expect(html).toContain("linkImagePaths(node);");
+    expect(html).toMatch(/\.image-link\s*\{[^}]*cursor:\s*zoom-in/);
+    const split = runInNewContext(`({${deps}}).splitImagePaths`) as (text: string) => Array<{ text: string; path?: string }>;
+    expect(split("見て C:/out/a.png")).toEqual([{ text: "見て " }, { text: "C:/out/a.png", path: "C:/out/a.png" }]);
     expect(html).toMatch(/\.image-previews\s*\{[^}]*flex-wrap:\s*wrap/);
-    expect(html).toMatch(/\.image-preview img\s*\{[^}]*max-height:\s*min\(320px, 40vh\)/);
+    expect(html).toMatch(/\.image-preview img\s*\{[^}]*max-height:\s*96px;\s*max-width:\s*160px/);
   });
   it("画像は全画面のビューアで開き、拡大縮小の計算を自己完結した関数として埋め込む", () => {
     const { html } = buildWebPage("ja");
