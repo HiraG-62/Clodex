@@ -232,10 +232,9 @@ const STYLE = `
   .shell-input .box .input-highlight, .shell-input .box textarea { font-family: var(--font-mono); }
   .target-slot { display: grid; }
   .target-slot > * { grid-area: 1 / 1; }
-  .shell-badge { visibility: hidden; display: inline-flex; align-items: center; gap: 6px; padding: 2px; border-radius: var(--r); background: var(--sunken); color: var(--code); font-size: 12.5px; }
+  .shell-badge { visibility: hidden; justify-self: start; display: inline-flex; align-items: center; padding: 2px; border-radius: var(--r); background: var(--sunken); color: var(--code); font-size: 12.5px; }
   .shell-badge > span { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: var(--r-inner); background: var(--panel); box-shadow: var(--ring); }
   .shell-badge > span::before { content: ""; width: 6px; height: 6px; border-radius: 1px; background: var(--code); }
-  .shell-badge .i { margin-left: 8px; width: 14px; height: 14px; }
   .shell-input .target-slot .to { visibility: hidden; }
   .shell-input .shell-badge { visibility: visible; }
   .input-wrap { position: relative; min-width: 0; }
@@ -720,7 +719,7 @@ ${UI_ICONS}
           <button type="button" data-agent="claude" aria-pressed="true">Claude</button>
           <button type="button" data-agent="codex" aria-pressed="false">Codex</button>
         </div>
-        <div class="shell-badge">${icon("terminal")}<span>${m("web.shellInput")}</span></div></div>
+        <div class="shell-badge"><span>${m("web.shellInput")}</span></div></div>
         ${button("attach", "image-plus", "web.attach.label", "attach")}
         ${button("mobile-add", "plus", "web.mobile.add", "mobile-only mobile-add")}
         <input type="file" id="attach-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
