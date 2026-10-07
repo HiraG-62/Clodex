@@ -26,7 +26,7 @@ const STYLE = `
     --r-outer: 8px; --r: 6px; --r-inner: 4px; --r-pill: 999px;
     --ring: 0 0 0 1px var(--line); --ring-strong: 0 0 0 1px var(--line-strong);
     --hover-bg: color-mix(in srgb, var(--fg) 6%, transparent); --press-bg: color-mix(in srgb, var(--fg) 10%, transparent);
-    --accent: var(--claude); --accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
+    --accent: var(--claude);
     --shadow-pop: 0 12px 32px var(--scrim), var(--ring); --ease: 120ms cubic-bezier(.2, .7, .3, 1);
     --bg: #fafafa; --panel: #ffffff; --sunken: #f2f2f3; --line: #e6e6e8; --line-strong: #d4d4d8;
     --fg: #111113; --fg-2: #3f3f46; --muted: #80808a;
@@ -228,7 +228,7 @@ const STYLE = `
   .composer { padding: 10px 16px; padding-bottom: max(12px, env(safe-area-inset-bottom)); background: var(--bg); margin: 0; }
   .box { border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); display: grid; }
   .box:focus-within { border-color: var(--fg-2); }
-  .composer.shell-input { --accent: var(--code); --accent-soft: color-mix(in srgb, var(--code) 18%, transparent); }
+  .composer.shell-input { --accent: var(--code); }
   .shell-input .box { border-color: var(--code); }
   /* 後ろの .box textarea の font: inherit に負けないよう詳細度を上げる */
   .shell-input .box .input-highlight, .shell-input .box textarea { font-family: var(--font-mono); }
@@ -410,7 +410,7 @@ const STYLE = `
   .conv-row.busy .conv .t::before { background: var(--agent, var(--muted)); }
   .conv-menu { opacity: .55; }
   .conv-row:hover .conv-menu { opacity: 1; }
-  .box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
   .send.icon-btn { background: var(--accent); color: var(--invert-fg); box-shadow: var(--ring); }
   .shell-input .send.icon-btn:hover:not(:disabled), .shell-input .send.icon-btn:active:not(:disabled) { background: color-mix(in srgb, var(--code) 85%, var(--fg)); }
   .seg { gap: 2px; padding: 2px; background: var(--sunken); border: 0; border-radius: var(--r); overflow: visible; }

@@ -26,6 +26,11 @@ describe("buildWebPage", () => {
     expect(html).toContain('aria-label="利用状況"');
     expect(html).not.toMatch(/el\("button", "(?:strip-summary|setting-chip mono)"/);
   });
+  it("入力欄の外側の薄い縁を、入力欄で送り先の色から作る", () => {
+    const html = buildWebPage("ja").html;
+    expect(html).toContain(".box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }");
+    expect(html).not.toContain("--accent-soft");
+  });
   it("GUI と同じ図形のアイコンを使う", () => {
     const guiIcon = readFileSync(new URL("../../gui/icon.svg", import.meta.url), "utf8");
     expect(ICON_SVG.trim()).toBe(guiIcon.trim());
