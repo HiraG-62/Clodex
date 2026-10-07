@@ -2061,7 +2061,7 @@ GUI の自動更新（D3 の後）:
 
 - インストーラーを手で入れ直さずに、GUI の中で新しい版を取得して入れ替える。配布も兼ねて、更新の元は GitHub Releases にする（Tauri 公式の `tauri-plugin-updater`）
 - 版の元は `package.json` の `version` だけにする。`tauri.conf.json` の `version` は `../../package.json` を指す。tag は `v<version>`
-- 公開: GitHub Actions（`.github/workflows/release.yml`、Windows の runner）が `pnpm build` と同梱物の組み立ての後に `tauri-apps/tauri-action` で build し、NSIS のインストーラー・署名（`.sig`）・`latest.json` を Release に上げる
+- 公開: GitHub Actions（`.github/workflows/release.yml`、Windows の runner）が `pnpm typecheck`・`pnpm test`（失敗したら公開しない）・`pnpm build` と同梱物の組み立ての後に `tauri-apps/tauri-action` で build し、NSIS のインストーラー・署名（`.sig`）・`latest.json` を Release に上げる
   - 本番: tag `v*` の push。tag と `package.json` の版が違えば失敗させる
   - dev: master への push（`docs/**` と `*.md` だけの変更は除く）。版は `package.json` の版のパッチを 1 つ上げて `-dev.<実行番号>` を付けたもの（`0.1.0` → `0.1.1-dev.57`）を CI が `package.json` に書いてから build する。tag `v<その版>` は Release の作成で付く。人は版も tag も触らない
   - dev の build は同時に 1 つだけ動かし、新しい push が来たら古い build を止める（古い build が後から `latest.json` を戻さないように）

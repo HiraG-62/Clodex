@@ -37,6 +37,8 @@ jobs:
         shell: bash
         run: echo "version=$(node scripts/release-version.mjs "$GITHUB_REF_TYPE" "$GITHUB_REF_NAME" "$GITHUB_RUN_NUMBER")" >> "$GITHUB_OUTPUT"
       - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
       - run: pnpm build
       - run: node scripts/stage-gui-runtime.mjs
       - uses: tauri-apps/tauri-action@v0
