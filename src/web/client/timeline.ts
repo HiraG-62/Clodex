@@ -1,6 +1,6 @@
 // feed からログの項目を組み立てる（DESIGN.md §17 Web UI）。
 // ブラウザ側にそのまま埋め込むため、外部のものを参照しない 1 つの関数として書く（型の import のみ）
-import type { AgentId, TurnResult } from "../../agents/agent-adapter.js";
+import type { AgentId, AgentStatus, TurnResult } from "../../agents/agent-adapter.js";
 import type { UserQuestion } from "../../protocol/questions.js";
 import type { AgentMessage } from "../../protocol/messages.js";
 import type { FeedItem, HistoryItem } from "../web-feed.js";
@@ -19,6 +19,21 @@ export type TimelineItem =
   | { kind: "notice"; id: string; at: string; text: string }
   | { kind: "error"; id: string; at: string; agent: AgentId; text: string }
   | { kind: "output"; id: string; text: string };
+
+export type DisplayTimelineItem = TimelineItem | { kind: "starting"; id: string; at: string; agent: AgentId };
+
+export function withStartingTurns(items: readonly TimelineItem[], agents: readonly { id: AgentId; status: AgentStatus }[], now: string): DisplayTimelineItem[] {
+  const result: DisplayTimelineItem[] = [...items];
+  for (const agent of agents) {
+    if (agent.status === "stopped") continue;
+    const last = items.findLast((item) => "agent" in item && item.agent === agent.id && ["human", "turn", "error"].includes(item.kind));
+    if (last?.kind === "turn" && last.status === "working") continue;
+    const waiting = last?.kind === "human" && !last.steer;
+    if (agent.status !== "starting" && !waiting) continue;
+    result.push({ kind: "starting", id: `starting-${agent.id}`, at: last && "at" in last ? last.at : now, agent: agent.id });
+  }
+  return result;
+}
 
 // 変更した項目だけを新しいオブジェクトにして返す（画面は項目の同一性で差分を描画する）
 export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineItem[] {

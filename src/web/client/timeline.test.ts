@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "../../agents/agent-adapter.js";
 import type { FeedItem } from "../web-feed.js";
-import { rebuildTimeline, applyFeedItem, type TimelineItem } from "./timeline.js";
+import { rebuildTimeline, applyFeedItem, withStartingTurns, type TimelineItem } from "./timeline.js";
 
 const AT = "2026-10-05T12:00:00.000Z";
 let seq = 0;
@@ -11,6 +11,29 @@ const human = (name: "claude" | "codex", text: string): FeedItem =>
   ({ type: "event", seq: ++seq, event: { kind: "human", agent: name, text, at: AT } });
 const output = (text: string): FeedItem => ({ type: "output", seq: ++seq, text });
 const run = (items: FeedItem[]) => items.reduce<TimelineItem[]>(applyFeedItem, []);
+
+describe("withStartingTurns", () => {
+  it("human の後は起動中を出し、turn_started で置き換える", () => {
+    const items = run([human("codex", "実装")]);
+    expect(withStartingTurns(items, [{ id: "codex", status: "idle" }], AT).at(-1)).toMatchObject({ kind: "starting", agent: "codex", at: AT });
+    const started = applyFeedItem(items, agent("codex", { type: "turn_started" }));
+    expect(withStartingTurns(started, [{ id: "codex", status: "busy" }], AT)).toEqual(started);
+    expect(items).toHaveLength(1);
+  });
+  it("state だけの起動中と両 Agent の同時起動を表示する", () => {
+    expect(withStartingTurns([], [{ id: "claude", status: "starting" }, { id: "codex", status: "starting" }], AT)).toHaveLength(2);
+  });
+  it("割り込み・失敗・停止・完了済みの履歴に仮ターンを残さない", () => {
+    const sent = run([human("codex", "実装")]);
+    expect(withStartingTurns(sent, [{ id: "codex", status: "stopped" }], AT)).toEqual(sent);
+    const failed = applyFeedItem(sent, agent("codex", { type: "error", message: "起動失敗" }));
+    expect(withStartingTurns(failed, [{ id: "codex", status: "idle" }], AT)).toEqual(failed);
+    const done = run([human("codex", "実装"), agent("codex", { type: "turn_started" }), agent("codex", { type: "turn", result: { status: "completed", text: "完了" } })]);
+    expect(withStartingTurns(done, [{ id: "codex", status: "idle" }], AT)).toEqual(done);
+    const steer = [{ kind: "human" as const, id: "steer", agent: "codex" as const, text: "修正", at: AT, steer: true }];
+    expect(withStartingTurns(steer, [{ id: "codex", status: "busy" }], AT)).toEqual(steer);
+  });
+});
 
 describe("applyFeedItem", () => {
   it("reset でログを空にする", () => {

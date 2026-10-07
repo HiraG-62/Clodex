@@ -1,3 +1,4 @@
+import type { PendingSettings, resolvePendingSettings as ResolvePendingSettings, isNavigationCommand as IsNavigationCommand, nextCommandStart as NextCommandStart } from "./pending.js";
 // Web UI の画面の振る舞い（DESIGN.md §17 Web UI）。
 // ブラウザ側にそのまま埋め込むため、外部のものを参照しない 1 つの関数として書く（型の import のみ）。
 // 純関数（renderMarkdown 等）とコマンドの一覧は引数で受け取る
@@ -6,7 +7,7 @@ import type { AgentState } from "../../cli/shell.js";
 import type { isShellInput as IsShellInput } from "./shell-input.js";
 import type { FeedItem, HistoryItem, HistoryPage, WebState } from "../web-feed.js";
 import type { renderMarkdown as RenderMarkdown } from "./markdown.js";
-import type { TimelineItem, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline } from "./timeline.js";
+import type { TimelineItem, DisplayTimelineItem, withStartingTurns as WithStartingTurns, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline } from "./timeline.js";
 import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
 import type { SlashCommand } from "../../cli/commands.js";
 import type { Suggestion, createInputAssist as CreateInputAssist } from "./input-assist.js";
@@ -16,6 +17,10 @@ import type { chooseProjectPath as ChooseProjectPath } from "./project-picker.js
 import type { DesktopNotification, DesktopNotifyState, updateDesktopNotify as UpdateDesktopNotify } from "./desktop-notify.js";
 
 export interface ClientDeps {
+  withStartingTurns: typeof WithStartingTurns;
+  resolvePendingSettings: typeof ResolvePendingSettings;
+  isNavigationCommand: typeof IsNavigationCommand;
+  nextCommandStart: typeof NextCommandStart;
   isShellInput: typeof IsShellInput;
   renderMarkdown: typeof RenderMarkdown;
   applyFeedItem: typeof ApplyFeedItem;
@@ -33,7 +38,7 @@ export interface ClientDeps {
 }
 
 export function clientMain({
-  renderMarkdown, applyFeedItem, rebuildTimeline, composeInputLine, createInputAssist, collectArtifacts, findImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
+  withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStart, renderMarkdown, applyFeedItem, rebuildTimeline, composeInputLine, createInputAssist, collectArtifacts, findImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -57,6 +62,8 @@ export function clientMain({
   const HISTORY_THRESHOLD_PX = 200;
   const TOAST_DURATION_MS = 4000;
   const MAX_TOASTS = 3;
+  const RELOAD_DELAY_MS = 350;
+  const TOAST_EXIT_MS = 150;
   const TOKENS_PER_K = 1000;
   const MS_PER_SECOND = 1000;
   const SECONDS_PER_MINUTE = 60;
@@ -120,19 +127,20 @@ export function clientMain({
   let historyLoading = false;
   let historyGeneration = 0;
   const questionDrafts = new Map<string, { selected: Set<number>[]; other: string[] }>();
-  const resetHistory = () => {
-    questionDrafts.clear();
-    history = [];
-    items = [];
-    historyHasMore = true;
-    historyLoading = false;
-    historyGeneration++;
-  };
   let state: WebState | undefined;
+  let pendingSettings: PendingSettings = {};
+  const pendingRequests = new Set<string>();
+  const interrupting = new Set<AgentId>();
+  let uploading = 0;
+  let commandStart: string | undefined;
+  let replaying = true;
+  let incomingHistory: HistoryItem[] = [];
+  let replayScheduled = false;
+  let liveGeneration = 0;
   let detail = storage.get(DETAIL_KEY) === "1";
   let target: AgentId | undefined; // undefined なら primary に送る
   const opened = new Map<string, boolean>(); // 人が開閉した details の状態（項目 ID ごと）
-  const rendered = new Map<string, { item: TimelineItem; node: HTMLElement }>();
+  const rendered = new Map<string, { item: DisplayTimelineItem; node: HTMLElement }>();
   const controlUpdaters = new WeakMap<HTMLElement, (agent: AgentState) => void>();
 
   const log = $("#log");
@@ -141,18 +149,67 @@ export function clientMain({
 
   // ---- 送信 ----
   // 送れたら true。失敗したら理由をトーストで出す
-  const send = async (line: string): Promise<boolean> => {
-    try {
-      const response = await fetch("/api/input", {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ line }),
-      });
-      if (response.ok) return true;
-      showToast(t("web.send.failedStatus", { status: response.status }));
-    } catch {
-      showToast(t("web.send.failed"));
-    }
-    return false;
+  const setPending = (button: HTMLButtonElement, pending: boolean) => {
+    if (pending && !button.classList.contains("is-loading")) button.dataset.wasDisabled = String(button.disabled);
+    if (!pending && button.classList.contains("is-loading")) button.disabled = button.dataset.wasDisabled === "true";
+    if (pending) button.disabled = true;
+    button.classList.toggle("is-loading", pending);
+    button.setAttribute("aria-busy", String(pending));
   };
+  const syncPendingButtons = () => {
+    for (const button of document.querySelectorAll<HTMLButtonElement>("button[data-command]")) {
+      const line = button.dataset.command ?? "";
+      const agent = line.split(" ")[1] as AgentId;
+      setPending(button, pendingRequests.has(line) || (line.startsWith("/interrupt ") && interrupting.has(agent)));
+    }
+    $(".app").classList.toggle("navigation-pending", [...pendingRequests].some(isNavigationCommand));
+  };
+  const withPending = async <T>(button: HTMLButtonElement | undefined, operation: () => Promise<T>): Promise<T> => {
+    if (button) setPending(button, true);
+    try { return await operation(); }
+    finally { if (button) setPending(button, false); }
+  };
+  const send = async (line: string, button?: HTMLButtonElement): Promise<boolean> => {
+    if (pendingRequests.has(line)) return false;
+    pendingRequests.add(line);
+    if (button) button.dataset.command = line;
+    const stoppedAgent = line.startsWith("/interrupt ") ? line.split(" ")[1] as AgentId : undefined;
+    if (stoppedAgent) interrupting.add(stoppedAgent);
+    syncPendingButtons();
+    try {
+      return await withPending(button, async () => {
+        try {
+          const response = await fetch("/api/input", {
+            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ line }),
+          });
+          if (response.ok) return true;
+          showToast(t("web.send.failedStatus", { status: response.status }));
+        } catch { showToast(t("web.send.failed")); }
+        if (stoppedAgent) interrupting.delete(stoppedAgent);
+        return false;
+      });
+    } finally {
+      pendingRequests.delete(line);
+      syncPendingButtons();
+    }
+  };
+  const requestSetting = async (id: AgentId, key: "model" | "effort" | "permission", value: string, button?: HTMLButtonElement) => {
+    if (pendingSettings[id]?.[key] !== undefined) return;
+    const generation = liveGeneration;
+    pendingSettings[id] = { ...pendingSettings[id], [key]: value };
+    renderState();
+    const sent = await send(`/${key} ${id} ${value}`, button);
+    if (generation !== liveGeneration) return;
+    if (!sent) {
+      delete pendingSettings[id]?.[key];
+      renderState();
+    }
+    refreshOpenSheet();
+  };
+  const displayedAgent = (agent: AgentState): AgentState => ({
+    ...agent, ...pendingSettings[agent.id],
+    ...(pendingSettings[agent.id]?.model ? { modelLabel: pendingSettings[agent.id]!.model } : {}),
+  });
 
   // ---- テーマ ----
   const applyTheme = (theme: Theme) => {
@@ -169,7 +226,7 @@ export function clientMain({
     toast.append(icon(level === "warn" ? "alert" : "check-circle"), el("span", "", text), icon("x"));
     toast.setAttribute("aria-label", `${text} · ${t("web.sheet.close")}`);
     toast.title = t("web.sheet.close");
-    const dismiss = () => { toast.classList.add("leaving"); window.setTimeout(() => toast.remove(), 150); };
+    const dismiss = () => { toast.classList.add("leaving"); window.setTimeout(() => toast.remove(), TOAST_EXIT_MS); };
     container.append(toast);
     const timer = window.setTimeout(dismiss, TOAST_DURATION_MS);
     toast.addEventListener("click", () => { window.clearTimeout(timer); dismiss(); });
@@ -368,7 +425,7 @@ export function clientMain({
     submit.addEventListener("click", async () => {
       submitting = true;
       refreshSubmit();
-      await send(`/answer ${item.id} ${JSON.stringify(answers())}`);
+      await send(`/answer ${item.id} ${JSON.stringify(answers())}`, submit);
       submitting = false;
       refreshSubmit();
     });
@@ -377,8 +434,18 @@ export function clientMain({
     return node;
   };
 
-  const renderItem = (item: TimelineItem): HTMLElement => {
+  const renderItem = (item: DisplayTimelineItem): HTMLElement => {
     switch (item.kind) {
+      case "starting": {
+        const node = el("article", "entry starting-turn");
+        node.append(mark(item.agent));
+        const head = el("div", "head");
+        head.append(el("b", `c-${item.agent}`, AGENTS[item.agent].name));
+        const body = el("div", "body");
+        body.append(el("span", "spin"), el("span", "", t("web.turn.starting")));
+        node.append(head, body);
+        return node;
+      }
       case "human": {
         const node = el("article", "entry you");
         const head = el("div", "head");
@@ -456,7 +523,8 @@ export function clientMain({
   // 変わった項目だけ描き直す（開閉やスクロール位置を保つ）
   const renderLog = (force = false) => {
     const stick = nearBottom();
-    const keep = new Set(items.map((i) => i.id));
+    const visibleItems = withStartingTurns(items, state?.agents ?? [], new Date().toISOString());
+    const keep = new Set(visibleItems.map((i) => i.id));
     for (const [id, entry] of rendered) {
       if (!keep.has(id)) {
         entry.node.remove();
@@ -464,7 +532,7 @@ export function clientMain({
       }
     }
     let previous: HTMLElement | undefined;
-    for (const item of items) {
+    for (const item of visibleItems) {
       const current = rendered.get(item.id);
       let node = current?.node;
       if (!current || current.item !== item || force) {
@@ -478,7 +546,19 @@ export function clientMain({
       }
       previous = node;
     }
-    $("#empty").hidden = items.length > 0;
+    $("#empty").hidden = !state || visibleItems.length > 0;
+    $("#log-skeleton").hidden = Boolean(state);
+    const older = $("#history-loading");
+    older.hidden = !historyLoading;
+    log.prepend(older);
+    log.querySelector(".output-clock")?.remove();
+    if (commandStart) {
+      const clockRow = el("div", "output-clock");
+      const elapsed = el("span", "elapsed", elapsedText(commandStart));
+      elapsed.dataset.start = commandStart;
+      clockRow.append(el("span", "spin"), el("span", "", t("web.command.running")), elapsed);
+      [...log.querySelectorAll(".output")].at(-1)?.before(clockRow);
+    }
     if (stick) scrollToBottom(); else newer.hidden = false;
     renderWorking();
   };
@@ -571,7 +651,8 @@ export function clientMain({
     const modelChip = chip(agent.modelLabel ?? agent.model ?? "default");
     const effortChip = chip(agent.effort ?? "default");
     const permissionChip = chip(agent.permission);
-    const updateChips = (current: AgentState) => {
+    const updateChips = (incoming: AgentState) => {
+      const current = displayedAgent(incoming);
       modelChip.textContent = current.modelLabel ?? current.model ?? "default";
       effortChip.textContent = current.effort ?? "default";
       permissionChip.replaceChildren(icon(current.permission === "full" ? "shield-alert" : "shield"), document.createTextNode(current.permission === "full" ? "" : current.permission));
@@ -582,6 +663,11 @@ export function clientMain({
         button.setAttribute("aria-label", button.title);
       }
       permissionChip.classList.toggle("warning", current.permission === "full");
+      const pending = pendingSettings[agent.id];
+      for (const [button, key] of [[modelChip, "model"], [effortChip, "effort"], [permissionChip, "permission"]] as const) {
+        button.classList.toggle("pending", pending?.[key] !== undefined);
+        if (pending?.[key] !== undefined) button.title += ` · ${t("web.setting.pending")}`;
+      }
     };
     updateChips(agent);
     const gauges = gaugeValues(agent.usage).map((g) => gauge(g.label, g.value, g.percent, agent.id, g.over, g.tick));
@@ -597,8 +683,10 @@ export function clientMain({
       links.append(button);
       return button;
     };
-    const interrupt = action("square", t("web.agent.interrupt"), () => void send(`/interrupt ${agent.id}`), "danger", agent.status !== "busy");
-    const compact = action("fold", t("web.agent.compact"), () => void send(`/compact ${agent.id}`), "", agent.status === "stopped");
+    const interrupt = action("square", t("web.agent.interrupt"), () => void send(`/interrupt ${agent.id}`, interrupt), "danger", agent.status !== "busy");
+    const compact = action("fold", t("web.agent.compact"), () => void send(`/compact ${agent.id}`, compact), "", agent.status === "stopped");
+    interrupt.dataset.command = `/interrupt ${agent.id}`;
+    compact.dataset.command = `/compact ${agent.id}`;
     links.append(roleButton(agent.id));
     wrap.append(links);
     controlUpdaters.set(wrap, (current) => {
@@ -686,6 +774,7 @@ export function clientMain({
     }
     renderPending();
     refreshOpenSheet();
+    syncPendingButtons();
   };
 
   // ---- 送信待ちの入力（取り消し・編集。DESIGN.md §28 v0.3 A） ----
@@ -696,16 +785,17 @@ export function clientMain({
     list.replaceChildren(...pending.map((queued) => {
       const original = queued.text.split(REFERENCES_SEPARATOR)[0] ?? queued.text;
       const row = el("li");
-      const action = (label: string, run: () => void) => {
+      const action = (label: string, run: (button: HTMLButtonElement) => void) => {
         const button = el("button", "", label) as HTMLButtonElement;
         button.type = "button";
-        button.addEventListener("click", run);
+        button.addEventListener("click", () => run(button));
+        button.dataset.command = `/cancel ${queued.id}`;
         return button;
       };
       row.append(
         el("span", "who", t("web.pending.to", { agent: AGENTS[queued.agent].name })),
         el("span", "text", original),
-        action(t("web.pending.edit"), () => void send(`/cancel ${queued.id}`).then((sent) => {
+        action(t("web.pending.edit"), (button) => void send(`/cancel ${queued.id}`, button).then((sent) => {
           if (!sent) return;
           target = queued.agent;
           input.value = original;
@@ -713,7 +803,7 @@ export function clientMain({
           onInputChanged();
           renderState();
         })),
-        action(t("web.pending.cancel"), () => void send(`/cancel ${queued.id}`)),
+        action(t("web.pending.cancel"), (button) => void send(`/cancel ${queued.id}`, button)),
       );
       return row;
     }));
@@ -730,9 +820,9 @@ export function clientMain({
       const meta = `${conversation.pinned ? t("web.conv.pinned") : ""}${activity}${shortDate(conversation.updatedAt)} · ${Object.keys(conversation.sessions).join(", ") || "—"}${branch}${conversation.current ? t("web.conv.current") : ""}`;
       button.append(el("span", "t", conversation.title ?? t("web.conv.untitled")), el("span", "m mono", meta));
       button.disabled = conversation.current;
+      button.dataset.command = `/resume ${index + 1}`;
       button.addEventListener("click", () => {
-        void send(`/resume ${index + 1}`);
-        closeSheet();
+        void send(`/resume ${index + 1}`, button).then((ok) => { if (ok) closeSheet(); });
       });
       const menu = iconButton("ellipsis", t("web.conv.menu"), "conv-menu");
       menu.type = "button";
@@ -775,15 +865,14 @@ export function clientMain({
     const fresh = el("button", "primary-action", t("web.conv.startNew")) as HTMLButtonElement;
     fresh.type = "button";
     fresh.addEventListener("click", () => {
-      void send("/new");
-      closeSheet();
+      void send("/new", fresh).then((ok) => { if (ok) closeSheet(); });
     });
     openSheet(t("web.conv.title"), [fresh, ...conversationList()]);
   };
-  const sheetButton = (label: string, cls: string, run: () => void) => {
+  const sheetButton = (label: string, cls: string, run: (button: HTMLButtonElement) => void) => {
     const button = el("button", cls, label) as HTMLButtonElement;
     button.type = "button";
-    button.addEventListener("click", run);
+    button.addEventListener("click", () => run(button));
     return button;
   };
   // ---- 成果物（DESIGN.md §28 v0.3 B） ----
@@ -851,20 +940,17 @@ export function clientMain({
     const title = conversation.title ?? t("web.conv.untitled");
     const actions: HTMLElement[] = [];
     if (conversation.current) {
-      actions.push(sheetButton(t("web.conv.rename"), "secondary-action", () => {
+      actions.push(sheetButton(t("web.conv.rename"), "secondary-action", (button) => {
         const name = window.prompt(t("web.conv.renamePrompt"), conversation.title ?? "")?.trim();
-        if (name) void send(`/rename ${name}`);
-        closeSheet();
+        if (name) void send(`/rename ${name}`, button).then((ok) => { if (ok) closeSheet(); });
       }));
     }
-    actions.push(sheetButton(t(conversation.pinned ? "web.conv.unpin" : "web.conv.pin"), "secondary-action", () => {
-      void send(`/pin ${number}`);
-      closeSheet();
+    actions.push(sheetButton(t(conversation.pinned ? "web.conv.unpin" : "web.conv.pin"), "secondary-action", (button) => {
+      void send(`/pin ${number}`, button).then((ok) => { if (ok) closeSheet(); });
     }));
     if (!conversation.current) {
-      actions.push(sheetButton(t("web.conv.delete"), "secondary-action danger", () => {
-        if (window.confirm(t("web.conv.deleteConfirm", { title }))) void send(`/delete ${number}`);
-        closeSheet();
+      actions.push(sheetButton(t("web.conv.delete"), "secondary-action danger", (button) => {
+        if (window.confirm(t("web.conv.deleteConfirm", { title }))) void send(`/delete ${number}`, button).then((ok) => { if (ok) closeSheet(); });
       }));
     }
     openSheet(title, actions);
@@ -872,8 +958,9 @@ export function clientMain({
 
   // Agent の設定: 役割・権限・model・effort と、この Agent だけの session のやり直し
   const openAgentSettings = (id: AgentId) => {
-    const agent = state?.agents.find((a) => a.id === id);
-    if (!agent) return;
+    const incoming = state?.agents.find((a) => a.id === id);
+    if (!incoming) return;
+    const agent = displayedAgent(incoming);
     sheetAgent = id;
     sheetKind = "agentSettings";
     const roleField = el("textarea", "role-editor") as HTMLTextAreaElement;
@@ -882,9 +969,9 @@ export function clientMain({
     const saveRole = sheetButton(t("web.role.save"), "primary-action", () => {
       const value = roleField.value.replace(/\s+/g, " ").trim();
       if (!value) return;
-      void send(`/role ${id} ${value}`).then((ok) => { if (ok) closeSheet(); });
+      void send(`/role ${id} ${value}`, saveRole).then((ok) => { if (ok) closeSheet(); });
     });
-    const permission = choice("permission", t("web.agentSettings.permission"), PERMISSIONS, agent.permission, (v) => v, (v) => void send(`/permission ${id} ${v}`));
+    const permission = choice("permission", t("web.agentSettings.permission"), PERMISSIONS, agent.permission, (v) => v, (v) => void requestSetting(id, "permission", v));
     const model = el("div", "setting");
     model.append(el("div", "eyebrow", t("web.agentSettings.model")));
     const form = el("form", "model-form") as HTMLFormElement;
@@ -917,21 +1004,20 @@ export function clientMain({
       e.preventDefault();
       const value = select.value === "__other__" ? field.value.trim() : select.value;
       if (!value) return;
-      void send(`/model ${id} ${value}`);
-      field.value = "";
+      void requestSetting(id, "model", value, apply);
     });
     form.append(select, field, apply);
     model.append(form);
-    const effort = choice("effort", t("web.agentSettings.effort"), EFFORTS[id], agent.effort ?? "", (v) => v, (v) => void send(`/effort ${id} ${v}`));
+    const effort = choice("effort", t("web.agentSettings.effort"), EFFORTS[id], agent.effort ?? "", (v) => v, (v) => void requestSetting(id, "effort", v));
     const restart = sheetButton(t("web.agentSettings.restart"), "secondary-action", () => {
-      void send(`/new ${id}`);
-      closeSheet();
+      void send(`/new ${id}`, restart).then((ok) => { if (ok) closeSheet(); });
     });
     openSheet(t("web.agentSettings.title", { agent: AGENTS[id].name }), [
       el("div", "eyebrow", t("web.role.title", { agent: AGENTS[id].name })),
       roleField, saveRole, el("p", "muted small", t("web.role.restart", { agent: id })),
-      permission, model, effort, restart,
+      permission, model, effort, el("div", "setting-pending"), restart,
     ]);
+    refreshOpenSheet();
   };
 
   const choice = <T extends string>(key: string, label: string, options: readonly T[], current: T, name: (v: T) => string, pick: (v: T) => void) => {
@@ -982,12 +1068,18 @@ export function clientMain({
       if (agent && controls) controlUpdaters.get(controls)?.(agent);
     }
     if (sheetKind === "agentSettings" && sheetAgent) {
-      const agent = state?.agents.find((candidate) => candidate.id === sheetAgent);
-      if (!agent) return;
+      const incoming = state?.agents.find((candidate) => candidate.id === sheetAgent);
+      if (!incoming) return;
+      const agent = displayedAgent(incoming);
+      const waiting = pendingSettings[sheetAgent];
       const body = $("#sheet-body");
       const press = (key: string, value: string | undefined) => {
         for (const button of body.querySelectorAll<HTMLButtonElement>(`[data-choice="${key}"] button`)) {
           button.setAttribute("aria-pressed", String(button.dataset.value === value));
+          const pending = waiting?.[key as "permission" | "effort"] !== undefined;
+          button.disabled = pending;
+          setPending(button, pending && button.dataset.value === value);
+          if (!pending) button.disabled = false;
         }
       };
       press("permission", agent.permission);
@@ -1016,6 +1108,15 @@ export function clientMain({
         }
       }
       if (field) field.placeholder = agent.modelLabel ?? agent.model ?? "default";
+      const apply = body.querySelector<HTMLButtonElement>(".model-form button");
+      if (apply) { setPending(apply, waiting?.model !== undefined); apply.disabled = waiting?.model !== undefined; }
+      if (select) select.disabled = waiting?.model !== undefined;
+      if (field) field.disabled = waiting?.model !== undefined;
+      const pendingLabel = body.querySelector<HTMLElement>(".setting-pending");
+      if (pendingLabel) {
+        pendingLabel.hidden = !waiting || !Object.keys(waiting).length;
+        pendingLabel.replaceChildren(el("span", "spin"), el("span", "", t("web.setting.pending")));
+      }
     }
     if (sheetKind === "settings") {
       const selected = target ?? state?.primary;
@@ -1031,21 +1132,29 @@ export function clientMain({
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !sheet.hidden) closeSheet(); });
   $("#open-conversations").addEventListener("click", openConversations);
   $("#open-settings").addEventListener("click", openSettings);
-  $("#new-conversation").addEventListener("click", () => void send("/new"));
+  $("#new-conversation").addEventListener("click", () => void send("/new", $("#new-conversation")));
   $("#open-artifacts").addEventListener("click", openArtifacts);
   $("#projects").addEventListener("change", (event) => {
     const value = (event.currentTarget as HTMLSelectElement).value;
-    if (value) void send(`/project ${value}`).then((ok) => { if (!ok) renderState(); });
+    if (!value) return;
+    const select = event.currentTarget as HTMLSelectElement;
+    select.disabled = true;
+    $("#project-pill").classList.add("is-loading");
+    void send(`/project ${value}`).then((ok) => { if (!ok) renderState(); }).finally(() => {
+      select.disabled = false;
+      $("#project-pill").classList.remove("is-loading");
+    });
   });
-  $("#open-project").addEventListener("click", () => void (async () => {
+  $("#open-project").addEventListener("click", () => void withPending($("#open-project"), async () => {
     const tauri = (window as Window & { __TAURI__?: { dialog?: { open(options: { directory: boolean; multiple: boolean }): Promise<string | null> } } }).__TAURI__;
     const dialog = tauri?.dialog;
     const path = await chooseProjectPath(
       dialog ? () => dialog.open({ directory: true, multiple: false }) : undefined,
       () => window.prompt(t("web.top.projectPrompt")),
     );
-    if (path) void send(`/project ${path}`);
-  })());
+    if (path) await send(`/project ${path}`);
+    return undefined;
+  }));
 
   // ---- 詳細表示 ----
   const detailButton = $("#detail");
@@ -1073,11 +1182,10 @@ export function clientMain({
   const sendButton = $("#composer .send") as HTMLButtonElement;
   const submit = async () => {
     const text = input.value.trim();
-    if (!text || sendButton.disabled) return;
+    if (!text || sendButton.disabled || uploading > 0) return;
     const to = target ?? state?.primary;
-    sendButton.disabled = true;
-    const sent = await send(composeInputLine(text, to));
-    sendButton.disabled = false;
+    const sent = await send(composeInputLine(text, to), sendButton);
+    sendButton.disabled = uploading > 0;
     if (!sent) return;
     if (input.value.trim() === text) input.value = "";
     onInputChanged();
@@ -1098,6 +1206,8 @@ export function clientMain({
   let files: string[] = [];
   let fileSet = new Set<string>();
   let filesLoadedAt = 0;
+  let filesLoading = false;
+  let filesGeneration = 0;
   let suggestion: Suggestion | undefined;
   let selected = 0;
 
@@ -1126,6 +1236,16 @@ export function clientMain({
     onInputChanged();
   };
   const renderSuggest = () => {
+    if (filesLoading && /(?:^|\s)@[^\s]*$/.test(input.value.slice(0, input.selectionStart))) {
+      const row = el("li", "muted", t("web.files.loading"));
+      row.prepend(el("span", "spin"));
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-disabled", "true");
+      suggestList.replaceChildren(row);
+      suggestList.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+      return;
+    }
     if (!suggestion) return closeSuggest();
     suggestList.replaceChildren(...suggestion.items.map((item, index) => {
       const option = el("li");
@@ -1148,15 +1268,26 @@ export function clientMain({
     renderSuggest();
   };
   const loadFiles = async () => {
-    if (Date.now() - filesLoadedAt < FILES_REFRESH_MS) return;
-    filesLoadedAt = Date.now();
+    if (filesLoading || Date.now() - filesLoadedAt < FILES_REFRESH_MS) return;
+    const generation = filesGeneration;
+    filesLoading = true;
+    updateSuggest();
     try {
       const response = await fetch("/api/files");
-      if (!response.ok) return;
-      files = (await response.json()) as string[];
+      if (!response.ok || generation !== filesGeneration) return;
+      const loaded = await response.json() as string[];
+      if (generation !== filesGeneration) return;
+      files = loaded;
       fileSet = new Set(files);
+      filesLoadedAt = Date.now();
       renderHighlight();
     } catch { /* 候補が出ないだけで入力はできる */ }
+    finally {
+      if (generation === filesGeneration) {
+        filesLoading = false;
+        if (document.activeElement === input) updateSuggest();
+      }
+    }
   };
   function onInputChanged() {
     const shell = isShellInput(input.value);
@@ -1169,6 +1300,7 @@ export function clientMain({
     resize();
     renderHighlight();
     updateSuggest();
+    if (/(?:^|\s)@/.test(input.value)) void loadFiles();
   }
 
   // ---- 画像の添付（DESIGN.md §28 v0.3 C）: 保存してから @<パス> を入力欄に足す ----
@@ -1182,13 +1314,21 @@ export function clientMain({
     onInputChanged();
   };
   const attach = async (file: Blob) => {
+    const generation = liveGeneration;
+    uploading++;
+    $("#upload-status").hidden = false;
+    sendButton.disabled = true;
     try {
       const response = await fetch("/api/upload", { method: "POST", headers: { "content-type": file.type }, body: file });
       if (!response.ok) return showToast(t("web.upload.failed"));
       const { path } = (await response.json()) as { path: string };
-      insertAtCaret(`@${path} `);
+      if (generation === liveGeneration) insertAtCaret(`@${path} `);
     } catch {
       showToast(t("web.upload.failed"));
+    } finally {
+      uploading--;
+      $("#upload-status").hidden = uploading === 0;
+      sendButton.disabled = uploading > 0 || sendButton.classList.contains("is-loading");
     }
   };
   const fileInput = document.querySelector<HTMLInputElement>("#attach-file")!;
@@ -1251,9 +1391,10 @@ export function clientMain({
   }, MS_PER_SECOND);
   const loadHistory = async () => {
     const oldest = history[0];
-    if (!oldest || historyLoading || !historyHasMore) return;
+    if (!oldest || historyLoading || !historyHasMore || replaying) return;
     const generation = historyGeneration;
     historyLoading = true;
+    $("#history-loading").hidden = false;
     try {
       const response = await fetch(`/api/history?before=${oldest.seq}`);
       if (!response.ok) throw new Error(String(response.status));
@@ -1264,6 +1405,7 @@ export function clientMain({
       const previousTop = log.scrollTop;
       const wasNewerHidden = newer.hidden;
       history = [...page.items, ...history];
+      historyLoading = false;
       items = rebuildTimeline(history, applyFeedItem);
       renderLog();
       log.scrollTop = previousTop + log.scrollHeight - previousHeight;
@@ -1271,7 +1413,7 @@ export function clientMain({
     } catch {
       if (generation === historyGeneration) showToast(t("web.history.failed"), "warn");
     } finally {
-      if (generation === historyGeneration) historyLoading = false;
+      if (generation === historyGeneration) { historyLoading = false; $("#history-loading").hidden = true; }
     }
   };
   log.addEventListener("scroll", () => {
@@ -1296,50 +1438,102 @@ export function clientMain({
     } catch { /* 通知の失敗で feed の描画を止めない */ }
   };
   const conn = $("#conn");
+  const commitReplay = () => {
+    if (!replaying) return;
+    history = incomingHistory;
+    incomingHistory = [];
+    items = rebuildTimeline(history, applyFeedItem);
+    historyGeneration++;
+    historyLoading = false;
+    historyHasMore = true;
+    commandStart = undefined;
+    replaying = false;
+  };
+  const scheduleLog = () => {
+    if (replayScheduled) return;
+    replayScheduled = true;
+    requestAnimationFrame(() => { replayScheduled = false; if (!replaying) renderLog(); });
+  };
+  $("#reload").addEventListener("click", () => location.reload());
   const connect = () => {
     const events = new EventSource("/events");
     events.onopen = () => {
       notificationState = { live: false, working: false };
-      // 接続（再接続を含む）のたびに履歴が送り直されるので作り直す
-      resetHistory();
-      opened.clear();
-      conn.hidden = true;
-      renderLog();
+      replaying = true;
+      historyGeneration++;
+      historyLoading = false;
+      $("#history-loading").hidden = true;
+      incomingHistory = [];
     };
     events.onmessage = (e: MessageEvent<string>) => {
       const item = JSON.parse(e.data) as FeedItem;
       const update = updateDesktopNotify(notificationState, item, messages);
       notificationState = update.state;
       if (update.notification) void notify(update.notification);
-      // Clodex が更新されて起動し直したら、古い画面のまま使わない
       if (item.type === "version") {
-        resetHistory();
-        opened.clear();
-        renderLog();
-        if (item.version !== version) location.reload();
+        if (item.version !== version) {
+          conn.hidden = false;
+          $("#conn-label").textContent = t("web.conn.updated");
+          $(".app").classList.add("navigation-pending");
+          window.setTimeout(() => location.reload(), RELOAD_DELAY_MS);
+        }
         return;
       }
       if (item.type === "state") {
-        if (state?.project !== item.state.project) {
-          target = undefined;
-          pendingPrimary = undefined;
+        const projectChanged = state?.project !== item.state.project;
+        const conversationChanged = state?.conversations.find((entry) => entry.current)?.id !== item.state.conversations.find((entry) => entry.current)?.id;
+        if (projectChanged || conversationChanged) {
+          liveGeneration++;
+          pendingSettings = {};
+          interrupting.clear();
+          if (projectChanged) {
+            files = []; fileSet.clear(); filesLoadedAt = 0; filesLoading = false; filesGeneration++;
+            target = undefined; pendingPrimary = undefined;
+          }
           closeSheet();
         }
+        commitReplay();
         state = item.state;
+        pendingSettings = resolvePendingSettings(pendingSettings, state.agents);
+        for (const agent of state.agents) if (agent.status !== "busy") interrupting.delete(agent.id);
         if (pendingPrimary && state.primary === pendingPrimary) {
           if (target === pendingPrimary) target = undefined;
           pendingPrimary = undefined;
         }
+        $(".app").classList.remove("initial-loading");
+        $(".app").setAttribute("aria-busy", "false");
+        conn.hidden = true;
+        $("#reload").hidden = true;
+        $("#conn-spinner").hidden = false;
         renderState();
+        renderLog();
+        if (projectChanged && document.activeElement === input) void loadFiles();
         return;
       }
       if (item.type === "toast") { showToast(item.text, item.level); return; }
-      if (item.type === "reset") { resetHistory(); opened.clear(); }
-      else history.push(item);
+      if (item.type === "reset") {
+        incomingHistory = [];
+        historyGeneration++;
+        historyLoading = false;
+        $("#history-loading").hidden = true;
+        replaying = true;
+        questionDrafts.clear();
+        opened.clear();
+        return;
+      }
+      if (replaying) { incomingHistory.push(item); return; }
+      history.push(item);
+      if (item.type === "output") commandStart = nextCommandStart(commandStart, item.text, new Date().toISOString());
       items = applyFeedItem(items, item);
-      renderLog();
+      scheduleLog();
     };
-    events.onerror = () => { conn.hidden = false; };
+    events.onerror = () => {
+      conn.hidden = false;
+      const closed = events.readyState === EventSource.CLOSED;
+      $("#conn-label").textContent = closed ? t("web.conn.closed") : t("web.conn.lost");
+      $("#reload").hidden = !closed;
+      $("#conn-spinner").hidden = closed;
+    };
   };
   connect();
 }

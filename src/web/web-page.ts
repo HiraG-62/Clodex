@@ -1,3 +1,4 @@
+import { resolvePendingSettings, isNavigationCommand, nextCommandStart } from "./client/pending.js";
 import { UI_ICONS } from "./web-icons.js";
 // Web UI の画面（DESIGN.md §17 Web UI）。HTML 1 枚に CSS と JS を inline で持つ。
 // 画面の振る舞いは src/web/client/ に型付きで書き、関数のソースをそのまま埋め込む
@@ -13,7 +14,7 @@ import { clientMain } from "./client/client-main.js";
 import { createInputAssist } from "./client/input-assist.js";
 import { collectArtifacts, displayPath, findImagePaths } from "./client/artifacts.js";
 import { renderMarkdown } from "./client/markdown.js";
-import { applyFeedItem, rebuildTimeline } from "./client/timeline.js";
+import { applyFeedItem, rebuildTimeline, withStartingTurns } from "./client/timeline.js";
 import { composeInputLine } from "./client/compose-input.js";
 import { isShellInput } from "./client/shell-input.js";
 import { chooseProjectPath } from "./client/project-picker.js";
@@ -428,6 +429,32 @@ const STYLE = `
   @media (min-width: 900px) and (max-width: 1199px) { .agent-strip .agent { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title actions" "chips actions" "gauges gauges"; } .agent-strip .mini-gauges { grid-template-columns: repeat(3,minmax(0,1fr)); } .agent-strip .gauge { grid-template-columns: 1fr auto; } .agent-strip .gauge .track { grid-column: 1 / -1; grid-row: 2; } .agent-strip .gauge .v { grid-column: 2; } }
   @keyframes tooltip-in { from { opacity: 0; } to { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+  .topbar { position: relative; }
+  .progress { display: none; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; z-index: 5; }
+  .progress::before { content: ""; position: absolute; width: 40%; height: 100%; background: var(--accent); animation: progress 1.1s ease-in-out infinite; }
+  .initial-loading .progress, .navigation-pending .progress { display: block; }
+  .spin { display: inline-block; width: 13px; height: 13px; border: 1.75px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; flex: none; }
+  .conn { display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--sunken); color: var(--fg-2); }
+  .btn { border: 0; border-radius: var(--r); padding: 7px 12px; background: var(--panel); color: var(--fg); box-shadow: var(--ring); }
+  .history-loading, .upload-status { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); padding: 8px; }
+  .upload-status { border-radius: var(--r); background: var(--sunken); margin-bottom: 6px; width: fit-content; }
+  .log-skeleton { display: grid; gap: 24px; padding: 20px 0; }
+  .sk-row { display: flex; gap: 12px; min-height: 64px; }
+  .sk { display: block; height: 10px; border-radius: var(--r-inner); background: linear-gradient(90deg,var(--sunken) 20%,var(--line) 45%,var(--sunken) 70%); background-size: 220% 100%; animation: shimmer 1.5s infinite; }
+  .sk-avatar { width: 22px; height: 22px; flex: none; }
+  .sk-lines { display: grid; gap: 8px; flex: 1; align-content: start; }
+  .sk-lines .sk:first-child { width: 120px; }
+  .sk-lines .sk:last-child { width: 64%; }
+  .sk-row:nth-child(2) { width: 80%; }
+  .initial-loading #agents::before, .initial-loading #agents::after, .initial-loading #conversations::before { content: ""; display: block; height: 70px; border-radius: var(--r); background: linear-gradient(90deg,var(--sunken),var(--line),var(--sunken)); background-size: 220% 100%; animation: shimmer 1.5s infinite; }
+  .initial-loading #conversations::before { height: 180px; mask-image: repeating-linear-gradient(to bottom,#000 0 15px,transparent 15px 35px); }
+  .setting-pending { color: var(--muted); font-size: 11px; display: flex; gap: 6px; align-items: center; margin: 6px 0; }
+  .setting-chip.pending { box-shadow: var(--ring-strong); }
+  .starting-turn .body { display: flex; gap: 8px; align-items: center; color: var(--muted); }
+  .output-clock { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; }
+  @keyframes progress { from { transform: translateX(-100%); } to { transform: translateX(350%); } }
+  @keyframes shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
 `;
 
 const escapeHtml = (text: string) =>
@@ -440,8 +467,9 @@ const body = (messages: Messages) => {
     `<button class="icon-btn ${cls}" type="button" id="${id}" aria-label="${m(key)}" title="${m(key)}" ${extra}>${icon(name)}</button>`;
   return `
 ${UI_ICONS}
-<div class="app">
+<div class="app initial-loading" aria-busy="true">
   <header class="topbar">
+    <div class="progress" aria-hidden="true"></div>
     <span class="brand">Clodex</span>
     <div class="project-pill" id="project-pill">${icon("folder")}<span id="project-name"></span>${icon("chevron-down")}<select id="projects" aria-label="${m("web.top.projects")}"></select></div>
     ${button("open-project", "folder-open", "web.top.openProject")}
@@ -453,7 +481,7 @@ ${UI_ICONS}
       ${button("open-settings", "settings", "web.top.settings")}
     </div>
   </header>
-  <div class="conn" id="conn" hidden role="status">${m("web.conn.lost")}</div>
+  <div class="conn" id="conn" hidden role="status"><span class="spin" id="conn-spinner"></span><span id="conn-label">${m("web.conn.lost")}</span><button class="btn" id="reload" type="button" hidden>${m("web.conn.reload")}</button></div>
   <div class="status" id="status"></div>
   <section class="agent-strip" id="agents" aria-label="Agent"></section>
   <aside class="side">
@@ -464,12 +492,15 @@ ${UI_ICONS}
   </aside>
   <div class="log-wrap">
     <main class="log" id="log" aria-label="${m("web.log.label")}" aria-live="polite">
-      <div class="empty" id="empty"><b>${m("web.empty.title")}</b></div>
+      <div class="history-loading" id="history-loading" hidden role="status"><span class="spin"></span>${m("web.history.loading")}</div>
+      <div class="log-skeleton" id="log-skeleton" aria-hidden="true">${[0, 1, 2, 3].map(() => '<div class="sk-row"><span class="sk sk-avatar"></span><div class="sk-lines"><span class="sk"></span><span class="sk"></span><span class="sk"></span></div></div>').join("")}</div>
+      <div class="empty" id="empty" hidden><b>${m("web.empty.title")}</b></div>
     </main>
     <button class="newer" type="button" id="newer" hidden>${m("web.newer")}</button>
   </div>
   <form class="composer" id="composer">
     <div class="shell-input-label" id="shell-input-label" hidden>${m("web.shellInput")}</div>
+    <div class="upload-status" id="upload-status" role="status" hidden><span class="spin"></span>${m("web.upload.loading")}</div>
     <div class="box">
       <ul class="pending" id="pending" aria-label="${m("web.pending.label")}" hidden></ul>
       <ul class="suggest" id="suggest" role="listbox" aria-label="${m("web.suggest.label")}" hidden></ul>
@@ -515,6 +546,10 @@ const FUNCTIONS = `
   renderMarkdown: ${inlineScript(renderMarkdown.toString())},
   applyFeedItem: ${inlineScript(applyFeedItem.toString())},
   rebuildTimeline: ${inlineScript(rebuildTimeline.toString())},
+  withStartingTurns: ${inlineScript(withStartingTurns.toString())},
+  resolvePendingSettings: ${inlineScript(resolvePendingSettings.toString())},
+  isNavigationCommand: ${inlineScript(isNavigationCommand.toString())},
+  nextCommandStart: ${inlineScript(nextCommandStart.toString())},
   composeInputLine: ${inlineScript(composeInputLine.toString())},
   createInputAssist: ${inlineScript(createInputAssist.toString())},
   collectArtifacts: ${inlineScript(collectArtifacts.toString())},
