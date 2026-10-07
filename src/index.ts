@@ -16,6 +16,7 @@ import { ensureUserConfigTemplate, loadConfig } from "./config/config.js";
 import { detectLanguage } from "./context/language.js";
 import type { CoordinatorEvent } from "./coordinator/event-bus.js";
 import { Hub } from "./hub/hub.js";
+import { installRuntimeErrors } from "./hub/runtime-errors.js";
 import { clearHubLock, isHubAlive, readHubLock, writeHubLock } from "./hub/hub-lock.js";
 import { LIMIT_KEYS, LIMIT_NAMES } from "./coordinator/budget-manager.js";
 import { openProject, type ProjectContext } from "./hub/project-context.js";
@@ -37,10 +38,11 @@ import { connectWebFeed, historyItemOf } from "./web/web-ui.js";
 const PROMPT = "clodex> ";
 const DEFAULT_WEB_PORT = 4319;
 const DEFAULT_PRIMARY: AgentId = "claude";
-const EXIT_FAILURE = 1;
 const FORCE_EXIT_DELAY_MS = 3_000;
 const LOG_SUFFIX_LENGTH = 8;
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+let reportRuntimeError = (_message: string) => {};
+const runtimeErrors = installRuntimeErrors({ home: homedir(), report: message => reportRuntimeError(message) });
 
 const conversationsOf = (context: ProjectContext): ConversationList => ({
   get currentId() { return context.history.currentId; },
@@ -93,6 +95,7 @@ const main = async (): Promise<void> => {
     if (context) context.saveFeedItem(context.history.currentId, item);
   });
   const notify = (text: string, level: "info" | "warn" = "info") => { feed.publishToast(text, level); printTerminal(text); };
+  reportRuntimeError = message => { const text = t("error.generic", { message }); feed.publishOutput(text); printTerminal(text); };
   hub = new Hub({ homeDir, cwd, openProject: async (projectRoot) => {
     let context: ProjectContext;
     context = await openProject({
@@ -275,4 +278,4 @@ const main = async (): Promise<void> => {
   }
 };
 
-main().catch((error: unknown) => { console.error(errorMessage(error)); process.exit(EXIT_FAILURE); });
+main().catch(runtimeErrors.fatal);

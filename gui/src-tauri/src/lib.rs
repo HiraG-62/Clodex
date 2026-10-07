@@ -8,10 +8,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{webview::WebviewWindowBuilder, Manager, WebviewUrl};
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 const START_TIMEOUT: Duration = Duration::from_secs(20);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -158,7 +159,56 @@ fn live_hub(home: &Path) -> Option<HubLock> {
     Some(lock)
 }
 
-fn spawn_hub(resource_dir: &Path) -> Result<Child, Box<dyn Error>> {
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn previous_failure_is_reported_once() {
+        let home = std::env::temp_dir().join(format!("clodex-hub-failure-{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir_all(home.join(".clodex")).unwrap();
+        fs::write(home.join(".clodex/hub-failure.json"), r#"{"message":"fatal","logPath":"hub.log"}"#).unwrap();
+        assert_eq!(take_previous_failure(&home).as_deref(), Some("前回の Hub が異常終了\nfatal\nhub.log"));
+        assert!(take_previous_failure(&home).is_none());
+    }
+
+    #[test]
+    fn hub_stderr_logs_are_separate_and_persistent() {
+        let home = std::env::temp_dir().join(format!("clodex-hub-log-{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        let mut first = open_hub_log(&home).unwrap();
+        first.write_all(b"first error").unwrap();
+        drop(first);
+        let mut second = open_hub_log(&home).unwrap();
+        second.write_all(b"second error").unwrap();
+        drop(second);
+        let logs: Vec<_> = fs::read_dir(home.join(".clodex/logs")).unwrap().map(|entry| entry.unwrap().path()).collect();
+        assert_eq!(logs.len(), 2);
+        let contents: Vec<_> = logs.iter().map(|path| fs::read_to_string(path).unwrap()).collect();
+        assert!(contents.contains(&"first error".to_string()));
+        assert!(contents.contains(&"second error".to_string()));
+    }
+}
+
+fn take_previous_failure(home: &Path) -> Option<String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Failure { message: String, log_path: String }
+    let path = home.join(".clodex/hub-failure.json");
+    let failure: Failure = serde_json::from_str(&fs::read_to_string(&path).ok()?).ok()?;
+    fs::remove_file(path).ok()?;
+    Some(format!("前回の Hub が異常終了\n{}\n{}", failure.message.chars().take(200).collect::<String>(), failure.log_path))
+}
+
+fn open_hub_log(home: &Path) -> std::io::Result<fs::File> {
+    let directory = home.join(".clodex/logs");
+    fs::create_dir_all(&directory)?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    fs::OpenOptions::new().write(true).create_new(true).open(directory.join(format!(
+        "hub-{}-{}.log", now.as_millis(), now.subsec_nanos()
+    )))
+}
+
+fn spawn_hub(home: &Path, resource_dir: &Path) -> Result<Child, Box<dyn Error>> {
     let mut command = if let Some(entry) = std::env::var_os("CLODEX_GUI_ENTRY") {
         let mut command =
             Command::new(std::env::var_os("CLODEX_GUI_NODE").unwrap_or_else(|| "node".into()));
@@ -180,7 +230,7 @@ fn spawn_hub(resource_dir: &Path) -> Result<Child, Box<dyn Error>> {
         .arg("serve")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(Stdio::from(open_hub_log(home)?));
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -197,7 +247,7 @@ fn ensure_hub(
     if let Some(lock) = live_hub(home) {
         return Ok((lock, None));
     }
-    let mut child = spawn_hub(resource_dir)?;
+    let mut child = spawn_hub(home, resource_dir)?;
     let deadline = Instant::now() + START_TIMEOUT;
     while Instant::now() < deadline {
         if let Some(lock) = live_hub(home) {
@@ -229,6 +279,9 @@ pub fn run() {
         })
         .setup(move |app| {
             let home = home_dir()?;
+            if let Some(message) = take_previous_failure(&home) {
+                app.dialog().message(message).title(APP_NAME).kind(MessageDialogKind::Error).show(|_| {});
+            }
             let resource_dir = app.path().resource_dir()?;
             let (lock, child) = ensure_hub(&home, &resource_dir)?;
             let token = fs::read_to_string(home.join(".clodex/web-token"))?;

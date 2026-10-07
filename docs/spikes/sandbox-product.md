@@ -146,3 +146,40 @@ restricted token 内の Windows PowerShell 5.1 で HTTPS に失敗するため�
 - Windows PowerShell 5.1 の `Start-Process -Credential` に `-Wait` を付けると、`Access is denied`（5）で起動に失敗する。`-Wait` は子プロセスを Job object に入れて待つため、別ユーザーのプロセスでは失敗すると見られる。`-Wait` を外して `-PassThru` の `WaitForExit()` で待てば起動できる。ただし、別ユーザーのプロセスの終了コードは取れない（`ExitCode` が空になる）
 - `CreateProcessWithLogonW` を直接呼ぶ場合は、ドメインの指定（`.` か PC 名か）、環境変数のブロック、`lpDesktop` によらず成功した
 - `Start-Process -Credential` で起動したコンソールのプログラムは、新しいウィンドウを作らず、呼び出し元のコンソールに相乗りする。GUI の Hub は見えないコンソールで動くため、ログイン用の PowerShell が画面に出なかった。`cmd.exe /c start "<title>" /wait …` を挟むと別ウィンドウで開く
+## sandbox の再有効化と Hub の診断
+
+`spikes/sandbox-reenable-probe.ts` は `openProject` を使って off → on → off → on を行い、起動と startup probe だけで未処理例外を監視する。終了時に元の sandbox 設定へ戻す。実 CLI のターンは送らない。
+
+2026-10-07 の初回調査では、sandbox 側の `account/read` が未認証を返し、Codex の起動が失敗した。コマンド例外を捕捉して切り替えを続けた実行は未処理例外 0 件。保存済み authenticated=true だけでは、現在の認証成功を保証していない。元の GUI クラッシュとの同一性は未確認。
+
+GUI が起動する Hub の stderr は、人の `~/.clodex/logs/hub-<Unix時刻ミリ秒>-<一意値>.log` に保存する。標準入力と標準出力の扱いは従来どおり。
+
+Hub は unhandledRejection と EPIPE / ECONNRESET / ERR_STREAM_DESTROYED をログへ記録し、error として表示して継続する。その他の uncaughtException と起動の失敗は同期的に stderr と `hub-errors-<時刻>-<pid>.log` に記録して終了コード 1 で終了する。`~/.clodex/hub-failure.json` の異常終了記録を GUI 次回起動時に一度通知する。
+
+再現時の Hub は作業ツリーの dist を使用していたと確認された。調査時の dist/cli/shell.js の更新時刻は16:24:07で、クラッシュ記録は16:27:57。同梱runtimeの古さを原因とする根拠はない。
+
+## sandbox の認証判定
+
+モデル一覧と利用状況の応答は未ログインでも返り、認証の証明にならない。sandbox の検査を `claude auth status --json` の loggedIn=true / authMethod=claude.ai と、Codex app-server の account/read の account.type=chatgpt に変更。認証方式の許可値は src/sandbox/authentication.ts の定数にまとめ、通常の Adapter は変更しない。
+
+setupStatus は毎回実検査し、sandbox-setup.json の authenticated=true を合格の根拠にしない。保存済み on の起動は認証未完了なら Agent を起動しない。on の再実行でも未完了を検出すればセットアップに入り、失敗時は起動禁止を保つ。
+
+2026-10-07 の実測（メールアドレス・ID は記録しない）:
+
+| Claude auth status --json のフィールド | agent 未ログイン | 人の既存ログイン |
+|---|---|---|
+| loggedIn | false | true |
+| authMethod | none | claude.ai |
+| apiProvider | firstParty | firstParty |
+| subscriptionType | フィールドなし | max |
+| 終了コード | 1 | 0 |
+
+agent の応答には analyticsDisabled=false、projectsDirectory=`C:\Users\clodex-agent\.claude\projects`、configDirectory=`C:\Users\clodex-agent\.claude` も含まれた。[CLI reference](https://code.claude.com/docs/en/cli-reference) の認証方式・終了コードの仕様とも一致した。
+
+`pnpm exec tsx spikes/sandbox-auth-probe.ts` は authentication={claude:false,codex:false}、authenticate=false、setupStatus.authenticated=false。他の setupStatus 項目（managed/user/credential/claude/codex/pnpm）は true。保存済み authenticated=true のままでも誤合格しないことを確認した。資格情報マネージャーの仮説は、人が一度もログインしていなかったとの訂正で調査終了。
+
+人の操作: 修正をビルドして Hub を再起動し、`/sandbox on` を実行。開いた agent 用 PowerShell で `claude auth login` と `codex login` を行ってウィンドウを閉じる。その後の実検査で合格したときだけセットアップ完了となる。agent のログイン後の応答は、人のログイン後に再計測する。今回 UAC・ログイン・実 CLI ターンは実行していない。
+
+認証修正後の再有効化 probe でも未処理例外は0件。未認証の on は probe がセットアップ前に止めるため、UAC とログイン画面を起動しない。元のクラッシュ原因の特定、およびログイン後の on → off → on の確認は未完了。
+
+検証: pnpm test は763件成功・5件skip、pnpm typecheck 成功、GUI の cargo test --lib は2件成功。コミットを分ける場合、Hub 診断は src/hub/runtime-errors*・src/index.ts・gui/src-tauri/src/lib.rs・spikes/sandbox-reenable-probe.ts、認証判定は src/sandbox/authentication*・controller*・windows-platform*・spikes/sandbox-auth-probe.ts。記録の本ファイルは各節で分ける。
