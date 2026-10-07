@@ -17,6 +17,10 @@ it("DPAPI 保存後に平文ファイルを作り、SID とファイル名だけ
   expect(calls[elevated]).toContain('-HumanSid "S-1-5-21-1"');
   expect(calls[elevated]).toContain('-SecretFile "C:\\Users\\human\\.clodex\\sandbox-admin\\password"');
   expect(calls[elevated]).not.toContain("GetNetworkCredential");
+  expect(calls[elevated]).toContain("error' '' $true");
+  expect(calls[elevated]).toContain("[IO.File]::ReadAllText");
+  expect(calls[elevated]).toContain("finally{");
+  expect(calls[elevated]).toContain("[IO.File]::Delete");
   expect(calls[0]).toContain("[IO.File]::Delete");
   expect(calls[elevated + 1]).toContain("[IO.File]::Delete");
   expect(accountSetupSource).not.toContain("ConvertFrom-SecureString");

@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { z } from "zod";
 import { accountSetupSource, accountUninstallSource } from "./admin-scripts.js";
+import { withAdminErrorReport } from "./admin-error.js";
 import { POWERSHELL, psQuote, runHost } from "./powershell.js";
 
 export type HostRunner = (script: string, input?: string) => Promise<string>;
@@ -82,8 +83,9 @@ $State|ConvertTo-Json -Compress
 
   private async elevate(source: string, humanSid: string, password: boolean): Promise<void> {
     const path = join(this.adminDir, password ? "setup.ps1" : "uninstall.ps1");
-    const bytes = Buffer.from(`\uFEFF${source}`, "utf8").toString("base64");
+    const errorPath=join(this.adminDir,"error");
+    const bytes = Buffer.from(`\uFEFF${withAdminErrorReport(source)}`, "utf8").toString("base64");
     const args = `-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${path}" -HumanSid "${humanSid}" -HomePath "${this.home}"${password ? ` -SecretFile "${this.passwordPath}"` : ""}`;
-    await this.host(`$Human=[Security.Principal.WindowsIdentity]::GetCurrent().User;${privateFileFunction} [void][IO.Directory]::CreateDirectory(${psQuote(this.adminDir)});Write-PrivateFile ${psQuote(path)} ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(${psQuote(bytes)}))) $true;$Process=Start-Process -FilePath ${psQuote(POWERSHELL)} -ArgumentList ${psQuote(args)} -Verb RunAs -WindowStyle Hidden -PassThru -Wait;if($Process.ExitCode -ne 0){throw 'sandbox の管理者処理が未完了'}`);
+    await this.host(`$Human=[Security.Principal.WindowsIdentity]::GetCurrent().User;${privateFileFunction} [void][IO.Directory]::CreateDirectory(${psQuote(this.adminDir)});Write-PrivateFile ${psQuote(path)} ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(${psQuote(bytes)}))) $true;Write-PrivateFile ${psQuote(errorPath)} '' $true;try{$Process=Start-Process -FilePath ${psQuote(POWERSHELL)} -ArgumentList ${psQuote(args)} -Verb RunAs -WindowStyle Hidden -PassThru -Wait;if($Process.ExitCode -ne 0){$Detail=[IO.File]::ReadAllText(${psQuote(errorPath)});if($Detail){throw $Detail};throw 'sandbox の管理者処理が未完了'}}finally{[IO.File]::Delete(${psQuote(errorPath)})}`);
   }
 }
