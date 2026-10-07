@@ -1891,6 +1891,16 @@ dogfooding で出た要望を 4 段階で入れる。小さく確実なものか
 - Agent: `send_message` の `interrupt: true`。宛先が**送信元からの message を処理中**のときだけ steer し（送信元が頼んだ作業の修正）、それ以外は通常どおりキューに積む。Budget の数え方は通常の message と同じ。Task envelope に `Interrupt: yes` を入れ、画面は「割り込み」と出す
 - tool の説明と定型文で「完了を待つと手戻りになる修正のときだけ `interrupt: true` にする」と伝える
 
+割り込みが届いた印（実測: docs/spikes/steer-ack.md）:
+
+- 割り込みは実行中の tool の区切りまで取り込まれないため、送った後に Agent の応答がしばらく無い。届いたかどうかを、送った側の発言の印で見せる
+- `steer(text, steerId)`: Coordinator が割り込みごとに ID を付ける。人間の割り込みは新しい UUID を使い、人間の入力の event に `steerId` を入れる。Agent の割り込みは message の ID を使う
+- Adapter は、割り込みを取り込んだ時点で AgentEvent の `{ type: "steer_delivered", steerId }` を出す
+  - Claude: 起動引数に `--replay-user-messages` を足す。割り込みの行に Adapter が作った UUID を `uuid` として付け、`steerId` と対応付けて覚える。`isReplay` の `user` の `uuid` が一致したら出す。区切りが無いまま終わったターンでは、割り込みが次のターンとして取り込まれ、そのときに出る
+  - Codex: steer に成功したら、そのターンの未着の列の末尾に `steerId` を足す。自分の thread の `item/started`（`userMessage`）のうち、ターンの 2 つ目以降が来たら、列の先頭を出す。ターンが終わったら列を空にする
+- 画面: 人間の割り込みの発言の「割り込み」の横に、届くまでは「送信済み」、届いたら「届いた」と出す（Web UI と TUI）。feed の再生でも同じ印になる（`steer_delivered` も Agent の event として feed に残る）
+- Agent の割り込み（message）には印を付けない。message の event は steer できるか決まる前に出すため、通常の配送に回ったものと区別できない
+
 マルチエージェント:
 
 - 各 CLI の公式 subagent を使う（§3.7）。Clodex は Agent を増やさない
