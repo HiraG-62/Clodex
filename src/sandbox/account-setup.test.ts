@@ -38,3 +38,16 @@ it("UAC の拒否・異常終了でも平文を除去し、プロファイル作
   expect(calls.at(-1)).toContain("[IO.File]::Delete");
   expect(calls.some((script) => script.includes("-LoadUserProfile"))).toBe(false);
 });
+
+it("昇格するスクリプトの本文はコマンドラインに入れず、標準入力で渡す", async () => {
+  const MAX_SCRIPT_LENGTH = 8_000;
+  const calls: Array<{ script: string; input?: string }> = [];
+  const host = vi.fn(async (script: string, input?: string) => {
+    calls.push({ script, input });
+    return script.includes("GetCurrent().User.Value") ? "S-1-5-21-1" : "";
+  });
+  await new WindowsAccountSetup("C:\Users\human", host).uninstall();
+  const elevated = calls.find(({ script }) => script.includes("-Verb RunAs"));
+  expect(elevated?.script.length).toBeLessThan(MAX_SCRIPT_LENGTH);
+  expect(elevated?.input).toMatch(/^[A-Za-z0-9+/=]+$/);
+});
