@@ -8,7 +8,7 @@ import { AGENT_IDS, type AgentId } from "./agents/agent-adapter.js";
 import { EMPTY_MODEL_CATALOG } from "./agents/startup-probe.js";
 import type { Coordinator } from "./coordinator/coordinator.js";
 import { parseCliArgs } from "./cli/args.js";
-import { createCommandRunner } from "./cli/command-runner.js";
+import { createCommandRunner, type CommandLifecycle } from "./cli/command-runner.js";
 import { createProcessManager } from "./process/process-manager.js";
 import { completeCommand } from "./cli/commands.js";
 import { createShell, type ConversationList } from "./cli/shell.js";
@@ -128,7 +128,7 @@ const main = async (): Promise<void> => {
   for (const project of hub.recoveryProjects().filter((project) => project !== initial)) await openInHub(project);
   if (initial) await openInHub(initial);
 
-  const print = (line: string) => { feed.publishOutput(line); printTerminal(line); };
+  const print = (line: string, command?: CommandLifecycle) => { feed.publishOutput(line, command); printTerminal(line); };
   const toggleVerbose = () => { displayMode = displayMode === "verbose" ? "normal" : "verbose"; return displayMode === "verbose"; };
   const current = () => {
     const context = hub.current;

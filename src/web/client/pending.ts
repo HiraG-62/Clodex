@@ -1,15 +1,21 @@
+import type { CommandLifecycle } from "../../cli/command-runner.js";
 import type { AgentId, PermissionLevel } from "../../agents/agent-adapter.js";
 import type { AgentState } from "../../cli/shell.js";
 
 export type PendingSettings = Partial<Record<AgentId, { model?: string; effort?: string; permission?: PermissionLevel }>>;
+export type PendingDeadlines = Partial<Record<AgentId, Partial<Record<"model" | "effort" | "permission", number>>>>;
 
-export function resolvePendingSettings(pending: PendingSettings, agents: readonly AgentState[]): PendingSettings {
+export function resolvePendingSettings(pending: PendingSettings, agents: readonly AgentState[], deadlines: PendingDeadlines = {}, now = Date.now()): PendingSettings {
   const result: PendingSettings = {};
   for (const id of ["claude", "codex"] as const) {
     const requested = pending[id];
     if (!requested) continue;
     const agent = agents.find((entry) => entry.id === id);
     const remaining = { ...requested };
+    for (const key of ["model", "effort", "permission"] as const) {
+      const deadline = deadlines[id]?.[key];
+      if (deadline !== undefined && deadline <= now) delete remaining[key];
+    }
     if (agent) {
       const resolved = agent.models.find((model) => model.value === requested.model)?.resolved;
       if (requested.model === agent.model || (resolved !== undefined && resolved === agent.model)) delete remaining.model;
@@ -25,11 +31,10 @@ export function isNavigationCommand(line: string): boolean {
   return /^\/(?:new|resume|project|sandbox)(?:\s|$)/.test(line.trim());
 }
 
-export function nextCommandStart(previous: string | undefined, text: string, now: string): string | undefined {
-  let start = previous;
-  for (const line of text.split("\n")) {
-    if (line.startsWith("$ ")) start = now;
-    else if (/^(?:exit -?\d+ \(|stopped \(|error: )/.test(line)) start = undefined;
-  }
-  return start;
+export function nextCommandStarts(previous: Readonly<Record<number, string>>, command: CommandLifecycle | undefined, now: string): Record<number, string> {
+  if (!command) return previous;
+  const result = { ...previous };
+  if (command.phase === "start") result[command.id] ??= now;
+  else delete result[command.id];
+  return result;
 }

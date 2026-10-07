@@ -9,7 +9,7 @@ export type TimelineStep = { kind: "say"; text: string } | { kind: "tool"; name:
 
 export type TimelineItem =
   | { kind: "question"; id: string; at: string; agent: AgentId; questions: UserQuestion[]; answers?: string[][] }
-  | { kind: "human"; id: string; at: string; agent: AgentId; text: string; steer?: boolean }
+  | { kind: "human"; id: string; at: string; agent: AgentId; text: string; steer?: boolean; queued?: boolean }
   | {
     kind: "turn"; id: string; at: string; agent: AgentId;
     status: "working" | TurnResult["status"]; steps: TimelineStep[]; text: string;
@@ -22,13 +22,17 @@ export type TimelineItem =
 
 export type DisplayTimelineItem = TimelineItem | { kind: "starting"; id: string; at: string; agent: AgentId };
 
-export function withStartingTurns(items: readonly TimelineItem[], agents: readonly { id: AgentId; status: AgentStatus }[], now: string): DisplayTimelineItem[] {
+export function withStartingTurns(items: readonly TimelineItem[], agents: readonly { id: AgentId; status: AgentStatus }[], now: string, pendingInputs: readonly { agent: AgentId }[] = []): DisplayTimelineItem[] {
   const result: DisplayTimelineItem[] = [...items];
   for (const agent of agents) {
     if (agent.status === "stopped") continue;
     const last = items.findLast((item) => "agent" in item && item.agent === agent.id && ["human", "turn", "error"].includes(item.kind));
+    if (agent.status === "busy" || pendingInputs.some((input) => input.agent === agent.id)) {
+      if (last?.kind === "human" && !last.queued && !last.steer) result[result.indexOf(last)] = { ...last, queued: true };
+      continue;
+    }
     if (last?.kind === "turn" && last.status === "working") continue;
-    const waiting = last?.kind === "human" && !last.steer;
+    const waiting = last?.kind === "human" && !last.steer && !last.queued;
     if (agent.status !== "starting" && !waiting) continue;
     result.push({ kind: "starting", id: `starting-${agent.id}`, at: last && "at" in last ? last.at : now, agent: agent.id });
   }

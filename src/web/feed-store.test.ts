@@ -15,6 +15,16 @@ describe("feedDirPath", () => {
 });
 
 describe("FeedStore", () => {
+  it("command の識別情報とフィールドなしの旧 output をそのまま保存する", () => {
+    const store = new FeedStore(makeDir());
+    const items: HistoryItem[] = [
+      output(1),
+      { type: "output", seq: 2, text: "$ run", command: { id: 1, phase: "start" } },
+      { type: "output", seq: 3, text: "exit 0 (1s)", command: { id: 1, phase: "exit" } },
+    ];
+    for (const item of items) store.append("a", item);
+    expect(store.load("a")).toEqual(items);
+  });
   it("会話ごとに追記し、読み込める。保存が無い会話は空", () => {
     const store = new FeedStore(makeDir());
     store.append("a", output(1));

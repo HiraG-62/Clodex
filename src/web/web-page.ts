@@ -1,4 +1,4 @@
-import { resolvePendingSettings, isNavigationCommand, nextCommandStart } from "./client/pending.js";
+import { resolvePendingSettings, isNavigationCommand, nextCommandStarts } from "./client/pending.js";
 import { UI_ICONS } from "./web-icons.js";
 // Web UI の画面（DESIGN.md §17 Web UI）。HTML 1 枚に CSS と JS を inline で持つ。
 // 画面の振る舞いは src/web/client/ に型付きで書き、関数のソースをそのまま埋め込む
@@ -260,7 +260,7 @@ const STYLE = `
   .to button[data-agent="claude"][aria-pressed="true"]::before { background: var(--claude); opacity: 1; }
   .to button[data-agent="codex"][aria-pressed="true"]::before { background: var(--codex); opacity: 1; }
   .attach { margin-left: auto; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 7px 12px; font-size: 12.5px; color: var(--fg-2); }
-  .attach + input + .send { margin-left: 0; }
+  .box .bar .send { margin-left: 0; }
   .send { margin-left: auto; border: 0; border-radius: 6px; padding: 8px 16px; font-weight: 600; font-size: 13px; background: var(--invert-bg); color: var(--invert-fg); }
 
   .conn { padding: 6px 16px; font-size: 12.5px; background: var(--warn); color: var(--invert-fg); text-align: center; }
@@ -307,7 +307,7 @@ const STYLE = `
   .working-entry .plan { color: var(--muted); overflow-wrap: anywhere; }
   .working-entry .elapsed { color: var(--muted); font-family: var(--font-mono); }
 
-  .app { display: grid; height: 100%; max-width: 1240px; margin: 0 auto; min-width: 0;
+  .app { display: grid; height: 100%; max-width: 1360px; margin: 0 auto; min-width: 0;
     grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto;
     grid-template-areas: "top" "conn" "status" "log" "compose"; }
   .topbar { grid-area: top; } .conn { grid-area: conn; } .status { grid-area: status; } .log-wrap { grid-area: log; } .composer { grid-area: compose; }
@@ -457,7 +457,7 @@ const STYLE = `
   .count { background: var(--fg); color: var(--bg); box-shadow: 0 0 0 2px var(--panel); font-weight: 600; }
   #question-toggle .count { background: var(--crit); color: #fff; }
   .strip-well { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-column: 1 / -1; gap: 2px; padding: 2px; background: var(--sunken); border-radius: 12px; min-width: 0; }
-  .agent-strip .agent { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) 96px auto; grid-template-areas: none; gap: 10px; padding: 7px 8px 7px 10px; align-items: center; min-height: 52px; border-radius: 10px; background: transparent; box-shadow: none; }
+  .agent-strip .agent { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) 136px auto; grid-template-areas: none; gap: 10px; padding: 7px 8px 7px 10px; align-items: center; min-height: 52px; border-radius: 10px; background: transparent; box-shadow: none; }
   .agent-strip .agent.busy { background: var(--panel); box-shadow: var(--ring); }
   .agent-strip .agent.busy::after { content: ""; position: absolute; inset: auto 0 0; height: 1px; background: linear-gradient(90deg,transparent,var(--agent),transparent); }
   .strip-who { min-width: 0; }
@@ -517,7 +517,8 @@ const STYLE = `
   .code-more { display: none; }
   .table-scroll { overflow-x: auto; max-width: 100%; box-shadow: inset -8px 0 8px -8px var(--muted); }
   .table-scroll table { min-width: 100%; }
-  .mobile-action-label { display: none; }
+  .mobile-action-label, .gauge-reset { display: none; }
+  .drawer-new { display: inline-flex; align-items: center; justify-content: center; gap: 8px; color: var(--fg); background: transparent; border: 1px solid var(--line-strong); border-radius: var(--r); min-height: 44px; margin: 4px 4px 8px; }
   .sheet-backdrop:hover:not(:disabled), .sheet-backdrop:active:not(:disabled) { background: var(--scrim); transform: none; }
   @media (max-width: 899px), (pointer: coarse) {
     .mobile-only { display: flex; }
@@ -601,12 +602,14 @@ const STYLE = `
     @keyframes drawer-in { from { transform: translateX(-100%); } }
     .drawer .grab { display: none; } .drawer .sheet-head { height: 52px; padding-left: 8px; flex: none; }
     .drawer #sheet-body { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-    .drawer .primary-action { min-height: 44px; margin: 4px 4px 8px; width: auto; }
+    .drawer .drawer-new { flex: none; }
     .drawer-conversations { overflow-y: auto; }
     .drawer .conv-row { min-height: 56px; }
     .drawer .conv-menu { width: 44px; height: 44px; opacity: 1; }
     .drawer-projects { margin-top: auto; border-top: 1px solid var(--line); padding: 8px 4px; }
-    .drawer-projects select { width: 100%; background: var(--sunken); color: var(--fg); border: 1px solid var(--line); border-radius: var(--r); padding: 0 10px; }
+    .drawer-projects .project-pill { width: 100%; height: 44px; max-width: none; }
+    .drawer-projects .project-pill select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+    .sheet .gauge-reset { display: inline; color: var(--muted); margin-right: 8px; font-weight: 400; }
     .mobile-menu-actions { display: grid; gap: 4px; }
     .mobile-menu-actions button { width: 100%; justify-content: flex-start; gap: 12px; padding: 0 12px; }
     .sheet.mobile-pop { align-items: start; justify-items: end; }
@@ -723,7 +726,7 @@ const FUNCTIONS = `
   withStartingTurns: ${inlineScript(withStartingTurns.toString())},
   resolvePendingSettings: ${inlineScript(resolvePendingSettings.toString())},
   isNavigationCommand: ${inlineScript(isNavigationCommand.toString())},
-  nextCommandStart: ${inlineScript(nextCommandStart.toString())},
+  nextCommandStarts: ${inlineScript(nextCommandStarts.toString())},
   composeInputLine: ${inlineScript(composeInputLine.toString())},
   createInputAssist: ${inlineScript(createInputAssist.toString())},
   collectArtifacts: ${inlineScript(collectArtifacts.toString())},

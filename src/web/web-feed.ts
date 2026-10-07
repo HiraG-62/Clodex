@@ -2,6 +2,7 @@
 import type { PendingQuestion } from "../protocol/questions.js";
 import type { AgentId } from "../agents/agent-adapter.js";
 import type { AgentState } from "../cli/shell.js";
+import type { CommandLifecycle } from "../cli/command-runner.js";
 import type { CoordinatorEvent } from "../coordinator/event-bus.js";
 import type { Conversation } from "../project/conversation-history.js";
 
@@ -28,7 +29,7 @@ export interface WebState {
 
 export type FeedItem =
   | { type: "event"; seq: number; event: CoordinatorEvent; envelope?: string }
-  | { type: "output"; seq: number; text: string }
+  | { type: "output"; seq: number; text: string; command?: CommandLifecycle }
   | { type: "state"; state: WebState }
   | { type: "toast"; text: string; level: "info" | "warn" }
   | { type: "reset" }
@@ -55,8 +56,8 @@ export class WebFeed {
     this.record({ type: "event", seq: ++this.seq, event, ...(envelope ? { envelope } : {}) });
   }
 
-  publishOutput(text: string): void {
-    this.record({ type: "output", seq: ++this.seq, text });
+  publishOutput(text: string, command?: CommandLifecycle): void {
+    this.record({ type: "output", seq: ++this.seq, text, ...(command ? { command } : {}) });
   }
 
   private record(item: HistoryItem): void {

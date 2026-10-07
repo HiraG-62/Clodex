@@ -7,6 +7,22 @@ const textEvent = (text: string): CoordinatorEvent => ({ kind: "agent", agent: "
 const STATE: WebState = { project: "C:\app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [] };
 
 describe("WebFeed", () => {
+  it("output の command を配信・保存用コールバック・履歴に保持する", () => {
+    const recorded: FeedItem[] = [];
+    const received: FeedItem[] = [];
+    const feed = new WebFeed(DEFAULT_RECENT_ITEMS, (item) => recorded.push(item));
+    feed.subscribe((item) => received.push(item));
+    feed.publishOutput("$ run", { id: 1, phase: "start" });
+    feed.publishOutput("error: normal output");
+    feed.publishOutput("exit 0 (1s)", { id: 1, phase: "exit" });
+    expect(received).toEqual([
+      { type: "output", seq: 1, text: "$ run", command: { id: 1, phase: "start" } },
+      { type: "output", seq: 2, text: "error: normal output" },
+      { type: "output", seq: 3, text: "exit 0 (1s)", command: { id: 1, phase: "exit" } },
+    ]);
+    expect(recorded).toEqual(received);
+    expect(feed.recent()).toEqual(received);
+  });
   it("event と output に通し番号を付けて購読者に配り、直近を保持する", () => {
     const feed = new WebFeed(2);
     const received: FeedItem[] = [];

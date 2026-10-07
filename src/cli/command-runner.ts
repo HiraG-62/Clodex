@@ -26,11 +26,16 @@ export interface CommandProcess {
 export interface CommandRunnerOptions {
   // 関数なら実行のたびに呼ぶ（今の会話の作業場所。DESIGN.md §28 D1）
   cwd: string | (() => string);
-  print: (line: string) => void;
+  print: (line: string, command?: CommandLifecycle) => void;
   spawnShell?: (file: string, args: string[], cwd: string) => CommandProcess;
   // 子プロセスごと止める（child.kill だけではシェルの子が残る）
   killTree?: (pid: number) => void;
   now?: () => number;
+}
+
+export interface CommandLifecycle {
+  id: number;
+  phase: "start" | "exit";
 }
 
 const defaultSpawnShell = (file: string, args: string[], cwd: string): CommandProcess =>
@@ -121,16 +126,18 @@ export const createCommandExecutor = ({
 export const createCommandRunner = ({ cwd, print, now = Date.now, ...options }: CommandRunnerOptions) => {
   const execute = createCommandExecutor(options);
   const running = new Set<ReturnType<typeof execute>>();
+  let nextId = 1;
 
   // 終了（または起動の失敗）で resolve する。reject しない
   const run = (command: string): Promise<void> => {
-    print(`$ ${command}`);
+    const id = nextId++;
+    print(`$ ${command}`, { id, phase: "start" });
     const startedAt = now();
     return new Promise((resolve) => {
       const handle = execute(command, typeof cwd === "function" ? cwd() : cwd, print, ({ code, stopped, error }) => {
         for (const entry of running) if (!entry.running) running.delete(entry);
         const elapsed = `${((now() - startedAt) / MS_PER_SECOND).toFixed(1)}s`;
-        print(error ? `error: ${error}` : stopped ? `stopped (${elapsed})` : `exit ${code} (${elapsed})`);
+        print(error ? `error: ${error}` : stopped ? `stopped (${elapsed})` : `exit ${code} (${elapsed})`, { id, phase: "exit" });
         resolve();
       });
       if (handle.running) running.add(handle);

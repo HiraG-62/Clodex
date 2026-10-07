@@ -13,6 +13,20 @@ const output = (text: string): FeedItem => ({ type: "output", seq: ++seq, text }
 const run = (items: FeedItem[]) => items.reduce<TimelineItem[]>(applyFeedItem, []);
 
 describe("withStartingTurns", () => {
+  it("配送待ちや busy 中の human は、取り消して idle になっても仮ターンにしない", () => {
+    const items = run([human("codex", "後で実装")]);
+    for (const status of ["busy", "idle"] as const) {
+      const queued = withStartingTurns(items, [{ id: "codex", status }], AT, [{ agent: "codex" }]);
+      expect(queued.some((item) => item.kind === "starting")).toBe(false);
+      const saved = queued.filter((item): item is TimelineItem => item.kind !== "starting");
+      const canceled = withStartingTurns(saved, [{ id: "codex", status: "idle" }], AT, []);
+      expect(canceled.some((item) => item.kind === "starting")).toBe(false);
+      const edited = applyFeedItem(saved, human("codex", "編集して再送"));
+      expect(withStartingTurns(edited, [{ id: "codex", status: "idle" }], AT).at(-1)?.kind).toBe("starting");
+    }
+    const busy = withStartingTurns(items, [{ id: "codex", status: "busy" }], AT);
+    expect(busy.some((item) => item.kind === "starting")).toBe(false);
+  });
   it("human の後は起動中を出し、turn_started で置き換える", () => {
     const items = run([human("codex", "実装")]);
     expect(withStartingTurns(items, [{ id: "codex", status: "idle" }], AT).at(-1)).toMatchObject({ kind: "starting", agent: "codex", at: AT });

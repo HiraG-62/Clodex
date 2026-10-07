@@ -20,13 +20,14 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 const setup = (missing: string[] = []) => {
   const printed: string[] = [];
+  const lifecycle: Array<{ id: number; phase: "start" | "exit" }> = [];
   const spawned: Array<{ file: string; args: string[]; cwd: string }> = [];
   const processes: FakeProcess[] = [];
   const killed: number[] = [];
   let time = 0;
   const runner = createCommandRunner({
     cwd: "C:\\app",
-    print: (line) => printed.push(line),
+    print: (line, command) => { printed.push(line); if (command) lifecycle.push(command); },
     spawnShell: (file, args, cwd) => {
       spawned.push({ file, args, cwd });
       const child = new FakeProcess(100 + spawned.length);
@@ -44,10 +45,34 @@ const setup = (missing: string[] = []) => {
     killTree: (pid) => killed.push(pid),
     now: () => time,
   });
-  return { runner, printed, spawned, processes, killed, advance: (ms: number) => { time += ms; } };
+  return { runner, printed, lifecycle, spawned, processes, killed, advance: (ms: number) => { time += ms; } };
 };
 
 describe("createCommandRunner", () => {
+  it("並行 command の開始・終了に同じ ID を付け、通常出力には付けない", async () => {
+    const { runner, lifecycle, processes } = setup();
+    const first = runner.run("first");
+    const second = runner.run("second");
+    processes[0]!.stdout.write("error: output\nexit 0 (1s)\n");
+    expect(lifecycle).toEqual([{ id: 1, phase: "start" }, { id: 2, phase: "start" }]);
+    processes[1]!.close(0);
+    await second;
+    processes[0]!.close(1);
+    await first;
+    expect(lifecycle).toEqual([{ id: 1, phase: "start" }, { id: 2, phase: "start" }, { id: 2, phase: "exit" }, { id: 1, phase: "exit" }]);
+  });
+
+  it("起動失敗・停止でも開始時と同じ ID で終了を通知する", async () => {
+    const failed = setup(["pwsh", "powershell"]);
+    await failed.runner.run("missing");
+    expect(failed.lifecycle).toEqual([{ id: 1, phase: "start" }, { id: 1, phase: "exit" }]);
+    const stopped = setup();
+    const done = stopped.runner.run("long");
+    stopped.runner.stopAll();
+    stopped.processes[0]!.close(1);
+    await done;
+    expect(stopped.lifecycle).toEqual([{ id: 1, phase: "start" }, { id: 1, phase: "exit" }]);
+  });
   it("project root で pwsh を UTF-8 指定付きで起動し、出力を行ごとに表示して終了コードを出す", async () => {
     const { runner, printed, spawned, processes, advance } = setup();
     const done = runner.run("git status");

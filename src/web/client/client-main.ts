@@ -1,4 +1,4 @@
-import type { PendingSettings, resolvePendingSettings as ResolvePendingSettings, isNavigationCommand as IsNavigationCommand, nextCommandStart as NextCommandStart } from "./pending.js";
+import type { PendingDeadlines, PendingSettings, resolvePendingSettings as ResolvePendingSettings, isNavigationCommand as IsNavigationCommand, nextCommandStarts as NextCommandStarts } from "./pending.js";
 // Web UI の画面の振る舞い（DESIGN.md §17 Web UI）。
 // ブラウザ側にそのまま埋め込むため、外部のものを参照しない 1 つの関数として書く（型の import のみ）。
 // 純関数（renderMarkdown 等）とコマンドの一覧は引数で受け取る
@@ -20,7 +20,7 @@ export interface ClientDeps {
   withStartingTurns: typeof WithStartingTurns;
   resolvePendingSettings: typeof ResolvePendingSettings;
   isNavigationCommand: typeof IsNavigationCommand;
-  nextCommandStart: typeof NextCommandStart;
+  nextCommandStarts: typeof NextCommandStarts;
   isShellInput: typeof IsShellInput;
   renderMarkdown: typeof RenderMarkdown;
   applyFeedItem: typeof ApplyFeedItem;
@@ -38,7 +38,7 @@ export interface ClientDeps {
 }
 
 export function clientMain({
-  withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStart, renderMarkdown, applyFeedItem, rebuildTimeline, composeInputLine, createInputAssist, collectArtifacts, findImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
+  withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, composeInputLine, createInputAssist, collectArtifacts, findImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -68,6 +68,8 @@ export function clientMain({
   const TOAST_DURATION_MS = 4000;
   const MAX_TOASTS = 3;
   const RELOAD_DELAY_MS = 350;
+  const SETTING_TIMEOUT_MS = 30_000;
+  const INTERRUPT_RETRY_MS = 5_000;
   const TOAST_EXIT_MS = 150;
   const TOKENS_PER_K = 1000;
   const MS_PER_SECOND = 1000;
@@ -134,10 +136,13 @@ export function clientMain({
   const questionDrafts = new Map<string, { selected: Set<number>[]; other: string[] }>();
   let state: WebState | undefined;
   let pendingSettings: PendingSettings = {};
+  let pendingDeadlines: PendingDeadlines = {};
+  let reloading = false;
   const pendingRequests = new Set<string>();
   const interrupting = new Set<AgentId>();
+  const interruptAttempts = new Map<AgentId, symbol>();
   let uploading = 0;
-  let commandStart: string | undefined;
+  let commandStarts: Record<number, string> = {};
   const startingAt = new Map<AgentId, string>();
   let replaying = true;
   let incomingHistory: HistoryItem[] = [];
@@ -167,6 +172,7 @@ export function clientMain({
       const line = button.dataset.command ?? "";
       const agent = line.split(" ")[1] as AgentId;
       setPending(button, pendingRequests.has(line) || (line.startsWith("/interrupt ") && interrupting.has(agent)));
+      if (line.startsWith("/interrupt ") && state?.agents.find((entry) => entry.id === agent)?.status !== "busy") button.disabled = true;
     }
     $(".app").classList.toggle("navigation-pending", [...pendingRequests].some(isNavigationCommand));
   };
@@ -180,7 +186,8 @@ export function clientMain({
     pendingRequests.add(line);
     if (button) button.dataset.command = line;
     const stoppedAgent = line.startsWith("/interrupt ") ? line.split(" ")[1] as AgentId : undefined;
-    if (stoppedAgent) interrupting.add(stoppedAgent);
+    const interruptAttempt = Symbol();
+    if (stoppedAgent) { interrupting.add(stoppedAgent); interruptAttempts.set(stoppedAgent, interruptAttempt); }
     syncPendingButtons();
     try {
       return await withPending(button, async () => {
@@ -195,22 +202,38 @@ export function clientMain({
         return false;
       });
     } finally {
+      if (stoppedAgent && interrupting.has(stoppedAgent)) {
+        const generation = liveGeneration;
+        window.setTimeout(() => {
+          if (generation !== liveGeneration || pendingRequests.has(line) || interruptAttempts.get(stoppedAgent) !== interruptAttempt) return;
+          interrupting.delete(stoppedAgent);
+          syncPendingButtons();
+        }, INTERRUPT_RETRY_MS);
+      }
       pendingRequests.delete(line);
       syncPendingButtons();
     }
   };
   const requestSetting = async (id: AgentId, key: "model" | "effort" | "permission", value: string, button?: HTMLButtonElement) => {
-    if (pendingSettings[id]?.[key] !== undefined) return;
+    if (pendingSettings[id]?.[key] !== undefined) return false;
     const generation = liveGeneration;
     pendingSettings[id] = { ...pendingSettings[id], [key]: value };
+    const deadline = Date.now() + SETTING_TIMEOUT_MS;
+    pendingDeadlines[id] = { ...pendingDeadlines[id], [key]: deadline };
+    window.setTimeout(() => {
+      if (generation !== liveGeneration || pendingDeadlines[id]?.[key] !== deadline) return;
+      pendingSettings = resolvePendingSettings(pendingSettings, state?.agents ?? [], pendingDeadlines);
+      renderState();
+    }, SETTING_TIMEOUT_MS);
     renderState();
     const sent = await send(`/${key} ${id} ${value}`, button);
-    if (generation !== liveGeneration) return;
+    if (generation !== liveGeneration || pendingDeadlines[id]?.[key] !== deadline) return false;
     if (!sent) {
       delete pendingSettings[id]?.[key];
       renderState();
     }
     refreshOpenSheet();
+    return sent;
   };
   const displayedAgent = (agent: AgentState): AgentState => ({
     ...agent, ...pendingSettings[agent.id],
@@ -581,7 +604,9 @@ export function clientMain({
   // 変わった項目だけ描き直す（開閉やスクロール位置を保つ）
   const renderLog = (force = false) => {
     const stick = nearBottom();
-    const visibleItems = withStartingTurns(items, state?.agents ?? [], new Date().toISOString());
+    const visibleItems = withStartingTurns(items, state?.agents ?? [], new Date().toISOString(), state?.pendingInputs ?? []);
+    items = visibleItems.filter((item): item is TimelineItem => item.kind !== "starting");
+    let changed = false;
     for (const item of visibleItems) {
       if (item.kind !== "starting") continue;
       if (!startingAt.has(item.agent)) startingAt.set(item.agent, item.at);
@@ -599,7 +624,9 @@ export function clientMain({
     for (const item of visibleItems) {
       const current = rendered.get(item.id);
       let node = current?.node;
-      if (!current || current.item !== item || force) {
+      const sameStarting = current?.item.kind === "starting" && item.kind === "starting" && current.item.at === item.at;
+      if (!current || (current.item !== item && !sameStarting) || force) {
+        changed = true;
         node = renderItem(item);
         if (current) current.node.replaceWith(node);
         rendered.set(item.id, { item, node });
@@ -615,23 +642,25 @@ export function clientMain({
     const older = $("#history-loading");
     older.hidden = !historyLoading;
     log.prepend(older);
-    log.querySelector(".output-clock")?.remove();
-    if (commandStart) {
+    for (const clock of log.querySelectorAll(".output-clock")) clock.remove();
+    for (const [id, commandStart] of Object.entries(commandStarts)) {
       const clockRow = el("div", "output-clock");
       const elapsed = el("span", "elapsed", elapsedText(commandStart));
       elapsed.dataset.start = commandStart;
-      clockRow.append(el("span", "spin"), el("span", "", t("web.command.running")), elapsed);
+      clockRow.dataset.commandId = id;
+      clockRow.append(el("span", "spin"), el("span", "", `#${id} · ${t("web.command.running")}`), elapsed);
       [...log.querySelectorAll(".output")].at(-1)?.before(clockRow);
     }
     enhanceMarkdown(log);
-    if (stick) scrollToBottom(); else newer.hidden = false;
+    if (stick) scrollToBottom(); else if (changed) newer.hidden = false;
     renderWorking();
   };
 
   // ---- 状態の描画 ----
-  const gauge = (label: string, value: string, percent: number | undefined, agent: AgentId, over = false, tick?: number) => {
+  const gauge = (label: string, value: string, percent: number | undefined, agent: AgentId, over = false, tick?: number, reset = "") => {
     const node = el("div", "gauge");
     node.append(el("span", "k", label), el("span", `v mono${over ? " over" : ""}`, value));
+    node.querySelector<HTMLElement>(".v")!.prepend(el("span", "gauge-reset", reset));
     node.querySelector<HTMLElement>(".v")!.dataset.compact = percent === undefined ? "—" : `${Math.round(percent)}%`;
     const track = el("span", `track ${agent}`);
     const fill = el("i");
@@ -650,14 +679,14 @@ export function clientMain({
     return node;
   };
 
-  const syncGauge = (node: HTMLElement, label: string, value: string, percent: number | undefined, over = false, tick?: number) => {
+  const syncGauge = (node: HTMLElement, label: string, value: string, percent: number | undefined, over = false, tick?: number, reset = "") => {
     node.title = `${label}: ${value}`;
     node.dataset.label = label === t("web.gauge.context") ? "ctx" : label.split(" · ")[0]?.split("（")[0]?.split(" (")[0] ?? label;
     const key = node.querySelector<HTMLElement>(".k")!;
     const val = node.querySelector<HTMLElement>(".v")!;
     const track = node.querySelector<HTMLElement>(".track")!;
     key.textContent = label.split(" · ")[0]?.split("（")[0]?.split(" (")[0] ?? label;
-    val.textContent = value;
+    val.replaceChildren(el("span", "gauge-reset", reset), document.createTextNode(value));
     val.dataset.compact = percent === undefined ? "—" : `${Math.round(percent)}%`;
     val.classList.toggle("over", over);
     track.querySelector<HTMLElement>("i")!.style.width = `${Math.max(0, Math.min(100, percent ?? 0))}%`;
@@ -686,18 +715,18 @@ export function clientMain({
       {
         label: `${t("web.gauge.fiveHour")}${resetLabel(usage.fiveHourResetsAt, false)}`,
         value: usage.fiveHourPercent === undefined ? "—" : `${usage.fiveHourPercent}%`,
-        percent: usage.fiveHourPercent, over: false, tick: undefined,
+        percent: usage.fiveHourPercent, over: false, tick: undefined, reset: usage.fiveHourResetsAt === undefined ? "" : clock(new Date(usage.fiveHourResetsAt * MS_PER_SECOND).toISOString()),
       },
       {
         label: `${t("web.gauge.weekly")}${pace === undefined ? "" : t("web.gauge.pace", { pace: `${pace > 0 ? "+" : ""}${pace}` })}${resetLabel(usage.weeklyResetsAt, true)}`,
         value: usage.weeklyPercent === undefined ? "—" : `${usage.weeklyPercent}%`,
-        percent: usage.weeklyPercent, over: (pace ?? 0) > 0,
+        percent: usage.weeklyPercent, over: (pace ?? 0) > 0, reset: usage.weeklyResetsAt === undefined ? "" : shortDate(new Date(usage.weeklyResetsAt * MS_PER_SECOND).toISOString()),
         tick: pace === undefined || usage.weeklyPercent === undefined ? undefined : usage.weeklyPercent - pace,
       },
       {
         label: t("web.gauge.context"), value: contextValue,
         percent: usage.contextTokens && usage.contextWindow ? (usage.contextTokens / usage.contextWindow) * PERCENT : 0,
-        over: false, tick: undefined,
+        over: false, tick: undefined, reset: "",
       },
     ];
   };
@@ -739,7 +768,7 @@ export function clientMain({
       }
     };
     updateChips(agent);
-    const gauges = gaugeValues(agent.usage).map((g) => gauge(g.label, g.value, g.percent, agent.id, g.over, g.tick));
+    const gauges = gaugeValues(agent.usage).map((g) => gauge(g.label, g.value, g.percent, agent.id, g.over, g.tick, g.reset));
     const minis = el("div", "mini-gauges");
     minis.append(...gauges);
     wrap.append(chips, minis);
@@ -767,7 +796,7 @@ export function clientMain({
       currentStatus.textContent = t(STATUS_LABEL[current.status]);
       gaugeValues(current.usage).forEach((g, index) => {
         const node = gauges[index];
-        if (node) syncGauge(node, g.label, g.value, g.percent, g.over, g.tick);
+        if (node) syncGauge(node, g.label, g.value, g.percent, g.over, g.tick, g.reset);
       });
       interrupt.disabled = current.status !== "busy";
       compact.disabled = current.status === "stopped";
@@ -987,8 +1016,9 @@ export function clientMain({
   const openConversations = () => {
     sheetKind = "conversations";
     sheetAgent = undefined;
-    const fresh = el("button", "primary-action", t("web.conv.startNew")) as HTMLButtonElement;
+    const fresh = el("button", "drawer-new", t("web.side.newConversation")) as HTMLButtonElement;
     fresh.type = "button";
+    fresh.prepend(icon("square-pen"));
     fresh.addEventListener("click", () => {
       void send("/new", fresh).then((ok) => { if (ok) closeSheet(); });
     });
@@ -1008,7 +1038,10 @@ export function clientMain({
       projects.disabled = true;
       void send(`/project ${projects.value}`).then((ok) => { if (ok) closeSheet(); }).finally(() => { projects.disabled = false; });
     });
-    footer.append(projects);
+    const pill = el("div", "project-pill");
+    const selectedName = el("span", "", state?.project.split(/[\\/]/).filter(Boolean).at(-1) ?? t("web.top.noProject"));
+    pill.append(icon("folder"), selectedName, icon("chevron-down"), projects);
+    footer.append(pill);
     openSheet(t("web.conv.title"), [fresh, conversations, footer]);
   };
   const sheetButton = (label: string, cls: string, run: (button: HTMLButtonElement) => void) => {
@@ -1085,6 +1118,7 @@ export function clientMain({
       actions.push(sheetButton(t("web.conv.rename"), "secondary-action", (button) => {
         const name = window.prompt(t("web.conv.renamePrompt"), conversation.title ?? "")?.trim();
         if (name) void send(`/rename ${name}`, button).then((ok) => { if (ok) closeSheet(); });
+        else closeSheet();
       }));
     }
     actions.push(sheetButton(t(conversation.pinned ? "web.conv.unpin" : "web.conv.pin"), "secondary-action", (button) => {
@@ -1093,6 +1127,7 @@ export function clientMain({
     if (!conversation.current) {
       actions.push(sheetButton(t("web.conv.delete"), "secondary-action danger", (button) => {
         if (window.confirm(t("web.conv.deleteConfirm", { title }))) void send(`/delete ${number}`, button).then((ok) => { if (ok) closeSheet(); });
+        else closeSheet();
       }));
     }
     openSheet(title, actions);
@@ -1146,7 +1181,7 @@ export function clientMain({
       e.preventDefault();
       const value = select.value === "__other__" ? field.value.trim() : select.value;
       if (!value) return;
-      void requestSetting(id, "model", value, apply);
+      void requestSetting(id, "model", value, apply).then((sent) => { if (sent && field.value.trim() === value) field.value = ""; });
     });
     form.append(select, field, apply);
     model.append(form);
@@ -1465,18 +1500,9 @@ export function clientMain({
     onInputChanged();
   };
   const renderSuggest = () => {
-    if (filesLoading && /(?:^|\s)@[^\s]*$/.test(input.value.slice(0, input.selectionStart))) {
-      const row = el("li", "muted", t("web.files.loading"));
-      row.prepend(el("span", "spin"));
-      row.setAttribute("role", "option");
-      row.setAttribute("aria-disabled", "true");
-      suggestList.replaceChildren(row);
-      suggestList.hidden = false;
-      input.setAttribute("aria-expanded", "true");
-      return;
-    }
-    if (!suggestion) return closeSuggest();
-    suggestList.replaceChildren(...suggestion.items.map((item, index) => {
+    const loading = filesLoading && /(?:^|\s)@[^\s]*$/.test(input.value.slice(0, input.selectionStart));
+    if (!suggestion && !loading) return closeSuggest();
+    suggestList.replaceChildren(...(suggestion?.items ?? []).map((item, index) => {
       const option = el("li");
       option.setAttribute("role", "option");
       option.setAttribute("aria-selected", String(index === selected));
@@ -1486,6 +1512,13 @@ export function clientMain({
       option.addEventListener("click", () => accept(index));
       return option;
     }));
+    if (loading) {
+      const row = el("li", "muted", t("web.files.loading"));
+      row.prepend(el("span", "spin"));
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-disabled", "true");
+      suggestList.append(row);
+    }
     suggestList.hidden = false;
     input.setAttribute("aria-expanded", "true");
     suggestList.children[selected]?.scrollIntoView({ block: "nearest" });
@@ -1508,12 +1541,12 @@ export function clientMain({
       if (generation !== filesGeneration) return;
       files = loaded;
       fileSet = new Set(files);
-      filesLoadedAt = Date.now();
       renderHighlight();
     } catch { /* 候補が出ないだけで入力はできる */ }
     finally {
       if (generation === filesGeneration) {
         filesLoading = false;
+        filesLoadedAt = Date.now();
         if (document.activeElement === input) updateSuggest();
       }
     }
@@ -1635,7 +1668,8 @@ export function clientMain({
       const wasNewerHidden = newer.hidden;
       history = [...page.items, ...history];
       historyLoading = false;
-      items = rebuildTimeline(history, applyFeedItem);
+      const queued = new Set(items.filter((item) => item.kind === "human" && item.queued).map((item) => item.id));
+      items = rebuildTimeline(history, applyFeedItem).map((item) => item.kind === "human" && queued.has(item.id) ? { ...item, queued: true } : item);
       renderLog();
       log.scrollTop = previousTop + log.scrollHeight - previousHeight;
       newer.hidden = wasNewerHidden;
@@ -1671,11 +1705,12 @@ export function clientMain({
     if (!replaying) return;
     history = incomingHistory;
     incomingHistory = [];
-    items = rebuildTimeline(history, applyFeedItem);
+    items = rebuildTimeline(history, applyFeedItem).map((item) => item.kind === "human" ? { ...item, queued: true } : item);
+    opened.clear();
     historyGeneration++;
     historyLoading = false;
     historyHasMore = true;
-    commandStart = undefined;
+    commandStarts = {};
     replaying = false;
   };
   const scheduleLog = () => {
@@ -1695,12 +1730,14 @@ export function clientMain({
       incomingHistory = [];
     };
     events.onmessage = (e: MessageEvent<string>) => {
+      if (reloading) return;
       const item = JSON.parse(e.data) as FeedItem;
       const update = updateDesktopNotify(notificationState, item, messages);
       notificationState = update.state;
       if (update.notification) void notify(update.notification);
       if (item.type === "version") {
         if (item.version !== version) {
+          reloading = true;
           conn.hidden = false;
           $("#conn-label").textContent = t("web.conn.updated");
           $(".app").classList.add("navigation-pending");
@@ -1715,6 +1752,7 @@ export function clientMain({
           liveGeneration++;
           startingAt.clear();
           pendingSettings = {};
+          pendingDeadlines = {};
           interrupting.clear();
           if (projectChanged) {
             files = []; fileSet.clear(); filesLoadedAt = 0; filesLoading = false; filesGeneration++;
@@ -1724,7 +1762,7 @@ export function clientMain({
         }
         commitReplay();
         state = item.state;
-        pendingSettings = resolvePendingSettings(pendingSettings, state.agents);
+        pendingSettings = resolvePendingSettings(pendingSettings, state.agents, pendingDeadlines);
         for (const agent of state.agents) if (agent.status !== "busy") interrupting.delete(agent.id);
         if (pendingPrimary && state.primary === pendingPrimary) {
           if (target === pendingPrimary) target = undefined;
@@ -1753,11 +1791,15 @@ export function clientMain({
       }
       if (replaying) { incomingHistory.push(item); return; }
       history.push(item);
-      if (item.type === "output") commandStart = nextCommandStart(commandStart, item.text, new Date().toISOString());
+      if (item.type === "output") commandStarts = nextCommandStarts(commandStarts, item.command, new Date().toISOString());
       items = applyFeedItem(items, item);
+      if (item.type === "event" && item.event.kind === "human") {
+        items = withStartingTurns(items, state?.agents ?? [], item.event.at, state?.pendingInputs ?? []).filter((entry): entry is TimelineItem => entry.kind !== "starting");
+      }
       scheduleLog();
     };
     events.onerror = () => {
+      if (reloading) return;
       conn.hidden = false;
       const closed = events.readyState === EventSource.CLOSED;
       $("#conn-label").textContent = closed ? t("web.conn.closed") : t("web.conn.lost");
