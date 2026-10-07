@@ -177,14 +177,15 @@ const main = async (): Promise<void> => {
     subscribe: (listener) => { currentListeners.add(listener); return () => currentListeners.delete(listener); },
   }, feed, () => {
     const context = hub.current;
+    const runtime = context?.workspace.currentIfReady;
     return {
-      project: context?.workspace.current.workDir ?? "",
+      project: runtime?.workDir ?? context?.projectRoot ?? "",
       projects: hub.list(),
       primary: shell.getPrimary(),
       roles: context?.config.roles ?? {},
-      agents: context?.workspace.current.coordinator.status() ?? [],
-      questions: context?.workspace.current.coordinator.pendingQuestions() ?? [],
-      pendingInputs: context?.workspace.current.coordinator.pendingInputs() ?? [],
+      agents: runtime?.coordinator.status() ?? [],
+      questions: runtime?.coordinator.pendingQuestions() ?? [],
+      pendingInputs: runtime?.coordinator.pendingInputs() ?? [],
       processes: processes.list().map(({ id, command, status }) => ({ id, command, status })),
       conversations: context?.history.list().map((conversation) => {
         const activity = context.workspace.activity(conversation.id);

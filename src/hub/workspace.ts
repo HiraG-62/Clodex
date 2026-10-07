@@ -53,6 +53,11 @@ export class Workspace {
     return runtime;
   }
 
+  // /sandbox の切り替えなどで runtime を作り直している間は無い。定期的な状態の表示はこちらを使う
+  get currentIfReady(): ConversationRuntime | undefined {
+    return this.runtimes.get(this.options.history.currentId);
+  }
+
   // 全会話の event。current: 今の会話の event か
   onEvent(listener: RuntimeEventListener): void {
     this.eventListeners.push(listener);

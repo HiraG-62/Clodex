@@ -121,4 +121,15 @@ describe("Workspace", () => {
     await workspace.closeAll();
     expect(created.map((r) => r.closed)).toEqual([true, true]);
   });
+
+  it("runtime を作り直している間、currentIfReady は例外を出さず undefined を返す", async () => {
+    const { workspace } = setup();
+    await workspace.init();
+    expect(workspace.currentIfReady).toBe(workspace.current);
+    const restarting = workspace.restart();
+    expect(workspace.currentIfReady).toBeUndefined();
+    expect(() => workspace.current).toThrow();
+    await restarting;
+    expect(workspace.currentIfReady).toBe(workspace.current);
+  });
 });
