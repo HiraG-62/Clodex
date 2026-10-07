@@ -37,7 +37,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: gui
-          tauriScript: pnpm exec tauri
+          # gui/ には package.json が無く、CI の pnpm exec は root の tauri を見つけないため、CLI を直接実行する。
+          tauriScript: node ${{ github.workspace }}/node_modules/@tauri-apps/cli/tauri.js
           # tauri の CLI は --config の相対パスを gui/ から解決しないため、絶対パスで渡す。
           args: --config ${{ github.workspace }}\gui\src-tauri\tauri.release.conf.json
           tagName: ${{ github.ref_name }}
