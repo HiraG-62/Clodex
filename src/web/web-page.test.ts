@@ -91,9 +91,18 @@ describe("buildWebPage", () => {
 
   it("画面の振る舞いに必要な要素がそろっている", () => {
     const { html } = buildWebPage("ja");
-    for (const id of ["log", "newer", "input", "input-highlight", "suggest", "pending", "open-artifacts", "attach", "attach-file", "composer", "status", "agents", "conversations", "sheet", "conn", "toast", "detail"]) {
+    for (const id of ["log", "newer", "input", "input-highlight", "suggest", "pending", "open-artifacts", "attach", "attach-file", "composer", "mobile-agents", "agents", "conversations", "sheet", "conn", "toast", "detail"]) {
       expect(html).toContain(`id="${id}"`);
     }
+  });
+
+  it("スマホの操作口とシートのつまみを持ち、画面の拡大を制限しない", () => {
+    const html = buildWebPage("ja").html;
+    expect(html).not.toContain("maximum-scale");
+    for (const id of ["mobile-menu", "mobile-more", "mobile-title", "target-toggle", "sheet-grab"]) {
+      expect(html).toContain(`id="${id}"`);
+    }
+    expect(html).not.toContain('id="status"');
   });
 
   it("操作アイコンに名前を付け、Agent ストリップを会話一覧の外に置く", () => {

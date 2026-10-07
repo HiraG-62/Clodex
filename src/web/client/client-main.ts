@@ -58,6 +58,11 @@ export function clientMain({
   const THEME_LABEL: Record<Theme, MessageKey> = { system: "web.settings.themeSystem", light: "web.settings.themeLight", dark: "web.settings.themeDark" };
   const STATUS_LABEL: Record<AgentStatus, MessageKey> = { busy: "web.status.busy", idle: "web.status.idle", starting: "web.status.starting", stopped: "web.status.stopped" };
   const TURN_LABEL: Record<"working" | TurnResult["status"], MessageKey | undefined> = { working: "web.status.busy", interrupted: "web.turn.interrupted", failed: "web.turn.failed", completed: undefined };
+  const MOBILE_QUERY = "(max-width: 899px), (pointer: coarse)";
+  const mobile = window.matchMedia(MOBILE_QUERY);
+  const SWIPE_CLOSE_PX = 72;
+  const KEYBOARD_THRESHOLD_PX = 120;
+  const CODE_FOLD_LINES = 8;
   const NEAR_BOTTOM_PX = 120;
   const HISTORY_THRESHOLD_PX = 200;
   const TOAST_DURATION_MS = 4000;
@@ -490,7 +495,7 @@ export function clientMain({
   const renderQuestionCount = () => {
     const count = state?.questions.length ?? 0;
     questionToggle.hidden = count === 0;
-    questionToggle.replaceChildren(icon("question"), el("span", "count", String(count)));
+    questionToggle.replaceChildren(icon("question"), ...(mobile.matches ? [el("span", "mobile-tab-label", t("web.question.title"))] : []), el("span", "count", String(count)));
     questionToggle.setAttribute("aria-label", `${t("web.question.title")} ${count}`);
   };
   questionToggle.addEventListener("click", () => {
@@ -500,6 +505,7 @@ export function clientMain({
   const renderWorking = () => {
     const active = items.filter((item): item is Extract<TimelineItem, { kind: "turn" }> => item.kind === "turn" && item.status === "working");
     $("#working-count").textContent = String(active.length);
+    workingToggle.dataset.agent = active.length > 1 ? state?.primary ?? "claude" : active[0]?.agent ?? "claude";
     workingToggle.hidden = active.length === 0;
     if (!active.length) { workingPanel.hidden = true; workingToggle.setAttribute("aria-expanded", "false"); }
     const list = $("#working-list");
@@ -531,6 +537,46 @@ export function clientMain({
     workingPanel.hidden = true;
     workingToggle.setAttribute("aria-expanded", "false");
   });
+
+  const enhanceMarkdown = (root: HTMLElement) => {
+    for (const pre of root.querySelectorAll("pre")) {
+      if (pre.parentElement?.classList.contains("code-block")) continue;
+      const code = pre.querySelector("code");
+      if (!code) continue;
+      const text = code.textContent ?? "";
+      const block = el("div", `code-block${text.trimEnd().split("\n").length > CODE_FOLD_LINES ? " long" : ""}`);
+      const head = el("div", "code-head");
+      const copy = iconButton("copy", t("web.code.copy"));
+      copy.addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(text); showToast(t("web.code.copied")); }
+        catch { showToast(t("web.code.copyFailed")); }
+      });
+      head.append(copy);
+      pre.before(block);
+      block.append(head, pre);
+      if (block.classList.contains("long")) {
+        const more = iconButton("chevron-down", t("web.code.full"), "code-more");
+        more.append(el("span", "", t("web.code.full")));
+        more.setAttribute("aria-expanded", "false");
+        more.addEventListener("click", () => {
+          const expanded = block.classList.toggle("expanded");
+          more.setAttribute("aria-expanded", String(expanded));
+          const label = t(expanded ? "web.code.collapse" : "web.code.full");
+          more.setAttribute("aria-label", label);
+          more.title = label;
+          more.querySelector("span")!.textContent = label;
+        });
+        block.append(more);
+      }
+    }
+    for (const table of root.querySelectorAll("table")) {
+      if (table.parentElement?.classList.contains("table-scroll")) continue;
+      const scroll = el("div", "table-scroll");
+      scroll.tabIndex = 0;
+      table.before(scroll);
+      scroll.append(table);
+    }
+  };
 
   // 変わった項目だけ描き直す（開閉やスクロール位置を保つ）
   const renderLog = (force = false) => {
@@ -577,6 +623,7 @@ export function clientMain({
       clockRow.append(el("span", "spin"), el("span", "", t("web.command.running")), elapsed);
       [...log.querySelectorAll(".output")].at(-1)?.before(clockRow);
     }
+    enhanceMarkdown(log);
     if (stick) scrollToBottom(); else newer.hidden = false;
     renderWorking();
   };
@@ -658,6 +705,10 @@ export function clientMain({
   // Agent パネル: 設定の要約、利用枠、操作。権限・model・effort はペンアイコンかチップから開くポップアップで変える
   const agentControls = (agent: AgentState) => {
     const wrap = el("div", "controls");
+    wrap.dataset.agent = agent.id;
+    const currentStatus = stateLabel(agent);
+    currentStatus.classList.add("mobile-only");
+    wrap.append(currentStatus);
     const chips = el("div", "setting-chips");
     const chip = (label: string) => {
       const button = el("button", "setting-chip mono", label) as HTMLButtonElement;
@@ -698,6 +749,7 @@ export function clientMain({
       button.type = "button";
       button.disabled = disabled;
       button.addEventListener("click", run);
+      button.append(el("span", "mobile-action-label", label));
       links.append(button);
       return button;
     };
@@ -705,10 +757,14 @@ export function clientMain({
     const compact = action("fold", t("web.agent.compact"), () => void send(`/compact ${agent.id}`, compact), "", agent.status === "stopped");
     interrupt.dataset.command = `/interrupt ${agent.id}`;
     compact.dataset.command = `/compact ${agent.id}`;
-    links.append(roleButton(agent.id));
+    const settingsButton = roleButton(agent.id);
+    settingsButton.append(el("span", "mobile-action-label", t("web.top.settings")));
+    links.append(settingsButton);
     wrap.append(links);
     controlUpdaters.set(wrap, (current) => {
       updateChips(current);
+      currentStatus.className = `state mobile-only ${current.status === "busy" ? "working" : current.status}`;
+      currentStatus.textContent = t(STATUS_LABEL[current.status]);
       gaugeValues(current.usage).forEach((g, index) => {
         const node = gauges[index];
         if (node) syncGauge(node, g.label, g.value, g.percent, g.over, g.tick);
@@ -754,26 +810,39 @@ export function clientMain({
     projects.hidden = listedProjects.length === 0;
     projects.value = selectedProject;
     // スマホ: 状態の行
-    const rows = $("#status");
-    rows.replaceChildren(...state.agents.map((agent) => {
-      const row = el("button", "status-row") as HTMLButtonElement;
-      row.type = "button";
-      row.setAttribute("aria-label", t("web.status.open", { agent: AGENTS[agent.id].name }));
-      const figs = el("span", "figs");
-      const fig = (k: string, v: string) => {
-        const span = el("span", "", `${k} `);
-        span.append(el("b", "mono", v));
-        return span;
-      };
-      figs.append(el("span", `name c-${agent.id}`, AGENTS[agent.id].name));
-      if (agent.usage.contextTokens !== undefined) figs.append(fig("ctx", kTokens(agent.usage.contextTokens)));
-      if (agent.usage.fiveHourPercent !== undefined) figs.append(fig("5h", `${agent.usage.fiveHourPercent}%`));
-      if (agent.usage.weeklyPace !== undefined) figs.append(fig(t("web.gauge.weekly"), `${agent.usage.weeklyPace > 0 ? "+" : ""}${agent.usage.weeklyPace}`));
-      if (agent.permission === "full") figs.append(el("span", "badge", "full"));
-      row.append(mark(agent.id), figs, stateLabel(agent));
-      row.addEventListener("click", () => openAgentSheet(agent.id));
-      return row;
+    $("#mobile-title").textContent = state.conversations.find((conversation) => conversation.current)?.title ?? t("web.conv.untitled");
+    $("#mobile-project").replaceChildren(icon("folder"), el("span", "", $("#project-name").textContent ?? ""));
+    $("#mobile-agents").replaceChildren(...state.agents.map((agent) => {
+      const button = el("button", "apill") as HTMLButtonElement;
+      button.type = "button";
+      button.dataset.agent = agent.id;
+      button.dataset.state = agent.status;
+      button.setAttribute("aria-expanded", String(!sheet.hidden && sheetAgent === agent.id));
+      button.setAttribute("aria-label", `${AGENTS[agent.id].name} · ${t(STATUS_LABEL[agent.status])}`);
+      button.title = button.getAttribute("aria-label")!;
+      const inside = el("span", "in");
+      inside.append(el("span", "dot"));
+      if (agent.permission === "full") { const shield = icon("shield-alert"); shield.classList.add("shield"); inside.append(shield); }
+      const ring = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      ring.setAttribute("viewBox", "0 0 24 24");
+      ring.setAttribute("class", "ring");
+      ring.setAttribute("aria-hidden", "true");
+      const percent = agent.usage.contextWindow ? Math.min(PERCENT, Math.max(0, (agent.usage.contextTokens ?? 0) / agent.usage.contextWindow * PERCENT)) : 0;
+      for (const cls of ["bg", "fg"]) {
+        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        for (const [key, value] of Object.entries({ cx: "12", cy: "12", r: "9", class: cls, pathLength: "100" })) circle.setAttribute(key, value);
+        if (cls === "fg") circle.setAttribute("stroke-dasharray", `${percent} 100`);
+        ring.append(circle);
+      }
+      inside.append(ring);
+      button.append(inside);
+      button.addEventListener("click", () => openAgentSheet(agent.id));
+      return button;
     }));
+    const selected = target ?? state.primary;
+    $("#target-toggle").replaceChildren(mark(selected));
+    $("#target-toggle").setAttribute("aria-label", `${t("web.to.label")}: ${AGENTS[selected].name}`);
+    $("#target-toggle").title = $("#target-toggle").getAttribute("aria-label")!;
     // PC: Agent パネル
     const well = el("div", "strip-well");
     well.append(...state.agents.map((agent) => {
@@ -886,15 +955,25 @@ export function clientMain({
   let sheetKind: "agent" | "agentSettings" | "settings" | "conversations" | "conversationMenu" | "artifacts" | "viewer" | undefined;
   let pendingPrimary: AgentId | undefined;
   const sheet = $("#sheet");
+  let sheetReturnFocus: HTMLElement | undefined;
   const openSheet = (title: string, content: HTMLElement[]) => {
+    if (sheet.hidden && document.activeElement instanceof HTMLElement) sheetReturnFocus = document.activeElement;
+    sheet.classList.remove("mobile-pop", "add-pop");
     $("#sheet-title").textContent = title;
     $("#sheet-body").replaceChildren(...content);
     // ファイルの表示は PC では広く使う
     sheet.querySelector(".sheet-panel")?.classList.toggle("wide", sheetKind === "viewer");
+    sheet.classList.toggle("drawer", sheetKind === "conversations" && mobile.matches);
     sheet.hidden = false;
+    $("#sheet-close").focus({ preventScroll: true });
+    for (const pill of document.querySelectorAll(".apill")) pill.setAttribute("aria-expanded", String((pill as HTMLElement).dataset.agent === sheetAgent));
   };
   const closeSheet = () => {
     sheet.hidden = true;
+    sheet.classList.remove("drawer", "mobile-pop", "add-pop");
+    if (sheetReturnFocus?.isConnected) sheetReturnFocus.focus({ preventScroll: true });
+    sheetReturnFocus = undefined;
+    for (const pill of document.querySelectorAll(".apill")) pill.setAttribute("aria-expanded", "false");
     sheetAgent = undefined;
     sheetKind = undefined;
   };
@@ -913,7 +992,24 @@ export function clientMain({
     fresh.addEventListener("click", () => {
       void send("/new", fresh).then((ok) => { if (ok) closeSheet(); });
     });
-    openSheet(t("web.conv.title"), [fresh, ...conversationList()]);
+    const conversations = el("div", "drawer-conversations");
+    conversations.append(...conversationList());
+    const footer = el("div", "drawer-projects");
+    const projects = el("select") as HTMLSelectElement;
+    projects.setAttribute("aria-label", t("web.top.projects"));
+    for (const project of state?.projects ?? []) {
+      const option = el("option") as HTMLOptionElement;
+      option.value = project.projectRoot;
+      option.textContent = project.projectRoot;
+      option.selected = project.current;
+      projects.append(option);
+    }
+    projects.addEventListener("change", () => {
+      projects.disabled = true;
+      void send(`/project ${projects.value}`).then((ok) => { if (ok) closeSheet(); }).finally(() => { projects.disabled = false; });
+    });
+    footer.append(projects);
+    openSheet(t("web.conv.title"), [fresh, conversations, footer]);
   };
   const sheetButton = (label: string, cls: string, run: (button: HTMLButtonElement) => void) => {
     const button = el("button", cls, label) as HTMLButtonElement;
@@ -1173,9 +1269,96 @@ export function clientMain({
     }
   };
 
+  $("#mobile-menu").addEventListener("click", openConversations);
+  $("#target-toggle").addEventListener("click", () => {
+    target = (target ?? state?.primary ?? "claude") === "claude" ? "codex" : "claude";
+    renderState();
+  });
+  $("#mobile-more").addEventListener("click", () => {
+    sheetKind = undefined;
+    sheetAgent = undefined;
+    const actions = el("div", "mobile-menu-actions");
+    for (const [name, key, id] of [["files", "web.top.artifacts", "open-artifacts"], ["settings", "web.top.settings", "open-settings"], ["list-tree", "web.mobile.detail", "detail"], ["folder-open", "web.mobile.openProject", "open-project"]] as const) {
+      const button = iconButton(name, t(key));
+      button.append(el("span", "", t(key)));
+      if (id === "detail") button.setAttribute("aria-pressed", String(detail));
+      button.addEventListener("click", () => { closeSheet(); $("#" + id).click(); });
+      actions.append(button);
+    }
+    const project = iconButton("folder", t("web.mobile.project"));
+    project.append(el("span", "", `${t("web.mobile.project")}: ${$("#project-name").textContent}`));
+    project.addEventListener("click", openConversations);
+    actions.insertBefore(project, actions.lastElementChild);
+    openSheet(t("web.top.more"), [actions]);
+    sheet.classList.add("mobile-pop");
+    actions.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+  });
+  $("#mobile-add").addEventListener("click", () => {
+    sheetKind = undefined;
+    sheetAgent = undefined;
+    const actions = el("div", "mobile-menu-actions");
+    for (const [name, key] of [["image-plus", "web.mobile.image"], ["terminal", "web.mobile.command"]] as const) {
+      const button = iconButton(name, t(key));
+      button.append(el("span", "", t(key)));
+      button.addEventListener("click", () => {
+        closeSheet();
+        if (name === "image-plus") $("#attach-file").click();
+        else { if (!input.value.startsWith("!")) input.value = "!" + input.value; onInputChanged(); input.focus(); }
+      });
+      actions.append(button);
+    }
+    openSheet(t("web.mobile.add"), [actions]);
+    sheet.classList.add("mobile-pop", "add-pop");
+    actions.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+  });
+  const tabs = $(".working-tabs");
+  const tabHome = tabs.parentElement!;
+  const adaptTabs = () => {
+    (mobile.matches ? $("#composer") : tabHome).prepend(tabs);
+    for (const [id, key] of [["working-toggle", "web.working.title"], ["question-toggle", "web.question.title"]] as const) {
+      const button = $("#" + id);
+      button.querySelector(".mobile-tab-label")?.remove();
+      if (mobile.matches) button.querySelector(".i")?.after(el("span", "mobile-tab-label", t(key)));
+    }
+  };
+  mobile.addEventListener("change", adaptTabs);
+  adaptTabs();
+  const grab = $("#sheet-grab");
+  let dragStart: number | undefined;
+  grab.addEventListener("pointerdown", (event) => {
+    dragStart = event.clientY;
+    grab.setPointerCapture(event.pointerId);
+  });
+  grab.addEventListener("pointerup", (event) => {
+    if (dragStart !== undefined && event.clientY - dragStart >= SWIPE_CLOSE_PX) closeSheet();
+    dragStart = undefined;
+  });
+  grab.addEventListener("pointercancel", () => { dragStart = undefined; });
+  const syncViewport = () => {
+    const viewport = window.visualViewport;
+    const focused = document.activeElement?.matches("input, textarea, select");
+    const keyboard = mobile.matches && focused && viewport && viewport.scale === 1 && window.innerHeight - viewport.height > KEYBOARD_THRESHOLD_PX;
+    document.body.classList.toggle("kbd", Boolean(keyboard));
+    if (mobile.matches && viewport?.scale === 1) document.documentElement.style.setProperty("--viewport-height", `${viewport.height}px`);
+    else document.documentElement.style.removeProperty("--viewport-height");
+  };
+  window.visualViewport?.addEventListener("resize", syncViewport);
+  window.addEventListener("resize", syncViewport);
+  document.addEventListener("focusin", syncViewport);
+  document.addEventListener("focusout", () => requestAnimationFrame(syncViewport));
+  syncViewport();
   $("#sheet-close").addEventListener("click", closeSheet);
   $("#sheet-backdrop").addEventListener("click", closeSheet);
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !sheet.hidden) closeSheet(); });
+  document.addEventListener("keydown", (e) => {
+    if (sheet.hidden) return;
+    if (e.key === "Escape") closeSheet();
+    if (e.key !== "Tab") return;
+    const controls = [...sheet.querySelectorAll<HTMLElement>('.sheet-panel button:not(:disabled), .sheet-panel input:not(:disabled), .sheet-panel select:not(:disabled), .sheet-panel textarea:not(:disabled), .sheet-panel [tabindex="0"]')].filter((node) => node.getClientRects().length > 0);
+    const first = controls[0];
+    const last = controls.at(-1);
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+  });
   $("#open-conversations").addEventListener("click", openConversations);
   $("#open-settings").addEventListener("click", openSettings);
   $("#new-conversation").addEventListener("click", () => void send("/new", $("#new-conversation")));
@@ -1215,7 +1398,7 @@ export function clientMain({
   detailButton.addEventListener("click", () => setDetail(!detail));
 
   // ---- 入力 ----
-  const coarse = window.matchMedia("(pointer: coarse)").matches;
+  const coarse = mobile.matches;
   const resize = () => {
     const stick = nearBottom();
     input.style.height = "";
@@ -1342,7 +1525,7 @@ export function clientMain({
     sendButton.replaceChildren(icon(shell ? "terminal" : "arrow-up"));
     sendButton.setAttribute("aria-label", t(shell ? "web.run" : "web.send"));
     sendButton.title = t(shell ? "web.run" : "web.send");
-    for (const button of document.querySelectorAll<HTMLButtonElement>(".to button")) button.disabled = shell;
+    for (const button of document.querySelectorAll<HTMLButtonElement>(".to button, #target-toggle")) button.disabled = shell;
     resize();
     renderHighlight();
     updateSuggest();
@@ -1408,7 +1591,7 @@ export function clientMain({
         selected = (selected + (e.key === "ArrowDown" ? 1 : count - 1)) % count;
         return renderSuggest();
       }
-      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !coarse)) {
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !mobile.matches)) {
         e.preventDefault();
         return accept(selected);
       }
@@ -1418,7 +1601,7 @@ export function clientMain({
         return closeSuggest();
       }
     }
-    if (coarse || e.key !== "Enter" || e.shiftKey) return;
+    if (mobile.matches || e.key !== "Enter" || e.shiftKey) return;
     e.preventDefault();
     void submit();
   });

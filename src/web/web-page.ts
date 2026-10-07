@@ -510,6 +510,119 @@ const STYLE = `
   .starting-turn .body { display: grid; gap: 9px; padding: 12px; background: var(--sunken); border-radius: var(--r-outer); }
   .starting-turn .body .sk:first-child { width: 65%; }
   .starting-turn .body .sk:last-child { width: 42%; }
+  .mobile-only, .grab { display: none; }
+  .code-block { min-width: 0; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; margin: 12px 0; }
+  .code-head { display: flex; justify-content: flex-end; border-bottom: 1px solid var(--line); padding-inline: 4px; background: var(--sunken); }
+  .code-block pre { margin: 0; border: 0; }
+  .code-more { display: none; }
+  .table-scroll { overflow-x: auto; max-width: 100%; box-shadow: inset -8px 0 8px -8px var(--muted); }
+  .table-scroll table { min-width: 100%; }
+  .mobile-action-label { display: none; }
+  .sheet-backdrop:hover:not(:disabled), .sheet-backdrop:active:not(:disabled) { background: var(--scrim); transform: none; }
+  @media (max-width: 899px), (pointer: coarse) {
+    .mobile-only { display: flex; }
+    .app { height: var(--viewport-height, 100dvh); grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-areas: "top" "conn" "log" "compose"; padding-inline: env(safe-area-inset-left) env(safe-area-inset-right); }
+    .topbar { height: calc(48px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 2px 0; gap: 0; flex-wrap: nowrap; }
+    .topbar > .brand, .topbar > .project-pill, .topbar > #open-project, .header-tray, .side, .agent-strip { display: none; }
+    .topbar > .icon-btn { width: 44px; height: 44px; flex: none; }
+    .mobile-title { flex: 1; min-width: 0; display: grid; line-height: 1.25; padding: 0 4px; }
+    .mobile-title b { font-size: 14.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mobile-title small { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mobile-title small .i { width: 13px; height: 13px; flex: none; }
+    #mobile-agents { flex: none; }
+    .mobile-agent-skeleton { width: 48px; height: 30px; border-radius: 999px; margin: 0 2px; }
+    .apill { border: 0; background: none; display: inline-grid; place-items: center; height: 44px; padding: 0 2px; border-radius: var(--r); }
+    .apill .in { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 6px 0 9px; border-radius: 999px; background: var(--sunken); }
+    .apill:hover .in, .apill[aria-expanded="true"] .in { background: var(--panel); box-shadow: var(--ring-strong); }
+    .apill .dot { width: 8px; height: 8px; border-radius: 2px; background: var(--agent); }
+    .apill[data-state="busy"] .dot { border-radius: 50%; animation: pulse 1.5s infinite; }
+    .apill[data-state="starting"] .dot { background: none; border: 1px dashed var(--agent); border-radius: 50%; animation: spin 1s linear infinite; }
+    .apill[data-state="stopped"] .dot { background: var(--muted); }
+    .apill .shield { width: 12px; height: 12px; color: var(--warn); margin-left: -2px; }
+    .ring { width: 20px; height: 20px; transform: rotate(-90deg); }
+    .ring circle { fill: none; stroke-width: 2.6; }
+    .ring .bg { stroke: var(--line-strong); } .ring .fg { stroke: var(--agent); stroke-linecap: round; }
+    .apill[data-state="stopped"] .ring .fg { stroke: var(--muted); }
+    .log { padding: 0 14px 64px; }
+    .entry { grid-template-columns: 20px minmax(0, 1fr); gap: 6px 8px; padding: 14px 0; }
+    .entry > :not(.mark):not(.head), .entry.question > :not(.mark):not(.head) { grid-column: 1 / -1; }
+    .entry > .mark { grid-row: 1; width: 20px; height: 20px; font-size: 10px; border-radius: 5px; }
+    .entry > .head { grid-column: 2; grid-row: 1; }
+    .entry .head .state { margin-left: auto; font-size: 11.5px; color: var(--muted); }
+    .entry .head .state.working::after { display: none; }
+    .entry .body { font-size: 15px; }
+    .fold > summary { min-height: 44px; padding: 8px 6px; }
+    .code-head .icon-btn { width: 44px; height: 44px; }
+    .code-block.long:not(.expanded) pre { max-height: 168px; overflow: hidden; mask-image: linear-gradient(#000 60%, transparent); }
+    .code-block.long .code-more { display: flex; justify-content: center; align-items: center; gap: 6px; width: 100%; height: 44px; border: 0; border-top: 1px solid var(--line); background: var(--panel); color: var(--fg-2); }
+    .code-block.expanded .code-more .i { transform: rotate(180deg); }
+    .question-option { min-height: 48px; }
+    input, textarea, select, .question-other, .role-editor, .model-custom { font-size: 16px !important; }
+    .question-footer input, .question-footer button { min-height: 44px; }
+    .composer { position: relative; padding: 6px 8px max(8px, env(safe-area-inset-bottom)); }
+    .working-tabs { position: absolute; top: auto; left: 12px; bottom: calc(100% + 10px); right: auto; display: flex; gap: 8px; }
+    .working-tab { display: inline-flex; align-items: center; gap: 7px; width: auto; height: 36px; min-width: 80px; padding: 0 13px 0 11px; border-radius: 999px; box-shadow: var(--shadow-pop); background: var(--panel); color: var(--fg); }
+    .working-tab::after { content: ""; position: absolute; inset: -4px 0; }
+    .working-tab .count { position: static; background: none; color: var(--muted); width: auto; height: auto; }
+    #question-toggle .count, #question-toggle .i { color: var(--crit); background: none; }
+    #working-toggle .i { display: none; }
+    #working-toggle::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--agent, var(--accent)); animation: state-pulse 1.4s infinite; }
+    .mobile-tab-label { font-size: 13px; }
+    .box { grid-template-columns: 44px minmax(0, 1fr) 44px 44px; align-items: end; border-radius: 16px; padding: 2px; gap: 0; }
+    .box > .pending, .box > .suggest { grid-column: 1 / -1; }
+    .box > .pending { grid-row: 1; } .box > .suggest { grid-row: 2; }
+    .box .bar { display: contents; } .to { display: none; }
+    .to-mark { display: inline-grid; place-items: center; grid-column: 1; grid-row: 3; width: 44px; height: 44px; border-radius: 13px; }
+    .to-mark .mark { width: 26px; height: 26px; font-size: 12px; border-radius: 7px; }
+    .input-wrap { grid-column: 2; grid-row: 3; }
+    .box textarea, .input-highlight { font-size: 16px; min-height: 44px; max-height: 30dvh; padding: 10px 4px 10px 6px; line-height: 1.5; scrollbar-gutter: auto; }
+    .box .attach { display: none; }
+    .box .mobile-add { grid-column: 3; grid-row: 3; width: 44px; height: 44px; border-radius: 13px; }
+    .box .send { grid-column: 4; grid-row: 3; width: 44px; height: 44px; border-radius: 13px; }
+    .newer { bottom: 60px; }
+    .sheet { align-items: end; }
+    .sheet-panel { max-height: 80dvh; max-width: none; border-radius: 16px 16px 0 0; padding: 0 max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); animation: sheet-mobile-in 260ms cubic-bezier(.2,.7,.3,1); }
+    @keyframes sheet-mobile-in { from { transform: translateY(100%); } }
+    .grab { display: block; width: 100%; height: 24px; position: relative; touch-action: none; }
+    .grab::before { content: ""; position: absolute; left: 50%; top: 9px; width: 36px; height: 5px; margin-left: -18px; border-radius: 3px; background: var(--line-strong); }
+    .sheet-head .icon-btn { width: 44px; height: 44px; }
+    .sheet button, .sheet input:not([type="checkbox"]), .sheet select { min-height: 44px; }
+    .sheet .controls .links { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .sheet .controls > .state { display: inline-flex; align-items: center; gap: 5px; width: fit-content; font-size: 11.5px; border-radius: 999px; padding: 2px 7px; background: var(--sunken); margin: 6px 0 12px; }
+    .sheet .controls > .state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--agent); }
+    .sheet .controls > .state::after { display: none; }
+    .sheet .controls .links button { gap: 6px; width: auto; height: 44px; border: 1px solid var(--line); }
+    .sheet .controls .links .danger { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 35%, var(--line)); }
+    .sheet .controls .links .danger:disabled { color: var(--muted); }
+    .mobile-action-label { display: inline; font-size: 14px; }
+    .sheet .mini-gauges { width: 100%; margin: 14px 0; gap: 12px; }
+    .sheet.drawer { align-items: stretch; justify-items: start; }
+    .sheet.drawer .sheet-panel { margin: 0; width: 86%; max-width: 380px; max-height: 100%; border-radius: 0; padding: env(safe-area-inset-top) 8px max(8px, env(safe-area-inset-bottom)); background: var(--bg); display: flex; flex-direction: column; animation: drawer-in 240ms ease-out; }
+    @keyframes drawer-in { from { transform: translateX(-100%); } }
+    .drawer .grab { display: none; } .drawer .sheet-head { height: 52px; padding-left: 8px; flex: none; }
+    .drawer #sheet-body { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+    .drawer .primary-action { min-height: 44px; margin: 4px 4px 8px; width: auto; }
+    .drawer-conversations { overflow-y: auto; }
+    .drawer .conv-row { min-height: 56px; }
+    .drawer .conv-menu { width: 44px; height: 44px; opacity: 1; }
+    .drawer-projects { margin-top: auto; border-top: 1px solid var(--line); padding: 8px 4px; }
+    .drawer-projects select { width: 100%; background: var(--sunken); color: var(--fg); border: 1px solid var(--line); border-radius: var(--r); padding: 0 10px; }
+    .mobile-menu-actions { display: grid; gap: 4px; }
+    .mobile-menu-actions button { width: 100%; justify-content: flex-start; gap: 12px; padding: 0 12px; }
+    .sheet.mobile-pop { align-items: start; justify-items: end; }
+    .mobile-pop .sheet-panel { width: 240px; margin: calc(52px + env(safe-area-inset-top)) 8px 0 0; padding: 6px; border-radius: var(--r-outer); box-shadow: var(--shadow-pop); animation: sheet-in 150ms ease-out; }
+    .mobile-pop .sheet-backdrop, .mobile-pop .sheet-backdrop:hover:not(:disabled), .mobile-pop .sheet-backdrop:active:not(:disabled) { background: transparent; }
+    .sheet.add-pop { align-items: end; }
+    .add-pop .sheet-panel { margin: 0 8px calc(70px + env(safe-area-inset-bottom)) 0; }
+    .mobile-pop .grab, .mobile-pop .sheet-head { display: none; }
+    .pending button { min-width: 44px; min-height: 44px; }
+    .ref { min-height: 44px; }
+    body.kbd .topbar { display: none; }
+    body.kbd .app { grid-template-areas: "conn" "log" "compose"; grid-template-rows: auto minmax(0, 1fr) auto; }
+    body.kbd .working-tabs { display: none; }
+    body.kbd .composer { padding-bottom: 6px; }
+  }
+
 `;
 
 const escapeHtml = (text: string) =>
@@ -525,6 +638,10 @@ ${UI_ICONS}
 <div class="app initial-loading" aria-busy="true">
   <header class="topbar">
     <div class="progress" aria-hidden="true"></div>
+    ${button("mobile-menu", "menu", "web.top.conversations", "mobile-only")}
+    <div class="mobile-title mobile-only"><b id="mobile-title"></b><small id="mobile-project"></small></div>
+    <div id="mobile-agents" class="mobile-only"><span class="sk mobile-agent-skeleton"></span><span class="sk mobile-agent-skeleton"></span></div>
+    ${button("mobile-more", "ellipsis", "web.top.more", "mobile-only")}
     <span class="brand">Clodex</span>
     <div class="project-pill" id="project-pill">${icon("folder")}<span id="project-name"></span>${icon("chevron-down")}<select id="projects" aria-label="${m("web.top.projects")}"></select></div>
     ${button("open-project", "folder-open", "web.top.openProject")}
@@ -537,7 +654,6 @@ ${UI_ICONS}
     </div>
   </header>
   <div class="conn" id="conn" hidden role="status"><span class="spin" id="conn-spinner"></span><span id="conn-label">${m("web.conn.lost")}</span><button class="btn" id="reload" type="button" hidden>${m("web.conn.reload")}</button></div>
-  <div class="status" id="status"></div>
   <section class="agent-strip" id="agents" aria-label="Agent"><div class="strip-well" aria-hidden="true">${[0, 1].map(() => '<div class="strip-skeleton"><span class="sk sk-avatar"></span><div class="sk-identity"><div><span class="sk sk-name"></span><span class="sk sk-state"></span></div><span class="sk sk-settings"></span></div><div class="sk-gauges"><span class="sk"></span><span class="sk"></span><span class="sk"></span></div></div>').join("")}</div></section>
   <aside class="side">
     <section>
@@ -559,6 +675,7 @@ ${UI_ICONS}
     <div class="box">
       <ul class="pending" id="pending" aria-label="${m("web.pending.label")}" hidden></ul>
       <ul class="suggest" id="suggest" role="listbox" aria-label="${m("web.suggest.label")}" hidden></ul>
+      ${button("target-toggle", "refresh", "web.to.label", "mobile-only to-mark")}
       <div class="input-wrap">
         <div class="input-highlight" id="input-highlight" aria-hidden="true"></div>
         <textarea id="input" rows="1" aria-label="${m("web.input.label")}" enterkeyhint="enter" role="combobox" aria-controls="suggest" aria-expanded="false" aria-autocomplete="list"></textarea>
@@ -569,6 +686,7 @@ ${UI_ICONS}
           <button type="button" data-agent="codex" aria-pressed="false">Codex</button>
         </div>
         ${button("attach", "image-plus", "web.attach.label", "attach")}
+        ${button("mobile-add", "plus", "web.mobile.add", "mobile-only mobile-add")}
         <input type="file" id="attach-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
         <button class="send icon-btn" type="submit" aria-label="${m("web.send")}" title="${m("web.send")}">${icon("arrow-up")}</button>
       </div>
@@ -582,6 +700,7 @@ ${UI_ICONS}
 <div class="sheet" id="sheet" hidden>
   <button class="sheet-backdrop" id="sheet-backdrop" type="button" aria-label="${m("web.sheet.close")}"></button>
   <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="grab" id="sheet-grab" aria-hidden="true"></div>
     <div class="sheet-head"><h2 id="sheet-title"></h2>${button("sheet-close", "x", "web.sheet.close", "sheet-close")}</div>
     <div id="sheet-body"></div>
   </div>
@@ -643,7 +762,7 @@ export const buildWebPage = (language: Language): WebPage => {
 <html lang="${language}">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <title>Clodex</title>
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
