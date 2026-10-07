@@ -65,6 +65,7 @@ describe("buildWebPage", () => {
     expect(html).toContain("unlinkImagePath(node, path)");
     expect(html).toContain("linkImagePaths(node);");
     expect(html).toMatch(/\.image-link\s*\{[^}]*cursor:\s*zoom-in/);
+    expect(html).toContain(".md a, .image-link { color: var(--link); text-decoration: underline;");
     const split = runInNewContext(`({${deps}}).splitImagePaths`) as (text: string) => Array<{ text: string; path?: string }>;
     expect(split("見て C:/out/a.png")).toEqual([{ text: "見て " }, { text: "C:/out/a.png", path: "C:/out/a.png" }]);
     expect(html).toMatch(/\.image-previews\s*\{[^}]*flex-wrap:\s*wrap/);

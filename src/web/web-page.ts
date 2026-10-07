@@ -32,7 +32,7 @@ const STYLE = `
     --shadow-pop: 0 12px 32px var(--scrim), var(--ring); --ease: 120ms cubic-bezier(.2, .7, .3, 1);
     --bg: #fafafa; --panel: #ffffff; --sunken: #f2f2f3; --line: #e6e6e8; --line-strong: #d4d4d8;
     --fg: #111113; --fg-2: #3f3f46; --muted: #80808a;
-    --claude: #b4793f; --codex: #4b6fa5; --code: #6f9a5a;
+    --claude: #b4793f; --codex: #4b6fa5; --code: #6f9a5a; --link: #2563eb;
     --invert-bg: #111113; --invert-fg: #fafafa;
     --warn: #b7791f; --crit: #d14343; --scrim: rgba(17, 17, 19, .32);
     --font-ui: "Geist", "Zen Kaku Gothic New", system-ui, sans-serif;
@@ -42,14 +42,14 @@ const STYLE = `
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
     --bg: #0b0b0c; --panel: #111113; --sunken: #18181b; --line: #232326; --line-strong: #2f2f34;
     --fg: #f4f4f5; --fg-2: #c8c8cd; --muted: #7c7c86;
-    --claude: #d7a26d; --codex: #8aa9d8;
+    --claude: #d7a26d; --codex: #8aa9d8; --link: #7aa7ff;
     --invert-bg: #f4f4f5; --invert-fg: #0b0b0c;
     --warn: #e0a84a; --crit: #ef6b6b; --scrim: rgba(0, 0, 0, .55); color-scheme: dark;
   } }
   :root[data-theme="dark"] {
     --bg: #0b0b0c; --panel: #111113; --sunken: #18181b; --line: #232326; --line-strong: #2f2f34;
     --fg: #f4f4f5; --fg-2: #c8c8cd; --muted: #7c7c86;
-    --claude: #d7a26d; --codex: #8aa9d8;
+    --claude: #d7a26d; --codex: #8aa9d8; --link: #7aa7ff;
     --invert-bg: #f4f4f5; --invert-fg: #0b0b0c;
     --warn: #e0a84a; --crit: #ef6b6b; --scrim: rgba(0, 0, 0, .55); color-scheme: dark;
   }
@@ -193,8 +193,9 @@ const STYLE = `
   .image-previews:empty { display: none; }
   .image-preview { max-width: 100%; min-width: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--sunken); }
   .image-preview { cursor: zoom-in; }
-  .image-link { cursor: zoom-in; text-decoration: underline dotted; text-underline-offset: 3px; border-radius: 2px; }
-  .image-link:hover { text-decoration-style: solid; }
+  .md a, .image-link { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
+  .image-link { cursor: zoom-in; }
+  .md a:hover, .image-link:hover { text-decoration-thickness: 2px; }
   .image-preview img { display: block; max-height: 96px; max-width: 160px; object-fit: contain; }
   .lightbox { position: fixed; inset: 0; z-index: 25; display: grid; grid-template-rows: auto minmax(0, 1fr); background: #0c0c0e; color: #f4f4f5; }
   .lightbox[hidden] { display: none; }
