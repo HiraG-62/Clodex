@@ -228,7 +228,7 @@ const main = async (): Promise<void> => {
     const context = hub.current;
     if (context) {
       printTerminal(t("start.banner", { project: context.projectRoot, primary: context.primary }));
-      printTerminal(t("start.log", { path: defaultLogPath(context.projectRoot, context.startedAt, context.history.currentId.slice(0, LOG_SUFFIX_LENGTH)) }));
+      printTerminal(t("start.log", { path: defaultLogPath(homeDir, context.projectRoot, context.startedAt, context.history.currentId.slice(0, LOG_SUFFIX_LENGTH)) }));
       const saved = AGENT_IDS.flatMap((id) => Object.entries(context.savedSettings[id] ?? {}).map(([key, value]) => `${id} ${key} ${value}`));
       for (const name of LIMIT_NAMES) {
         const value = context.savedSettings.limits?.[LIMIT_KEYS[name]];

@@ -1,6 +1,5 @@
 // Event Bus の購読者として terminal 表示と JSONL 記録を行う（DESIGN.md §17）
 import { appendFileSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { AgentEvent, RateLimitWindow } from "../agents/agent-adapter.js";
 import type { CoordinatorEvent, EventBus } from "../coordinator/event-bus.js";
@@ -112,11 +111,11 @@ export const createJsonlWriter = (path: string) => {
 
 // project の working tree を汚さないよう、ホームディレクトリに置く
 // suffix: 会話ごとにファイルを分けるときの識別子（DESIGN.md §28 D1）
-export const defaultLogPath = (projectRoot: string, startedAt: Date, suffix?: string): string => {
+export const defaultLogPath = (homeDir: string, projectRoot: string, startedAt: Date, suffix?: string): string => {
   const d = startedAt;
   const stamp = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
   const name = basename(projectRoot) || projectRoot.replace(/[^A-Za-z0-9]/g, "-");
-  return join(homedir(), LOG_DIR, `${name}-${stamp}${suffix ? `-${suffix}` : ""}${LOG_EXTENSION}`);
+  return join(homeDir, LOG_DIR, `${name}-${stamp}${suffix ? `-${suffix}` : ""}${LOG_EXTENSION}`);
 };
 
 export interface EventLogOptions {

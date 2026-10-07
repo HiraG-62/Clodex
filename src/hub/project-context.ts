@@ -145,7 +145,7 @@ export const openProject = async ({
       language,
     });
     attachEventLog(bus, {
-      path: defaultLogPath(projectRoot, startedAt, conversation.id.slice(0, LOG_SUFFIX_LENGTH)),
+      path: defaultLogPath(homeDir, projectRoot, startedAt, conversation.id.slice(0, LOG_SUFFIX_LENGTH)),
       print: (line) => { if (isCurrent() && workspace?.current.bus === bus) printTerminal(line); },
       mode: displayMode,
     });

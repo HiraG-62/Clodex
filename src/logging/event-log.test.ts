@@ -108,13 +108,13 @@ describe("createJsonlWriter", () => {
 });
 
 describe("defaultLogPath", () => {
-  it("ホームの .clodex/logs に project 名と起動時刻で置く", () => {
-    const path = defaultLogPath("C:\\dev\\my-app", new Date(2026, 9, 5, 14, 32, 10));
-    expect(path).toBe(join(homedir(), ".clodex", "logs", "my-app-20261005-143210.jsonl"));
+  it("渡されたホームの .clodex/logs に project 名と起動時刻で置く", () => {
+    const path = defaultLogPath("D:\\home", "C:\\dev\\my-app", new Date(2026, 9, 5, 14, 32, 10));
+    expect(path).toBe(join("D:\\home", ".clodex", "logs", "my-app-20261005-143210.jsonl"));
   });
 
   it("ドライブ直下では project root の置換名を使う", () => {
-    expect(defaultLogPath("C:\\", new Date(2026, 9, 5, 14, 32, 10)))
+    expect(defaultLogPath(homedir(), "C:\\", new Date(2026, 9, 5, 14, 32, 10)))
       .toBe(join(homedir(), ".clodex", "logs", "C---20261005-143210.jsonl"));
   });
 });
@@ -169,7 +169,7 @@ describe("createTerminalFormatter（既定表示の方針）", () => {
 
 describe("defaultLogPath の会話ごとのファイル", () => {
   it("suffix を名前の末尾に足す", () => {
-    expect(defaultLogPath("C:\\dev\\Clodex", new Date(2026, 9, 5, 14, 32, 10), "1a2b3c4d"))
+    expect(defaultLogPath(homedir(), "C:\\dev\\Clodex", new Date(2026, 9, 5, 14, 32, 10), "1a2b3c4d"))
       .toBe(join(homedir(), ".clodex", "logs", "Clodex-20261005-143210-1a2b3c4d.jsonl"));
   });
 });
