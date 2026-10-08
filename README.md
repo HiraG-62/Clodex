@@ -2,7 +2,7 @@
 
 Windows ネイティブ環境で Claude Code と Codex CLI を対等な開発エージェントとして協調させる、薄い Development Shell。
 
-設計: [docs/DESIGN.md](docs/DESIGN.md) / CLI の検証結果: [docs/spikes/](docs/spikes/README.md)
+設計: [docs/DESIGN.md](docs/DESIGN.md) / CLI の検証結果: [docs/spikes/](docs/spikes/README.md) / Clodex で開発するプロジェクトの準備: [docs/GUIDE.md](docs/GUIDE.md)
 
 ## 前提
 
