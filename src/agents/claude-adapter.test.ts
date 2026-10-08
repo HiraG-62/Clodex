@@ -93,7 +93,7 @@ describe("ClaudeAdapter", () => {
   });
 
   it("idle の model / effort 変更は slash command を各 1 ターンとして送る", async () => {
-    const { adapter, spawner, proc } = await setup();
+    const { adapter, spawner, proc, events } = await setup();
     const model = adapter.setModel("haiku");
     expect(proc.writtenWith("type", "user")).toContainEqual({ type: "user", message: { role: "user", content: "/model haiku" } });
     proc.emit(result("Set model to `Haiku 4.5` for this session only"));
@@ -103,9 +103,14 @@ describe("ClaudeAdapter", () => {
     proc.emit(result("Set effort level to medium (this session only)"));
     await expect(effort).resolves.toMatchObject({ status: "completed" });
     expect(spawner.calls).toHaveLength(1);
+    expect(events.filter((event) => event.type === "turn_started" || event.type === "turn")).toEqual([]);
     const turn = adapter.send("hello");
     proc.emit(result("done"));
     await expect(turn).resolves.toEqual({ status: "completed", text: "done" });
+    expect(events.filter((event) => event.type === "turn_started" || event.type === "turn")).toEqual([
+      { type: "turn_started" },
+      { type: "turn", result: { status: "completed", text: "done" } },
+    ]);
   });
 
   it("不正な model / effort は is_error=false でも failed にする", async () => {
@@ -118,7 +123,7 @@ describe("ClaudeAdapter", () => {
     await expect(effort).resolves.toMatchObject({ status: "failed" });
     expect(adapter.model).toBeUndefined();
     expect(adapter.effort).toBeUndefined();
-    expect(events).toContainEqual({ type: "turn", result: { status: "failed", text: "Model 'missing-model' not found" } });
+    expect(events.filter((event) => event.type === "turn_started" || event.type === "turn")).toEqual([]);
   });
 
   it("一時的な API error は failed のターンにし、プロセスは続ける", async () => {

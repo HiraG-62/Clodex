@@ -21,6 +21,7 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   protected proc: AgentProcess | undefined;
   private readonly handlers = new Set<AgentEventHandler>();
   private resolveTurn: ((result: TurnResult) => void) | undefined;
+  private quietTurn = false;
   private abortReason: string | undefined;
   private spontaneousTurn: Promise<TurnResult> | undefined;
   private stopping: Promise<void> | undefined;
@@ -60,15 +61,20 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
     return this.beginTurn(() => this.writeTurn(text, images));
   }
 
+  protected sendQuietly(text: string): Promise<TurnResult> {
+    return this.beginTurn(() => this.writeTurn(text, []), true);
+  }
+
   compact(): Promise<TurnResult> {
     return this.beginTurn(() => this.writeCompact());
   }
 
-  private beginTurn(write: () => void): Promise<TurnResult> {
-    if (this.spontaneousTurn) return this.spontaneousTurn.then(() => this.beginTurn(write));
+  private beginTurn(write: () => void, quiet = false): Promise<TurnResult> {
+    if (this.spontaneousTurn) return this.spontaneousTurn.then(() => this.beginTurn(write, quiet));
     if (this.status !== "idle") return Promise.reject(new Error(`${this.id} is ${this.status}`));
     this.status = "busy";
-    this.emit({ type: "turn_started" });
+    this.quietTurn = quiet;
+    if (!quiet) this.emit({ type: "turn_started" });
     const turn = new Promise<TurnResult>((resolve) => (this.resolveTurn = resolve));
     write();
     return turn;
@@ -77,6 +83,7 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   protected beginSpontaneousTurn(): void {
     if (this.status !== "idle") return;
     this.status = "busy";
+    this.quietTurn = false;
     this.spontaneousTurn = new Promise<TurnResult>((resolve) => (this.resolveTurn = resolve));
     this.emit({ type: "turn_started" });
   }
@@ -112,7 +119,9 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
     this.resolveTurn = undefined;
     this.spontaneousTurn = undefined;
     if (this.status === "busy") this.status = "idle";
-    this.emit({ type: "turn", result });
+    const quiet = this.quietTurn;
+    this.quietTurn = false;
+    if (!quiet) this.emit({ type: "turn", result });
     resolve(result);
   }
 

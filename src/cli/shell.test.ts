@@ -489,15 +489,17 @@ describe("createShell", () => {
     await shell.handleLine("/effort high");
     expect(coordinator.models).toEqual([{ agent: "claude", model: "haiku" }]);
     expect(coordinator.efforts).toEqual([{ agent: "codex", level: "low" }, { agent: undefined, level: "high" }]);
-    expect(printed).toEqual(["model: claude -> haiku", "effort: codex -> low", "effort: all agents -> high"]);
+    expect(printed).toEqual(["Saved model: claude → haiku", "Saved effort: codex → low", "Saved effort: all agents → high"]);
   });
 
   it("設定ターンが failed のとき成功表示を出さず、保存もしない", async () => {
-    const { coordinator, printed, shell, saved } = setup();
+    const { coordinator, printed, notified, levels, shell, saved } = setup();
     coordinator.settingResult = { status: "failed", text: "Model not found" };
     await shell.handleLine("/model claude missing-model");
     await shell.handleLine("/effort claude high");
     expect(printed).toEqual([]);
+    expect(notified).toEqual(["Model not found", "Model not found"]);
+    expect(levels).toEqual(["warn", "warn"]);
     expect(saved).toEqual([]);
   });
 

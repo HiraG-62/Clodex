@@ -152,7 +152,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     if (this.status !== "idle") return super.send(command);
     this.settingTurn = kind;
     try {
-      const result = await super.send(command);
+      const result = await this.sendQuietly(command);
       if (result.status === "completed") this[kind] = value;
       return result;
     } finally {

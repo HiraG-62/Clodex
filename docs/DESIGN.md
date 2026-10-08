@@ -648,10 +648,10 @@ git:
 - 既定は各 CLI のユーザー設定（`~/.claude/settings.json`、`~/.codex/config.toml`）。起動オプション `--claude-model` / `--codex-model` で起動時の model を上書きできる
 - 切り替えた値は `/new`・`/resume`・プロセスの再起動後も使う。project ごとに保存し、Clodex を起動し直しても使う（下記「Agent の設定の保存」）。失敗した切り替え（Claude が受け付けなかった値）は保存しない
 - 反映は次のターンから。実行中のターンには影響しない。停止中の Agent は次の起動時にその値で起動する
-- `/model` は model 名を検証しない（CLI が受け付けなければ、そのターンの失敗として表示される）。model 名は Agent ごとに違うので Agent の指定を必須にする
+- `/model` は model 名を検証しない（CLI が受け付けなければ、その返事を警告の通知で出す）。model 名は Agent ごとに違うので Agent の指定を必須にする
 - `/effort` の値: Claude は `low` / `medium` / `high` / `xhigh` / `max`（`claude --effort`）。Codex は `ReasoningEffort`（文字列。model ごとに対応する値が違う）。Agent を省略したときは両 Agent が受け付ける値だけを許す
 - `/status` と Web UI に、各 Agent の今の model と effort を表示する。CLI の既定のままで実際の値が分からなければ `default`
-- 反映の方法（docs/spikes/model-effort.md で実測）: Codex は `turn/start` の `model` / `effort`（以降のターンにも引き継がれる）。Claude は `/model <model>` / `/effort <level>` を user message として mailbox の 1 ターンで直列に送る。CLI の result 文言で成功を確認し、無効値は failed の turn として表示する
+- 反映の方法（docs/spikes/model-effort.md で実測）: Codex は `turn/start` の `model` / `effort`（以降のターンにも引き継がれる）。Claude は `/model <model>` / `/effort <level>` を user message として mailbox の 1 ターンで直列に送る。CLI の result 文言で成功を確認する。この設定用のターンは `turn_started` / `turn` を出さず、ログに Claude の枠を作らない（CLI の「this session only」という返事は Clodex の保存と食い違って見えるため出さない）。成功したら Clodex が「model を保存: <agent> → <model>」「effort を保存: <対象> → <level>」の 1 行を出し、失敗したら CLI の返事を警告の通知で出す
 
 ## Agent の設定の保存
 

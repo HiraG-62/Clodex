@@ -479,18 +479,20 @@ export const createShell = ({
         saveSettings(targets(command.agent), { permission: command.level });
         print(t("shell.permission", { target: command.agent ?? t("shell.allAgents"), level: command.level }));
         return "continue";
-      case "model":
-        if ((await coordinator().setModel(command.model, command.agent))?.status !== "failed") {
-          saveSettings([command.agent], { model: command.model });
-          print(t("shell.model", { agent: command.agent, model: command.model }));
-        }
+      case "model": {
+        const result = await coordinator().setModel(command.model, command.agent);
+        if (result?.status === "failed") { notify(result.text, "warn"); return "continue"; }
+        saveSettings([command.agent], { model: command.model });
+        print(t("shell.model", { agent: command.agent, model: command.model }));
         return "continue";
-      case "effort":
-        if ((await coordinator().setEffort(command.level, command.agent))?.status !== "failed") {
-          saveSettings(targets(command.agent), { effort: command.level });
-          print(t("shell.effort", { target: command.agent ?? t("shell.allAgents"), level: command.level }));
-        }
+      }
+      case "effort": {
+        const result = await coordinator().setEffort(command.level, command.agent);
+        if (result?.status === "failed") { notify(result.text, "warn"); return "continue"; }
+        saveSettings(targets(command.agent), { effort: command.level });
+        print(t("shell.effort", { target: command.agent ?? t("shell.allAgents"), level: command.level }));
         return "continue";
+      }
       case "verbose":
         print(t("shell.verbose", { state: t(toggleVerbose() ? "shell.on" : "shell.off") }));
         return "continue";
