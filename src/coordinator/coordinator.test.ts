@@ -409,15 +409,38 @@ describe("Coordinator", () => {
     };
     const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+    it("spontaneous turn の失敗で上限なら再開を予約する", async () => {
+      const { claude, events, coordinator } = setupLimit();
+      claude.emit({ type: "rate_limit", fiveHour: { usedPercent: 100, resetsAt: Date.now() / 1000 + 0.1 } });
+      claude.emit({ type: "turn_started" });
+      claude.emit({ type: "turn", result: { status: "failed", text: "You've hit your session limit" } });
+      expect(coordinator.status().find((agent) => agent.id === "claude")?.holdUntil).toBeDefined();
+      claude.emit({ type: "turn", result: { status: "failed", text: "limit" } });
+      expect(events.filter((event) => event.kind === "notice" && /再開|resuming/i.test(event.text))).toHaveLength(1);
+      await wait(200);
+      expect(claude.sent[0]).toContain("usage limit has reset");
+      claude.completeTurn();
+    });
+
+    it("spontaneous turn の失敗でも枠が残っていれば hold しない", () => {
+      const { claude, events, coordinator } = setupLimit();
+      claude.emit({ type: "rate_limit", fiveHour: { usedPercent: 80, resetsAt: Date.now() / 1000 + 3600 } });
+      claude.emit({ type: "turn", result: { status: "failed", text: "error" } });
+      expect(coordinator.status().find((agent) => agent.id === "claude")?.holdUntil).toBeUndefined();
+      expect(events.some((event) => event.kind === "notice" && event.text.includes("claude"))).toBe(false);
+    });
+
     it("上限の枠があるときに失敗したら配送を止め、リセット後に続きを送ってから残りを送る", async () => {
       const { claude, events, coordinator } = setupLimit();
       void coordinator.sendToAgent("claude", "first");
       void coordinator.sendToAgent("claude", "second");
       await flush();
       claude.emit({ type: "rate_limit", fiveHour: { usedPercent: 100, resetsAt: Date.now() / 1000 + 0.1 } });
+      claude.emit({ type: "turn", result: { status: "failed", text: "limit" } });
       claude.completeTurn({ status: "failed", text: "limit" });
       await flush();
       expect(claude.sent).toEqual(["first"]);
+      expect(events.filter((event) => event.kind === "notice" && /再開|resuming/i.test(event.text))).toHaveLength(1);
       expect(coordinator.status().find((agent) => agent.id === "claude")?.holdUntil).toMatch(/^\d{4}-\d{2}-\d{2}T/);
       const queued = coordinator.receiveMessage("codex", { to: "claude", type: "QUESTION", taskId: "hold", body: "待機中の質問" });
       expect(queued.ok).toBe(true);

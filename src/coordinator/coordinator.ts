@@ -162,6 +162,11 @@ export class Coordinator {
       agents[id].onEvent((event) => {
         if (event.type === "rate_limit") this.liveUsage.add(id);
         bus.publish({ kind: "agent", agent: id, event });
+        if (event.type !== "turn" || event.result.status !== "failed") return;
+        const mailbox = this.mailboxes?.[id];
+        if (!mailbox || mailbox.activeSending || mailbox.holding || mailbox.isClosed) return;
+        const hold = this.limitHold(id);
+        if (hold) mailbox.holdForLimit(hold);
       });
       // 起動前なので値を保持するだけ（次の起動時に使われる）
       const { permission, model, effort } = settings?.[id] ?? {};

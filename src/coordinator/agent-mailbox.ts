@@ -89,6 +89,12 @@ export class AgentMailbox {
 
   get holding(): boolean { return this.holdTimer !== undefined; }
 
+  holdForLimit(hold: LimitHold): void {
+    if (this.closed || this.holding) return;
+    this.hold(hold);
+    this.onChange();
+  }
+
   // 待つのをやめて配送を再開する（続きの指示は積まない）
   releaseHold(): void {
     if (!this.holdTimer) return;

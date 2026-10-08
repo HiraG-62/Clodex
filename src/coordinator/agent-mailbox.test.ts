@@ -13,6 +13,34 @@ const setup = () => {
 };
 
 describe("AgentMailbox", () => {
+  it("外からの hold で配送を止め、再開時に続きの指示を先に送る", async () => {
+    const { agent, mailbox } = setup();
+    const resumeAt = Date.now() + 60;
+    mailbox.holdForLimit({ resumeAt, text: "continue" });
+    const queued = mailbox.enqueue("queued");
+    expect(mailbox.holding).toBe(true);
+    expect(mailbox.holdUntil).toBe(new Date(resumeAt).toISOString());
+    expect(agent.sent).toEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(agent.sent).toEqual(["continue"]);
+    agent.completeTurn();
+    await flush();
+    expect(agent.sent).toEqual(["continue", "queued"]);
+    agent.completeTurn();
+    await queued;
+  });
+
+  it("hold 中と close 後の重複した hold を無視する", () => {
+    const { mailbox } = setup();
+    const resumeAt = Date.now() + 60_000;
+    mailbox.holdForLimit({ resumeAt, text: "first" });
+    mailbox.holdForLimit({ resumeAt: resumeAt + 1_000, text: "second" });
+    expect(mailbox.holdUntil).toBe(new Date(resumeAt).toISOString());
+    mailbox.close();
+    mailbox.holdForLimit({ resumeAt, text: "after close" });
+    expect(mailbox.holding).toBe(false);
+    expect(mailbox.holdUntil).toBeUndefined();
+  });
   it("配送時だけ hook の文言を末尾に足し、送信待ちの本文には含めない", async () => {
     const agent = new FakeAgentAdapter("codex");
     let pending = true;
