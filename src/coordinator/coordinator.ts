@@ -50,6 +50,7 @@ export const RECOVERY_CONTINUE = "[Clodex] Clodex restarted and your previous tu
 // solo: Agent 同士のやり取りを止める。"free" は人の送り先を固定しない（DESIGN.md §11 Solo）
 export type SoloMode = "free" | AgentId;
 const SOLO_REMINDER = "[Clodex] Solo mode: do not use send_message. Do all the work yourself.";
+const SOLO_RELEASED_NOTE = "[Clodex] Solo mode is off. Delegate to the other agent with send_message as your role says, and reply to requests with send_message.";
 const SOLO_REJECTED = "solo mode: the other agent is not available. Do the work yourself.";
 // 作業を頼む message は、配送したターンが失敗したら一度だけ送り直し、それでも失敗したら送信元に引き取らせる（DESIGN.md §12 配送ルール）
 const RETRIED_TYPES: ReadonlySet<AgentMessage["type"]> = new Set(["DELEGATE", "REVIEW_REQUEST", "QUESTION"]);
@@ -89,6 +90,8 @@ export interface CoordinatorOptions {
   resumeSessionIds?: Partial<Record<AgentId, string>>;
   // 今の会話の solo。会話の保存が持つので、毎回読む
   solo?: () => SoloMode | undefined;
+  soloReleased?: (agent: AgentId) => boolean;
+  consumeSoloReleased?: (agent: AgentId) => boolean;
   // 作業を頼む message の配送が失敗してから送り直すまでの待ち（テスト用に短くできる）
   retryDelayMs?: number;
   // 上限で止まった後、リセット時刻からどれだけ待って再開するか（テスト用に短くできる）
@@ -183,6 +186,7 @@ export class Coordinator {
         () => this.notifyRecoveryChange(),
         () => { if (this.options.canStart?.() === false) throw new Error(t("sandbox.incomplete")); },
         () => this.limitHold(id),
+        () => this.deliveryNote(id),
       );
     };
     this.mailboxes = { claude: createMailbox("claude"), codex: createMailbox("codex") };
@@ -268,7 +272,7 @@ export class Coordinator {
     const envelope = buildEnvelope(message, this.language);
     const mailbox = this.mailboxes[message.to];
     const steerable = message.interrupt && mailbox.current?.from === message.from;
-    if (steerable && await this.options.agents[message.to].steer(envelope, message.id)) return;
+    if (steerable && await this.steerWithNotice(message.to, envelope, message.id)) return;
     const result = await mailbox.enqueue(envelope, { message });
     const replied = this.repliedRequests.delete(message.id);
     if (RETRIED_TYPES.has(message.type) && result.status === "completed" && result.text.trim() && !replied
@@ -306,12 +310,23 @@ export class Coordinator {
   // @agent!: 実行中なら steer し、そうでなければ通常の送信（DESIGN.md §28 v0.3 C）
   async steerOrSend(id: AgentId, text: string, context = false): Promise<"steered" | "queued"> {
     const steerId = randomUUID();
-    if (await this.options.agents[id].steer(`${text}${this.inputSuffix(context)}`, steerId)) {
+    if (await this.steerWithNotice(id, `${text}${this.inputSuffix(context)}`, steerId)) {
       this.options.bus.publish({ kind: "human", agent: id, text, steer: true, steerId });
       return "steered";
     }
     void this.sendToAgent(id, text, [], context);
     return "queued";
+  }
+
+  private deliveryNote(id: AgentId): string {
+    return this.options.consumeSoloReleased?.(id) ? `\n\n${SOLO_RELEASED_NOTE}` : "";
+  }
+
+  private async steerWithNotice(id: AgentId, text: string, steerId: string): Promise<boolean> {
+    const note = this.options.soloReleased?.(id) ? `\n\n${SOLO_RELEASED_NOTE}` : "";
+    if (!await this.options.agents[id].steer(`${text}${note}`, steerId)) return false;
+    if (note) this.options.consumeSoloReleased?.(id);
+    return true;
   }
 
   sendToAgent(id: AgentId, text: string, images: readonly string[] = [], context = false): Promise<TurnResult> {

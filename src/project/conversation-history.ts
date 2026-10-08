@@ -26,6 +26,7 @@ const conversationSchema = z.strictObject({
   sessions: sessionsSchema,
   // DESIGN.md §11 Solo
   solo: z.union([z.literal("free"), z.enum(AGENT_IDS)]).optional(),
+  soloReleased: z.array(z.enum(AGENT_IDS)).optional(),
 });
 const stateSchema = z.strictObject({ conversations: z.array(conversationSchema) });
 
@@ -50,7 +51,7 @@ const loadConversations = (path: string): Conversation[] => {
   }
 };
 
-const isWorthSaving = (c: Conversation) => Boolean(c.title || c.workDir || c.solo || c.sessions.claude || c.sessions.codex);
+const isWorthSaving = (c: Conversation) => Boolean(c.title || c.workDir || c.solo || c.soloReleased?.length || c.sessions.claude || c.sessions.codex);
 const byNewest = (a: Conversation, b: Conversation) => b.updatedAt.localeCompare(a.updatedAt);
 // ピン止めした会話は先頭に並べ、最大件数の枠に数えない
 const arrange = (conversations: Conversation[]): Conversation[] => {
@@ -107,14 +108,28 @@ export class ConversationHistory {
 
   // /solo: 今の会話の solo を変える。undefined で解除
   setSolo(mode: Conversation["solo"]): void {
-    const { solo: _old, ...rest } = this.currentConversation;
-    this.currentConversation = mode ? { ...rest, solo: mode } : rest;
+    const previous = this.currentConversation.solo;
+    if (!mode && !previous) return;
+    const { solo: _old, soloReleased: _released, ...rest } = this.currentConversation;
+    this.currentConversation = mode ? { ...rest, solo: mode } : { ...rest, soloReleased: [...AGENT_IDS] };
     this.save((list) => list);
   }
 
   soloOf(id: string): Conversation["solo"] {
     if (id === this.currentConversation.id) return this.currentConversation.solo;
     return this.conversations.find((c) => c.id === id)?.solo;
+  }
+
+  soloReleasedOf(id: string, agent: AgentId): boolean {
+    return this.find(id)?.soloReleased?.includes(agent) ?? false;
+  }
+
+  consumeSoloReleased(id: string, agent: AgentId): boolean {
+    const conversation = this.find(id);
+    if (!conversation?.soloReleased?.includes(agent)) return false;
+    const remaining = conversation.soloReleased.filter((entry) => entry !== agent);
+    this.updateConversation(id, { soloReleased: remaining.length ? remaining : undefined });
+    return true;
   }
 
   // /pin: ピン止めを切り替え、切り替え後の状態を返す。無い会話なら undefined

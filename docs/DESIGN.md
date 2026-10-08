@@ -741,6 +741,8 @@ Formal message channel を別に持つ。
 - 切り替えは、今の会話のどの Agent も作業中でなく、配送待ちの入力・message も無いときだけ受け付ける。それ以外は理由を出して拒否する
 - solo の間、Coordinator は `send_message` を拒否する（`ACK` を含む）。拒否の理由は「solo のため、相手に依頼せず自分で行う」
 - solo の間、人の入力の末尾に「solo: 相手の Agent に依頼せず、自分で作業する」の 1 行を足す（言語の 1 行と同じ仕組み）。実行中の session は作り直さない
+- solo を解除したら（`/solo disable`）、各 Agent に次に何かを届けるとき（人の入力・formal message の envelope・利用枠の続きの指示のどれでも）、末尾に一度だけ「solo は解除された。役割どおり `send_message` で相手の Agent に依頼してよい」の 1 行（英語）を足す。solo の 1 行は会話の履歴に残っているので、解除を伝えないと Agent は solo のつもりで続けるため
+  - 伝える必要がある Agent は会話の保存に `soloReleased`（Agent の配列）として残し、伝えたら外す（Hub を再起動しても伝え漏れない）。解除したときに両方の Agent を入れる。もう一度 solo にしたら空にする
 - 送り先が固定されているとき、ほかの Agent への送信（`@<agent>`・`@all`・`!>` の宛先）は拒否する
 - 画面: state の会話に `solo` を入れる。Web UI は送り先が固定されていれば、送り先の切り替えをその Agent にして押せなくする。`free` なら切り替えられる。Web UI と TUI の下の行に「solo」を出す。`/status` にも出す
 

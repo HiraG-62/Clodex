@@ -13,6 +13,25 @@ const setup = () => {
 };
 
 describe("AgentMailbox", () => {
+  it("配送時だけ hook の文言を末尾に足し、送信待ちの本文には含めない", async () => {
+    const agent = new FakeAgentAdapter("codex");
+    let pending = true;
+    const mailbox = new AgentMailbox(agent, () => START_OPTIONS, vi.fn(), vi.fn(), () => {}, () => undefined,
+      () => pending ? (pending = false, "\n\n[Clodex] Solo mode is off.") : "");
+    mailbox.pause();
+    const first = mailbox.enqueue("最初", { inputId: "in1", suffix: "\n言語" });
+    expect(mailbox.pendingInputs).toEqual([{ id: "in1", text: "最初" }]);
+    mailbox.resume();
+    await flush();
+    expect(agent.sent[0]).toBe("最初\n言語\n\n[Clodex] Solo mode is off.");
+    agent.completeTurn();
+    await first;
+    const second = mailbox.enqueue("次");
+    await flush();
+    expect(agent.sent[1]).toBe("次");
+    agent.completeTurn();
+    await second;
+  });
   it("上限待機中だけ再開時刻を返す", async () => {
     const agent = new FakeAgentAdapter("codex");
     const resumeAt = Date.now() + 60_000;

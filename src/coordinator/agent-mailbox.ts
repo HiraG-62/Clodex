@@ -51,6 +51,7 @@ export class AgentMailbox {
     private readonly assertStart: () => void = () => {},
     // 送ったターンが失敗したときに呼ぶ。上限で止まったなら再開の時刻と続きの指示を返す
     private readonly limitHold: () => LimitHold | undefined = () => undefined,
+    private readonly deliveryNote: () => string = () => "",
   ) {}
 
   // 失敗しても reject せず failed の TurnResult を返す（呼び出し側は待たずに投げてよい）
@@ -233,7 +234,7 @@ export class AgentMailbox {
   private async deliver(text: string, images?: readonly string[]): Promise<TurnResult> {
     try {
       await this.ensureRunning();
-      return await this.agent.send(text, images);
+      return await this.agent.send(`${text}${this.deliveryNote()}`, images);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.onError(message);

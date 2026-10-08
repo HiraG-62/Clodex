@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
+import { ConversationHistory } from "../project/conversation-history.js";
 import { type SoloMode, Coordinator } from "./coordinator.js";
 import { EventBus, type CoordinatorEvent } from "./event-bus.js";
 import { MAX_BODY_LENGTH, type CreateMessageResult } from "../protocol/messages.js";
@@ -1115,5 +1116,94 @@ describe("Coordinator の solo（DESIGN.md §11 Solo）", () => {
     await flush();
     expect(coordinator.idle()).toBe(true);
     await coordinator.stop();
+  });
+});
+
+describe("solo 解除の配送通知", () => {
+  const setupReleased = () => {
+    const pending = new Set(["claude", "codex"] as const);
+    const claude = new FakeAgentAdapter("claude");
+    const codex = new FakeAgentAdapter("codex");
+    const coordinator = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor,
+      soloReleased: (agent) => pending.has(agent), consumeSoloReleased: (agent) => pending.delete(agent) });
+    return { claude, codex, pending, coordinator };
+  };
+
+  it("人の入力には Agent ごとに最初の配送だけ解除の 1 行を足す", async () => {
+    const { claude, codex, coordinator } = setupReleased();
+    void coordinator.sendToAgent("claude", "最初");
+    await flush();
+    expect(claude.sent[0]).toContain("Solo mode is off");
+    claude.completeTurn();
+    await flush();
+    void coordinator.sendToAgent("claude", "次");
+    void coordinator.sendToAgent("codex", "別 Agent");
+    await flush();
+    expect(claude.sent[1]).not.toContain("Solo mode is off");
+    expect(codex.sent[0]).toContain("Solo mode is off");
+  });
+
+  it("先に届く formal message と割り込みにも解除の 1 行を足す", async () => {
+    const { claude, codex, coordinator } = setupReleased();
+    coordinator.receiveMessage("claude", reviewRequest);
+    await flush();
+    expect(codex.sent[0]).toContain("Solo mode is off");
+    void coordinator.sendToAgent("claude", "作業");
+    await flush();
+    expect(claude.sent[0]).toContain("Solo mode is off");
+    await coordinator.steerOrSend("claude", "修正");
+    expect(claude.steered[0]).not.toContain("Solo mode is off");
+  });
+
+  it("解除後の最初の配送が steer なら、その割り込みに一度だけ足す", async () => {
+    const { codex, pending, coordinator } = setupReleased();
+    pending.clear();
+    void coordinator.sendToAgent("codex", "作業中");
+    await flush();
+    pending.add("codex");
+    await coordinator.steerOrSend("codex", "追加指示");
+    expect(codex.steered[0]).toContain("Solo mode is off");
+    expect(pending.has("codex")).toBe(false);
+    await coordinator.steerOrSend("codex", "さらに追加");
+    expect(codex.steered[1]).not.toContain("Solo mode is off");
+  });
+
+  it("解除前から送信待ちの入力にも、配送時に通知を足す", async () => {
+    const { codex, pending, coordinator } = setupReleased();
+    pending.clear();
+    void coordinator.sendToAgent("codex", "実行中");
+    await flush();
+    void coordinator.sendToAgent("codex", "送信待ち");
+    expect(coordinator.pendingInputs().map((item) => item.text)).toEqual(["送信待ち"]);
+    pending.add("codex");
+    codex.completeTurn();
+    await flush();
+    expect(codex.sent[1]).toContain("Solo mode is off");
+    expect(coordinator.pendingInputs()).toEqual([]);
+  });
+
+  it("再起動後の Coordinator も保存された通知待ちを使う", async () => {
+    const path = join(mkdtempSync(join(tmpdir(), "clodex-release-")), "state.json");
+    const history = new ConversationHistory(path, { resumeLatest: false });
+    history.setSolo("free");
+    history.setSolo(undefined);
+    const id = history.currentId;
+    const first = new FakeAgentAdapter("claude");
+    const before = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude: first, codex: new FakeAgentAdapter("codex") },
+      bus: new EventBus(), mcpUrlFor, soloReleased: (agent) => history.soloReleasedOf(id, agent),
+      consumeSoloReleased: (agent) => history.consumeSoloReleased(id, agent) });
+    void before.sendToAgent("claude", "最初");
+    await flush();
+    expect(first.sent[0]).toContain("Solo mode is off");
+    await before.stop();
+    const restored = new ConversationHistory(path, { resumeLatest: true });
+    const codex = new FakeAgentAdapter("codex");
+    const after = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude: new FakeAgentAdapter("claude"), codex },
+      bus: new EventBus(), mcpUrlFor, soloReleased: (agent) => restored.soloReleasedOf(id, agent),
+      consumeSoloReleased: (agent) => restored.consumeSoloReleased(id, agent) });
+    void after.sendToAgent("codex", "再開");
+    await flush();
+    expect(codex.sent[0]).toContain("Solo mode is off");
+    expect(restored.current.soloReleased).toBeUndefined();
   });
 });

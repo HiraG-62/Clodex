@@ -177,6 +177,29 @@ describe("ConversationHistory", () => {
 });
 
 describe("ConversationHistory の solo", () => {
+  it("解除時に両 Agent の通知待ちを保存し、配送した Agent から一つずつ外す", () => {
+    const { history, path } = setup();
+    history.setSolo("free");
+    history.setSolo(undefined);
+    const id = history.currentId;
+    expect(history.current.soloReleased).toEqual(["claude", "codex"]);
+    expect(new ConversationHistory(path, { resumeLatest: true }).current.soloReleased).toEqual(["claude", "codex"]);
+    expect(history.consumeSoloReleased(id, "claude")).toBe(true);
+    expect(history.consumeSoloReleased(id, "claude")).toBe(false);
+    expect(new ConversationHistory(path, { resumeLatest: true }).current.soloReleased).toEqual(["codex"]);
+    expect(history.consumeSoloReleased(id, "codex")).toBe(true);
+    expect(new ConversationHistory(path, { resumeLatest: true }).current.soloReleased).toBeUndefined();
+  });
+
+  it("solo に戻したら解除通知を消し、solo でない会話の解除では作らない", () => {
+    const { history } = setup();
+    history.setSolo(undefined);
+    expect(history.current.soloReleased).toBeUndefined();
+    history.setSolo("codex");
+    history.setSolo(undefined);
+    history.setSolo("free");
+    expect(history.current.soloReleased).toBeUndefined();
+  });
   it("今の会話の solo を保存し、読み直しても残る。新しい会話は通常のモード", () => {
     const { history, path } = setup();
     history.setSolo("codex");
