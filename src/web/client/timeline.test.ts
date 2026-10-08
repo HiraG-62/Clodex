@@ -106,13 +106,14 @@ describe("applyFeedItem", () => {
       human("claude", "割り込み"),
       agent("claude", { type: "turn", result: { status: "completed", text: "直しました。" } }, LATER),
     ]);
+    const [process, , result] = timeline;
     expect(timeline).toEqual([
-      { kind: "turn", id: expect.any(String), at: AT, agent: "claude", status: "completed", text: "", resultBelow: true,
+      { kind: "turn", id: expect.any(String), at: AT, agent: "claude", status: "completed", text: "", resultId: result?.id,
         plan: "確認します。", planAt: AT, steps: [{ kind: "tool", name: "Read", input: "a.ts" }] },
       expect.objectContaining({ kind: "human", text: "割り込み" }),
-      { kind: "turn", id: expect.any(String), at: LATER, agent: "claude", status: "completed", text: "直しました。", steps: [] },
+      { kind: "turn", id: expect.any(String), at: LATER, agent: "claude", status: "completed", text: "直しました。", steps: [], processId: process?.id },
     ]);
-    expect(timeline[0]?.id).not.toBe(timeline[2]?.id);
+    expect(process?.id).not.toBe(result?.id);
   });
 
   it("方針も作業も残らない枠は消して、最終応答だけを末尾に出す", () => {
@@ -127,6 +128,7 @@ describe("applyFeedItem", () => {
       { kind: "turn", at: LATER, status: "completed", text: "完了しました。", steps: [] },
     ]);
     expect(timeline).toHaveLength(2);
+    expect(timeline[1]).not.toHaveProperty("processId");
   });
 
   it("後ろが作業中のターンだけなら、最終応答は元の枠に入れる", () => {

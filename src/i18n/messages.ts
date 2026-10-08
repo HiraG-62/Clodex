@@ -126,6 +126,8 @@ export const en = {
   "web.turn.completed": "Done",
   "web.turn.interrupted": "Interrupted",
   "web.turn.failed": "Failed",
+  "web.turn.toProcess": "Progress",
+  "web.turn.toResult": "Result",
   "web.message.spec": "Spec",
   "web.message.envelope": "Full text sent to {agent}",
   // Web UI: Agent
@@ -501,6 +503,8 @@ export const ja: Messages = {
   "web.turn.completed": "完了",
   "web.turn.interrupted": "中断",
   "web.turn.failed": "失敗",
+  "web.turn.toProcess": "途中経過",
+  "web.turn.toResult": "結果",
   "web.message.spec": "設計書",
   "web.message.envelope": "{agent} に送った全文",
   "web.status.busy": "作業中",

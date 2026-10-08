@@ -398,18 +398,33 @@ export function clientMain({
     node.append(previews);
   };
 
+  const jumpButton = (targetId: string, name: string, label: string) => {
+    const button = iconButton(name, label, "jump");
+    button.addEventListener("click", () => {
+      const target = rendered.get(targetId)?.node;
+      if (!target) return;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.remove("jumped");
+      void target.offsetWidth; // 続けて押してもアニメーションをやり直すため
+      target.classList.add("jumped");
+    });
+    return button;
+  };
+
   const renderTurn = (item: Extract<TimelineItem, { kind: "turn" }>) => {
     const node = el("article", "entry");
     node.append(mark(item.agent));
     const head = el("div", "head");
     head.append(el("b", `c-${item.agent}`, AGENTS[item.agent].name), el("time", "mono", clock(item.at)));
     const label = TURN_LABEL[item.status];
-    if (label && !item.resultBelow) head.append(el("span", `state ${item.status}`, t(label)));
+    if (label && !item.resultId) head.append(el("span", `state ${item.status}`, t(label)));
     if (item.status === "working") {
       const elapsed = el("span", "elapsed mono", elapsedText(item.at));
       elapsed.dataset.start = item.at;
       head.append(elapsed);
     }
+    if (item.processId) head.append(jumpButton(item.processId, "arrow-up", t("web.turn.toProcess")));
+    if (item.resultId) head.append(jumpButton(item.resultId, "arrow-down", t("web.turn.toResult")));
     node.append(head);
     if (item.plan) {
       const plan = el("div", "plan md");
@@ -429,7 +444,7 @@ export function clientMain({
     if (item.status === "working") node.append(nowLine(item));
     const body = el("div", "body md");
     if (item.text) body.innerHTML = renderMarkdown(item.text);
-    else if (item.status === "completed" && !item.resultBelow) body.append(el("span", "muted", t("web.turn.completed")));
+    else if (item.status === "completed" && !item.resultId) body.append(el("span", "muted", t("web.turn.completed")));
     if (body.childNodes.length) node.append(body);
     appendImagePreviews(node, item.text, item.at);
     return node;

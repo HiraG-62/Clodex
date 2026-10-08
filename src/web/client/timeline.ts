@@ -15,7 +15,8 @@ export type TimelineItem =
     status: "working" | TurnResult["status"]; steps: TimelineStep[]; text: string;
     plan?: string; // ターンの最初の発言（方針。DESIGN.md §17 ログ）
     planAt?: string;
-    resultBelow?: true; // 最終応答を後ろの別の項目に出した枠
+    resultId?: string; // 最終応答を後ろの別の項目に出した枠の、その項目
+    processId?: string; // 最終応答だけの項目の、方針と作業を残した枠
   }
   | { kind: "message"; id: string; at: string; message: AgentMessage; envelope?: string }
   | { kind: "notice"; id: string; at: string; text: string }
@@ -116,8 +117,8 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
       // 作業中に後ろへ別の項目が並んだら、最終応答は末尾に出してログを時系列に保つ（DESIGN.md §17 ログ）
       const finished = finish(items[index] as Turn);
       const result: Turn = { kind: "turn", id, at, agent, status, steps: [], text };
-      const kept = finished.plan === undefined && finished.steps.length === 0 ? [] : [{ ...finished, text: "", resultBelow: true as const }];
-      return limit([...items.slice(0, index), ...kept, ...items.slice(index + 1), result]);
+      if (finished.plan === undefined && finished.steps.length === 0) return limit([...items.slice(0, index), ...items.slice(index + 1), result]);
+      return limit([...items.slice(0, index), { ...finished, text: "", resultId: id }, ...items.slice(index + 1), { ...result, processId: finished.id }]);
     }
     case "error":
       return limit([...items, { kind: "error", id, at, agent, text: agentEvent.message }]);
