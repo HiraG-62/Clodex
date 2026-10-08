@@ -25,7 +25,7 @@ import { openProject, type ProjectContext } from "./hub/project-context.js";
 import { selectProject } from "./hub/project-selection.js";
 import { MESSAGES, setLanguage, t } from "./i18n/i18n.js";
 import { PushService } from "./web/push.js";
-import { updateDesktopNotify, type DesktopNotifyState } from "./web/client/desktop-notify.js";
+import { updateDesktopNotify, type DesktopNotification, type DesktopNotifyState } from "./web/client/desktop-notify.js";
 import { defaultLogPath, type DisplayMode } from "./logging/event-log.js";
 import { pruneLogs } from "./logging/log-retention.js";
 import { listProjectFiles } from "./project/project-files.js";
@@ -60,6 +60,8 @@ const conversationsOf = (context: ProjectContext): ConversationList => ({
   remove: (id) => context.history.remove(id),
   togglePin: (id) => context.history.togglePin(id),
 });
+
+const PUSH_KINDS: ReadonlySet<DesktopNotification["kind"]> = new Set(["finished", "question"]);
 
 const main = async (): Promise<void> => {
   const args = parseCliArgs(process.argv.slice(2));
@@ -108,8 +110,8 @@ const main = async (): Promise<void> => {
   feed.subscribe((item) => {
     const update = updateDesktopNotify(pushState, item, MESSAGES[language]);
     pushState = update.state;
-    // スマホには作業が終わって返答が来たときだけ送る
-    if (update.notification?.kind === "finished") push.notify({ title: update.notification.title, body: update.notification.body }).catch((error: unknown) => reportRuntimeError(errorMessage(error)));
+    // スマホには、作業が終わって返答が来たときと、Agent が人に質問したときだけ送る
+    if (update.notification && PUSH_KINDS.has(update.notification.kind)) push.notify({ title: update.notification.title, body: update.notification.body }).catch((error: unknown) => reportRuntimeError(errorMessage(error)));
   });
   reportRuntimeError = message => { const text = t("error.generic", { message }); feed.publishOutput(text); printTerminal(text); };
   hub = new Hub({ homeDir, cwd, openProject: async (projectRoot) => {

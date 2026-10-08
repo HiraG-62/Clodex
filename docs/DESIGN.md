@@ -2065,8 +2065,8 @@ D3 の詳細（Tauri GUI。Windows）:
   - `notice`（利用枠など）・`toast`（ほかの会話の完了など）と `error`
   - 画面を開いたときや会話を切り替えたときの feed の読み込み（再生）では出さない
   - 音は Windows の既定の通知音（plugin は `sound` を指定しないと無音にする）
-- **スマホへの通知（Web Push）**: 上の通知のうち、今の会話の作業が終わったとき（Agent の返答）だけを、登録した端末（ホーム画面に追加した PWA。iOS 16.4 以降）に Web Push で届ける。画面を開いていなくても届く
-  - 通知を出すかは Hub が決める。Hub は feed を購読し、上の通知と同じ関数（`updateDesktopNotify`）で通知を作り、種類（`kind`）が `finished` のものだけを送る。会話の切り替えなどの再生は feed の購読に流れないので、通知しない
+- **スマホへの通知（Web Push）**: 上の通知のうち、今の会話の作業が終わったとき（Agent の返答）と Agent の質問（`ask_user`）だけを、登録した端末（ホーム画面に追加した PWA。iOS 16.4 以降）に Web Push で届ける。画面を開いていなくても届く
+  - 通知を出すかは Hub が決める。Hub は feed を購読し、上の通知と同じ関数（`updateDesktopNotify`）で通知を作り、種類（`kind`）が `finished` と `question` のものだけを送る。会話の切り替えなどの再生は feed の購読に流れないので、通知しない
   - 送り先から外す: その端末の画面が見えている間（下の `visible`）は送らない。iOS は Push を受けて通知を出さないと購読を取り消すことがあるので、Service Worker では間引かず、Hub が送る前に間引く
   - 鍵: VAPID の鍵は初回に作り `~/.clodex/push/vapid.json` に置く（subject は `https://github.com/HiraG-62/Clodex`）。購読は `~/.clodex/push/subscriptions.json`（`{ id, endpoint, keys }[]`。`id` は endpoint の SHA-256 の先頭 16 文字）。送信が 404 / 410 なら購読を消す
   - API（token で認証）: `GET /api/push/key`（公開鍵）、`POST /api/push/subscribe`（購読。`id` を返す）、`POST /api/push/unsubscribe`（`{ id }`）、`POST /api/push/visibility`（`{ id, visible }`）。Service Worker の `/sw.js` は秘密を含まないので token なしで返す
