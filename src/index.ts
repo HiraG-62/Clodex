@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // Hub の入口。project ごとの初期化は ProjectContext に任せる（DESIGN.md §28 D2a）
-import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { uninstallSandboxes } from "./sandbox/controller.js";
@@ -14,7 +13,7 @@ import { createCommandRunner, type CommandLifecycle } from "./cli/command-runner
 import { createProcessManager } from "./process/process-manager.js";
 import { completeCommand } from "./cli/commands.js";
 import { createShell, type ConversationList } from "./cli/shell.js";
-import { ensureUserConfigTemplate, loadConfig, saveUserLanguage } from "./config/config.js";
+import { clodexHomeDir, ensureUserConfigTemplate, loadConfig, saveUserLanguage } from "./config/config.js";
 import { detectLanguage } from "./context/language.js";
 import type { CoordinatorEvent } from "./coordinator/event-bus.js";
 import { Hub } from "./hub/hub.js";
@@ -49,7 +48,7 @@ const STOP_TIMEOUT_MS = 10_000;
 const LOG_SUFFIX_LENGTH = 8;
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 let reportRuntimeError = (_message: string) => {};
-const runtimeErrors = installRuntimeErrors({ home: homedir(), report: message => reportRuntimeError(message) });
+const runtimeErrors = installRuntimeErrors({ home: clodexHomeDir(), report: message => reportRuntimeError(message) });
 
 const conversationsOf = (context: ProjectContext): ConversationList => ({
   get currentId() { return context.history.currentId; },
@@ -67,7 +66,7 @@ const PUSH_KINDS: ReadonlySet<DesktopNotification["kind"]> = new Set(["finished"
 
 const main = async (): Promise<void> => {
   const args = parseCliArgs(process.argv.slice(2));
-  const homeDir = homedir();
+  const homeDir = clodexHomeDir();
   const cwd = process.cwd();
   ensureUserConfigTemplate(homeDir);
   // 言語と Web のポートは Hub 全体で 1 つ。project の設定は ProjectContext が読む。

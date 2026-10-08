@@ -1,5 +1,6 @@
 // 設定ファイル（DESIGN.md §13 Roles）。ユーザー全体の設定を project の設定でトップレベルのキー単位に上書きする
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { AGENT_IDS, PERMISSION_LEVELS } from "../agents/agent-adapter.js";
@@ -7,6 +8,10 @@ import { LANGUAGES, type Language } from "../context/language.js";
 import { writeFileAtomic } from "../project/atomic-write.js";
 
 const USER_CONFIG_PATH = join(".clodex", "config.json");
+const CLODEX_HOME_ENV = "CLODEX_HOME";
+
+// Clodex 自身のデータ（.clodex/）の置き場所。実 CLI の E2E がユーザーの一覧や設定を書き換えないよう差し替えられる（DESIGN.md §28 D2a）
+export const clodexHomeDir = (env: NodeJS.ProcessEnv = process.env): string => env[CLODEX_HOME_ENV] || homedir();
 const PROJECT_CONFIG_FILE = ".clodex.json";
 
 const UPDATE_CHANNELS = ["stable", "dev"] as const;

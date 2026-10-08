@@ -1,8 +1,8 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ensureUserConfigTemplate, loadConfig, saveUserLanguage } from "./config.js";
+import { clodexHomeDir, ensureUserConfigTemplate, loadConfig, saveUserLanguage } from "./config.js";
 
 const setup = (files: { user?: unknown; project?: unknown } = {}) => {
   const base = mkdtempSync(join(tmpdir(), "clodex-config-"));
@@ -146,4 +146,10 @@ it.each(["{ broken", '{/* comment */"language":"ja"}', '{"unknown":true}'])("言
   const paths = setup({ user });
   expect(() => saveUserLanguage(paths.homeDir, "en")).toThrow(join(paths.homeDir, ".clodex", "config.json"));
   expect(readFileSync(join(paths.homeDir, ".clodex", "config.json"), "utf8")).toBe(user);
+});
+
+it("CLODEX_HOME があれば Clodex のデータの置き場所をそこにする", () => {
+  expect(clodexHomeDir({ CLODEX_HOME: "C:\\tmp\\clodex-e2e" })).toBe("C:\\tmp\\clodex-e2e");
+  expect(clodexHomeDir({})).toBe(homedir());
+  expect(clodexHomeDir({ CLODEX_HOME: "" })).toBe(homedir());
 });

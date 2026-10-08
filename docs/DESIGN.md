@@ -2075,6 +2075,7 @@ D2 の詳細（Hub として複数の project を扱う）。2 段に分ける:
     - 一覧はピン止めした project を先に、ほかを後に並べる（それぞれ開いた順）
     - 開いている project（今の project を含む）は外せない。外すと Agent を止めることになるため。外した project も `/project <path>` で開けば一覧に戻る
     - Web UI の project のセレクトは、ピン止めを「ピン止め」の optgroup にまとめ、最後に「一覧を編集…」を置く。選ぶとシートを開き、project ごとにパス・ピン止めのトグル（pin のアイコン。`aria-pressed`）・外すボタン（開いている project には出さない）を並べる
+  - 環境変数 `CLODEX_HOME` があれば、Clodex 自身のデータ（`.clodex/` の設定・履歴・ログ・`hub.json` など）をユーザーのホームではなくそこに置く。Claude / Codex の設定や認証には関係しない。実 CLI の E2E は一時フォルダを指定し、ユーザーの一覧や設定を書き換えない
   - `clodex serve`: terminal の Shell を持たずに Hub と Web UI だけを動かす（`--web` 相当。project は Web UI から開く。起動時の project は省略可）
   - 言語・Web の token・ポートは Hub で 1 つ。project ごとの設定（`.clodex.json`）は ProjectContext ごとに読む
 - **D2b: CLI から Hub へつなぐ**（D4 の TUI と一緒に行う）

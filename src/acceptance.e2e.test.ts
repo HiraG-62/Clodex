@@ -48,7 +48,9 @@ describe.runIf(process.env.CLODEX_E2E === "1")("v0.1 acceptance (real clodex pro
   it("§20 の受入条件 1〜12", async () => {
     const { root, subdir } = makeRepo();
     // 1. 既存 Git project のサブディレクトリから --project なしで起動できる
-    child = spawn(process.execPath, [TSX_CLI, ENTRY, "--claude-model", "haiku"], { cwd: subdir });
+    // ユーザーの ~/.clodex（project の一覧・設定）を書き換えない
+    const clodexHome = mkdtempSync(join(tmpdir(), "clodex-acceptance-home-"));
+    child = spawn(process.execPath, [TSX_CLI, ENTRY, "--claude-model", "haiku"], { cwd: subdir, env: { ...process.env, CLODEX_HOME: clodexHome } });
     let output = "";
     child.stdout.on("data", (d: Buffer) => (output += d.toString()));
     child.stderr.on("data", (d: Buffer) => (output += d.toString()));
