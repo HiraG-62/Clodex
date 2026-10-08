@@ -90,7 +90,7 @@ describe("buildWebPage", () => {
     const script = scriptsOf(html)[1]!;
     const deps = script.slice(script.lastIndexOf("workingFeed:"), script.lastIndexOf("withStartingTurns:"));
     expect(runInNewContext(`({${deps}}).workingFeed`)([])).toEqual([]);
-    expect(html).toContain("list.replaceChildren(...workingFeed(items).map((entry) => {");
+    expect(html).toContain("const feed = workingFeed(items);");
     expect(html).toContain('el("div", "working-say md")');
     expect(html).not.toContain("working-entry");
   });

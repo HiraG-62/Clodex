@@ -320,13 +320,39 @@ describe("workingFeed", () => {
       { kind: "say", agent: "codex", text: "通った" },
     ]);
   });
-  it("発言の無いターンは見出しだけ、終わったターンは出さない", () => {
+  it("発言の無いターンは見出しだけを出し、終わったターンの見出しには done を付ける", () => {
     const items = run([
       agent("codex", { type: "turn_started" }, at(0)),
-      agent("codex", { type: "text", text: "完了" }, at(1)),
-      agent("codex", { type: "turn", result: { status: "completed", text: "完了" } }, at(2)),
-      agent("claude", { type: "turn_started" }, at(3)),
+      agent("codex", { type: "text", text: "確認する" }, at(1)),
+      agent("codex", { type: "text", text: "途中" }, at(2)),
+      agent("codex", { type: "turn", result: { status: "completed", text: "完了" } }, at(3)),
+      agent("claude", { type: "turn_started" }, at(4)),
     ]);
-    expect(workingFeed(items)).toEqual([{ kind: "head", turnId: items[1]!.id, agent: "claude", at: at(3) }]);
+    expect(workingFeed(items)).toEqual([
+      { kind: "head", turnId: items[0]!.id, agent: "codex", at: at(0), done: true },
+      { kind: "say", agent: "codex", text: "確認する" },
+      { kind: "say", agent: "codex", text: "途中" },
+      { kind: "head", turnId: items[1]!.id, agent: "claude", at: at(4) },
+    ]);
+  });
+  it("Agent ごとに直近 2 ターンだけを残し、最終応答だけの項目は数えない", () => {
+    const turn = (name: "claude" | "codex", text: string, start: number): FeedItem[] => [
+      agent(name, { type: "turn_started" }, at(start)),
+      agent(name, { type: "text", text }, at(start + 1)),
+      agent(name, { type: "text", text: `${text}の途中` }, at(start + 2)),
+      agent(name, { type: "turn", result: { status: "completed", text: `${text}の完了` } }, at(start + 3)),
+    ];
+    const items = run([
+      ...turn("claude", "1", 0),
+      ...turn("codex", "A", 4),
+      agent("claude", { type: "turn_started" }, at(10)),
+      agent("claude", { type: "text", text: "2" }, at(11)),
+      human("claude", "割り込み"),
+      agent("claude", { type: "turn", result: { status: "completed", text: "2の完了" } }, at(12)),
+      ...turn("claude", "3", 20),
+    ]);
+    const texts = workingFeed(items).filter((entry) => entry.kind === "say").map((entry) => entry.kind === "say" ? entry.text : "");
+    expect(texts).toEqual(["A", "Aの途中", "2", "3", "3の途中"]);
+    expect(workingFeed(items).filter((entry) => entry.kind === "head").map((entry) => entry.agent)).toEqual(["codex", "claude", "claude"]);
   });
 });

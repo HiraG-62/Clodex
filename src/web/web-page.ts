@@ -503,6 +503,7 @@ const STYLE = `
   @keyframes shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
 
   .count { background: var(--fg); color: var(--bg); box-shadow: 0 0 0 2px var(--panel); font-weight: 600; }
+  .count:empty { display: none; }
   .strip-well { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-column: 1 / -1; gap: 2px; padding: 2px; background: var(--sunken); border-radius: 12px; min-width: 0; }
   .agent-strip .agent { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) 136px auto; grid-template-areas: none; gap: 10px; padding: 7px 8px 7px 10px; align-items: center; min-height: 52px; border-radius: 10px; background: transparent; box-shadow: none; }
   .agent-strip .agent.busy { background: var(--panel); box-shadow: var(--ring); }

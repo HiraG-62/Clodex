@@ -705,13 +705,14 @@ export function clientMain({
   const workingToggle = $("#working-toggle");
   const renderWorking = () => {
     const active = items.filter((item): item is Extract<TimelineItem, { kind: "turn" }> => item.kind === "turn" && item.status === "working");
-    $("#working-count").textContent = String(active.length);
+    const feed = workingFeed(items);
+    $("#working-count").textContent = active.length ? String(active.length) : "";
     workingToggle.dataset.agent = active.length > 1 ? state?.primary ?? "claude" : active[0]?.agent ?? "claude";
-    workingToggle.hidden = active.length === 0;
-    if (!active.length) { workingPanel.hidden = true; workingToggle.setAttribute("aria-expanded", "false"); }
+    workingToggle.hidden = feed.length === 0;
+    if (!feed.length) { workingPanel.hidden = true; workingToggle.setAttribute("aria-expanded", "false"); }
     const list = $("#working-list");
     const following = workingPanel.scrollHeight - workingPanel.scrollTop - workingPanel.clientHeight < NEAR_BOTTOM_PX;
-    list.replaceChildren(...workingFeed(items).map((entry) => {
+    list.replaceChildren(...feed.map((entry) => {
       if (entry.kind === "say") {
         const say = el("div", "working-say md");
         say.innerHTML = renderMarkdown(entry.text);
@@ -721,9 +722,11 @@ export function clientMain({
       button.type = "button";
       button.append(el("span", `name c-${entry.agent}`, AGENTS[entry.agent].name));
       if (entry.plan) button.append(el("span", "plan", (entry.plan.split("\n", 1)[0] ?? "").replace(/`/g, "")));
-      const elapsed = el("span", "elapsed", elapsedText(entry.at));
-      elapsed.dataset.start = entry.at;
-      button.append(elapsed);
+      if (!entry.done) {
+        const elapsed = el("span", "elapsed", elapsedText(entry.at));
+        elapsed.dataset.start = entry.at;
+        button.append(elapsed);
+      }
       button.addEventListener("click", () => {
         workingPanel.hidden = true;
         workingToggle.setAttribute("aria-expanded", "false");

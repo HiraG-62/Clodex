@@ -133,13 +133,24 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
 }
 
 export type WorkingEntry =
-  | { kind: "head"; turnId: string; agent: AgentId; at: string; plan?: string }
+  | { kind: "head"; turnId: string; agent: AgentId; at: string; plan?: string; done?: true }
   | { kind: "say"; agent: AgentId; text: string };
 
-// 作業中パネル（DESIGN.md §28 作業中の表示）: 作業中のターンの発言を時系列に並べ、発言のターンが変わるところに見出しを挟む
+// 作業中パネル（DESIGN.md §28 作業中の表示）: Agent ごとに直近のターンの発言を時系列に並べ、発言のターンが変わるところに見出しを挟む
 export function workingFeed(items: readonly TimelineItem[]): WorkingEntry[] {
   type Turn = Extract<TimelineItem, { kind: "turn" }>;
-  const turns = items.filter((item): item is Turn => item.kind === "turn" && item.status === "working");
+  const RECENT_TURNS = 2;
+  const counts: Partial<Record<AgentId, number>> = {};
+  const turns: Turn[] = [];
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    // 最終応答だけを末尾に出した項目は、元の枠と同じターンなので数えない
+    if (item?.kind !== "turn" || item.processId !== undefined) continue;
+    const count = counts[item.agent] ?? 0;
+    if (count >= RECENT_TURNS) continue;
+    counts[item.agent] = count + 1;
+    turns.unshift(item);
+  }
   const says = turns.flatMap((turn) => [
     ...(turn.plan === undefined ? [] : [{ turn, text: turn.plan, at: turn.planAt ?? turn.at }]),
     ...turn.steps.flatMap((step) => step.kind === "say" ? [{ turn, text: step.text, at: step.at }] : []),
@@ -156,7 +167,7 @@ export function workingFeed(items: readonly TimelineItem[]): WorkingEntry[] {
       const { id, agent, at, plan } = event.turn;
       // 直後の発言が方針そのものなら、見出しには重ねて出さない
       const showPlan = plan !== undefined && event.text !== plan;
-      entries.push({ kind: "head", turnId: id, agent, at, ...(showPlan ? { plan } : {}) });
+      entries.push({ kind: "head", turnId: id, agent, at, ...(showPlan ? { plan } : {}), ...(event.turn.status === "working" ? {} : { done: true as const }) });
       current = event.turn;
     }
     if (event.text !== undefined) entries.push({ kind: "say", agent: event.turn.agent, text: event.text });
