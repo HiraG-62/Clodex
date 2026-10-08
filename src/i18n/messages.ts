@@ -134,6 +134,7 @@ export const en = {
   "web.turn.toResult": "Result",
   "web.message.spec": "Spec",
   "web.message.envelope": "Full text sent to {agent}",
+  "web.message.auto": "auto",
   // Web UI: Agent
   "web.status.busy": "Working",
   "web.status.idle": "Idle",
@@ -527,6 +528,7 @@ export const ja: Messages = {
   "web.turn.toResult": "結果",
   "web.message.spec": "設計書",
   "web.message.envelope": "{agent} に送った全文",
+  "web.message.auto": "自動",
   "web.status.busy": "作業中",
   "web.status.idle": "待機中",
   "web.status.starting": "起動中",

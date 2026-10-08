@@ -107,6 +107,7 @@ const labels = (): TerminalLabels => ({
   steps: t("web.turn.steps"), message: t("tui.message"), notice: t("tui.notice"),
   error: t("tui.error"), output: t("tui.output"),
   steer: t("web.steer"),
+  auto: t("web.message.auto"),
 });
 
 const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed; now: number }) => {

@@ -42,6 +42,7 @@ export const buildEnvelope = (m: AgentMessage, language?: Language): string => {
   const lines = [`[Clodex] Message ${m.id} from ${m.from}`, `Type: ${m.type}`, `Task: ${m.taskId}`];
   if (m.replyTo) lines.push(`Reply-To: ${m.replyTo}`);
   if (m.status) lines.push(`Status: ${m.status}`);
+  if (m.auto) lines.push("Auto: the recipient ended its turn without send_message; this is its final reply.");
   if (m.interrupt) lines.push("Interrupt: yes");
   lines.push(`Repository: ${m.repository}`);
   if (m.commit) lines.push(`Commit: ${m.commit}`);

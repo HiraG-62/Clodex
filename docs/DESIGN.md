@@ -783,6 +783,7 @@ Coordinator が付与するフィールド（Agent の自己申告は使わな�
 | `repository` | project root（§7） |
 | `createdAt` | ISO 8601 |
 | `specChanges` | `spec` があり、宛先に同じ設計書を前に渡しているときだけ付ける。前回から変わった節の見出し（下記 Spec の差分）。変わっていなければ空配列 |
+| `auto` | Coordinator が依頼の最終応答から作った `RESULT` にだけ付ける（§12 配送ルール） |
 
 例:
 
@@ -877,6 +878,11 @@ MCP message を受け取った後、
 - 作業を頼む message（`DELEGATE`・`REVIEW_REQUEST`・`QUESTION`）は、配送したターンが失敗（`failed`。混雑や API のエラー）したら 30 秒待って、同じ envelope をもう一度だけ宛先の mailbox に積む。取り消し（`/interrupt`・`/cancel`）と停止（mailbox を閉じた）は失敗に数えない。宛先が利用枠の上限で待っているときも送り直さない（リセット後に続きを送るため。§利用枠の可視化と通知）
   - もう一度失敗したら、送信元の mailbox に「宛先に届かなかった。送り直さずに自分で進める」という指示（英語。message の type・ID・宛先・エラーの 1 行目）を積み、画面に notice（「{to} への {type} が 2 回失敗。{from} が自分で進める」）を出す。`DELEGATE` は自分で実装し、`REVIEW_REQUEST` は自分で確かめ、`QUESTION` は自分で判断して進める
   - 待っている間に Hub が止まったら、再試行はしない（未配送分としても残らない）
+- 依頼系の message（`DELEGATE`・`REVIEW_REQUEST`・`QUESTION`）を配送したターンが完了（`completed`）したのに、宛先の Agent がそのターンの間に送信元へ formal message を 1 つも送らなかったら、Coordinator がそのターンの最終応答を `RESULT` として送信元へ届ける（Agent が `send_message` を使わずに普通の返答で報告して終えても、依頼元が結果を受け取れるように）
+  - `from` は宛先の Agent、`to` は依頼の送信元、`taskId` は依頼と同じ、`replyTo` は依頼の message ID、`status` は `done`、`body` は最終応答（`MAX_BODY_LENGTH` を超えたら切り詰め、末尾に `…`）。最終応答が空なら送らない
+  - Coordinator が作ったことを示す `auto: true` を付ける（Coordinator が付与するフィールド。Agent の入力では受け付けない）。envelope には `Auto: the recipient ended its turn without send_message; this is its final reply.` の 1 行を添える。画面の message の行にも自動で届けたことが分かる印を出す
+  - そのターンの間に宛先が送信元へ `RESULT`・`QUESTION`・`ISSUE` などを送っていれば、やり取りが続いているので作らない。ターンが `failed`・`interrupted` のとき、割り込み（`interrupt`）で実行中のターンに足した依頼、宛先が利用枠の上限で待っているときも作らない
+  - Budget は通常の `RESULT` と同じく数える（親は依頼の message）。上限を超えるなら作らず、人に `error` を出す
 - `/new`・`/resume` で Agent を止める間は、その Agent の mailbox の配送を止める。止めている間に届いた項目は捨てず、切り替え後の session に配送する
 - Coordinator の停止時は、先に全 mailbox を閉じてから Agent を止める（停止中に Agent を再起動しない）。未配送分と作業中だったことは、閉じる前の状態として保存してあり、次の起動で戻す（§18 Hub の再起動からの復旧）
 

@@ -16,6 +16,10 @@ const base: AgentMessage = {
 };
 
 describe("buildEnvelope", () => {
+  it("自動 RESULT の印を Status の後に出す", () => {
+    const envelope = buildEnvelope({ ...base, type: "RESULT", replyTo: "msg_prev", status: "done", auto: true });
+    expect(envelope).toContain("Status: done\nAuto: the recipient ended its turn without send_message; this is its final reply.\n");
+  });
   it("依頼系は参照情報・本文・返信方法を含む", () => {
     expect(buildEnvelope(base)).toBe([
       "[Clodex] Message msg_1a2b3c4d from claude",

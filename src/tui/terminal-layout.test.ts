@@ -8,6 +8,7 @@ const labels = {
   you: "あなた", working: "作業中", completed: "完了", failed: "失敗", interrupted: "中断",
   steps: "作業 {count} 件", message: "メッセージ", notice: "通知", error: "エラー", output: "出力",
   steer: "割り込み",
+  auto: "自動",
 };
 
 it("コマンド入力の枠を緑にして上辺にラベルを置き、! を消すと戻す", () => {
@@ -82,6 +83,7 @@ describe("formatTimelineItem", () => {
       id: "x", from: "claude", to: "codex", type: "DELEGATE", taskId: "T-1", body: "実装して", repository: "r", createdAt: "2026-01-01T00:00:00Z",
     } };
     expect(formatTimelineItem(message, labels, false)).toMatchObject({ title: "Claude → Codex", tag: "DELEGATE · T-1", body: "実装して" });
+    expect(formatTimelineItem({ ...message, message: { ...message.message, auto: true } }, labels, false).tag).toBe("DELEGATE · T-1 · 自動");
   });
 });
 

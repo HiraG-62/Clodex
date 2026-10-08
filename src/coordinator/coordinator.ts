@@ -11,7 +11,7 @@ import { buildEnvelope } from "../context/context-resolver.js";
 import { CONTEXT_INSTRUCTION } from "../context/conversation-instruction.js";
 import { t } from "../i18n/i18n.js";
 import { languageReminder, type Language } from "../context/language.js";
-import { createMessage, type AgentMessage, type CreateMessageResult } from "../protocol/messages.js";
+import { createMessage, MAX_BODY_LENGTH, type AgentMessage, type CreateMessageResult } from "../protocol/messages.js";
 import { AgentMailbox } from "./agent-mailbox.js";
 import { BudgetManager, humanBudgetError, type BudgetLimits } from "./budget-manager.js";
 import { DEFAULT_USAGE_ALERT, UsageMonitor, limitResetAt, type UsageAlert, type UsageSnapshot } from "./usage-monitor.js";
@@ -101,6 +101,7 @@ export class Coordinator {
   private readonly usage: UsageMonitor;
   private inputSeq = 0;
   private readonly questions = new Map<string, PendingQuestion>();
+  private readonly repliedRequests = new Set<string>();
   // 宛先ごと・設計書の実パスごとに、前回渡した中身（DESIGN.md §13 Spec の差分）
   private readonly specSnapshots = new Map<string, string>();
   private readonly liveUsage = new Set<AgentId>();
@@ -141,7 +142,7 @@ export class Coordinator {
           });
         } else {
           this.budget.restore(item.message);
-          void this.mailboxes[id].enqueue(buildEnvelope(item.message, this.language), { message: item.message });
+          void this.deliver(item.message);
         }
       }
     }
@@ -247,12 +248,14 @@ export class Coordinator {
     }
 
     // 送信元が処理中の message を親として chain を決める（DESIGN.md §14）
-    const budgetError = this.budget.admit(message, this.mailboxes[from].current);
+    const parent = this.mailboxes[from].current;
+    const budgetError = this.budget.admit(message, parent);
     if (budgetError) {
       bus.publish({ kind: "agent", agent: from, event: { type: "error", message: humanBudgetError(budgetError) } });
       return { ok: false, error: budgetError };
     }
 
+    if (parent && RETRIED_TYPES.has(parent.type) && message.to === parent.from) this.repliedRequests.add(parent.id);
     if (specSnapshot) this.specSnapshots.set(specSnapshot.key, specSnapshot.content);
     bus.publish({ kind: "message", message });
     // ACK は記録のみ。配送して Agent を起こさない（DESIGN.md §12, §25）
@@ -267,6 +270,9 @@ export class Coordinator {
     const steerable = message.interrupt && mailbox.current?.from === message.from;
     if (steerable && await this.options.agents[message.to].steer(envelope, message.id)) return;
     const result = await mailbox.enqueue(envelope, { message });
+    const replied = this.repliedRequests.delete(message.id);
+    if (RETRIED_TYPES.has(message.type) && result.status === "completed" && result.text.trim() && !replied
+      && !mailbox.isClosed && !mailbox.holding) this.autoResult(message, result.text);
     // 上限で待っている宛先は、リセット後に続きを送るので送り直さない
     if (result.status !== "failed" || !RETRIED_TYPES.has(message.type) || mailbox.isClosed || mailbox.holding) return;
     if (attempt < MAX_DELIVERY_ATTEMPTS) {
@@ -279,6 +285,22 @@ export class Coordinator {
     const error = (result.text.split("\n", 1)[0] ?? "").slice(0, ERROR_LINE_LENGTH);
     this.options.bus.publish({ kind: "notice", text: t("notice.handoffFailed", { type: message.type, to: message.to, from: message.from }) });
     void sender.enqueue(handoffFallback(message, error), { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, suffix: this.reminder });
+  }
+
+  private autoResult(request: AgentMessage, text: string): void {
+    const body = text.length > MAX_BODY_LENGTH ? `${text.slice(0, MAX_BODY_LENGTH - 1)}…` : text;
+    const created = createMessage({ to: request.from, type: "RESULT", taskId: request.taskId, replyTo: request.id,
+      status: "done", body }, { from: request.to, repository: this.options.projectRoot,
+      ...(this.options.createMessageId ? { createId: this.options.createMessageId } : {}) });
+    if (!created.ok) return;
+    const message: AgentMessage = { ...created.message, auto: true };
+    const budgetError = this.budget.admit(message, request);
+    if (budgetError) {
+      this.options.bus.publish({ kind: "agent", agent: request.to, event: { type: "error", message: humanBudgetError(budgetError) } });
+      return;
+    }
+    this.options.bus.publish({ kind: "message", message });
+    void this.deliver(message);
   }
 
   // @agent!: 実行中なら steer し、そうでなければ通常の送信（DESIGN.md §28 v0.3 C）

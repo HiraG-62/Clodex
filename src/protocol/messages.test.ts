@@ -35,6 +35,11 @@ describe("createMessage", () => {
     const result = createMessage({ ...reviewRequest, from: "codex", id: "msg_fake" }, context);
     expect(result).toMatchObject({ ok: true, message: { from: "claude", id: "msg_1a2b3c4d" } });
   });
+  it("Agent の入力に auto があっても保持しない", () => {
+    const result = createMessage({ ...reviewRequest, auto: true }, context);
+    expect(result).toMatchObject({ ok: true });
+    if (result.ok) expect(result.message).not.toHaveProperty("auto");
+  });
 
   it("RESULT は status と issues を持てる", () => {
     const result = createMessage({

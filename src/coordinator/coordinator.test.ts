@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { type SoloMode, Coordinator } from "./coordinator.js";
 import { EventBus, type CoordinatorEvent } from "./event-bus.js";
-import type { CreateMessageResult } from "../protocol/messages.js";
+import { MAX_BODY_LENGTH, type CreateMessageResult } from "../protocol/messages.js";
 
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 const NOW = "2026-10-05T07:00:00.000Z";
@@ -30,6 +30,120 @@ const setup = (projectRoot = PROJECT_ROOT) => {
 };
 
 const reviewRequest = { to: "codex", type: "REVIEW_REQUEST", taskId: "T-1", body: "review please", files: ["a.ts"] };
+
+describe("自動 RESULT", () => {
+  it("依頼先が返事を送らず完了したら最終応答を依頼元へ届ける", async () => {
+    const { claude, codex, events, coordinator } = setup();
+    const request = coordinator.receiveMessage("claude", { ...reviewRequest, type: "DELEGATE" });
+    expect(request.ok).toBe(true);
+    if (!request.ok) return;
+    await flush();
+    codex.completeTurn({ status: "completed", text: "実装しました" });
+    await flush();
+    const messages = events.filter((event) => event.kind === "message").map((event) => event.message);
+    expect(messages).toHaveLength(2);
+    expect(messages[1]).toMatchObject({ from: "codex", to: "claude", type: "RESULT", taskId: "T-1",
+      replyTo: request.message.id, status: "done", body: "実装しました", auto: true });
+    expect(claude.sent[0]).toContain("Auto: the recipient ended its turn without send_message; this is its final reply.");
+  });
+
+  it.each(["RESULT", "QUESTION"] as const)("依頼元へ %s を送っていれば自動で返さない", async (type) => {
+    const { codex, events, coordinator } = setup();
+    const request = coordinator.receiveMessage("claude", reviewRequest);
+    expect(request.ok).toBe(true);
+    if (!request.ok) return;
+    await flush();
+    const reply = coordinator.receiveMessage("codex", { to: "claude", type, taskId: "T-1", body: "返事",
+      ...(type === "RESULT" ? { replyTo: request.message.id } : {}) });
+    expect(reply.ok).toBe(true);
+    codex.completeTurn({ status: "completed", text: "最終応答" });
+    await flush();
+    expect(events.filter((event) => event.kind === "message")).toHaveLength(2);
+  });
+
+  it.each(["failed", "interrupted"] as const)("%s なら自動で返さない", async (status) => {
+    const { codex, events, coordinator } = setup();
+    coordinator.receiveMessage("claude", reviewRequest);
+    await flush();
+    codex.completeTurn({ status, text: "途中" });
+    await flush();
+    expect(events.filter((event) => event.kind === "message")).toHaveLength(1);
+  });
+
+  it("空の最終応答と返信不要の message では自動で返さない", async () => {
+    const { claude, codex, events, coordinator } = setup();
+    coordinator.receiveMessage("claude", reviewRequest);
+    await flush();
+    codex.completeTurn({ status: "completed", text: "  " });
+    await flush();
+    coordinator.receiveMessage("claude", { to: "codex", type: "ISSUE", taskId: "T-2", body: "問題" });
+    await flush();
+    codex.completeTurn({ status: "completed", text: "確認" });
+    await flush();
+    coordinator.receiveMessage("claude", { to: "codex", type: "RESULT", taskId: "T-3", body: "結果", replyTo: "msg_older" });
+    await flush();
+    codex.completeTurn({ status: "completed", text: "確認" });
+    await flush();
+    expect(events.filter((event) => event.kind === "message")).toHaveLength(3);
+    expect(claude.sent).toEqual([]);
+  });
+
+  it("実行中のターンに足した依頼からは自動 RESULT を作らない", async () => {
+    const { codex, events, coordinator } = setup();
+    const original = coordinator.receiveMessage("claude", reviewRequest);
+    expect(original.ok).toBe(true);
+    if (!original.ok) return;
+    await flush();
+    const correction = coordinator.receiveMessage("claude", { to: "codex", type: "QUESTION", taskId: "T-2",
+      body: "追加の確認", interrupt: true });
+    expect(correction.ok).toBe(true);
+    if (!correction.ok) return;
+    await flush();
+    expect(codex.steered).toHaveLength(1);
+    codex.completeTurn({ status: "completed", text: "確認済み" });
+    await flush();
+    const automatic = events.flatMap((event) => event.kind === "message" && event.message.auto ? [event.message] : []);
+    expect(automatic.map((message) => message.replyTo)).toEqual([original.message.id]);
+  });
+
+  it("長い最終応答を上限内で切り詰める", async () => {
+    const { codex, events, coordinator } = setup();
+    coordinator.receiveMessage("claude", reviewRequest);
+    await flush();
+    codex.completeTurn({ status: "completed", text: "x".repeat(MAX_BODY_LENGTH + 200) });
+    await flush();
+    const messages = events.filter((event) => event.kind === "message").map((event) => event.message);
+    expect(messages[1]?.body).toHaveLength(MAX_BODY_LENGTH);
+    expect(messages[1]?.body.endsWith("…")).toBe(true);
+  });
+
+  it("Budget の上限なら作らずエラーを出す", async () => {
+    const { codex, events, coordinator } = setup();
+    coordinator.setLimits({ maxMessagesPerChain: 1, maxReviewRoundsPerChain: 3, maxDelegationsPerChain: 4, maxDelegationDepth: 2 });
+    coordinator.receiveMessage("claude", reviewRequest);
+    await flush();
+    codex.completeTurn({ status: "completed", text: "完了" });
+    await flush();
+    expect(events.filter((event) => event.kind === "message")).toHaveLength(1);
+    expect(events).toContainEqual(expect.objectContaining({ kind: "agent", agent: "codex",
+      event: { type: "error", message: expect.stringContaining("Budget limit reached") } }));
+  });
+
+  it("復旧した配送待ちの依頼にも自動 RESULT を返す", async () => {
+    const { claude, codex, events, coordinator } = setup();
+    coordinator.restore({ interrupted: [], queue: { claude: [], codex: [{ kind: "message", message: {
+      id: "msg_restored", from: "claude", to: "codex", type: "DELEGATE", taskId: "R", body: "復旧した依頼",
+      repository: PROJECT_ROOT, createdAt: NOW,
+    } }] } });
+    await flush();
+    codex.completeTurn({ status: "completed", text: "復旧した作業を完了" });
+    await flush();
+    expect(events).toContainEqual(expect.objectContaining({ kind: "message", message: expect.objectContaining({
+      type: "RESULT", replyTo: "msg_restored", auto: true,
+    }) }));
+    expect(claude.sent[0]).toContain("復旧した作業を完了");
+  });
+});
 
 describe("Coordinator", () => {
   it("復旧状態の変化を知らせ、stop 時は直前の状態を保持する", async () => {
@@ -358,7 +472,7 @@ describe("Coordinator", () => {
     };
     const delegate = { to: "codex", type: "DELEGATE", taskId: "T-1", body: "implement" };
 
-    it("1 回失敗したら同じ envelope をもう一度だけ送り、成功すれば送信元には何も送らない", async () => {
+    it("1 回失敗したら同じ envelope をもう一度だけ送り、成功時は自動 RESULT を返す", async () => {
       const { claude, codex, coordinator } = setupRetry();
       coordinator.receiveMessage("claude", delegate);
       await flush();
@@ -368,7 +482,7 @@ describe("Coordinator", () => {
       expect(codex.sent[1]).toBe(codex.sent[0]);
       codex.completeTurn();
       await flush();
-      expect(claude.sent).toEqual([]);
+      expect(claude.sent[0]).toContain("Auto: the recipient ended its turn without send_message");
     });
 
     it("2 回失敗したら送信元に自分で進めるよう指示し、notice を出す", async () => {
@@ -548,6 +662,9 @@ describe("Coordinator", () => {
     expect(idle).toBe(false);
 
     codex.completeTurn();
+    await flush();
+    expect(idle).toBe(false);
+    claude.completeTurn();
     await flush();
     expect(idle).toBe(true);
   });

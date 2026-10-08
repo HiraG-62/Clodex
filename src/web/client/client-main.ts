@@ -463,6 +463,7 @@ export function clientMain({
     const route = el("div", "route");
     route.append(mark(message.from), el("span", "arrow", "→"), mark(message.to), el("span", "kind", message.type));
     if (message.status) route.append(el("span", "kind", message.status.replace(/_/g, " ").toUpperCase()));
+    if (message.auto) route.append(el("span", "kind", t("web.message.auto")));
     if (message.interrupt) route.append(el("span", "kind steer", t("web.steer")));
     route.append(el("span", "task mono", `${message.taskId} · ${clock(item.at)}`));
     const text = el("div", "text md");
