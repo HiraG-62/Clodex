@@ -462,6 +462,7 @@ const STYLE = `
     .composer { padding: 6px 32px 16px; }
     .agent-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .icon-btn[title]:hover::before { content: attr(title); position: absolute; top: calc(100% + 9px); right: 0; z-index: 40; padding: 5px 8px; border-radius: var(--r); background: var(--panel); color: var(--fg); box-shadow: var(--shadow-pop); white-space: nowrap; font-size: 12px; pointer-events: none; animation: tooltip-in 400ms step-end; }
+    .composer .icon-btn[title]:hover::before { top: auto; bottom: calc(100% + 9px); }
   }
   @media (min-width: 900px) and (max-width: 1199px) { .agent-strip .agent { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title actions" "chips actions" "gauges gauges"; } .agent-strip .mini-gauges { grid-template-columns: repeat(3,minmax(0,1fr)); } .agent-strip .gauge { grid-template-columns: 1fr auto; } .agent-strip .gauge .track { grid-column: 1 / -1; grid-row: 2; } .agent-strip .gauge .v { grid-column: 2; } }
   @keyframes tooltip-in { from { opacity: 0; } to { opacity: 1; } }
