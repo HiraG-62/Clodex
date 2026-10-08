@@ -53,9 +53,9 @@ describe("renderMarkdown", () => {
   it("空文字は空", () => expect(renderMarkdown("")).toBe(""));
 });
 
-it("絶対パスのインラインコードに path の class を付け、ほかのコードには付けない", () => {
+it("絶対パスのインラインコードに abs-path の class を付け、ほかのコードには付けない", () => {
   expect(renderMarkdown("`C:\\Users\\a.png` と `C:/x/y.ts` と `/tmp/a` と `~/b`")).toBe(
-    '<p><code class="path">C:\\Users\\a.png</code> と <code class="path">C:/x/y.ts</code> と <code class="path">/tmp/a</code> と <code class="path">~/b</code></p>\n',
+    '<p><code class="abs-path">C:\\Users\\a.png</code> と <code class="abs-path">C:/x/y.ts</code> と <code class="abs-path">/tmp/a</code> と <code class="abs-path">~/b</code></p>\n',
   );
   expect(renderMarkdown("`src/a.ts` と `/limits` と `<b>`")).toBe("<p><code>src/a.ts</code> と <code>/limits</code> と <code>&lt;b&gt;</code></p>\n");
 });

@@ -179,7 +179,7 @@ const STYLE = `
   .md pre code { padding: 0; background: none; }
   code { font-family: var(--font-mono); font-size: .92em; padding: 1px 5px; border-radius: 4px; background: var(--sunken); color: var(--code); overflow-wrap: anywhere; }
   /* 絶対パスは本文より目立たせない */
-  code.path { font-size: .78em; padding: 0; background: none; color: var(--muted); }
+  code.abs-path { font-size: .78em; padding: 0; background: none; color: var(--muted); }
 
   .steps { grid-column: 2; margin: 2px 0 6px; min-width: 0; }
   .steps summary, .envelope summary { list-style: none; cursor: pointer; font-size: 12px; color: var(--muted); display: inline-flex; gap: 6px; padding: 2px 0; }
