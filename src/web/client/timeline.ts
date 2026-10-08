@@ -15,6 +15,7 @@ export type TimelineItem =
     status: "working" | TurnResult["status"]; steps: TimelineStep[]; text: string;
     plan?: string; // ターンの最初の発言（方針。DESIGN.md §17 ログ）
     planAt?: string;
+    resultBelow?: true; // 最終応答を後ろの別の項目に出した枠
   }
   | { kind: "message"; id: string; at: string; message: AgentMessage; envelope?: string }
   | { kind: "notice"; id: string; at: string; text: string }
@@ -96,9 +97,9 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
         : { ...turn, steps: [...turn.steps, { kind: "say", text: agentEvent.text, at }] }));
     case "tool":
       return updateTurn((turn) => ({ ...turn, steps: [...turn.steps, { kind: "tool", name: agentEvent.name, input: agentEvent.input, ...(agentEvent.files ? { files: agentEvent.files } : {}) }] }));
-    case "turn":
-      return updateTurn((turn) => {
-        const { status, text } = agentEvent.result;
+    case "turn": {
+      const { status, text } = agentEvent.result;
+      const finish = (turn: Turn): Turn => {
         const last = turn.steps[turn.steps.length - 1];
         // 最終応答は本文として出すので、同じ内容の最後の発言は作業から外す
         const steps = last?.kind === "say" && last.text.trim() === text.trim() ? turn.steps.slice(0, -1) : turn.steps;
@@ -108,7 +109,16 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
           return { ...rest, status, text, steps };
         }
         return { ...turn, status, text, steps };
-      });
+      };
+      const index = items.findLastIndex((entry) => entry.kind === "turn" && entry.agent === agent && entry.status === "working");
+      const later = items.slice(index + 1).some((entry) => entry.kind !== "turn" || entry.status !== "working");
+      if (index < 0 || !later) return updateTurn(finish);
+      // 作業中に後ろへ別の項目が並んだら、最終応答は末尾に出してログを時系列に保つ（DESIGN.md §17 ログ）
+      const finished = finish(items[index] as Turn);
+      const result: Turn = { kind: "turn", id, at, agent, status, steps: [], text };
+      const kept = finished.plan === undefined && finished.steps.length === 0 ? [] : [{ ...finished, text: "", resultBelow: true as const }];
+      return limit([...items.slice(0, index), ...kept, ...items.slice(index + 1), result]);
+    }
     case "error":
       return limit([...items, { kind: "error", id, at, agent, text: agentEvent.message }]);
     case "compacted":

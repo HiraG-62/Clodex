@@ -4,6 +4,7 @@ import type { FeedItem } from "../web-feed.js";
 import { rebuildTimeline, applyFeedItem, withStartingTurns, workingFeed, type TimelineItem } from "./timeline.js";
 
 const AT = "2026-10-05T12:00:00.000Z";
+const LATER = "2026-10-05T12:05:00.000Z";
 let seq = 0;
 const agent = (name: "claude" | "codex", event: AgentEvent, at = AT): FeedItem =>
   ({ type: "event", seq: ++seq, event: { kind: "agent", agent: name, event, at } });
@@ -95,6 +96,50 @@ describe("applyFeedItem", () => {
       kind: "turn", status: "working", plan: "方針です。",
       steps: [{ kind: "tool", name: "Read", input: "a.ts" }, { kind: "say", text: "途中です。" }],
     }]);
+  });
+
+  it("作業中に後ろへ項目が並んだら、最終応答は末尾に新しい項目として出す", () => {
+    const timeline = run([
+      agent("claude", { type: "turn_started" }),
+      agent("claude", { type: "text", text: "確認します。" }),
+      agent("claude", { type: "tool", name: "Read", input: "a.ts" }),
+      human("claude", "割り込み"),
+      agent("claude", { type: "turn", result: { status: "completed", text: "直しました。" } }, LATER),
+    ]);
+    expect(timeline).toEqual([
+      { kind: "turn", id: expect.any(String), at: AT, agent: "claude", status: "completed", text: "", resultBelow: true,
+        plan: "確認します。", planAt: AT, steps: [{ kind: "tool", name: "Read", input: "a.ts" }] },
+      expect.objectContaining({ kind: "human", text: "割り込み" }),
+      { kind: "turn", id: expect.any(String), at: LATER, agent: "claude", status: "completed", text: "直しました。", steps: [] },
+    ]);
+    expect(timeline[0]?.id).not.toBe(timeline[2]?.id);
+  });
+
+  it("方針も作業も残らない枠は消して、最終応答だけを末尾に出す", () => {
+    const timeline = run([
+      agent("codex", { type: "turn_started" }),
+      agent("codex", { type: "text", text: "完了しました。" }),
+      human("codex", "割り込み"),
+      agent("codex", { type: "turn", result: { status: "completed", text: "完了しました。" } }, LATER),
+    ]);
+    expect(timeline).toMatchObject([
+      { kind: "human", text: "割り込み" },
+      { kind: "turn", at: LATER, status: "completed", text: "完了しました。", steps: [] },
+    ]);
+    expect(timeline).toHaveLength(2);
+  });
+
+  it("後ろが作業中のターンだけなら、最終応答は元の枠に入れる", () => {
+    const timeline = run([
+      agent("claude", { type: "turn_started" }),
+      agent("claude", { type: "tool", name: "Read", input: "a" }),
+      agent("codex", { type: "turn_started" }),
+      agent("claude", { type: "turn", result: { status: "completed", text: "ok" } }),
+    ]);
+    expect(timeline).toMatchObject([
+      { kind: "turn", agent: "claude", status: "completed", text: "ok" },
+      { kind: "turn", agent: "codex", status: "working" },
+    ]);
   });
 
   it("両 Agent のターンが並行しても、それぞれのターンに振り分ける", () => {

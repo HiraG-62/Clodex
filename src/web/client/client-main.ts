@@ -404,7 +404,7 @@ export function clientMain({
     const head = el("div", "head");
     head.append(el("b", `c-${item.agent}`, AGENTS[item.agent].name), el("time", "mono", clock(item.at)));
     const label = TURN_LABEL[item.status];
-    if (label) head.append(el("span", `state ${item.status}`, t(label)));
+    if (label && !item.resultBelow) head.append(el("span", `state ${item.status}`, t(label)));
     if (item.status === "working") {
       const elapsed = el("span", "elapsed mono", elapsedText(item.at));
       elapsed.dataset.start = item.at;
@@ -429,7 +429,7 @@ export function clientMain({
     if (item.status === "working") node.append(nowLine(item));
     const body = el("div", "body md");
     if (item.text) body.innerHTML = renderMarkdown(item.text);
-    else if (item.status === "completed") body.append(el("span", "muted", t("web.turn.completed")));
+    else if (item.status === "completed" && !item.resultBelow) body.append(el("span", "muted", t("web.turn.completed")));
     if (body.childNodes.length) node.append(body);
     appendImagePreviews(node, item.text, item.at);
     return node;
