@@ -1656,10 +1656,14 @@ export function clientMain({
     delegations: form.querySelector<HTMLInputElement>("#limit-delegations")!.value,
     depth: form.querySelector<HTMLInputElement>("#limit-depth")!.value,
   });
+  const draftLimitChanges = (form: HTMLElement, limits: WebState["limits"]) => limitChanges(
+    { messages: limits.messages.value, reviews: limits.reviews.value, delegations: limits.delegations.value, depth: limits.depth.value },
+    limitDraft(form),
+    { messages: limits.messages.default, reviews: limits.reviews.default, delegations: limits.delegations.default, depth: limits.depth.default },
+  );
   const syncLimitActions = (form: HTMLElement) => {
     if (!state) return;
-    const current = { messages: state.limits.messages.value, reviews: state.limits.reviews.value, delegations: state.limits.delegations.value, depth: state.limits.depth.value };
-    const { changes, valid } = limitChanges(current, limitDraft(form));
+    const { changes, valid } = draftLimitChanges(form, state.limits);
     form.querySelector<HTMLButtonElement>(".limits-apply")!.disabled = settingsRequests.has("limits") || !valid || changes.length === 0;
   };
   const settingsChoice = <T extends string>(key: string, label: string, options: readonly T[], current: T, name: (value: T) => string) =>
@@ -1705,8 +1709,7 @@ export function clientMain({
       field.min = String(LIMIT_MIN);
       field.max = String(LIMIT_MAX);
       field.step = "1";
-      field.required = true;
-      row.append(label, field, el("span", "muted small limit-default"));
+      row.append(label, field);
       field.addEventListener("input", () => syncLimitActions(limits));
       limits.append(row);
     }
@@ -1731,8 +1734,7 @@ export function clientMain({
     limits.addEventListener("submit", event => {
       event.preventDefault();
       if (!state || settingsRequests.has("limits")) return;
-      const current = { messages: state.limits.messages.value, reviews: state.limits.reviews.value, delegations: state.limits.delegations.value, depth: state.limits.depth.value };
-      const { changes, valid } = limitChanges(current, limitDraft(limits));
+      const { changes, valid } = draftLimitChanges(limits, state.limits);
       if (!valid || !changes.length) return;
       sendLimits(`/limits ${changes.map(({ name, value }) => `${name} ${value}`).join(" ")}`, apply);
     });
@@ -1959,11 +1961,12 @@ export function clientMain({
         const limit = state.limits[name];
         const field = row.querySelector<HTMLInputElement>("input")!;
         field.disabled = limitsBusy;
+        // 既定値はプレースホルダに出し、既定値のままなら空欄にする（DESIGN.md §17 設定）
+        field.placeholder = String(limit.default);
         if (field.dataset.synced !== String(limit.value)) {
-          field.value = String(limit.value);
-          field.dataset.synced = field.value;
+          field.value = limit.value === limit.default ? "" : String(limit.value);
+          field.dataset.synced = String(limit.value);
         }
-        row.querySelector<HTMLElement>(".limit-default")!.textContent = t("web.settings.default", { value: limit.default });
         row.querySelector<HTMLElement>(".limit-changed")!.hidden = limit.value === limit.default;
       }
       const limits = body.querySelector<HTMLElement>(".limits-settings");

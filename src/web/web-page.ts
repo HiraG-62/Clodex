@@ -596,10 +596,9 @@ const STYLE = `
   .code-head { display: flex; justify-content: flex-end; border-bottom: 1px solid var(--line); padding-inline: 4px; background: var(--sunken); }
   .code-block pre { margin: 0; border: 0; }
   .limits-settings { display: grid; }
-  .limit-row { display: grid; grid-template-columns: minmax(0, 1fr) 56px 54px; gap: 8px; align-items: center; min-height: 44px; }
+  .limit-row { display: grid; grid-template-columns: minmax(0, 1fr) 56px; gap: 8px; align-items: center; min-height: 44px; }
   .limit-label { min-width: 0; font-size: 12px; line-height: 1.3; }
   .limit-row input { min-width: 0; width: 56px; height: 28px; padding: 3px 6px; border: 0; border-radius: var(--r-inner); box-shadow: var(--ring); background: var(--sunken); color: var(--fg); font: 12px var(--font-mono); }
-  .limit-default { text-align: right; white-space: nowrap; }
   .limit-changed { color: var(--accent); margin-left: 6px; }
   .limits-actions { display: flex; gap: 8px; justify-content: flex-end; }
   .gui-update-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
@@ -619,7 +618,6 @@ const STYLE = `
   .settings-card > .limits-settings { padding: 4px 0; }
   .settings-card > .limits-settings > .eyebrow { margin: 4px 0; color: var(--fg); font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; }
   .settings-card .limit-row + .limit-row { border-top: 1px solid var(--line); }
-  .settings-card .limit-default { font-size: 10px; }
   .settings-card .limits-actions { width: 100%; padding: 4px 0; border-top: 1px solid var(--line); }
   .settings-card .limits-actions .btn { min-height: 28px; border: 0; padding: 3px 7px; background: transparent; color: var(--fg-2); font-size: 11px; }
   .settings-card .limits-actions .limits-apply { background: var(--invert-bg); color: var(--invert-fg); border-radius: 4px; }
@@ -682,7 +680,7 @@ const STYLE = `
     .code-block.long:not(.expanded) pre { max-height: 168px; overflow: hidden; mask-image: linear-gradient(#000 60%, transparent); }
     .settings-sheet .sheet-panel { padding: 0 max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
     .settings-card { padding-inline: 10px; }
-    .settings-card .limit-row { grid-template-columns: minmax(0, 1fr) 56px 54px; gap: 6px; }
+    .settings-card .limit-row { grid-template-columns: minmax(0, 1fr) 56px; gap: 6px; }
     .settings-card .limits-actions .btn { min-height: 44px; }
     .code-block.long .code-more { display: flex; justify-content: center; align-items: center; gap: 6px; width: 100%; height: 44px; border: 0; border-top: 1px solid var(--line); background: var(--panel); color: var(--fg-2); }
     .code-block.expanded .code-more .i { transform: rotate(180deg); }
