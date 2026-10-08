@@ -303,9 +303,18 @@ describe("Coordinator", () => {
       claude.completeTurn({ status: "failed", text: "limit" });
       await flush();
       expect(claude.sent).toEqual(["first"]);
+      expect(coordinator.status().find((agent) => agent.id === "claude")?.holdUntil).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      const queued = coordinator.receiveMessage("codex", { to: "claude", type: "QUESTION", taskId: "hold", body: "待機中の質問" });
+      expect(queued.ok).toBe(true);
+      if (queued.ok) {
+        expect(coordinator.pendingMessages()).toMatchObject([{ id: queued.message.id, agent: "claude" }]);
+        expect(coordinator.cancelInput(queued.message.id)).toMatchObject({ id: queued.message.id });
+        expect(coordinator.pendingMessages()).toEqual([]);
+      }
       expect(coordinator.recoveryState().interrupted).toEqual(["claude"]);
       expect(events).toContainEqual(expect.objectContaining({ kind: "notice", text: expect.stringContaining("claude") }));
       await wait(200);
+      expect(coordinator.status().find((agent) => agent.id === "claude")?.holdUntil).toBeUndefined();
       expect(claude.sent).toHaveLength(2);
       expect(claude.sent[1]).toContain("usage limit has reset");
       claude.completeTurn();
@@ -650,6 +659,23 @@ describe("Coordinator", () => {
 });
 
 describe("Coordinator の取り消しと割り込み", () => {
+  it("配送待ちの formal message を一覧に出し、ID 指定で取り消す", async () => {
+    const { claude, codex, coordinator } = setup();
+    void coordinator.sendToAgent("codex", "作業中");
+    await flush();
+    const created = coordinator.receiveMessage("claude", { to: "codex", type: "DELEGATE", taskId: "T", body: "実装して\n詳細" });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(coordinator.pendingMessages()).toEqual([{
+      id: created.message.id, agent: "codex", from: "claude", type: "DELEGATE", taskId: "T", text: "実装して\n詳細",
+    }]);
+    expect(coordinator.cancelInput(created.message.id)).toMatchObject({ id: created.message.id, agent: "codex" });
+    expect(coordinator.pendingMessages()).toEqual([]);
+    codex.completeTurn();
+    await flush();
+    expect(codex.sent).toEqual(["作業中"]);
+    expect(claude.sent).toEqual([]);
+  });
   it("配送待ちの人間の入力を一覧にし、ID 省略時は最後のものを取り消す", async () => {
     const { codex, events, coordinator } = setup();
     void coordinator.sendToAgent("codex", "first");

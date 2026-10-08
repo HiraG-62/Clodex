@@ -2,7 +2,7 @@ import { DEFAULT_LIMITS, LIMIT_KEYS } from "../coordinator/budget-manager.js";
 import { describe, expect, it } from "vitest";
 import type { AgentId, AgentStatus, PermissionLevel, TurnResult } from "../agents/agent-adapter.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
-import type { SoloMode } from "../coordinator/coordinator.js";
+import type { SoloMode, PendingMessage } from "../coordinator/coordinator.js";
 import { createShell, type AgentState, type ConversationList, type PendingInput, type ShellCoordinator } from "./shell.js";
 import type { CommandResult } from "./command-runner.js";
 
@@ -101,11 +101,13 @@ class FakeCoordinator implements ShellCoordinator {
   }
 
   pending: PendingInput[] = [{ id: "in2", agent: "codex", text: "queued" }];
+  messages: PendingMessage[] = [];
   readonly canceled: Array<string | undefined> = [];
   pendingInputs() { return this.pending; }
+  pendingMessages() { return this.messages; }
   cancelInput(id?: string) {
     this.canceled.push(id);
-    return this.pending.find((p) => p.id === (id ?? "in2"));
+    return this.pending.find((p) => p.id === (id ?? "in2")) ?? this.messages.find((message) => message.id === id);
   }
 
   readonly switched: SavedSessions[] = [];
@@ -467,6 +469,16 @@ describe("createShell", () => {
       "  context: unknown",
       "queued: in2 -> codex: queued",
     ]);
+  });
+
+  it("/status と /cancel に配送待ちの Agent 間メッセージを含める", async () => {
+    const { coordinator, printed, shell } = setup();
+    coordinator.messages = [{ id: "msg_1", agent: "codex", from: "claude", type: "DELEGATE", taskId: "T", text: "実装して\n詳細" }];
+    await shell.handleLine("/status");
+    expect(printed).toContain("queued: msg_1 claude -> codex DELEGATE: 実装して");
+    await shell.handleLine("/cancel msg_1");
+    expect(coordinator.canceled).toContain("msg_1");
+    expect(printed.at(-1)).toBe("canceled: msg_1 -> codex");
   });
 
   it("/help は入力方法を表示する", async () => {

@@ -5,6 +5,7 @@ import type { AgentId } from "../agents/agent-adapter.js";
 import type { AgentState } from "../cli/shell.js";
 import type { CommandLifecycle } from "../cli/command-runner.js";
 import type { CoordinatorEvent } from "../coordinator/event-bus.js";
+import type { PendingMessage } from "../coordinator/coordinator.js";
 import type { Conversation } from "../project/conversation-history.js";
 
 export const DEFAULT_RECENT_ITEMS = 1000;
@@ -32,6 +33,7 @@ export interface WebState {
   conversations: Array<Conversation & { current: boolean; activity?: ConversationActivity }>;
   // 配送待ちの人間の入力（取り消し・編集の対象）
   pendingInputs: PendingInput[];
+  pendingMessages: PendingMessage[];
   questions: PendingQuestion[];
   processes: Array<{ id: number; command: string; status: "running" | "exited" | "stopped" }>;
 }

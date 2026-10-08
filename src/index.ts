@@ -130,6 +130,9 @@ const main = async (): Promise<void> => {
       }
       refreshState();
     });
+    context.workspace.onRecoveryChange(() => {
+      if (hub.current === context) refreshState();
+    });
     context.bindFeed(feed, () => hub.current === context);
     await context.restore();
     void context.probe().then(() => refreshState()).catch((error: unknown) => notify(errorMessage(error), "warn"));
@@ -218,6 +221,7 @@ const main = async (): Promise<void> => {
       agents: runtime?.coordinator.status() ?? [],
       questions: runtime?.coordinator.pendingQuestions() ?? [],
       pendingInputs: runtime?.coordinator.pendingInputs() ?? [],
+      pendingMessages: runtime?.coordinator.pendingMessages() ?? [],
       processes: processes.list().map(({ id, command, status }) => ({ id, command, status })),
       conversations: context?.history.list().map((conversation) => {
         const activity = context.workspace.activity(conversation.id);

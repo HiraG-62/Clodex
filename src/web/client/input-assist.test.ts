@@ -18,6 +18,7 @@ describe("suggest", () => {
     conversations: [{ title: "Planning" }, { title: "Review" }],
     projects: [{ projectRoot: "C:\\dev\\app" }],
     pendingInputs: [{ id: "in2" }],
+    pendingMessages: [{ id: "msg_1", from: "claude", agent: "codex", type: "DELEGATE" }],
     processes: [{ id: 1, command: "pnpm dev", status: "running" }, { id: 2, command: "pnpm test", status: "exited" }],
   };
   it("コマンドの引数を state から候補にする", () => {
@@ -31,6 +32,7 @@ describe("suggest", () => {
     expect(suggest("/project p", 10, FILES, state)?.items.map((i) => i.insert)).toEqual(["pin "]);
     expect(suggest("/project remove C", 17, FILES, state)?.items.map((i) => i.insert)).toContain("C:\\dev\\app ");
     expect(suggest("/cancel i", 9, FILES, state)?.items.map((i) => i.insert)).toContain("in2 ");
+    expect(suggest("/cancel m", 9, FILES, state)?.items).toContainEqual({ label: "msg_1", detail: "claude → codex DELEGATE", insert: "msg_1 " });
     expect(suggest("/new w", 6, FILES, state)?.items.map((i) => i.insert)).toContain("worktree ");
     expect(suggest("/processes ", 11, FILES, state)?.items.map(({ insert, detail }) => [insert, detail])).toEqual([["1 ", "pnpm dev"], ["2 ", "pnpm test"]]);
     expect(suggest("/kill ", 6, FILES, state)?.items.map(({ insert }) => insert)).toEqual(["1 "]);

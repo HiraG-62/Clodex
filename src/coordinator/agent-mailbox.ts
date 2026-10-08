@@ -40,6 +40,7 @@ export class AgentMailbox {
   current: AgentMessage | undefined;
   private activeSend = false;
   private holdTimer: ReturnType<typeof setTimeout> | undefined;
+  private resumeAt: number | undefined;
 
   constructor(
     private readonly agent: AgentAdapter,
@@ -65,6 +66,14 @@ export class AgentMailbox {
     return this.queue.flatMap((item) => (item.inputId ? [{ id: item.inputId, text: item.text }] : []));
   }
 
+  get pendingMessages(): AgentMessage[] {
+    return this.queue.flatMap((item) => item.message ? [item.message] : []);
+  }
+
+  get holdUntil(): string | undefined {
+    return this.resumeAt === undefined ? undefined : new Date(this.resumeAt).toISOString();
+  }
+
   get recoveryQueue(): RecoveryItem[] {
     return this.queue.flatMap((item): RecoveryItem[] => {
       if (item.message) return [{ kind: "message", message: item.message }];
@@ -84,13 +93,16 @@ export class AgentMailbox {
     if (!this.holdTimer) return;
     clearTimeout(this.holdTimer);
     this.holdTimer = undefined;
+    this.resumeAt = undefined;
     this.resume();
   }
 
   private hold({ resumeAt, text }: LimitHold): void {
     this.paused = true;
+    this.resumeAt = resumeAt;
     this.holdTimer = setTimeout(() => {
       this.holdTimer = undefined;
+      this.resumeAt = undefined;
       if (this.closed) return;
       this.queue.unshift({ kind: "send", text, message: undefined, resolve: () => {} });
       this.resume();
@@ -99,14 +111,14 @@ export class AgentMailbox {
   }
 
   // 配送待ちの人間の入力を取り消し、本文を返す。配送済み・無いなら undefined
-  cancel(inputId: string): string | undefined {
-    const index = this.queue.findIndex((item) => item.inputId === inputId);
+  cancel(id: string): string | AgentMessage | undefined {
+    const index = this.queue.findIndex((item) => item.inputId === id || item.message?.id === id);
     const [item] = index < 0 ? [] : this.queue.splice(index, 1);
     if (!item) return undefined;
     item.resolve(CANCELED_RESULT);
     this.onChange();
     this.resolveIdleIfDone();
-    return item.text;
+    return item.message ?? item.text;
   }
 
   // 配送待ちの formal message を破棄して返す（/interrupt。人間の入力は残す）
@@ -174,6 +186,7 @@ export class AgentMailbox {
     this.closed = true;
     clearTimeout(this.holdTimer);
     this.holdTimer = undefined;
+    this.resumeAt = undefined;
     for (const item of this.queue.splice(0)) item.resolve(CLOSED_RESULT);
     if (!this.draining) for (const resolve of this.idleWaiters.splice(0)) resolve();
   }

@@ -13,6 +13,20 @@ const setup = () => {
 };
 
 describe("AgentMailbox", () => {
+  it("上限待機中だけ再開時刻を返す", async () => {
+    const agent = new FakeAgentAdapter("codex");
+    const resumeAt = Date.now() + 60_000;
+    const mailbox = new AgentMailbox(agent, () => START_OPTIONS, vi.fn(), vi.fn(), () => {},
+      () => ({ resumeAt, text: "continue" }));
+    const first = mailbox.enqueue("first");
+    await flush();
+    agent.completeTurn({ status: "failed", text: "limit" });
+    await first;
+    expect(mailbox.holdUntil).toBe(new Date(resumeAt).toISOString());
+    mailbox.releaseHold();
+    expect(mailbox.holdUntil).toBeUndefined();
+    mailbox.close();
+  });
   it("起動禁止でも session を参照でき、配送時には起動を拒否する", async () => {
     const agent = new FakeAgentAdapter("codex");
     const mailbox = new AgentMailbox(agent, () => ({ ...START_OPTIONS, resumeSessionId: "saved" }), vi.fn(), undefined,
@@ -284,5 +298,23 @@ describe("AgentMailbox の取り消しと破棄", () => {
     agent.completeTurn();
     await flush();
     expect(agent.sent).toEqual(["busy", "human"]);
+  });
+
+  it("配送待ちの formal message を順に返し、ID で取り消す", async () => {
+    const { agent, mailbox } = setup();
+    void mailbox.enqueue("busy");
+    await flush();
+    const first = message("msg_1");
+    const second = message("msg_2");
+    const pending = mailbox.enqueue("one", { message: first });
+    void mailbox.enqueue("two", { message: second });
+    expect(mailbox.pendingMessages).toEqual([first, second]);
+    expect(mailbox.cancel("msg_1")).toEqual(first);
+    await expect(pending).resolves.toEqual({ status: "interrupted", text: "canceled before delivery" });
+    expect(mailbox.pendingMessages).toEqual([second]);
+    agent.completeTurn();
+    await flush();
+    expect(agent.sent).toEqual(["busy", "two"]);
+    agent.completeTurn();
   });
 });

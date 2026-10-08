@@ -22,6 +22,7 @@ import type { chooseProjectPath as ChooseProjectPath } from "./project-picker.js
 import type { DesktopNotification, DesktopNotifyState, updateDesktopNotify as UpdateDesktopNotify } from "./desktop-notify.js";
 import type { settingsSections as SettingsSections, SettingsItem, SettingsSectionId } from "./settings-sections.js";
 import type { limitChanges as LimitChanges } from "./limit-changes.js";
+import type { pendingRows as PendingRows } from "./pending-rows.js";
 import type { LimitName } from "../../coordinator/budget-manager.js";
 
 export interface ClientDeps {
@@ -52,11 +53,12 @@ export interface ClientDeps {
   updateDesktopNotify: typeof UpdateDesktopNotify;
   settingsSections: typeof SettingsSections;
   limitChanges: typeof LimitChanges;
+  pendingRows: typeof PendingRows;
   version: string;
 }
 
 export function clientMain({
-  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify, settingsSections, limitChanges,
+  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify, settingsSections, limitChanges, pendingRows,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -1205,10 +1207,9 @@ export function clientMain({
   // ---- 送信待ちの入力（取り消し・編集。DESIGN.md §28 v0.3 A） ----
   const renderPending = () => {
     const list = $("#pending");
-    const pending = state?.pendingInputs ?? [];
-    list.hidden = !pending.length;
-    list.replaceChildren(...pending.map((queued) => {
-      const original = queued.text.split(REFERENCES_SEPARATOR)[0] ?? queued.text;
+    const rows = pendingRows(state?.pendingInputs ?? [], state?.pendingMessages ?? [], state?.agents ?? [], REFERENCES_SEPARATOR);
+    list.hidden = !rows.length;
+    list.replaceChildren(...rows.map((queued) => {
       const row = el("li");
       const action = (label: string, run: (button: HTMLButtonElement) => void) => {
         const button = el("button", "", label) as HTMLButtonElement;
@@ -1217,19 +1218,26 @@ export function clientMain({
         button.dataset.command = `/cancel ${queued.id}`;
         return button;
       };
-      row.append(
-        el("span", "who", t("web.pending.to", { agent: AGENTS[queued.agent].name })),
-        el("span", "text", original),
-        action(t("web.pending.edit"), (button) => void send(`/cancel ${queued.id}`, button).then((sent) => {
-          if (!sent) return;
-          target = queued.agent;
-          input.value = original;
-          input.focus();
-          onInputChanged();
-          renderState();
-        })),
-        action(t("web.pending.cancel"), (button) => void send(`/cancel ${queued.id}`, button)),
-      );
+      row.append(el("span", "who", queued.kind === "message"
+        ? t("web.pending.route", { from: AGENTS[queued.from!].name, to: AGENTS[queued.agent].name })
+        : t("web.pending.to", { agent: AGENTS[queued.agent].name })));
+      if (queued.type) row.append(el("span", "pending-type", queued.type));
+      row.append(el("span", "text", queued.text));
+      if (queued.holdTime) {
+        const hold = el("span", "pending-hold", queued.holdTime);
+        hold.prepend(icon("pause"));
+        hold.title = t("web.pending.resume", { time: queued.holdTime });
+        row.append(hold);
+      }
+      if (queued.kind === "input") row.append(action(t("web.pending.edit"), (button) => void send(`/cancel ${queued.id}`, button).then((sent) => {
+        if (!sent) return;
+        target = queued.agent;
+        input.value = queued.text;
+        input.focus();
+        onInputChanged();
+        renderState();
+      })));
+      row.append(action(t("web.pending.cancel"), (button) => void send(`/cancel ${queued.id}`, button)));
       return row;
     }));
   };

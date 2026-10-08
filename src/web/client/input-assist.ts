@@ -27,6 +27,7 @@ export interface AssistState {
   projects?: ReadonlyArray<{ projectRoot: string }>;
   questions?: ReadonlyArray<{ id: string; questions: ReadonlyArray<{ question: string }> }>;
   pendingInputs: ReadonlyArray<{ id: string }>;
+  pendingMessages?: ReadonlyArray<{ id: string; from: string; agent: string; type: string }>;
   processes?: ReadonlyArray<{ id: number; command: string; status: string }>;
 }
 
@@ -123,7 +124,10 @@ export function createInputAssist(commands: readonly SlashCommand[], agents: rea
           break;
         }
         case "cancel":
-          if (index === 0) values = state.pendingInputs.map(({ id }) => ({ value: id, detail: labels.queued }));
+          if (index === 0) values = [
+            ...state.pendingInputs.map(({ id }) => ({ value: id, detail: labels.queued })),
+            ...(state.pendingMessages ?? []).map(({ id, from, agent, type }) => ({ value: id, detail: `${from} → ${agent} ${type}` })),
+          ];
           break;
       }
       const query = word.toLowerCase();

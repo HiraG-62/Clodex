@@ -33,6 +33,15 @@ export interface PendingInput {
   text: string;
 }
 
+export interface PendingMessage {
+  id: string;
+  agent: AgentId;
+  from: AgentId;
+  type: AgentMessage["type"];
+  taskId: string;
+  text: string;
+}
+
 const QUESTION_ID_PREFIX = "q_";
 const QUESTION_HEADER_LENGTH = 80;
 const INPUT_ID_PREFIX = "in";
@@ -319,9 +328,17 @@ export class Coordinator {
       .sort((a, b) => seq(a.id) - seq(b.id));
   }
 
+  pendingMessages(): PendingMessage[] {
+    return AGENT_IDS.flatMap((agent) => this.mailboxes[agent].pendingMessages.map((message) => ({
+      id: message.id, agent, from: message.from, type: message.type, taskId: message.taskId, text: message.body,
+    })));
+  }
+
   // ID 省略時は最後に送った配送待ちの入力。取り消せなければ undefined
-  cancelInput(id?: string): PendingInput | undefined {
-    const target = id ? this.pendingInputs().find((input) => input.id === id) : this.pendingInputs().at(-1);
+  cancelInput(id?: string): PendingInput | PendingMessage | undefined {
+    const target = id
+      ? this.pendingInputs().find((input) => input.id === id) ?? this.pendingMessages().find((message) => message.id === id)
+      : this.pendingInputs().at(-1);
     if (!target || this.mailboxes[target.agent].cancel(target.id) === undefined) return undefined;
     this.options.bus.publish({ kind: "notice", text: t("notice.canceled", { agent: target.agent, text: preview(target.text) }) });
     return target;
@@ -395,12 +412,13 @@ export class Coordinator {
 
   status(): Array<{
     id: AgentId; status: AgentStatus; sessionId: string | undefined; permission: PermissionLevel;
-    model: string | undefined; modelLabel: string; effort: string | undefined; models: ModelCatalog[AgentId]; usage: UsageSnapshot;
+    model: string | undefined; modelLabel: string; effort: string | undefined; models: ModelCatalog[AgentId]; usage: UsageSnapshot; holdUntil?: string;
   }> {
     return AGENT_IDS.map((id) => {
       const { status, permission, model, effort } = this.options.agents[id];
       const models = this.options.modelCatalog?.()[id] ?? [];
-      return { id, status, sessionId: this.mailboxes[id].sessionId, permission, model, modelLabel: modelLabel(model, models), effort, models, usage: this.usage.snapshot(id) };
+      const holdUntil = this.mailboxes[id].holdUntil;
+      return { id, status, sessionId: this.mailboxes[id].sessionId, permission, model, modelLabel: modelLabel(model, models), effort, models, usage: this.usage.snapshot(id), ...(holdUntil ? { holdUntil } : {}) };
     });
   }
 

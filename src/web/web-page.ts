@@ -21,6 +21,7 @@ import { composeInputLine } from "./client/compose-input.js";
 import { isSendKey } from "./client/send-key.js";
 import { settingsSections } from "./client/settings-sections.js";
 import { limitChanges } from "./client/limit-changes.js";
+import { pendingRows } from "./client/pending-rows.js";
 import { fitView, zoomView } from "./client/image-zoom.js";
 import { isShellInput } from "./client/shell-input.js";
 import { chooseProjectPath } from "./client/project-picker.js";
@@ -286,6 +287,9 @@ const STYLE = `
   .pending li { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; }
   .pending .who { flex: none; color: var(--muted); }
   .pending .text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pending .pending-type { flex: none; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--fg-2); font: 10px/1.5 var(--font-mono); }
+  .pending .pending-hold { display: inline-flex; align-items: center; gap: 3px; flex: none; color: var(--warn); font: 11px/1.4 var(--font-mono); white-space: nowrap; }
+  .pending .pending-hold .i { width: 12px; height: 12px; }
   .pending button { flex: none; border: 1px solid var(--line); background: var(--panel); border-radius: 5px; padding: 3px 8px; font-size: 12px; color: var(--fg); }
   .suggest { list-style: none; margin: 0; padding: 4px; border-bottom: 1px solid var(--line); max-height: 40vh; overflow-y: auto; }
   .suggest li { display: flex; align-items: baseline; gap: 10px; padding: 7px 10px; border-radius: 6px; cursor: pointer; min-width: 0; }
@@ -885,6 +889,7 @@ const FUNCTIONS = `
   isSendKey: ${inlineScript(isSendKey.toString())},
   settingsSections: ${inlineScript(settingsSections.toString())},
   limitChanges: ${inlineScript(limitChanges.toString())},
+  pendingRows: ${inlineScript(pendingRows.toString())},
   fitView: ${inlineScript(fitView.toString())},
   zoomView: ${inlineScript(zoomView.toString())},
   createInputAssist: ${inlineScript(createInputAssist.toString())},

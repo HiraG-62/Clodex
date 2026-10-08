@@ -4,7 +4,7 @@ import { getLanguage } from "../i18n/i18n.js";
 import type { Language } from "../context/language.js";
 import type { PendingQuestion } from "../protocol/questions.js";
 import { AGENT_IDS, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult } from "../agents/agent-adapter.js";
-import type { SoloMode } from "../coordinator/coordinator.js";
+import type { SoloMode, PendingMessage } from "../coordinator/coordinator.js";
 import type { HubProjectEntry, ProjectRemoveError } from "../hub/hub.js";
 import type { UsageSnapshot } from "../coordinator/usage-monitor.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
@@ -27,6 +27,7 @@ export interface AgentState {
   effort?: string;
   models: readonly ModelOption[];
   usage: UsageSnapshot;
+  holdUntil?: string;
 }
 
 export interface ShellCoordinator {
@@ -39,9 +40,10 @@ export interface ShellCoordinator {
   setEffort(level: string, agent?: AgentId): Promise<TurnResult | void>;
   switchSessions(sessions: SavedSessions, targets?: readonly AgentId[]): Promise<string | undefined>;
   pendingInputs(): PendingInput[];
+  pendingMessages(): PendingMessage[];
   pendingQuestions(): PendingQuestion[];
   answer(id: string, answers: unknown): string | undefined;
-  cancelInput(id?: string): PendingInput | undefined;
+  cancelInput(id?: string): PendingInput | PendingMessage | undefined;
   status(): AgentState[];
   // 作業中のターンも配送待ちも無い（solo の切り替えの条件）
   idle(): boolean;
@@ -348,6 +350,9 @@ export const createShell = ({
           print(formatContext(usage));
         }
         for (const input of coordinator().pendingInputs()) print(t("shell.queued", { id: input.id, agent: input.agent, text: input.text }));
+        for (const message of coordinator().pendingMessages()) print(t("shell.queuedMessage", {
+          id: message.id, from: message.from, agent: message.agent, type: message.type, text: message.text.split(/\r?\n/, 1)[0] ?? "",
+        }));
         return "continue";
       case "project":
         if (command.action && command.path) {

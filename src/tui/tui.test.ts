@@ -22,6 +22,18 @@ const fakeClient = () => {
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 describe("TuiApp", () => {
+  it("送信待ちの件数に Agent 間メッセージを含める", async () => {
+    setLanguage("ja");
+    const { client, emit } = fakeClient();
+    const app = render(React.createElement(TuiApp, { client }));
+    await tick();
+    emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], conversations: [],
+      pendingInputs: [], pendingMessages: [{ id: "msg_1", agent: "codex", from: "claude", type: "DELEGATE", taskId: "T", text: "作業" }],
+      questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false,
+      limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
+    await tick();
+    expect(app.lastFrame()).toContain("送信待ち 1 件");
+  });
   it("先頭の ! の入力と削除でコマンドの枠ラベルを切り替える", async () => {
     setLanguage("ja");
     const { client } = fakeClient();
@@ -263,7 +275,7 @@ it("接続中の言語変更ではログを保持し、以後のラベルと候�
   emit({ type: "output", seq: 1, text: "保持するログ" });
   await tick();
   emit({ type: "version", version: "en" });
-  emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [], language: "en", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
+  emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "en", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
   app.stdin.write("/language");
   await tick();
   expect(app.lastFrame()).toContain("保持するログ");
@@ -317,7 +329,7 @@ it("今の会話が solo なら下の行に出す", async () => {
   const app = render(React.createElement(TuiApp, { client }));
   await tick();
   const conversation = { id: "c1", startedAt: "2026-10-08T00:00:00Z", updatedAt: "2026-10-08T00:00:00Z", sessions: {}, current: true, solo: "codex" as const };
-  emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], conversations: [conversation], pendingInputs: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
+  emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], conversations: [conversation], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
   await tick();
   expect(app.lastFrame()).toContain("app · solo · Codex");
 });

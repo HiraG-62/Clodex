@@ -467,7 +467,7 @@ Internal command（v0.1）:
 | command | 内容 |
 |---|---|
 | `/interrupt [claude\|codex]` | 指定 Agent（省略時は全 Agent と実行中の `!command`）の実行中ターンを interrupt する。Agent 指定時、キュー済みの message はそのまま配送される。省略時は Agent 間のやり取りも止める: 配送待ちの formal message を破棄し、処理中・破棄した message の chain を閉じる（以後その chain の `send_message` は拒否）。人間の配送待ちの入力は残す |
-| `/cancel [id]` | まだ配送していない人間の入力を取り消す（省略時は最後に送ったもの）。配送済みは取り消せない（`/interrupt` を使う）。Web UI は送信待ちの一覧に「編集」「取り消し」を出す（編集は取り消して本文を入力欄に戻す） |
+| `/cancel [id]` | まだ配送していない人間の入力か、相手の Agent からの message を取り消す（省略時は最後に送った人間の入力）。配送済みは取り消せない（`/interrupt` を使う）。Web UI は送信待ちの一覧に「編集」「取り消し」を出す（編集は取り消して本文を入力欄に戻す。message は「取り消し」だけ） |
 | `/status` | 各 Agent の状態と session ID。停止中は次の起動で使う session（/new 後の新規なら表示しない）。配送待ちの人間の入力（ID・送り先・本文） |
 | `/verbose` | terminal の詳細表示を切り替える（§17） |
 | `/primary <claude\|codex>` | 通常のテキストの送り先を切り替える（§3.10） |
@@ -1089,6 +1089,11 @@ Agent Adapter の `rate_limit` event（Claude: `rate_limit_event`、Codex: `acco
 - リセット時刻の 1 分後に、mailbox の先頭に「利用枠が戻った。止まった作業を続ける」の指示（英語。人の入力と同じく言語の 1 行を添える）を積んで配送を再開する。止まったターンの入力は session に残っているので送り直さない
 - 待っている Agent は復旧の状態で「作業中だった」に含める。Hub を再起動したら、復旧の「続き」を送り、まだ上限なら同じ判定でまた待つ
 - 待っている間に人が `/interrupt` したら、待つのをやめ、続きの指示は積まずに配送を再開する
+- 待っている間に積まれた項目は、リセット後に送られる前に人が確かめて減らせるようにする
+  - state に、配送待ちの formal message（`pendingMessages`: message ID・宛先・送信元・type・taskId・本文）と、Agent ごとの再開時刻（`AgentState.holdUntil`。ISO 8601。待っていないときは無し）を含める。人間の入力は今どおり `pendingInputs`
+  - Web UI の送信待ちの一覧に、人間の入力と formal message を積まれた順に並べる。message の行は「送信元 → 宛先」・type・本文の 1 行目と「取り消し」（`/cancel <message ID>`）。上限で待っている Agent 宛ての行には、一時停止のアイコンと再開時刻を添える（title に「再開 <時刻>」）
+  - `/cancel <message ID>` は、配送待ちの formal message を mailbox から外して捨てる。送信元の Agent には知らせない（返事が来ないだけ。必要なら人が伝える）。取り消しの notice は人間の入力と同じ
+  - `/status` の送信待ちの行と TUI の件数に message も含める。`/cancel` の引数の候補にも message ID を出す（説明は「送信元 → 宛先 type」）
 
 ## 将来
 
@@ -1962,7 +1967,7 @@ dogfooding で出た要望を 4 段階で入れる。小さく確実なものか
 | Agent の設定ポップアップ | 権限・model・effort を、Agent ごとの 1 つのボタンから開くポップアップにまとめる。操作は対応するスラッシュコマンドを送るだけ |
 | 新しい会話 | Web UI は会話一覧に「新しい会話」ボタンを 1 つ置く（`/new`）。Agent ごとの New（`/new <agent>`）は設定ポップアップの中に移し、「この Agent だけ session を始め直す」と説明する |
 | 会話のリネーム・削除・ピン止め | `/rename <title>`（今の会話）、`/delete <番号>`、`/pin <番号>`（もう一度で解除）。ピン止めした会話は一覧の先頭に出し、最大 20 件の枠から外す。今の会話は削除できない。削除した会話の feed も消す。Web UI は会話一覧の項目のメニューから送る |
-| 送信の取り消し・編集 | まだ配送していない人間の入力は取り消せる。Web UI は配送待ちの入力に「取り消し」「編集」を出す（編集は取り消して本文を入力欄に戻す）。CLI は `/cancel` で最後の配送待ちの入力を取り消す。配送済み（Agent が処理中）の入力は取り消せないので、`/interrupt` を使う。state に配送待ちの入力（ID・送り先・本文）を含める |
+| 送信の取り消し・編集 | まだ配送していない人間の入力は取り消せる。Web UI は配送待ちの入力に「取り消し」「編集」を出す（編集は取り消して本文を入力欄に戻す）。CLI は `/cancel` で最後の配送待ちの入力を取り消す。配送済み（Agent が処理中）の入力は取り消せないので、`/interrupt` を使う。state に配送待ちの入力（ID・送り先・本文）を含める。配送待ちの formal message も同じ一覧に出し、`/cancel <message ID>` で取り消せる（下記「上限での停止と自動再開」） |
 | `/interrupt` で Agent 間のやり取りを止める | Agent 指定なしの `/interrupt` は、実行中のターンと `!command` に加えて、配送待ちの formal message を破棄し、進行中の chain を閉じる（以後その chain の `send_message` は拒否）。人間の配送待ちの入力は残す（取り消しは上の操作で行う） |
 
 ### B — 成果物のプレビュー

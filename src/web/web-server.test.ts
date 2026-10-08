@@ -7,7 +7,7 @@ import { startWebServer, type WebServerHandle } from "./web-server.js";
 
 const TOKEN = "a".repeat(64);
 const COOKIE = `clodex_token=${TOKEN}`;
-const STATE: WebState = { project: "C:\app", primary: "claude", roles: { codex: "実装" }, agents: [], conversations: [], pendingInputs: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } };
+const STATE: WebState = { project: "C:\app", primary: "claude", roles: { codex: "実装" }, agents: [], conversations: [], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } };
 
 let server: WebServerHandle | undefined;
 afterEach(async () => {
