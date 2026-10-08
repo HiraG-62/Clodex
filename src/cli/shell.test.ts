@@ -182,6 +182,7 @@ const setup = ({ withoutProject = false } = {}) => {
   let verbose = false;
   const history = new FakeHistory();
   const busy = { value: false };
+  const worktreeSetup: { value: string | undefined } = { value: undefined };
   const saved: Array<{ agents: readonly AgentId[]; change: object }> = [];
   const roles: Partial<Record<AgentId, string>> = { claude: "設計" };
   const references: string[] = [];
@@ -217,9 +218,10 @@ const setup = ({ withoutProject = false } = {}) => {
     },
     projects, processes: background,
     roles: () => roles,
+    worktreeSetup: () => worktreeSetup.value,
     saveRole: (agent, value) => { roles[agent] = value; return value; },
   });
-  return { languageSettings, languages, coordinator, printed, notified, levels, shell, history, runner, saved, busy, projects, roles, background, references, sandbox };
+  return { languageSettings, languages, coordinator, printed, notified, levels, shell, history, runner, saved, busy, worktreeSetup, projects, roles, background, references, sandbox };
 };
 
 it("/language は現在値を表示し、正しい値だけ保存する", async () => {
@@ -578,6 +580,20 @@ describe("createShell", () => {
     history.worktreeError = "fatal: not a git repository";
     await shell.handleLine("/new worktree");
     expect(notified.at(-1)).toBe("could not create a worktree: fatal: not a git repository");
+  });
+
+  it("/new worktree で作れたら worktree.setup を !command と同じに実行する", async () => {
+    const { history, runner, worktreeSetup, shell } = setup();
+    await shell.handleLine("/new worktree");
+    expect(runner.commands).toEqual([]);
+    worktreeSetup.value = "pnpm install";
+    await shell.handleLine("/new");
+    expect(runner.commands).toEqual([]);
+    await shell.handleLine("/new worktree");
+    expect(runner.commands).toEqual(["pnpm install"]);
+    history.worktreeError = "fatal: not a git repository";
+    await shell.handleLine("/new worktree");
+    expect(runner.commands).toEqual(["pnpm install"]);
   });
 
   it("同じ作業場所で別の会話が作業中なら、送る前に worktree を勧める", async () => {

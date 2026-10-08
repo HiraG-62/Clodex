@@ -99,6 +99,8 @@ export interface ShellOptions {
   };
   language?: { get(): Language; set(value: Language): void | Promise<void> };
   roles?: () => Partial<Record<AgentId, string>>;
+  // /new worktree の直後に worktree で実行する command（設定の worktree.setup）
+  worktreeSetup?: () => string | undefined;
   sandbox?: { enabled(): boolean; ready(): Promise<boolean>; set(enabled: boolean): Promise<void>; uninstall(): Promise<void> };
   limits?: {
     get(): BudgetLimits;
@@ -179,7 +181,7 @@ export const createShell = ({
   coordinator, primary: initialPrimary, print, notify, toggleVerbose, history: historySource, runner, saveSettings = () => {}, resolveReference = async () => undefined,
   busyElsewhere = () => false, processes,
   projects,
-  language, sandbox, limits: projectLimits, roles = () => ({}), saveRole = (_agent, text) => text,
+  language, sandbox, limits: projectLimits, roles = () => ({}), worktreeSetup = () => undefined, saveRole = (_agent, text) => text,
 }: ShellOptions) => {
   let primary = initialPrimary;
   const history = typeof historySource === "function" ? historySource : () => historySource;
@@ -204,6 +206,9 @@ export const createShell = ({
     if (error) return notify(t("shell.worktreeFailed", { error }), "warn");
     const { workDir, branch } = history().list().find((c) => c.id === history().currentId) ?? {};
     notify(workDir && branch ? t("shell.newWorktree", { workDir, branch }) : t("shell.newConversation"));
+    const setupCommand = worktree ? worktreeSetup() : undefined;
+    // 終了を待たずに次の入力を受け付ける。出力は runner が表示する
+    if (setupCommand) void runner.run(setupCommand);
   };
 
   const resumeConversation = async (index: number) => {

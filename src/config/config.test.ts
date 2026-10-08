@@ -45,6 +45,10 @@ describe("loadConfig", () => {
     expect(loadConfig(setup())).toEqual({});
   });
 
+  it("worktree.setup を読む", () => {
+    expect(loadConfig(setup({ project: { worktree: { setup: "pnpm install" } } }))).toEqual({ worktree: { setup: "pnpm install" } });
+  });
+
   it("ユーザーの設定を読む", () => {
     const config = { primary: "codex", roles: { claude: "設計", codex: "実装" } };
     expect(loadConfig(setup({ user: config }))).toEqual(config);

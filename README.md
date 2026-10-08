@@ -69,7 +69,7 @@ GUI を起動するか、project のディレクトリで `clodex` を実行す�
 
 ## 設定ファイル
 
-`~/.clodex/config.json` は全 project の既定値、project root の `.clodex.json` はその project の設定。project 側の値がトップレベルのキー単位で上書きする。設定できるキーは `roles`、`primary`、`permission`、`language`、`limits`、`web`、`usageAlert`。
+`~/.clodex/config.json` は全 project の既定値、project root の `.clodex.json` はその project の設定。project 側の値がトップレベルのキー単位で上書きする。設定できるキーは `roles`、`primary`、`permission`、`language`、`limits`、`web`、`usageAlert`、`worktree`。`worktree.setup`（例: `"pnpm install"`）は `/new worktree` で作った worktree で最初に実行する command。
 
 ```json
 {

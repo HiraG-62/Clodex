@@ -170,6 +170,7 @@ const main = async (): Promise<void> => {
       web?.updatePage(buildWebPage(next));
     } },
     roles: () => current().config.roles ?? {},
+    worktreeSetup: () => current().config.worktree?.setup,
     saveRole: (agent, text) => {
       const context = current();
       const saved = saveProjectRole(context.projectRoot, agent, text);

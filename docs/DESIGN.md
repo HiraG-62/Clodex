@@ -983,6 +983,7 @@ AGENTS.md → Codex
 ```
 
 - `permission` は起動時の権限レベル（§9 Permission）。両 Agent に同じレベルを使う
+- `worktree.setup` は `/new worktree` の直後に worktree で実行する command（§28 D1）
 - `updateChannel`（`stable` / `dev`、既定 `stable`）は GUI の更新の取得先（§28 GUI の自動更新）。GUI はユーザーの設定だけを読む
 - `~/.clodex/config.json` が無ければ、起動時に役割を空にしたひな形を作る（`{ "roles": { "claude": "", "codex": "" } }`）。役割の文章は書かない（書くのは人）。既にあれば触らない。作れなくても起動は続ける
 - 役割の空文字は未設定として扱う（ひな形のままでも、役割が無いのと同じ）
@@ -2032,6 +2033,7 @@ D1 の詳細（1 つのプロセスの中の複数の会話）:
 - 今の会話以外で Agent のターンが終わったら、`toast` で知らせる（例: `「設計の相談」の codex のターンが終わりました（completed）`。ログには入れない。§17）
 - feed は会話ごとに保存する（今と同じ）。今の会話でない間の event も保存する
 - **worktree**: `/new worktree` で、新しい会話用の worktree を作ってその会話の作業場所にする（`git worktree add <project の隣>/<project 名>-<会話の短い ID> -b clodex/<会話の短い ID>`）。会話の履歴に作業場所（`workDir`）とブランチを記録し、`/resume` で戻ったときもそこで Agent を起動する。worktree の削除・マージは人が git で行う
+- 設定ファイルの `worktree.setup`（例: `"pnpm install"`）があれば、worktree を作って切り替えた直後に、その worktree で `!command` と同じように実行する。git が持たない依存関係（`node_modules` など）が無いと、worktree でテストが通らないため。出力は `!command` と同じに表示し、Ctrl+C や `/interrupt` で止められる。終わるのは待たない
 - 同じ作業場所で別の会話の Agent が作業中のときに入力したら、`/new worktree` を勧める `toast` を出す（止めはしない）
 - Web UI の会話の一覧に、各会話の状態（作業中・待機中・停止中）と worktree の印を出す
 - 入力行は届いた順に処理する（会話の切り替えや worktree の作成を待ってから次の行へ）

@@ -27,6 +27,7 @@ const configSchema = z.strictObject({
     maxDelegationsPerChain: nonNegativeInt.optional(),
     maxDelegationDepth: nonNegativeInt.optional(),
   }).optional(),
+  worktree: z.strictObject({ setup: z.string().optional() }).optional(),
   web: z.strictObject({ port: z.number().int().min(1).max(65535).optional() }).optional(),
   usageAlert: z.strictObject({
     weeklyPaceThreshold: z.number().optional(),
