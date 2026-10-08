@@ -164,8 +164,9 @@ it("/answer の ID と回答本文を分離する", () => {
 it("/limits の表示・変更・リセットと範囲を検証する", () => {
   expect(parseInput("/limits", "claude")).toEqual({ kind: "limits" });
   expect(parseInput("/limits reset", "claude")).toEqual({ kind: "limits", reset: true });
-  expect(parseInput("/limits messages 16", "claude")).toEqual({ kind: "limits", name: "messages", value: 16 });
-  for (const arg of ["messages 0", "messages 101", "messages 1.5", "messages x", "unknown 2", "reset extra", "messages 2 extra"]) {
+  expect(parseInput("/limits messages 16", "claude")).toEqual({ kind: "limits", values: [{ name: "messages", value: 16 }] });
+  expect(parseInput("/limits messages 16 reviews 5", "claude")).toEqual({ kind: "limits", values: [{ name: "messages", value: 16 }, { name: "reviews", value: 5 }] });
+  for (const arg of ["messages 0", "messages 101", "messages 1.5", "messages x", "unknown 2", "reset extra", "messages 2 extra", "messages 2 messages 3", "messages 2 reviews", "messages 2 reviews 101"]) {
     expect(parseInput(`/limits ${arg}`, "claude").kind).toBe("invalid");
   }
 });

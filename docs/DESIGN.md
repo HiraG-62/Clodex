@@ -479,7 +479,7 @@ Internal command（v0.1）:
 | `/permission [claude\|codex] <read-only\|edit\|full>` | Agent（省略時は両方）の権限レベルを切り替える（§9 Permission） |
 | `/model <claude\|codex> <model>` | Agent の model を切り替える（§9 Model / Effort） |
 | `/effort [claude\|codex] <level>` | Agent（省略時は両方）の reasoning effort を切り替える（§9 Model / Effort） |
-| `/limits [<name> <n>\|reset]` | Agent 間のやり取りの上限を表示・変更する（§14 上限） |
+| `/limits [<name> <n> ...\|reset\|unlimited]` | Agent 間のやり取りの上限を表示・変更する（§14 上限） |
 | `/sandbox [on\|off\|uninstall]` | project の外への書き込みを OS で止める sandbox の表示・切り替え（§9 Sandbox） |
 | `/processes [番号]` | 番号なしで `!&` の background process の一覧、番号付きでその process の出力の末尾（§15） |
 | `/kill <番号>` | background process をプロセスツリーごと止める（§15） |
@@ -1044,7 +1044,7 @@ Agent 同士が無限に会話しないよう hard limit を持つ。
 人は `/limits` で上限を表示・変更できる:
 
 - `/limits`: 4 つの上限の今の値と、既定値から変わっているかを表示する
-- `/limits <name> <n>`: 上限を変える。`name` は `messages`（`maxMessagesPerChain`）・`reviews`（`maxReviewRoundsPerChain`）・`delegations`（`maxDelegationsPerChain`）・`depth`（`maxDelegationDepth`）。`n` は 1〜100 の整数。範囲外・不明な名前は使い方を表示する
+- `/limits <name> <n> [<name> <n> ...]`: 上限を変える。複数の組をまとめて変えられる（設定画面の「適用」は変えた項目をまとめて 1 回で送る）。`name` は `messages`（`maxMessagesPerChain`）・`reviews`（`maxReviewRoundsPerChain`）・`delegations`（`maxDelegationsPerChain`）・`depth`（`maxDelegationDepth`）。`n` は 1〜100 の整数。1 つでも範囲外・不明な名前・同じ名前の重複があれば、何も変えずに使い方を表示する
 - `/limits reset`: 保存した値を消し、設定ファイル（無ければ既定値）に戻す。無制限も解除する
 - `/limits unlimited`: 4 つの上限をすべて無くす（無制限）。`.settings.json` に `limitsUnlimited: true` として保存する。`/limits <name> <n>` で値を変えるか `/limits reset` で解除する。無制限の間も chain は数える（`/interrupt` で閉じた chain の拒否は今どおり）。`/limits` の表示と起動時の案内に「無制限」と出す
 - 設定画面の上限の欄に「無制限」を置く（押すと `/limits unlimited`。無制限の間は押された状態）
@@ -1307,15 +1307,16 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
 - 「設定」のポップアップには、画面のボタンでは変えられない Hub・project の設定を置く。送り先・作業と全文・テーマは置かない（それぞれのボタンで切り替える）
 - 設定は効く範囲で 3 つの節に分け、この順に並べる。節には見出しを付け、節の間は区切る。項目のない節は見出しごと出さない
   - **プロジェクト**: sandbox・上限
-    - **sandbox**: off / on の選択と、今の状態（セットアップ済みか）。選ぶと `/sandbox on|off` を送る。切り替えの間はトップのバーを出す
-    - **上限**: 4 つの上限（§14）を数値で変える。既定値と違う項目は分かるようにする。適用で `/limits <name> <n>`、「既定に戻す」で `/limits reset` を送る
+    - **sandbox**: スイッチ（`role="switch"`・`aria-checked`）と、今の状態（セットアップ済みか）。切り替えると `/sandbox on|off` を送る。切り替えの間はトップのバーを出す
+    - **上限**: 4 つの上限（§14）を数値で変える。既定値と違う項目は分かるようにする。「適用」は欄に 1 つだけ置き、今の値から変えた項目をまとめて `/limits <name> <n> ...` で送る（変えた項目が無いか、範囲外の値があるときは押せない）。「既定に戻す」で `/limits reset`、「無制限」で `/limits unlimited` を送る
   - **端末**: 送信キー・通知
     - **送信キー**: 「Enter で送信」/「Ctrl+Enter で送信」。端末の localStorage に保存し、Hub には送らない。スマホでは出さない
-    - **通知**: 下記 Web Push（§28）
+    - **通知**: スイッチ。下記 Web Push（§28）
   - **Clodex**: 言語・GUI の版と更新
     - **言語**: 日本語 / English。選ぶと `/language <ja|en>` を送る
     - **GUI の版と更新**: 下記 GUI の自動更新（§28）。GUI につながっていないときは出さない
-- 各項目は 1 行にまとめ、PC では左に名前・右に操作を置く。狭い画面（スマホ）では名前の下に操作を置く。補足（sandbox の状態、上限の既定値）は名前の下に小さく出す。上限は 4 行を名前・数値・適用・既定値の列で揃え、「既定に戻す」「無制限」は表の下の右に置く
+- 各項目は 1 行にまとめ、左に名前・右に操作を置く（スマホでも同じ。操作が小さいので横に収まる）。補足（sandbox の状態、上限の既定値）は名前の下に小さく出す
+- 部品は小さく、飾りを減らす: on / off はスイッチ、2 択（言語・送信キー）は小さな segmented control、上限の数値は狭い入力欄。行の高さは詰め、項目ごとの枠は付けない（節の中は細い区切り線だけ）。上限は 4 行を名前・数値・既定値の列で揃え、その下の右に「既定に戻す」「無制限」「適用」を並べる
 - ポップアップ（シート）は、スマホではつまみ付きで下から開き（下へのスワイプでも閉じる。高さは `80dvh` まで）、PC では画面中央のモーダルとして開く（背景を暗くし、背景のクリックか Esc で閉じる）
 - 会話の一覧の各項目の「⋯」から、名前の変更（今の会話のみ）・ピン止め・削除（今の会話以外）を行う
 
@@ -2114,7 +2115,7 @@ D3 の詳細（Tauri GUI。Windows）:
   - API（token で認証）: `GET /api/push/key`（公開鍵）、`POST /api/push/subscribe`（購読。`id` を返す）、`POST /api/push/unsubscribe`（`{ id }`）、`POST /api/push/visibility`（`{ id, visible }`）。Service Worker の `/sw.js` は秘密を含まないので token なしで返す
   - 見えているか: 購読した端末の画面は `/events?push=<id>&visible=<0|1>` でつなぎ、`visibilitychange` で `/api/push/visibility` を送る。Hub は id ごとに、つながっていて見えている接続があれば送らない。接続が切れたら見えていない扱い
   - Service Worker: `push` で通知を出す（タイトルと本文）。通知を押したら開いている画面を前に出し、無ければ `/` を開く
-  - 設定画面の「端末」の節の「通知」: `off` / `on` のトグル（`on` で権限を求めて購読、`off` で解除）。Push を使えない画面（`PushManager` が無い。iOS の Safari でホーム画面に追加していないときなど）と GUI の中の画面では出さない。権限が拒否されたり失敗したりしたら toast を出して `off` のままにする
+  - 設定画面の「端末」の節の「通知」: スイッチ（`on` で権限を求めて購読、`off` で解除）。Push を使えない画面（`PushManager` が無い。iOS の Safari でホーム画面に追加していないときなど）と GUI の中の画面では出さない。権限が拒否されたり失敗したりしたら toast を出して `off` のままにする
 - Tauri のメニューの文言は GUI（Rust）の定数に置く（Web UI の文言カタログの外）
 - ウィンドウの位置・大きさ・最大化の状態を覚え、次に起動したときに戻す（`tauri-plugin-window-state`）。トレイの「終了」・ウィンドウを隠したときに保存する。保存した位置の画面が無くなっていれば、見える位置に戻す
 

@@ -459,11 +459,11 @@ export const createShell = ({
         } else if (command.unlimited) {
           projectLimits?.setUnlimited();
           print(t("shell.limitsUnlimited"));
+        } else if (command.values) {
+          for (const { name, value } of command.values) projectLimits?.set(name, value);
+          print(`limits: ${command.values.map(({ name, value }) => `${name} ${value}`).join(", ")}`);
         } else if (projectLimits?.unlimited()) {
           print(t("shell.limitsUnlimited"));
-        } else if (command.name && command.value !== undefined) {
-          projectLimits?.set(command.name, command.value);
-          print(`limits: ${command.name} ${command.value}`);
         } else {
           const limits = projectLimits?.get() ?? DEFAULT_LIMITS;
           for (const name of LIMIT_NAMES) {

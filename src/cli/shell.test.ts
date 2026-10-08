@@ -725,6 +725,15 @@ it("/limits の表示・変更・リセットを project の操作に渡す", as
   expect(printed.slice(-4)).toEqual(["messages 8", "reviews 3", "delegations 4", "depth 2"]);
 });
 
+it("/limits の複数指定をすべて保存して 1 行で出す", async () => {
+  const { shell, printed } = setup();
+  await shell.handleLine("/limits unlimited");
+  await shell.handleLine("/limits messages 16 reviews 5");
+  expect(printed.at(-1)).toBe("limits: messages 16, reviews 5");
+  await shell.handleLine("/limits");
+  expect(printed.slice(-4)).toEqual(["messages 16 (default 8)", "reviews 5 (default 3)", "delegations 4", "depth 2"]);
+});
+
 it("/limits unlimited で無制限にし、/limits で無制限と表示する", async () => {
   const { shell, printed } = setup();
   await shell.handleLine("/limits unlimited");

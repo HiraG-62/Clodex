@@ -21,6 +21,8 @@ import type { MessageKey, Messages } from "../../i18n/messages.js";
 import type { chooseProjectPath as ChooseProjectPath } from "./project-picker.js";
 import type { DesktopNotification, DesktopNotifyState, updateDesktopNotify as UpdateDesktopNotify } from "./desktop-notify.js";
 import type { settingsSections as SettingsSections, SettingsItem, SettingsSectionId } from "./settings-sections.js";
+import type { limitChanges as LimitChanges } from "./limit-changes.js";
+import type { LimitName } from "../../coordinator/budget-manager.js";
 
 export interface ClientDeps {
   layout: typeof WEB_LAYOUT;
@@ -49,11 +51,12 @@ export interface ClientDeps {
   chooseProjectPath: typeof ChooseProjectPath;
   updateDesktopNotify: typeof UpdateDesktopNotify;
   settingsSections: typeof SettingsSections;
+  limitChanges: typeof LimitChanges;
   version: string;
 }
 
 export function clientMain({
-  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify, settingsSections,
+  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify, settingsSections, limitChanges,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -1629,12 +1632,36 @@ export function clientMain({
     wrap.append(seg);
     return wrap;
   };
+  const settingsSwitch = (key: string, label: string, checked: boolean, pick: (checked: boolean, button: HTMLButtonElement) => void) => {
+    const wrap = el("div", "setting");
+    const button = el("button", "settings-switch") as HTMLButtonElement;
+    button.type = "button";
+    button.dataset.choice = key;
+    button.setAttribute("role", "switch");
+    button.setAttribute("aria-label", label);
+    button.setAttribute("aria-checked", String(checked));
+    button.addEventListener("click", () => pick(button.getAttribute("aria-checked") !== "true", button));
+    wrap.append(el("div", "eyebrow", label), button);
+    return wrap;
+  };
   const LIMIT_LABEL: Record<keyof WebState["limits"], MessageKey> = {
     messages: "web.settings.messages", reviews: "web.settings.reviews", delegations: "web.settings.delegations", depth: "web.settings.depth",
   };
   const LIMIT_MIN = 1;
   const LIMIT_MAX = 100;
   const settingsRequests = new Set<string>();
+  const limitDraft = (form: HTMLElement): Record<LimitName, string> => ({
+    messages: form.querySelector<HTMLInputElement>("#limit-messages")!.value,
+    reviews: form.querySelector<HTMLInputElement>("#limit-reviews")!.value,
+    delegations: form.querySelector<HTMLInputElement>("#limit-delegations")!.value,
+    depth: form.querySelector<HTMLInputElement>("#limit-depth")!.value,
+  });
+  const syncLimitActions = (form: HTMLElement) => {
+    if (!state) return;
+    const current = { messages: state.limits.messages.value, reviews: state.limits.reviews.value, delegations: state.limits.delegations.value, depth: state.limits.depth.value };
+    const { changes, valid } = limitChanges(current, limitDraft(form));
+    form.querySelector<HTMLButtonElement>(".limits-apply")!.disabled = settingsRequests.has("limits") || !valid || changes.length === 0;
+  };
   const settingsChoice = <T extends string>(key: string, label: string, options: readonly T[], current: T, name: (value: T) => string) =>
     choice(key, label, options, current, name, (value, button) => {
       const segment = button.parentElement!;
@@ -1650,12 +1677,19 @@ export function clientMain({
     if (!state) return;
     sheetKind = "settings";
     sheetAgent = undefined;
-    const sandbox = settingsChoice("sandbox", t("web.settings.sandbox"), ["off", "on"] as const, state.sandbox.enabled ? "on" : "off", value => value);
+    const sandbox = settingsSwitch("sandbox", t("web.settings.sandbox"), state.sandbox.enabled, (checked, button) => {
+      settingsRequests.add("sandbox");
+      void send(`/sandbox ${checked ? "on" : "off"}`, button).finally(() => {
+        settingsRequests.delete("sandbox");
+        refreshOpenSheet();
+      });
+      refreshOpenSheet();
+    });
     sandbox.append(el("p", "muted small sandbox-ready"));
-    const limits = el("section", "setting limits-settings");
+    const limits = el("form", "setting limits-settings") as HTMLFormElement;
     limits.append(el("div", "eyebrow", t("web.settings.limits")));
     for (const name of Object.keys(LIMIT_LABEL) as Array<keyof WebState["limits"]>) {
-      const row = el("form", "limit-row") as HTMLFormElement;
+      const row = el("div", "limit-row");
       row.dataset.limit = name;
       const label = el("label", "limit-label", t(LIMIT_LABEL[name])) as HTMLLabelElement;
       label.htmlFor = `limit-${name}`;
@@ -1672,31 +1706,38 @@ export function clientMain({
       field.max = String(LIMIT_MAX);
       field.step = "1";
       field.required = true;
-      const button = el("button", "btn", t("web.settings.apply")) as HTMLButtonElement;
-      button.type = "submit";
-      row.append(label, field, button, el("span", "muted small limit-default"));
-      row.addEventListener("submit", event => {
-        event.preventDefault();
-        if (!row.reportValidity() || settingsRequests.has(name)) return;
-        settingsRequests.add(name);
-        field.disabled = true;
-        void send(`/limits ${name} ${field.value}`, button).finally(() => {
-          settingsRequests.delete(name);
-          const activeField = document.querySelector<HTMLInputElement>(`#limit-${name}`);
-          if (activeField) activeField.disabled = false;
-          refreshOpenSheet();
-        });
-      });
+      row.append(label, field, el("span", "muted small limit-default"));
+      field.addEventListener("input", () => syncLimitActions(limits));
       limits.append(row);
     }
+    const sendLimits = (line: string, button: HTMLButtonElement) => {
+      if (settingsRequests.has("limits")) return;
+      settingsRequests.add("limits");
+      refreshOpenSheet();
+      void send(line, button).finally(() => {
+        settingsRequests.delete("limits");
+        for (const field of limits.querySelectorAll<HTMLInputElement>(".limit-row input")) delete field.dataset.synced;
+        refreshOpenSheet();
+      });
+    };
     const reset = el("button", "btn limits-reset", t("web.settings.reset")) as HTMLButtonElement;
     reset.type = "button";
-    reset.addEventListener("click", () => void send("/limits reset", reset));
+    reset.addEventListener("click", () => sendLimits("/limits reset", reset));
     const unlimited = el("button", "btn limits-unlimited", t("web.settings.unlimited")) as HTMLButtonElement;
     unlimited.type = "button";
-    unlimited.addEventListener("click", () => void send("/limits unlimited", unlimited));
+    unlimited.addEventListener("click", () => sendLimits("/limits unlimited", unlimited));
+    const apply = el("button", "btn limits-apply", t("web.settings.apply")) as HTMLButtonElement;
+    apply.type = "submit";
+    limits.addEventListener("submit", event => {
+      event.preventDefault();
+      if (!state || settingsRequests.has("limits")) return;
+      const current = { messages: state.limits.messages.value, reviews: state.limits.reviews.value, delegations: state.limits.delegations.value, depth: state.limits.depth.value };
+      const { changes, valid } = limitChanges(current, limitDraft(limits));
+      if (!valid || !changes.length) return;
+      sendLimits(`/limits ${changes.map(({ name, value }) => `${name} ${value}`).join(" ")}`, apply);
+    });
     const actions = el("div", "limits-actions");
-    actions.append(reset, unlimited);
+    actions.append(reset, unlimited, apply);
     limits.append(actions);
     const language = settingsChoice("language", t("web.settings.language"), ["ja", "en"] as const, state.language, value => value === "ja" ? "日本語" : "English");
     // 端末ごとの設定なので Hub には送らない。スマホは常に Enter で改行するので出さない
@@ -1781,13 +1822,14 @@ export function clientMain({
     await postJson("/api/push/unsubscribe", { id });
   };
   const pushSection = () => {
-    const section = choice("push", t("web.settings.push"), ["off", "on"] as const, pushId ? "on" : "off", (value) => value, (value, button) => {
-      const segment = button.parentElement!;
-      for (const control of segment.querySelectorAll<HTMLButtonElement>("button")) control.disabled = true;
-      void (value === "on" ? enablePush() : disablePush())
+    const section = settingsSwitch("push", t("web.settings.push"), Boolean(pushId), (checked, button) => {
+      settingsRequests.add("push");
+      setPending(button, true);
+      void (checked ? enablePush() : disablePush())
         .catch((error: unknown) => showToast(String(error), "warn"))
         .finally(() => {
-          for (const control of segment.querySelectorAll<HTMLButtonElement>("button")) control.disabled = false;
+          settingsRequests.delete("push");
+          setPending(button, false);
           refreshOpenSheet();
         });
     });
@@ -1796,9 +1838,10 @@ export function clientMain({
     return section;
   };
   const refreshPush = (body: HTMLElement) => {
-    for (const button of body.querySelectorAll<HTMLButtonElement>('[data-choice="push"] button')) {
-      button.setAttribute("aria-pressed", String(button.dataset.value === (pushId ? "on" : "off")));
-    }
+    const button = body.querySelector<HTMLButtonElement>('[data-choice="push"][role="switch"]');
+    if (!button) return;
+    button.setAttribute("aria-checked", String(Boolean(pushId)));
+    button.disabled = settingsRequests.has("push");
   };
   document.addEventListener("visibilitychange", () => {
     if (pushId) void postJson("/api/push/visibility", { id: pushId, visible: document.visibilityState === "visible" });
@@ -1889,7 +1932,14 @@ export function clientMain({
     }
     if (sheetKind === "settings" && state) {
       const body = $("#sheet-body");
-      for (const [key, value] of [["sandbox", state.sandbox.enabled ? "on" : "off"], ["language", state.language]]) {
+      const sandboxPending = [...pendingRequests].find(line => line.startsWith("/sandbox "));
+      const sandboxSwitch = body.querySelector<HTMLButtonElement>('[data-choice="sandbox"][role="switch"]');
+      if (sandboxSwitch) {
+        sandboxSwitch.setAttribute("aria-checked", String((sandboxPending?.split(" ")[1] ?? (state.sandbox.enabled ? "on" : "off")) === "on"));
+        setPending(sandboxSwitch, Boolean(sandboxPending));
+        sandboxSwitch.disabled = Boolean(sandboxPending) || settingsRequests.has("sandbox");
+      }
+      for (const [key, value] of [["language", state.language]]) {
         const pendingLine = [...pendingRequests].find(line => line.startsWith(`/${key} `));
         for (const button of body.querySelectorAll<HTMLButtonElement>(`[data-choice="${key}"] button`)) {
           button.setAttribute("aria-pressed", String(button.dataset.value === (pendingLine?.split(" ")[1] ?? value)));
@@ -1903,17 +1953,23 @@ export function clientMain({
       refreshPush(body);
       body.querySelector(".limits-settings")?.classList.toggle("unlimited", state.limitsUnlimited);
       body.querySelector(".limits-unlimited")?.setAttribute("aria-pressed", String(state.limitsUnlimited));
+      const limitsBusy = settingsRequests.has("limits");
       for (const row of body.querySelectorAll<HTMLElement>("[data-limit]")) {
         const name = row.dataset.limit as keyof WebState["limits"];
         const limit = state.limits[name];
         const field = row.querySelector<HTMLInputElement>("input")!;
-        field.disabled = settingsRequests.has(name);
+        field.disabled = limitsBusy;
         if (field.dataset.synced !== String(limit.value)) {
           field.value = String(limit.value);
           field.dataset.synced = field.value;
         }
         row.querySelector<HTMLElement>(".limit-default")!.textContent = t("web.settings.default", { value: limit.default });
         row.querySelector<HTMLElement>(".limit-changed")!.hidden = limit.value === limit.default;
+      }
+      const limits = body.querySelector<HTMLElement>(".limits-settings");
+      if (limits) {
+        for (const button of limits.querySelectorAll<HTMLButtonElement>(".limits-actions button")) button.disabled = limitsBusy;
+        syncLimitActions(limits);
       }
     }
   };

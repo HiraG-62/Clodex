@@ -20,6 +20,7 @@ import { nextUnanswered, questionAnswers } from "./client/question-flow.js";
 import { composeInputLine } from "./client/compose-input.js";
 import { isSendKey } from "./client/send-key.js";
 import { settingsSections } from "./client/settings-sections.js";
+import { limitChanges } from "./client/limit-changes.js";
 import { fitView, zoomView } from "./client/image-zoom.js";
 import { isShellInput } from "./client/shell-input.js";
 import { chooseProjectPath } from "./client/project-picker.js";
@@ -594,44 +595,49 @@ const STYLE = `
   .code-block { min-width: 0; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; margin: 12px 0; }
   .code-head { display: flex; justify-content: flex-end; border-bottom: 1px solid var(--line); padding-inline: 4px; background: var(--sunken); }
   .code-block pre { margin: 0; border: 0; }
-  .limits-settings { display: grid; gap: 12px; }
-  .limit-row { display: grid; grid-template-columns: minmax(0, 1fr) 68px auto; gap: 2px 10px; align-items: center; }
-  .limit-label { font-size: 13px; line-height: 1.5; }
-  .limit-row input { min-width: 0; width: 100%; padding: 6px 8px; height: 32px; border: 0; border-radius: var(--r-inner); box-shadow: var(--ring); background: var(--sunken); color: var(--fg); font: 13px var(--font-mono); }
-  .limit-row .btn, .limits-reset, .limits-unlimited { min-height: 32px; font-size: 12px; }
-  .limit-row input { grid-column: 2; grid-row: 1 / span 2; }
-  .limit-row .btn { grid-column: 3; grid-row: 1 / span 2; }
-  .limit-default { grid-column: 1; grid-row: 2; }
+  .limits-settings { display: grid; }
+  .limit-row { display: grid; grid-template-columns: minmax(0, 1fr) 56px 54px; gap: 8px; align-items: center; min-height: 44px; }
+  .limit-label { min-width: 0; font-size: 12px; line-height: 1.3; }
+  .limit-row input { min-width: 0; width: 56px; height: 28px; padding: 3px 6px; border: 0; border-radius: var(--r-inner); box-shadow: var(--ring); background: var(--sunken); color: var(--fg); font: 12px var(--font-mono); }
+  .limit-default { text-align: right; white-space: nowrap; }
   .limit-changed { color: var(--accent); margin-left: 6px; }
-  .limits-actions { display: flex; gap: 8px; justify-self: start; }
+  .limits-actions { display: flex; gap: 8px; justify-content: flex-end; }
   .gui-update-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   .gui-update[hidden] { display: none; }
   .limits-unlimited[aria-pressed="true"] { color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .limits-settings.unlimited .limit-row { opacity: .45; }
-  .settings-sheet .sheet-panel { max-width: 590px; padding: 0 20px 20px; }
-  .settings-sheet .sheet-head { position: sticky; top: 0; z-index: 1; margin: 0 -20px; padding: 14px 20px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
-  .settings-sheet .sheet-head h2 { font-size: 17px; }
-  .settings-sheet #sheet-body { display: grid; gap: 18px; padding-top: 16px; }
-  .settings-section-heading { margin: 0 0 7px 2px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
-  .settings-card { border: 1px solid var(--line); border-radius: 10px; padding: 4px 16px; background: var(--panel); }
+  .settings-sheet .sheet-panel { max-width: 480px; padding: 0 16px 16px; }
+  .settings-sheet .sheet-head { position: sticky; top: 0; z-index: 1; margin: 0 -16px; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  .settings-sheet #sheet-body { display: grid; gap: 12px; padding-top: 12px; }
+  .settings-section-heading { margin: 0 0 4px 2px; color: var(--muted); font-size: 11px; font-weight: 600; }
+  .settings-card { border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; background: var(--panel); }
   .settings-card > .setting { margin: 0; }
   .settings-card > .setting + .setting, .settings-card > .limits-settings { border-top: 1px solid var(--line); }
-  .settings-card > .setting:not(.limits-settings) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 16px; align-items: center; min-height: 68px; padding: 12px 0; }
-  .settings-card > .setting > .eyebrow { margin: 0; color: var(--fg); font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; }
-  .settings-card > .setting > .seg { min-width: 174px; }
-  .settings-card > .setting > .sandbox-ready { grid-column: 1; margin: -12px 0 0; }
-  .settings-card > .limits-settings { gap: 0; padding: 16px 0 12px; }
-  .settings-card > .limits-settings > .eyebrow, .settings-card.gui-update > .eyebrow { margin: 0 0 8px; color: var(--fg); font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; }
-  .settings-card .limit-row { padding: 10px 0; border-top: 1px solid var(--line); }
-  .settings-card .limit-row .btn { background: transparent; border: 1px solid var(--line-strong); color: var(--fg-2); }
-  .settings-card .limit-row .btn:hover { background: var(--sunken); }
-  .settings-card .limit-default { font-size: 11px; }
-  .settings-card .limits-actions { width: 100%; justify-content: flex-end; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
-  .settings-card .limits-actions .btn { background: transparent; border: 0; color: var(--fg-2); padding: 6px 8px; }
+  .settings-card > .setting:not(.limits-settings) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px; align-items: center; min-height: 44px; padding: 2px 0; }
+  .settings-card > .setting > .eyebrow { margin: 0; color: var(--fg); font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+  .settings-card > .setting > .sandbox-ready { grid-column: 1; margin: -4px 0 0; font-size: 10px; line-height: 1.2; }
+  .settings-card > .limits-settings { padding: 4px 0; }
+  .settings-card > .limits-settings > .eyebrow { margin: 4px 0; color: var(--fg); font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+  .settings-card .limit-row + .limit-row { border-top: 1px solid var(--line); }
+  .settings-card .limit-default { font-size: 10px; }
+  .settings-card .limits-actions { width: 100%; padding: 4px 0; border-top: 1px solid var(--line); }
+  .settings-card .limits-actions .btn { min-height: 28px; border: 0; padding: 3px 7px; background: transparent; color: var(--fg-2); font-size: 11px; }
+  .settings-card .limits-actions .limits-apply { background: var(--invert-bg); color: var(--invert-fg); border-radius: 4px; }
   .settings-card .limits-unlimited[aria-pressed="true"] { background: var(--sunken); box-shadow: none; color: var(--fg); }
-  .settings-card > .gui-update { display: block; min-height: 68px; padding: 12px 0; }
-  .settings-card .gui-update-row { gap: 8px; min-height: 44px; }
+  .settings-card > .setting.gui-update { display: block; min-height: 44px; padding: 2px 0; }
+  .settings-card .gui-update-row { gap: 6px; min-height: 40px; }
   .settings-card .gui-version { margin-right: auto; }
+  .settings-card .gui-update-row .btn { border: 0; background: transparent; padding: 0 4px; color: var(--fg-2); font-size: 11px; }
+  .settings-sheet .seg { height: 28px; gap: 1px; padding: 1px; }
+  .settings-sheet .seg button { position: relative; height: 44px; min-height: 44px; min-width: 66px; margin-top: -9px; padding: 0 7px; background: transparent; box-shadow: none; color: var(--muted); font-size: 12px; z-index: 0; }
+  .settings-sheet .seg button::before { content: ""; position: absolute; inset: 9px 0; border-radius: 4px; z-index: -1; }
+  .settings-sheet .seg button[aria-pressed="true"] { color: var(--fg); }
+  .settings-sheet .seg button[aria-pressed="true"]::before { background: var(--panel); box-shadow: var(--ring); }
+  .settings-switch { position: relative; width: 44px; height: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; }
+  .settings-switch::before { content: ""; position: absolute; left: 6px; top: 13px; width: 32px; height: 18px; border-radius: 999px; background: var(--line-strong); }
+  .settings-switch::after { content: ""; position: absolute; left: 8px; top: 15px; width: 14px; height: 14px; border-radius: 50%; background: var(--panel); box-shadow: 0 1px 2px var(--scrim); transition: transform var(--ease); }
+  .settings-switch[aria-checked="true"]::before { background: var(--accent); }
+  .settings-switch[aria-checked="true"]::after { transform: translateX(14px); }
   .code-more { display: none; }
   .table-scroll { overflow-x: auto; max-width: 100%; box-shadow: inset -8px 0 8px -8px var(--muted); }
   .table-scroll table { min-width: 100%; }
@@ -674,20 +680,10 @@ const STYLE = `
     .fold > summary { min-height: 44px; padding: 8px 6px; }
     .code-head .icon-btn { width: 44px; height: 44px; }
     .code-block.long:not(.expanded) pre { max-height: 168px; overflow: hidden; mask-image: linear-gradient(#000 60%, transparent); }
-    .limit-row input, .limit-row .btn, .limits-reset, .limits-unlimited { min-height: 44px; }
     .settings-sheet .sheet-panel { padding: 0 max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
-    .settings-sheet .sheet-head { margin: 0 -16px; padding: 8px 16px; }
-    .settings-card { padding-inline: 14px; }
-    .settings-card > .setting:not(.limits-settings):not(.gui-update) { grid-template-columns: minmax(0, 1fr); gap: 8px; }
-    .settings-card > .limits-settings { grid-template-columns: minmax(0, 1fr); }
-    .settings-card > .setting > .seg { width: 100%; min-width: 0; }
-    .settings-card > .setting > .sandbox-ready { grid-row: 2; margin: -8px 0 0; }
-    .settings-project .settings-card > .setting > .seg { grid-row: 3; }
-    .settings-card .limit-row { grid-template-columns: minmax(0, 1fr) 72px auto; gap: 4px 8px; }
-    .settings-card .limit-label { grid-column: 1 / -1; grid-row: 1; }
-    .settings-card .limit-default { grid-column: 1; grid-row: 2; }
-    .settings-card .limit-row input { grid-column: 2; grid-row: 2; }
-    .settings-card .limit-row .btn { grid-column: 3; grid-row: 2; }
+    .settings-card { padding-inline: 10px; }
+    .settings-card .limit-row { grid-template-columns: minmax(0, 1fr) 56px 54px; gap: 6px; }
+    .settings-card .limits-actions .btn { min-height: 44px; }
     .code-block.long .code-more { display: flex; justify-content: center; align-items: center; gap: 6px; width: 100%; height: 44px; border: 0; border-top: 1px solid var(--line); background: var(--panel); color: var(--fg-2); }
     .code-block.expanded .code-more .i { transform: rotate(180deg); }
     .question-option { min-height: 48px; }
@@ -724,6 +720,7 @@ const STYLE = `
     .grab::before { content: ""; position: absolute; left: 50%; top: 9px; width: 36px; height: 5px; margin-left: -18px; border-radius: 3px; background: var(--line-strong); }
     .sheet-head .icon-btn { width: 44px; height: 44px; }
     .sheet button, .sheet input:not([type="checkbox"]), .sheet select { min-height: 44px; }
+    .settings-sheet .limit-row input { min-height: 28px; }
     .sheet .controls .links { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
     .sheet .controls > .state { display: inline-flex; align-items: center; gap: 5px; width: fit-content; font-size: 11.5px; border-radius: 999px; padding: 2px 7px; background: var(--sunken); margin: 6px 0 12px; }
     .sheet .controls > .state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--agent); }
@@ -888,6 +885,7 @@ const FUNCTIONS = `
   composeInputLine: ${inlineScript(composeInputLine.toString())},
   isSendKey: ${inlineScript(isSendKey.toString())},
   settingsSections: ${inlineScript(settingsSections.toString())},
+  limitChanges: ${inlineScript(limitChanges.toString())},
   fitView: ${inlineScript(fitView.toString())},
   zoomView: ${inlineScript(zoomView.toString())},
   createInputAssist: ${inlineScript(createInputAssist.toString())},

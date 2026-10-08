@@ -40,7 +40,7 @@ const SPECS: readonly SlashCommandSpec[] = [
   { name: "permission", args: "[agent] <read-only|edit|full>", description: "cmd.permission" },
   { name: "model", args: "<agent> <model>", description: "cmd.model" },
   { name: "effort", args: "[agent] <level>", description: "cmd.effort" },
-  { name: "limits", args: "[<name> <n>|reset|unlimited]", description: "cmd.limits", argumentValues: [...LIMIT_NAMES, "reset", "unlimited"] },
+  { name: "limits", args: "[<name> <n> ...|reset|unlimited]", description: "cmd.limits", argumentValues: [...LIMIT_NAMES, "reset", "unlimited"] },
   { name: "language", args: "[ja|en]", argumentValues: LANGUAGES, description: "cmd.language" },
   { name: "verbose", args: "", description: "cmd.verbose" },
   { name: "help", args: "", description: "cmd.help" },
