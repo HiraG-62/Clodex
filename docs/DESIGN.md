@@ -575,10 +575,11 @@ Adapter の必須処理:
 | レベル | Claude（`--permission-mode` / `set_permission_mode`） | Codex（`sandbox` / `sandboxPolicy`） |
 |---|---|---|
 | `read-only` | `plan`（読み取りと計画のみ。ユーザー設定で許可済みの tool でも編集・実行しない） | `read-only` |
-| `edit`（既定） | `acceptEdits` | `workspace-write` |
+| `edit`（既定） | `acceptEdits` | `workspace-write`（ネットワーク可） |
 | `full` | `bypassPermissions` | `danger-full-access` |
 
 - 既定は `edit`。設定ファイルの `permission` で変えられる（§13 Roles）
+- Codex の `edit` はネットワークを許す（起動引数の `-c sandbox_workspace_write.network_access=true` と、`sandboxPolicy` の `networkAccess: true`）。依存関係の取得など、project の作業に要るため。Schannel を使う TLS（`curl.exe`、PowerShell 5.1 の HTTPS）は Codex の sandbox では通らない（docs/spikes/codex-project-config.md）
 - Claude は `full` へ後から切り替えられるよう、常に `--allow-dangerously-skip-permissions` を付けて起動する（付けるだけでは bypass にならない）
 - 反映: Claude は即時（`set_permission_mode`）、Codex は次のターンから（`turn/start` の `sandboxPolicy`。以降のターンにも引き継がれる）
 - 停止中の Agent は、次の起動時にそのレベルで起動する
@@ -935,6 +936,8 @@ Write body in Markdown: a one-line summary first, then bullet points. Do not wri
 CLAUDE.md → Claude
 AGENTS.md → Codex
 ```
+
+`AGENTS.md` が無い project では、Codex にも `CLAUDE.md` を読ませる（起動引数の `-c 'project_doc_fallback_filenames=["CLAUDE.md"]'`）。project ごとに同じ内容の `AGENTS.md` を置かずに済むようにするため。`AGENTS.md` があればそちらを使う（docs/spikes/codex-project-config.md）。
 
 将来的に共有 artifact を置く場合:
 

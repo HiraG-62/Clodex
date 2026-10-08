@@ -146,6 +146,24 @@ describe("CodexAdapter", () => {
     expect(spawner.last.writtenWith("method", "turn/start")[0]!.params).toMatchObject({ sandboxPolicy: { type: "readOnly" } });
   });
 
+  it("AGENTS.md が無い project 用に CLAUDE.md を読ませ、workspace-write のネットワークを許して起動する", async () => {
+    const { spawner, started } = await setup();
+    await started;
+    expect(spawner.calls[0]!.args).toEqual(expect.arrayContaining([
+      "-c", 'project_doc_fallback_filenames=["CLAUDE.md"]',
+      "-c", "sandbox_workspace_write.network_access=true",
+    ]));
+  });
+
+  it("edit への setPermission はネットワークを許す sandboxPolicy を送る", async () => {
+    const { adapter, started, proc } = await setup();
+    await started;
+    await adapter.setPermission("edit");
+    void adapter.send("a");
+    await flush();
+    expect(proc.writtenWith("method", "turn/start")[0]!.params).toMatchObject({ sandboxPolicy: { type: "workspaceWrite", networkAccess: true } });
+  });
+
   it("起動中の setPermission は次の turn/start に sandboxPolicy を 1 回だけ付ける", async () => {
     const { adapter, started, proc } = await setup();
     await started;

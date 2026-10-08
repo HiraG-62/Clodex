@@ -19,6 +19,7 @@ CLI: Claude Code 2.1.289 / codex-cli 0.156.1
 | M 専用ユーザー + WRITE_RESTRICTED | Deny なしの E: / 別 project と人の home の Win32 作成・削除を拒否。ツール・HKCU・MCP・broker 停止は成功。ただし ProgramData / Windows Temp に新規作成できる | [sandbox-hybrid.md](sandbox-hybrid.md) |
 | N GUI の自動更新 | `tauri-plugin-updater` で、ダウンロード・署名の検証・NSIS の passive インストール・再起動（`/R`）までが動く。止めるのは GUI が起動した Hub だけ | [updater.md](updater.md) |
 | O 割り込みの取り込み | Claude は `--replay-user-messages` の replay（送った uuid 付き）、Codex はターンの 2 つ目以降の `userMessage` で、割り込みを取り込んだ時点を検知できる | [steer-ack.md](steer-ack.md) |
+| P Codex の project doc とネットワーク | `-c project_doc_fallback_filenames=["CLAUDE.md"]` で `CLAUDE.md` を読む（`AGENTS.md` が優先）。`workspace-write` は既定でネットワーク不可、`network_access` / `networkAccess` で Node・pnpm は通る（Schannel の TLS は不可） | [codex-project-config.md](codex-project-config.md) |
 
 ## 設計への影響
 

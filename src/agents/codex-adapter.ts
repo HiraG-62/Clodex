@@ -21,9 +21,14 @@ const SANDBOX_MODE: Record<PermissionLevel, string> = {
 
 const SANDBOX_POLICY: Record<PermissionLevel, unknown> = {
   "read-only": { type: "readOnly", networkAccess: false },
-  edit: { type: "workspaceWrite", writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false },
+  edit: { type: "workspaceWrite", writableRoots: [], networkAccess: true, excludeTmpdirEnvVar: false, excludeSlashTmp: false },
   full: { type: "dangerFullAccess" },
 };
+// AGENTS.md が無い project でも CLAUDE.md のルールを読ませる。edit でも依存関係の取得などに要るのでネットワークを許す（docs/spikes/codex-project-config.md）
+const PROJECT_CONFIG_ARGS = [
+  "-c", 'project_doc_fallback_filenames=["CLAUDE.md"]',
+  "-c", "sandbox_workspace_write.network_access=true",
+];
 const METHOD_NOT_FOUND = -32601;
 
 interface RpcMessage {
@@ -83,7 +88,7 @@ export class CodexAdapter extends BaseAgentAdapter {
   async start({ cwd, resumeSessionId, mcpUrl, instructions }: AgentStartOptions): Promise<void> {
     if (this.status !== "stopped") throw new Error(`codex is ${this.status}`);
     this.status = "starting";
-    const args = ["app-server", ...(mcpUrl ? mcpArgs(mcpUrl) : [])];
+    const args = ["app-server", ...PROJECT_CONFIG_ARGS, ...(mcpUrl ? mcpArgs(mcpUrl) : [])];
     this.attach(this.spawnProcess(CODEX_COMMAND, args, { cwd, env: agentEnv(process.env, this.id) }));
     try {
       await this.handshake(cwd, resumeSessionId, instructions);
