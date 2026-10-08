@@ -882,7 +882,7 @@ MCP message を受け取った後、
 
 Agent が人に判断を求めるとき、文章の中に質問を書かせず、選択肢つきの質問として画面に出して答えられるようにする（Claude Code の AskUserQuestion に相当）。Claude / Codex のどちらでも同じ形にするため、各 CLI の組み込みの質問機能ではなく Clodex の MCP tool にする。
 
-- 入力: `{ questions: Array<{ question: string; header?: string; options: Array<{ label: string; description?: string }>; multiSelect?: boolean }> }`。質問は 1〜4 件、選択肢は 2〜6 件。人は選択肢のほかに自由に書いて答えることもできる（「その他」）
+- 入力: `{ questions: Array<{ question: string; header?: string; options: Array<{ label: string; description?: string; recommended?: boolean }>; multiSelect?: boolean }> }`。質問は 1〜4 件、選択肢は 2〜6 件。推奨は label や description に書かず `recommended` で印を付け、description は選択肢を比べるための短い 1 文にする（tool の schema の説明で伝える）。人は選択肢のほかに自由に書いて答えることもできる（「その他」）
 - tool は待たずにすぐ返す（受理した質問の ID と「ターンを終えて回答を待つ」旨）。回答は人が答えた後、その Agent への新しいターンとして届く（`send_message` の返信と同じ。CLI の tool の timeout に左右されない）
 - Coordinator は質問を Event Bus の `question` event（`{ id, agent, questions }`）として出す。feed に流して保存し、画面は回答の欄つきの質問欄に出す（Web UI）
 - 回答は `/answer <質問 ID> <回答>` で送る（画面のボタンもこれを送るだけ。§17 の入力の決まり）。`<回答>` は JSON の `string[][]`（質問ごとに選んだ label か自由記述）。Coordinator は `answer` event（`{ id, answers }`）を出し、質問した Agent の mailbox に人間の入力として「質問と回答」の文章を入れる
@@ -1329,7 +1329,7 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
   - Web UI のクライアントは `toString()` でページに埋め込むため、`marked` のブラウザ用ビルド（UMD）をページに埋め込む
 - Agent 間の message は、送信元 → 宛先、種類、本文、関連ファイル、指摘（severity 付き）、相手に渡した全文（畳む）を表示する
 - Agent の質問（§12 `ask_user`）は、未回答のものをログの外の「質問欄」に出す。質問欄は入力欄の上にくっつけて置き、ログのスクロールに影響されない
-  - 出すのは state の未回答の質問（`questions`）の最も古い 1 組。1 組の中の質問は 1 問ずつ出す: 見出し・質問文・選択肢のボタン（説明を添える。`multiSelect` はチェック）・「その他」の入力欄
+  - 出すのは state の未回答の質問（`questions`）の最も古い 1 組。1 組の中の質問は 1 問ずつ出す: 見出し・質問文・選択肢のボタン（説明を添える。`recommended` は label の横に星のアイコン。`multiSelect` はチェック）・「その他」の入力欄
   - 単一選択の選択肢を押したら、次の未回答の質問へ進む。複数選択と「その他」は「次へ」で進む（「その他」は Enter でも進む）。「前へ」と、質問ごとの点（回答済みかを示す）で前の質問に戻れる。回答は 1 組まとめて送るので、すべて答えたら「回答」を押せる
   - 見出しの行に Agent・何問目か（`1/3`）・ほかに待っている組の数を出す。見出しの行を押すと質問欄を畳む／開く（畳むと見出しの行だけ）。スマホでも畳んでログを見られる。開いているときの高さは画面の半分までにし、超えたら質問欄の中でスクロールする
   - 回答の下書き（選んだもの・入力・何問目か）は組ごとに画面で持ち、畳んでも消えない

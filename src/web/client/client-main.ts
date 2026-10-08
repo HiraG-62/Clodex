@@ -599,7 +599,15 @@ export function clientMain({
     question.options.forEach((option, optionIndex) => {
       const button = el("button", "question-option") as HTMLButtonElement;
       button.type = "button";
-      button.append(el("span", "", option.label));
+      const label = el("span", "question-label", option.label);
+      if (option.recommended) {
+        const mark = el("span", "question-recommended");
+        mark.title = t("web.question.recommended");
+        mark.setAttribute("aria-label", t("web.question.recommended"));
+        mark.append(icon("star"));
+        label.append(mark);
+      }
+      button.append(label);
       if (option.description) button.append(el("small", "muted", option.description));
       button.addEventListener("click", () => {
         const selected = draft.selected[index]!;

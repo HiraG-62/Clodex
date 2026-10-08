@@ -320,6 +320,8 @@ const STYLE = `
   .question-options { display: grid; gap: 6px; }
   .question-option { display: grid; gap: 4px; text-align: left; white-space: pre-wrap; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg); }
   .question-option.selected { border-color: currentColor; background: var(--bg); }
+  .question-recommended { display: inline-flex; vertical-align: -2px; margin-left: 6px; color: var(--accent); }
+  .question-recommended .i { width: 14px; height: 14px; fill: currentColor; }
   .question-other { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg); }
   .question-submit { justify-self: start; padding: 8px 16px; border: 0; border-radius: 6px; background: var(--invert-bg); color: var(--invert-fg); }
   .question-submit:disabled { opacity: .5; }
