@@ -171,7 +171,7 @@ const setup = ({ withoutProject = false } = {}) => {
     starts: [] as string[], stops: 0, killed: [] as number[],
     entries: [] as ManagedProcess[],
     start(command: string) { this.starts.push(command); return this.starts.length; },
-    stopAll() { this.stops++; },
+    async stopAll() { this.stops++; },
     kill(id: number) { this.killed.push(id); return id === 1; },
     list() { return this.entries; },
     output(id: number) { return id === 1 ? ["line one", "line two"] : undefined; },

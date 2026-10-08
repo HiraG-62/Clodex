@@ -472,7 +472,7 @@ export const createShell = ({
         print(t("shell.verbose", { state: t(toggleVerbose() ? "shell.on" : "shell.off") }));
         return "continue";
       case "exit":
-        processes.stopAll();
+        void processes.stopAll();
         return "exit";
       case "invalid":
         print(command.message);

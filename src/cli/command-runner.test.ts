@@ -149,4 +149,18 @@ describe("createCommandRunner", () => {
     expect(printed.at(-1)).toMatch(/^stopped \(/);
     expect(runner.stopAll()).toBe(0);
   });
+
+  it("idle は実行中の command がすべて終わってから resolve する", async () => {
+    const { runner, processes } = setup();
+    void runner.run("first");
+    void runner.run("second");
+    let idle = false;
+    void runner.idle().then(() => { idle = true; });
+    processes[0]!.close(0);
+    await flush(); await flush();
+    expect(idle).toBe(false);
+    processes[1]!.close(0);
+    await flush(); await flush();
+    expect(idle).toBe(true);
+  });
 });

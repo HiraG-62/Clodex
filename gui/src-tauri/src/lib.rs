@@ -19,7 +19,8 @@ mod update;
 
 const START_TIMEOUT: Duration = Duration::from_secs(20);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
+// Hub が子プロセスの終了を待つ上限（src/index.ts の STOP_TIMEOUT_MS）より長くする
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
 const RUNTIME_NODE: &str = "runtime/node.exe";
 const RUNTIME_ENTRY: &str = "runtime/app/dist/index.js";
 const MAIN_WINDOW: &str = "main";
@@ -30,6 +31,8 @@ const TRAY_OPEN_LABEL: &str = "開く";
 const TRAY_EXIT_LABEL: &str = "終了";
 const TRAY_UPDATE_LABEL: &str = "更新を確認";
 pub(crate) const APP_NAME: &str = "Clodex";
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 // 表示状態は戻さない（隠したまま終えると、次の起動で見えないまま戻るため）
 fn window_state_flags() -> StateFlags {
@@ -126,7 +129,7 @@ impl OwnedHub {
             }
             thread::sleep(POLL_INTERVAL);
         }
-        let _ = self.child.kill();
+        kill_tree(&mut self.child);
         let _ = self.child.wait();
         if live_hub(&self.home).is_none() {
             // kill では Node の終了処理が走らない。自分の lock だけ掃除する。
@@ -139,6 +142,28 @@ impl OwnedHub {
             }
         }
     }
+}
+
+// Hub の node だけを止めると、その子の Agent やシェルが残る
+#[cfg(windows)]
+fn kill_tree(child: &mut Child) {
+    use std::os::windows::process::CommandExt;
+    let killed = Command::new("taskkill")
+        .args(["/pid", &child.id().to_string(), "/T", "/F"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .status()
+        .is_ok_and(|status| status.success());
+    if !killed {
+        let _ = child.kill();
+    }
+}
+
+#[cfg(not(windows))]
+fn kill_tree(child: &mut Child) {
+    let _ = child.kill();
 }
 
 #[derive(Deserialize)]
@@ -266,7 +291,6 @@ fn spawn_hub(home: &Path, resource_dir: &Path) -> Result<Child, Box<dyn Error>> 
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
     Ok(command.spawn()?)

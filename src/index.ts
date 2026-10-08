@@ -44,6 +44,8 @@ const PROMPT = "clodex> ";
 const DEFAULT_WEB_PORT = 4319;
 const DEFAULT_PRIMARY: AgentId = "claude";
 const FORCE_EXIT_DELAY_MS = 3_000;
+// GUI は Hub の終了をこれより長く待つ（gui/src-tauri/src/lib.rs の SHUTDOWN_TIMEOUT）
+const STOP_TIMEOUT_MS = 10_000;
 const LOG_SUFFIX_LENGTH = 8;
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 let reportRuntimeError = (_message: string) => {};
@@ -272,9 +274,9 @@ const main = async (): Promise<void> => {
     shuttingDown = true;
     rl?.close();
     runner.stopAll();
-    processes.stopAll();
     try {
-      await hub.closeAll();
+      const stopped = Promise.all([runner.idle(), processes.stopAll(), hub.closeAll()]);
+      await Promise.race([stopped, new Promise((resolve) => setTimeout(resolve, STOP_TIMEOUT_MS).unref())]);
       await web?.close();
     } finally {
       if (args.serve) clearHubLock(homeDir, process.pid);

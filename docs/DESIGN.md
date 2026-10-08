@@ -696,6 +696,14 @@ Coordinator
 - 子プロセスの環境変数から `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `OPENAI_API_KEY` / `CODEX_API_KEY` を取り除く。Claude は API key があると黙ってそちらを使う（Spike E）
 - 認証方式を確認し、サブスクリプション認証でなければ Agent を停止してエラーにする。Codex は起動直後（`account/read`）、Claude は最初のターンまで何も出力しないため、最初のターンの `system/init` で確認する（そのターンは failed になる）
 
+## 終了
+
+Clodex の終了（`/exit`・Ctrl+D・`clodex serve` のシグナル・GUI の終了）では、Clodex が起動したプロセスをすべて止め、終わったのを確かめてから Clodex を終える。
+
+- 止めるもの: 全会話の Agent（Claude / Codex）、実行中の `!command`、Process Manager の process（§15）。どれもプロセスツリーごと止める（Windows では `taskkill /T /F`。親だけを止めると子が残る）
+- すべて終わるのを待つ。待つのは最大 10 秒（定数）で、過ぎたら残りを待たずに終える
+- GUI が起動した Hub は、GUI が `/exit` を送って最大 15 秒（Hub の上限より長い定数）待つ。それでも Hub が終わらなければ Hub のプロセスツリーごと止める（Hub の node だけを止めると、その子の Agent やシェルが残る）
+
 ## リスク
 
 - Codex app-server は experimental、Claude の stream-json 入力の control protocol はドキュメントが薄い。CLI の版更新で変わりうるので、プロトコル依存は Adapter 内に閉じ込める
@@ -2050,7 +2058,7 @@ D2 の詳細（Hub として複数の project を扱う）。2 段に分ける:
 D3 の詳細（Tauri GUI。Windows）:
 
 - `gui/` に Tauri v2 のプロジェクトを置く（Rust。`pnpm gui:dev` / `pnpm gui:build`。Tauri の CLI は devDependency の `@tauri-apps/cli`）
-- GUI は Hub を探し、いなければ起動する。そのため `clodex serve` は起動時に `~/.clodex/hub.lock`（`{ pid, port, url }`）を書き、終了時に消す（D2b の lock を先に入れる）。GUI は lock の pid が生きていればその Hub を使い、いなければ `clodex serve` を子プロセスで起動して lock を待つ。GUI が起動した Hub は GUI の終了で止める
+- GUI は Hub を探し、いなければ起動する。そのため `clodex serve` は起動時に `~/.clodex/hub.lock`（`{ pid, port, url }`）を書き、終了時に消す（D2b の lock を先に入れる）。GUI は lock の pid が生きていればその Hub を使い、いなければ `clodex serve` を子プロセスで起動して lock を待つ。GUI が起動した Hub は GUI の終了で止める（§10 終了）
 - GUI は単体で動く: Node の実行ファイルと Clodex 本体（`dist` と本番用の `node_modules`）をアプリの resource に同梱し、Hub はそれで起動する。PATH の `clodex` や Node のインストールは要らない（Claude / Codex の CLI は今どおり PATH のものを使う）。開発中は `CLODEX_GUI_ENTRY`（と `CLODEX_GUI_NODE`）で同梱物の代わりに手元の `dist/index.js` を使える
   - 同梱物は `pnpm gui:dev` / `pnpm gui:build` の前に `gui/src-tauri/runtime/` に組み立てる（git の管理外）。`dist` は `import.meta.resolve` で `marked` のファイルを読むため、1 ファイルへの bundle はせず、`node_modules` ごと入れる
   - 既に動いている Hub（CLI の `clodex serve` 等）があれば、版が違ってもそれを使う

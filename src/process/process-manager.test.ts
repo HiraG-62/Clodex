@@ -9,6 +9,8 @@ class FakeProcess extends EventEmitter {
   constructor(readonly pid: number) { super(); }
 }
 
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
 const setup = () => {
   const children: FakeProcess[] = [];
   const printed: string[] = [];
@@ -92,5 +94,19 @@ describe("background process", () => {
     children.forEach((child) => child.emit("close", 1));
     expect(manager.list().map(({ status }) => status)).toEqual(["stopped", "stopped"]);
     expect(printed.slice(-2)).toEqual(["#1 stopped (1.5s): first", "#2 stopped (1.5s): second"]);
+  });
+
+  it("stopAll は止めたプロセスがすべて終わってから resolve する", async () => {
+    const { manager, children } = setup();
+    manager.start("first");
+    manager.start("second");
+    children[0]!.emit("close", 0);
+    let stopped = false;
+    void manager.stopAll().then(() => { stopped = true; });
+    await flush();
+    expect(stopped).toBe(false);
+    children[1]!.emit("close", 1);
+    await flush();
+    expect(stopped).toBe(true);
   });
 });

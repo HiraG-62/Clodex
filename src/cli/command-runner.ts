@@ -137,6 +137,7 @@ export const createCommandExecutor = ({
 export const createCommandRunner = ({ cwd, print, now = Date.now, ...options }: CommandRunnerOptions) => {
   const execute = createCommandExecutor(options);
   const running = new Set<ReturnType<typeof execute>>();
+  const pending = new Set<Promise<CommandResult>>();
   let nextId = 1;
 
   // 終了（または起動の失敗）で resolve する。reject しない
@@ -151,7 +152,7 @@ export const createCommandRunner = ({ cwd, print, now = Date.now, ...options }: 
       if (output.length > KEPT_OUTPUT_LINES) { output.shift(); droppedLines++; }
       print(line);
     };
-    return new Promise((resolve) => {
+    const result = new Promise<CommandResult>((resolve) => {
       const handle = execute(command, typeof cwd === "function" ? cwd() : cwd, record, ({ code, stopped, error }) => {
         for (const entry of running) if (!entry.running) running.delete(entry);
         const elapsed = `${((now() - startedAt) / MS_PER_SECOND).toFixed(1)}s`;
@@ -160,6 +161,9 @@ export const createCommandRunner = ({ cwd, print, now = Date.now, ...options }: 
       });
       if (handle.running) running.add(handle);
     });
+    pending.add(result);
+    void result.then(() => pending.delete(result));
+    return result;
   };
 
   const stopAll = (): number => {
@@ -171,6 +175,7 @@ export const createCommandRunner = ({ cwd, print, now = Date.now, ...options }: 
   return {
     run,
     stopAll,
+    idle: async (): Promise<void> => { await Promise.all(pending); },
     get running() {
       return running.size;
     },
