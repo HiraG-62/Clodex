@@ -11,6 +11,12 @@ const SHELL_ARGS = ["-NoProfile", "-NonInteractive", "-Command"];
 export const UTF8_PREFIX = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; $OutputEncoding = [Text.Encoding]::UTF8; ";
 // -Command は native command の失敗を終了コード 1 に丸めるので、実際の終了コードを返す
 export const EXIT_CODE_SUFFIX = "\nif (-not $?) { if ($LASTEXITCODE) { exit $LASTEXITCODE } else { exit 1 } }";
+// command をそのまま埋め込むと、構文エラーが UTF-8 にする前に出て化ける。UTF-8 にした後で構文解析させる。
+// 終了コードの 1 行は scriptblock の中にも入れる（外だけでは dot-source の後の $? が常に真になる）。外の 1 行は構文エラーのとき
+const shellScript = (command: string): string => {
+  const encoded = Buffer.from(`${command}${EXIT_CODE_SUFFIX}`, "utf8").toString("base64");
+  return `${UTF8_PREFIX}. ([scriptblock]::Create([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'))))${EXIT_CODE_SUFFIX}`;
+};
 const ANSI_ESCAPE = /\u001b\[[0-9;?]*[A-Za-z]/g;
 const LINE_BREAK = /\r?\n/;
 const MS_PER_SECOND = 1000;
@@ -104,7 +110,7 @@ export const createCommandExecutor = ({
         finish({ code: null, stopped, error: error.message });
       };
       try {
-        child = spawnShell(SHELLS[index]!, [...SHELL_ARGS, `${UTF8_PREFIX}${command}${EXIT_CODE_SUFFIX}`], cwd);
+        child = spawnShell(SHELLS[index]!, [...SHELL_ARGS, shellScript(command)], cwd);
       } catch (error) {
         onError(error instanceof Error ? error : new Error(String(error)));
         return;

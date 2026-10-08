@@ -446,7 +446,7 @@ Project root の解決順:
 
 `!command`（docs/spikes/shell-command.md）:
 
-- project root で PowerShell（pwsh があれば pwsh、無ければ powershell.exe）の `-NoProfile -NonInteractive -Command` として実行する。出力が文字化けしないよう、先頭で出力の文字コードを UTF-8 にする。native command の終了コードを 1 に丸めないよう、後ろに `$LASTEXITCODE` を返す 1 行を足す
+- project root で PowerShell（pwsh があれば pwsh、無ければ powershell.exe）の `-NoProfile -NonInteractive -Command` として実行する。出力が文字化けしないよう、先頭で出力の文字コードを UTF-8 にする。native command の終了コードを 1 に丸めないよう、後ろに `$LASTEXITCODE` を返す 1 行を足す。command（と終了コードの 1 行）は base64 にして、UTF-8 にした後で `[scriptblock]::Create` で構文解析し dot-source する。そのまま埋め込むと、構文エラーが UTF-8 にする前に出て化けるため（docs/spikes/shell-command.md）
 - `$ <command>`、出力（stdout / stderr を行ごと。ANSI escape は取り除く）、`exit <code> (<秒>s)` を terminal と Web UI に表示する
 - 人間が見るためのもので、出力は Agent に送らない。Agent に見せたいときは `!>` を使う
 

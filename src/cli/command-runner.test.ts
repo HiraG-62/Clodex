@@ -89,7 +89,9 @@ describe("createCommandRunner", () => {
   it("project root で pwsh を UTF-8 指定付きで起動し、出力を行ごとに表示して終了コードを出す", async () => {
     const { runner, printed, spawned, processes, advance } = setup();
     const done = runner.run("git status");
-    expect(spawned).toEqual([{ file: "pwsh", args: ["-NoProfile", "-NonInteractive", "-Command", `${UTF8_PREFIX}git status${EXIT_CODE_SUFFIX}`], cwd: "C:\\app" }]);
+    const encoded = Buffer.from(`git status${EXIT_CODE_SUFFIX}`, "utf8").toString("base64");
+    const script = `${UTF8_PREFIX}. ([scriptblock]::Create([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'))))${EXIT_CODE_SUFFIX}`;
+    expect(spawned).toEqual([{ file: "pwsh", args: ["-NoProfile", "-NonInteractive", "-Command", script], cwd: "C:\\app" }]);
     expect(runner.running).toBe(1);
 
     const child = processes[0]!;
@@ -108,6 +110,19 @@ describe("createCommandRunner", () => {
 
     expect(printed).toEqual(["$ git status", "日本", "line 1", "line 2", "Write-Error: だめ", "tail", "exit 3 (1.5s)"]);
     expect(runner.running).toBe(0);
+  });
+
+  it("実際の PowerShell で、構文エラーを化けずに出し、native command の終了コードを返す", async () => {
+    const run = async (command: string) => {
+      const printed: string[] = [];
+      const runner = createCommandRunner({ cwd: process.cwd(), print: (line) => printed.push(line) });
+      return { result: await runner.run(command), output: printed.join("\n") };
+    };
+    const parseError = await run("! git push");
+    expect(parseError.result.code).toBe(1);
+    expect(parseError.output).toContain("! git push");
+    expect(parseError.output).not.toContain("�");
+    expect((await run("cmd /c exit 3")).result.code).toBe(3);
   });
 
   it("pwsh が無ければ powershell で実行し、以後も powershell を使う", async () => {
