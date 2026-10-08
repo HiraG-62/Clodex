@@ -14,6 +14,12 @@ export interface DesktopNotifyState {
   lastTurn?: { agent: AgentId; result: TurnResult };
 }
 
+export function backgroundPushPayload(kind: "finished" | "question" | undefined, body: string, messages: Messages):
+  Pick<DesktopNotification, "title" | "body"> | undefined {
+  if (!kind) return undefined;
+  return { title: messages[kind === "finished" ? "desktop.notify.finished" : "web.question.title"], body };
+}
+
 export function updateDesktopNotify(
   previous: DesktopNotifyState,
   item: FeedItem,

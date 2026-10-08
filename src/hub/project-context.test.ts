@@ -8,6 +8,25 @@ import { rebuildTimeline, applyFeedItem } from "../web/client/timeline.js";
 import { WebFeed } from "../web/web-feed.js";
 import { openProject } from "./project-context.js";
 
+it("別 project のターン終了を共有の通知先へ渡す", async () => {
+  const homeDir = mkdtempSync(join(tmpdir(), "clodex-other-project-"));
+  const projectRoot = join(homeDir, "other-project");
+  mkdirSync(projectRoot);
+  const notify = vi.fn();
+  const context = await openProject({
+    projectRoot, homeDir, args: { models: {}, resume: false, web: false, serve: false }, language: "ja",
+    printTerminal: () => {}, notify, displayMode: () => "normal", isCurrent: () => false,
+    modelCatalog: EMPTY_MODEL_CATALOG, registerCoordinator: () => () => {},
+    createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") }),
+  });
+  try {
+    context.workspace.current.bus.publish({ kind: "agent", agent: "claude", event: { type: "turn", result: { status: "completed", text: "完了" } } });
+    expect(notify).toHaveBeenCalledWith(expect.stringMatching(/^other-project · /), "info", "finished");
+    context.workspace.current.bus.publish({ kind: "question", id: "q1", agent: "codex", questions: [{ question: "方針は", options: [{ label: "A" }] }] });
+    expect(notify).toHaveBeenCalledWith(expect.stringMatching(/^other-project · /), "info", "question");
+  } finally { await context.close(); }
+});
+
 it("言語変更で session を作り直さず、次の session の system prompt に反映する", async () => {
   const homeDir = mkdtempSync(join(tmpdir(), "clodex-language-"));
   const projectRoot = join(homeDir, "project");

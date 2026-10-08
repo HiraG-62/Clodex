@@ -19,6 +19,7 @@ interface FakeRuntime extends ConversationRuntime {
 }
 
 const setup = (worktree: WorktreeResult = { ok: true, worktree: { workDir: "C:\\dev\\app-wt", branch: "clodex/wt" } }) => {
+  let currentProject = true;
   const history = new ConversationHistory(join(mkdtempSync(join(tmpdir(), "clodex-ws-")), "state.json"), { resumeLatest: false });
   const created: FakeRuntime[] = [];
   const createRuntime = async (conversation: Conversation): Promise<FakeRuntime> => {
@@ -35,13 +36,44 @@ const setup = (worktree: WorktreeResult = { ok: true, worktree: { workDir: "C:\\
     return runtime;
   };
   const notify = vi.fn();
-  const workspace = new Workspace({ notify, history, projectRoot: ROOT, createRuntime, createWorktree: async () => worktree });
+  const workspace = new Workspace({ notify, history, projectRoot: ROOT, isCurrentProject: () => currentProject,
+    createRuntime, createWorktree: async () => worktree });
   const seen: Array<{ conversationId: string; event: CoordinatorEvent; current: boolean }> = [];
   workspace.onEvent((runtime, event, current) => seen.push({ conversationId: runtime.conversationId, event, current }));
-  return { history, workspace, created, seen, notify };
+  return { history, workspace, created, seen, notify, setCurrentProject: (value: boolean) => { currentProject = value; } };
 };
 
 describe("Workspace", () => {
+  it("今の project の今の会話のターン終了は通知しない", async () => {
+    const { workspace, notify } = setup();
+    await workspace.init();
+    workspace.current.bus.publish({ kind: "agent", agent: "claude", event: { type: "turn", result: { status: "completed", text: "ok" } } });
+    workspace.current.bus.publish({ kind: "question", id: "q1", agent: "claude", questions: [{ question: "方針は", options: [{ label: "A" }] }] });
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("ほかの project の今の会話のターン終了は project 名付きで通知する", async () => {
+    const { workspace, notify, setCurrentProject } = setup();
+    await workspace.init();
+    setCurrentProject(false);
+    workspace.current.bus.publish({ kind: "agent", agent: "codex", event: { type: "turn", result: { status: "completed", text: "ok" } } });
+    expect(notify).toHaveBeenCalledWith(expect.stringMatching(/^app · /), "info", "finished");
+  });
+  it("今の project の裏の会話の質問を通知する", async () => {
+    const { workspace, created, notify } = setup();
+    await workspace.init();
+    await workspace.startNew();
+    created[0]!.bus.publish({ kind: "question", id: "q1", agent: "codex", questions: [{ question: "方針は", options: [{ label: "A" }] }] });
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining("codex"), "info", "question");
+    expect(notify.mock.lastCall?.[0]).not.toMatch(/^app · /);
+  });
+  it("ほかの project の質問を project 名付きで通知する", async () => {
+    const { workspace, notify, setCurrentProject } = setup();
+    await workspace.init();
+    setCurrentProject(false);
+    workspace.current.bus.publish({ kind: "question", id: "q1", agent: "claude", questions: [{ question: "方針は", options: [{ label: "A" }] }] });
+    expect(notify).toHaveBeenCalledWith(expect.stringMatching(/^app · /), "info", "question");
+  });
   it("起動時に今の会話の runtime を作り、会話の切り替えでは前の会話の Agent を止めない", async () => {
     const { history, workspace, created } = setup();
     await workspace.init();
@@ -82,9 +114,10 @@ describe("Workspace", () => {
     await workspace.startNew();
     created[0]!.bus.publish({ kind: "agent", agent: "codex", event: { type: "turn", result: { status: "completed", text: "ok" } } });
     expect(seen.some((s) => s.event.kind === "notice")).toBe(false);
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining("裏で進める作業"), "info");
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining("裏で進める作業"), "info", "finished");
+    expect(notify.mock.lastCall?.[0]).not.toMatch(/^app · /);
     created[0]!.bus.publish({ kind: "agent", agent: "codex", event: { type: "turn", result: { status: "failed", text: "" } } });
-    expect(notify).toHaveBeenLastCalledWith(expect.any(String), "warn");
+    expect(notify).toHaveBeenLastCalledWith(expect.any(String), "warn", "finished");
     // 裏の会話の event も current: false として届く
     expect(seen.some((s) => s.conversationId === created[0]!.conversationId && !s.current)).toBe(true);
   });

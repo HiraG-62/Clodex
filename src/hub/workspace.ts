@@ -2,6 +2,7 @@
 // 人が見ている会話（今の会話）は 1 つ。会話を切り替えても、前の会話の Agent は止めない
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import { basename } from "node:path";
 import type { Coordinator } from "../coordinator/coordinator.js";
 import type { RecoveryState, ConversationRecovery } from "../project/recovery-store.js";
 import type { CoordinatorEvent, EventBus } from "../coordinator/event-bus.js";
@@ -23,9 +24,11 @@ export interface ConversationRuntime {
 export type ConversationActivity = "busy" | "idle" | "stopped";
 
 export type RuntimeEventListener = (runtime: ConversationRuntime, event: CoordinatorEvent, current: boolean) => void;
+export type BackgroundNoticeKind = "finished" | "question";
 
 export interface WorkspaceOptions {
-  notify(text: string, level: "info" | "warn"): void;
+  notify(text: string, level: "info" | "warn", kind?: BackgroundNoticeKind): void;
+  isCurrentProject(): boolean;
   history: ConversationHistory;
   projectRoot: string;
   createRuntime: (conversation: Conversation) => Promise<ConversationRuntime>;
@@ -170,12 +173,24 @@ export class Workspace {
   private handleEvent(runtime: ConversationRuntime, event: CoordinatorEvent): void {
     const current = this.runtimes.get(this.options.history.currentId) === runtime;
     for (const listener of this.eventListeners) listener(runtime, event, current);
-    if (current || event.kind !== "agent" || event.event.type !== "turn") return;
-    // 裏で動いている会話のターンが終わったら、toast で知らせる
+    if (event.kind !== "question" && event.kind !== "agent") return;
+    if (event.kind === "agent" && event.event.type !== "turn") return;
+    const currentProject = this.options.isCurrentProject();
+    if (current && currentProject) return;
     const title = this.options.history.list().find((c) => c.id === runtime.conversationId)?.title ?? runtime.conversationId;
-    this.options.notify(
-      t("notice.background", { title: title.slice(0, NOTICE_TITLE_LENGTH), agent: event.agent, status: event.event.result.status }),
-      event.event.result.status === "completed" ? "info" : "warn",
-    );
+    let text: string;
+    let level: "info" | "warn";
+    let kind: BackgroundNoticeKind;
+    if (event.kind === "question") {
+      text = t("notice.backgroundQuestion", { title: title.slice(0, NOTICE_TITLE_LENGTH), agent: event.agent });
+      level = "info";
+      kind = "question";
+    } else if (event.kind === "agent" && event.event.type === "turn") {
+      text = t("notice.background", { title: title.slice(0, NOTICE_TITLE_LENGTH), agent: event.agent, status: event.event.result.status });
+      level = event.event.result.status === "completed" ? "info" : "warn";
+      kind = "finished";
+    } else return;
+    this.options.notify(currentProject ? text : t("notice.backgroundProject", { project: basename(this.options.projectRoot), text }),
+      level, kind);
   }
 }

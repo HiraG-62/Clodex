@@ -21,10 +21,11 @@ import { installRuntimeErrors } from "./hub/runtime-errors.js";
 import { clearHubLock, isHubAlive, readHubLock, writeHubLock } from "./hub/hub-lock.js";
 import { LIMIT_KEYS, LIMIT_NAMES } from "./coordinator/budget-manager.js";
 import { openProject, type ProjectContext } from "./hub/project-context.js";
+import type { BackgroundNoticeKind } from "./hub/workspace.js";
 import { selectProject } from "./hub/project-selection.js";
 import { MESSAGES, setLanguage, t } from "./i18n/i18n.js";
 import { PushService } from "./web/push.js";
-import { updateDesktopNotify, type DesktopNotification, type DesktopNotifyState } from "./web/client/desktop-notify.js";
+import { backgroundPushPayload, updateDesktopNotify, type DesktopNotification, type DesktopNotifyState } from "./web/client/desktop-notify.js";
 import { defaultLogPath, type DisplayMode } from "./logging/event-log.js";
 import { pruneLogs } from "./logging/log-retention.js";
 import { listProjectFiles } from "./project/project-files.js";
@@ -104,9 +105,14 @@ const main = async (): Promise<void> => {
     const context = hub.current;
     if (context) context.saveFeedItem(context.history.currentId, item);
   });
-  const notify = (text: string, level: "info" | "warn" = "info") => { feed.publishToast(text, level); printTerminal(text); };
   // スマホへの通知は、GUI の通知と同じ関数で Hub が決める（DESIGN.md §28 スマホへの通知（Web Push））
   const push = new PushService(join(homeDir, ".clodex", "push"));
+  const notify = (text: string, level: "info" | "warn" = "info", kind?: BackgroundNoticeKind) => {
+    feed.publishToast(text, level);
+    printTerminal(text);
+    const payload = backgroundPushPayload(kind, text, MESSAGES[language]);
+    if (payload) push.notify(payload).catch((error: unknown) => reportRuntimeError(errorMessage(error)));
+  };
   let pushState: DesktopNotifyState = { live: false, working: false };
   feed.subscribe((item) => {
     const update = updateDesktopNotify(pushState, item, MESSAGES[language]);

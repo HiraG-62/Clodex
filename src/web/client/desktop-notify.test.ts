@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "../../agents/agent-adapter.js";
 import { en, ja } from "../../i18n/messages.js";
 import type { FeedItem, WebState } from "../web-feed.js";
-import { updateDesktopNotify, type DesktopNotifyState } from "./desktop-notify.js";
+import { backgroundPushPayload, updateDesktopNotify, type DesktopNotifyState } from "./desktop-notify.js";
 
 const IDLE: WebState = { project: "app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } };
 const state = (pending = false): FeedItem => ({ type: "state", state: { ...IDLE, pendingInputs: pending ? [{ id: "1", agent: "claude", text: "次" }] : [] } });
@@ -11,6 +11,11 @@ const turn = (text = "完了\n詳細", status: "completed" | "failed" | "interru
 const notice: FeedItem = { type: "event", seq: 2, event: { kind: "notice", text: "利用枠", at: "now" } };
 
 describe("desktop-notify", () => {
+  it("裏の会話の通知種別に応じた Web Push の本文を返す", () => {
+    expect(backgroundPushPayload("finished", "完了", ja)).toEqual({ title: "Clodex · 作業終了", body: "完了" });
+    expect(backgroundPushPayload("question", "質問", ja)).toEqual({ title: "質問", body: "質問" });
+    expect(backgroundPushPayload(undefined, "通常通知", ja)).toBeUndefined();
+  });
   const session = () => {
     let current: DesktopNotifyState = { live: false, working: false };
     return (item: FeedItem) => {
