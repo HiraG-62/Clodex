@@ -20,6 +20,7 @@ import type { collectArtifacts as CollectArtifacts, displayPath as DisplayPath, 
 import type { MessageKey, Messages } from "../../i18n/messages.js";
 import type { chooseProjectPath as ChooseProjectPath } from "./project-picker.js";
 import type { DesktopNotification, DesktopNotifyState, updateDesktopNotify as UpdateDesktopNotify } from "./desktop-notify.js";
+import type { settingsSections as SettingsSections, SettingsItem, SettingsSectionId } from "./settings-sections.js";
 
 export interface ClientDeps {
   layout: typeof WEB_LAYOUT;
@@ -47,11 +48,12 @@ export interface ClientDeps {
   messages: Messages;
   chooseProjectPath: typeof ChooseProjectPath;
   updateDesktopNotify: typeof UpdateDesktopNotify;
+  settingsSections: typeof SettingsSections;
   version: string;
 }
 
 export function clientMain({
-  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify,
+  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify, settingsSections,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -1266,6 +1268,7 @@ export function clientMain({
   const openSheet = (title: string, content: HTMLElement[]) => {
     if (sheet.hidden && document.activeElement instanceof HTMLElement) sheetReturnFocus = document.activeElement;
     sheet.classList.remove("mobile-pop", "add-pop");
+    sheet.classList.toggle("settings-sheet", sheetKind === "settings");
     $("#sheet-title").textContent = title;
     $("#sheet-body").replaceChildren(...content);
     // ファイルの表示は PC では広く使う
@@ -1700,7 +1703,17 @@ export function clientMain({
     const sendKeyChoice = choice("sendKey", t("web.settings.sendKey"), SEND_KEYS, sendKey,
       value => t(value === "enter" ? "web.settings.sendEnter" : "web.settings.sendCtrlEnter"),
       value => { sendKey = value; storage.set(SEND_KEY_KEY, value); });
-    openSheet(t("web.settings.title"), [sandbox, limits, language, ...(mobile.matches ? [] : [sendKeyChoice]), pushSection(), guiUpdateSection()]);
+    const items: Record<SettingsItem, HTMLElement> = { sandbox, limits, sendKey: sendKeyChoice, push: pushSection(), language, guiUpdate: guiUpdateSection() };
+    const headings: Record<SettingsSectionId, string> = { project: t("web.settings.project"), device: t("web.settings.device"), clodex: "Clodex" };
+    const groups = settingsSections({ mobile: mobile.matches, pushSupported, guiConnected: Boolean(gui) }).map(section => {
+      const group = el("section", `settings-group settings-${section.id}`);
+      group.append(el("h3", "settings-section-heading", headings[section.id]));
+      const card = el("div", "settings-card");
+      card.append(...section.items.map(item => items[item]));
+      group.append(card);
+      return group;
+    });
+    openSheet(t("web.settings.title"), groups);
     refreshOpenSheet();
   };
 
@@ -1725,7 +1738,6 @@ export function clientMain({
     void withPending(button, () => postJson("/api/gui/update", { action }));
   const guiUpdateSection = () => {
     const section = el("section", "setting gui-update");
-    section.append(el("div", "eyebrow", t("web.settings.app")));
     const row = el("div", "gui-update-row");
     const check = el("button", "btn gui-check", t("web.settings.checkUpdate")) as HTMLButtonElement;
     check.type = "button";
@@ -1798,7 +1810,11 @@ export function clientMain({
     return t(update.status === "checking" ? "web.settings.updateChecking" : update.status === "latest" ? "web.settings.updateLatest" : "web.settings.updateInstalling");
   };
   const refreshGuiUpdate = (body: HTMLElement) => {
-    const section = body.querySelector<HTMLElement>(".gui-update");
+    let section = body.querySelector<HTMLElement>(".gui-update");
+    if (!section && gui) {
+      section = guiUpdateSection();
+      body.querySelector(".settings-clodex .settings-card")?.append(section);
+    }
     if (!section) return;
     section.hidden = !gui;
     if (!gui) return;

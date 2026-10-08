@@ -1305,10 +1305,17 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
 - Agent の「設定」は、役割の編集・権限・model・effort と「この Agent だけ session を始め直す」（`/new <agent>`）をまとめたポップアップを開く。開くのは Agent カード（スマホは Agent のシート）の設定ボタンだけ。model / effort / 権限の表示は押せない（同じ操作の入り口を 2 つにしない）
 - テーマのボタンは押すたびに システム → ライト → ダーク と切り替える。アイコンは今のテーマ（モニター / 太陽 / 月）。選択はその端末のブラウザに保存する
 - 「設定」のポップアップには、画面のボタンでは変えられない Hub・project の設定を置く。送り先・作業と全文・テーマは置かない（それぞれのボタンで切り替える）
-  - **sandbox**（この project）: off / on の選択と、今の状態（セットアップ済みか）。選ぶと `/sandbox on|off` を送る。切り替えの間はトップのバーを出す
-  - **上限**（この project）: 4 つの上限（§14）を数値で変える。既定値と違う項目は分かるようにする。適用で `/limits <name> <n>`、「既定に戻す」で `/limits reset` を送る
-  - **言語**: 日本語 / English。選ぶと `/language <ja|en>` を送る
-  - **送信キー**（この端末）: 「Enter で送信」/「Ctrl+Enter で送信」。端末の localStorage に保存し、Hub には送らない。スマホでは出さない
+- 設定は効く範囲で 3 つの節に分け、この順に並べる。節には見出しを付け、節の間は区切る。項目のない節は見出しごと出さない
+  - **プロジェクト**: sandbox・上限
+    - **sandbox**: off / on の選択と、今の状態（セットアップ済みか）。選ぶと `/sandbox on|off` を送る。切り替えの間はトップのバーを出す
+    - **上限**: 4 つの上限（§14）を数値で変える。既定値と違う項目は分かるようにする。適用で `/limits <name> <n>`、「既定に戻す」で `/limits reset` を送る
+  - **端末**: 送信キー・通知
+    - **送信キー**: 「Enter で送信」/「Ctrl+Enter で送信」。端末の localStorage に保存し、Hub には送らない。スマホでは出さない
+    - **通知**: 下記 Web Push（§28）
+  - **Clodex**: 言語・GUI の版と更新
+    - **言語**: 日本語 / English。選ぶと `/language <ja|en>` を送る
+    - **GUI の版と更新**: 下記 GUI の自動更新（§28）。GUI につながっていないときは出さない
+- 各項目は 1 行にまとめ、PC では左に名前・右に操作を置く。狭い画面（スマホ）では名前の下に操作を置く。補足（sandbox の状態、上限の既定値）は名前の下に小さく出す。上限は 4 行を名前・数値・適用・既定値の列で揃え、「既定に戻す」「無制限」は表の下の右に置く
 - ポップアップ（シート）は、スマホではつまみ付きで下から開き（下へのスワイプでも閉じる。高さは `80dvh` まで）、PC では画面中央のモーダルとして開く（背景を暗くし、背景のクリックか Esc で閉じる）
 - 会話の一覧の各項目の「⋯」から、名前の変更（今の会話のみ）・ピン止め・削除（今の会話以外）を行う
 
@@ -2107,7 +2114,7 @@ D3 の詳細（Tauri GUI。Windows）:
   - API（token で認証）: `GET /api/push/key`（公開鍵）、`POST /api/push/subscribe`（購読。`id` を返す）、`POST /api/push/unsubscribe`（`{ id }`）、`POST /api/push/visibility`（`{ id, visible }`）。Service Worker の `/sw.js` は秘密を含まないので token なしで返す
   - 見えているか: 購読した端末の画面は `/events?push=<id>&visible=<0|1>` でつなぎ、`visibilitychange` で `/api/push/visibility` を送る。Hub は id ごとに、つながっていて見えている接続があれば送らない。接続が切れたら見えていない扱い
   - Service Worker: `push` で通知を出す（タイトルと本文）。通知を押したら開いている画面を前に出し、無ければ `/` を開く
-  - 設定画面の「通知」: `off` / `on` のトグル（`on` で権限を求めて購読、`off` で解除）。Push を使えない画面（`PushManager` が無い。iOS の Safari でホーム画面に追加していないときなど）と GUI の中の画面では出さない。権限が拒否されたり失敗したりしたら toast を出して `off` のままにする
+  - 設定画面の「端末」の節の「通知」: `off` / `on` のトグル（`on` で権限を求めて購読、`off` で解除）。Push を使えない画面（`PushManager` が無い。iOS の Safari でホーム画面に追加していないときなど）と GUI の中の画面では出さない。権限が拒否されたり失敗したりしたら toast を出して `off` のままにする
 - Tauri のメニューの文言は GUI（Rust）の定数に置く（Web UI の文言カタログの外）
 - ウィンドウの位置・大きさ・最大化の状態を覚え、次に起動したときに戻す（`tauri-plugin-window-state`）。トレイの「終了」・ウィンドウを隠したときに保存する。保存した位置の画面が無くなっていれば、見える位置に戻す
 
@@ -2137,7 +2144,7 @@ GUI の自動更新（D3 の後）:
 - Web UI の設定からの更新: スマホ等の Web UI からも、GUI に確認と入れ替えをさせる。Hub が中継する
   - GUI の中の Web UI（`window.__TAURI__` がある画面）は `/events?gui=<GUI の版>`（`core:app:allow-version` で取得）でつなぐ。Hub はこの接続を GUI として覚える（複数あれば最後のもの。切れたら外す）
   - Hub は GUI の有無と更新の状態を feed の `{ type: "gui", gui: { version, update } | null }` で全画面に送る（接続時と変わったとき）。`update` は `checking` / `latest` / `available`（`version`）/ `installing` / `error`（`message`）。GUI がつながっていなければ状態は消す
-  - 設定画面の「Clodex」の節に、GUI の版と「更新を確認」を出す。GUI がつながっていないときは節ごと出さない。状態は「確認中…」「最新版」「<version> あり」と「更新」ボタン、「更新中…」、「失敗: <message>」。「更新」は確認（「Clodex <version> に更新しますか？作業中のターンは止まります」）の後に送る
+  - 設定画面の「Clodex」の節に、GUI の版と「更新を確認」を出す。GUI がつながっていないときはこの項目を出さない。状態は「確認中…」「最新版」「<version> あり」と「更新」ボタン、「更新中…」、「失敗: <message>」。「更新」は確認（「Clodex <version> に更新しますか？作業中のターンは止まります」）の後に送る
   - 画面は `POST /api/gui/update`（`{ action: "check" | "install" }`）を送る。Hub は状態を `checking` / `installing` にし、GUI の接続へ `{ type: "gui_command", action }` を送る。GUI が無ければ 409
   - GUI の画面は Tauri command（`check_update` / `install_update`）を呼び、結果を `POST /api/gui/status` で Hub に返す。`install_update` はダイアログを出さずに入れ替える（上の入れ替えと同じく Hub を止めてからインストーラーを起動する）。入れ替え後に GUI と Hub が起動し直し、各画面は再接続で新しい版の画面を読み込む
   - Tauri 2.11.1 以降は、外部 URL の画面（Hub の `http://127.0.0.1`）から app の command を呼ぶには ACL の許可が要る。`build.rs` の `AppManifest` に command を並べ、capability `main` で `allow-check-update` / `allow-install-update` を許可する（`check_update` は新しい版の版か `null` を返す）
