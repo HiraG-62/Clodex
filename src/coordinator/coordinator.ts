@@ -8,6 +8,7 @@ import {
 import { resolveSpecFile } from "../project/spec-file.js";
 import { changedSections } from "../context/spec-sections.js";
 import { buildEnvelope } from "../context/context-resolver.js";
+import { CONTEXT_INSTRUCTION } from "../context/conversation-instruction.js";
 import { t } from "../i18n/i18n.js";
 import { languageReminder, type Language } from "../context/language.js";
 import { createMessage, type AgentMessage, type CreateMessageResult } from "../protocol/messages.js";
@@ -125,7 +126,10 @@ export class Coordinator {
     for (const id of AGENT_IDS) {
       for (const item of state.queue[id]) {
         if (item.kind === "input") {
-          void this.mailboxes[id].enqueue(item.text, { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, images: item.images, suffix: this.reminder });
+          void this.mailboxes[id].enqueue(item.text, {
+            inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, images: item.images,
+            suffix: this.inputSuffix(item.context), ...(item.context ? { context: true } : {}),
+          });
         } else {
           this.budget.restore(item.message);
           void this.mailboxes[id].enqueue(buildEnvelope(item.message, this.language), { message: item.message });
@@ -269,19 +273,26 @@ export class Coordinator {
   }
 
   // @agent!: 実行中なら steer し、そうでなければ通常の送信（DESIGN.md §28 v0.3 C）
-  async steerOrSend(id: AgentId, text: string): Promise<"steered" | "queued"> {
+  async steerOrSend(id: AgentId, text: string, context = false): Promise<"steered" | "queued"> {
     const steerId = randomUUID();
-    if (await this.options.agents[id].steer(`${text}${this.reminder}`, steerId)) {
+    if (await this.options.agents[id].steer(`${text}${this.inputSuffix(context)}`, steerId)) {
       this.options.bus.publish({ kind: "human", agent: id, text, steer: true, steerId });
       return "steered";
     }
-    void this.sendToAgent(id, text);
+    void this.sendToAgent(id, text, [], context);
     return "queued";
   }
 
-  sendToAgent(id: AgentId, text: string, images: readonly string[] = []): Promise<TurnResult> {
+  sendToAgent(id: AgentId, text: string, images: readonly string[] = [], context = false): Promise<TurnResult> {
     this.options.bus.publish({ kind: "human", agent: id, text });
-    return this.mailboxes[id].enqueue(text, { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, images, suffix: this.reminder });
+    return this.mailboxes[id].enqueue(text, {
+      inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, images,
+      suffix: this.inputSuffix(context), ...(context ? { context: true } : {}),
+    });
+  }
+
+  private inputSuffix(context?: boolean): string {
+    return `${context ? `\n\n${CONTEXT_INSTRUCTION}` : ""}${this.reminder}`;
   }
 
   private get language(): Language | undefined {

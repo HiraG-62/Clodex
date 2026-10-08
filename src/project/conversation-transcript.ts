@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { basename, dirname, extname, join } from "node:path";
 import type { AgentId } from "../agents/agent-adapter.js";
 import type { CoordinatorEvent } from "../coordinator/event-bus.js";
+import { withoutContextInstruction } from "../context/conversation-instruction.js";
 import type { HistoryItem } from "../web/web-feed.js";
 
 const TRANSCRIPT_EXT = ".jsonl";
@@ -32,7 +33,7 @@ const entryOf = (event: CoordinatorEvent): ConversationEntry | undefined => {
   const { at } = event;
   switch (event.kind) {
     case "human":
-      return event.text.trim() ? { at, kind: "input", from: "human", to: event.agent, body: event.text } : undefined;
+      return event.text.trim() ? { at, kind: "input", from: "human", to: event.agent, body: withoutContextInstruction(event.text) } : undefined;
     case "agent":
       return event.event.type === "turn" && event.event.result.status === "completed" && event.event.result.text.trim()
         ? { at, kind: "reply", from: event.agent, body: event.event.result.text }
@@ -82,7 +83,9 @@ export class ConversationTranscript {
     const entries = readFileSync(this.filePath, "utf8").split("\n").flatMap((line) => {
       if (!line.trim()) return [];
       try {
-        return [JSON.parse(line) as ConversationEntry];
+        const entry = JSON.parse(line) as ConversationEntry;
+        if (typeof entry.body !== "string") return [];
+        return [{ ...entry, body: entry.kind === "input" ? withoutContextInstruction(entry.body) : entry.body }];
       } catch {
         return [];
       }

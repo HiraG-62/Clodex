@@ -5,6 +5,7 @@ import { expect, it } from "vitest";
 import type { CoordinatorEvent, CoordinatorEventInput } from "../coordinator/event-bus.js";
 import type { HistoryItem } from "../web/web-feed.js";
 import { ConversationTranscript, transcriptPath } from "./conversation-transcript.js";
+import { CONTEXT_INSTRUCTION } from "../context/conversation-instruction.js";
 
 const at = "2026-10-08T00:00:00.000Z";
 const event = (item: CoordinatorEventInput): CoordinatorEvent => ({ ...item, at });
@@ -64,4 +65,10 @@ it("会話 ID ごとに保存先を分け、途中の作業と出力は初期履
   second.seed([{ type: "event", seq: 1, event: event({ kind: "human", agent: "codex", text: "会話 2" }) }]);
   expect(first.page().entries.map((entry) => entry.body)).toEqual(["会話 1"]);
   expect(second.page().entries.map((entry) => entry.body)).toEqual(["会話 2"]);
+});
+
+it("以前に保存した /context の内部指示を会話参照から除く", () => {
+  const transcript = new ConversationTranscript(path());
+  transcript.append(event({ kind: "human", agent: "codex", text: `依頼\n\n${CONTEXT_INSTRUCTION}` }));
+  expect(transcript.page().entries[0]?.body).toBe("依頼");
 });

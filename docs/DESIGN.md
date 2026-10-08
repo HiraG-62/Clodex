@@ -444,7 +444,7 @@ Project root の解決順:
 - 入力の候補（`@` の後）と強調表示では、`all` を Agent 名と同じに扱う。Web UI の送り先の切り替えには足さない
 - スラッシュコマンドは 1 行で書く。2 行目以降がある入力は invalid として使い方を表示し、Agent には送らない
 - コマンドの一覧は `cli/commands.ts` の 1 か所にまとめ、`/help`・Web UI の候補・CLI の Tab 補完で共有する
-- `/context` は本文のある依頼にだけ使う。省略時は primary、`@claude` / `@codex` / `@all` の後にも置ける。Web UI は選択中の送り先を維持する。送信本文に `read_conversation` を使う指示を添え、同じ会話の本文を参照させる（§12）。通常の入力と同じく送信・steer・ファイル参照を処理する
+- `/context` は本文のある依頼にだけ使う。省略時は primary、`@claude` / `@codex` / `@all` の後にも置ける。Web UI は選択中の送り先を維持し、入力が `@<path>` で始まっても宛先を付ける。`read_conversation` を使う指示は配送時だけ Agent に添え、画面・保存済みの会話本文・配送待ちの表示には出さない（§12）。修正前に保存された指示付き入力も、表示と会話参照では末尾の内部指示を除く。通常の入力と同じく送信・steer・ファイル参照を処理する
 
 `!command`（docs/spikes/shell-command.md）:
 

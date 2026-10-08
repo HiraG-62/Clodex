@@ -10,7 +10,7 @@ const messageSchema = z.object(sendMessageShape).extend({
   id: z.string().min(1), from: z.enum(AGENT_IDS), repository: z.string().min(1), createdAt: z.string(),
 });
 const itemSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("input"), text: z.string(), images: z.array(z.string()).optional() }),
+  z.strictObject({ kind: z.literal("input"), text: z.string(), images: z.array(z.string()).optional(), context: z.literal(true).optional() }),
   z.strictObject({ kind: z.literal("message"), message: messageSchema }),
 ]);
 const conversationSchema = z.strictObject({

@@ -12,7 +12,8 @@ interface QueueItem {
   message: AgentMessage | undefined; // 人間の入力・compact なら undefined
   inputId?: string; // 人間の入力の ID（取り消しに使う）
   images?: readonly string[]; // 人間の入力に添えた画像（実パス）
-  suffix?: string; // 配送するときだけ本文の末尾に足す（言語の 1 行。送信待ちの表示には出さない）
+  suffix?: string; // 配送するときだけ本文の末尾に足す（送信待ちの表示には出さない）
+  context?: true;
   resolve: (result: TurnResult) => void;
 }
 
@@ -21,6 +22,7 @@ export interface EnqueueOptions {
   inputId?: string;
   images?: readonly string[];
   suffix?: string;
+  context?: true;
 }
 
 // 上限で止まったときに配送を止めて待つ（DESIGN.md 上限での停止と自動再開）
@@ -51,10 +53,10 @@ export class AgentMailbox {
   ) {}
 
   // 失敗しても reject せず failed の TurnResult を返す（呼び出し側は待たずに投げてよい）
-  enqueue(text: string, { message, inputId, images, suffix }: EnqueueOptions = {}): Promise<TurnResult> {
+  enqueue(text: string, { message, inputId, images, suffix, context }: EnqueueOptions = {}): Promise<TurnResult> {
     if (this.closed) return Promise.resolve(CLOSED_RESULT);
     return this.push({
-      kind: "send", text, message, ...(inputId ? { inputId } : {}), ...(images?.length ? { images } : {}), ...(suffix ? { suffix } : {}),
+      kind: "send", text, message, ...(inputId ? { inputId } : {}), ...(images?.length ? { images } : {}), ...(suffix ? { suffix } : {}), ...(context ? { context } : {}),
     });
   }
 
@@ -66,7 +68,7 @@ export class AgentMailbox {
   get recoveryQueue(): RecoveryItem[] {
     return this.queue.flatMap((item): RecoveryItem[] => {
       if (item.message) return [{ kind: "message", message: item.message }];
-      if (item.inputId) return [{ kind: "input", text: item.text, ...(item.images ? { images: [...item.images] } : {}) }];
+      if (item.inputId) return [{ kind: "input", text: item.text, ...(item.images ? { images: [...item.images] } : {}), ...(item.context ? { context: true } : {}) }];
       return [];
     });
   }

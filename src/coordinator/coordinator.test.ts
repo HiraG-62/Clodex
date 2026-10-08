@@ -187,6 +187,32 @@ describe("Coordinator", () => {
     expect(events).toContainEqual({ kind: "human", agent: "codex", text: "review this", at: NOW });
   });
 
+  it("/context の指示は Agent にだけ送り、会話の event と配送待ちには出さない", async () => {
+    const { codex, coordinator, events } = setup();
+    void coordinator.sendToAgent("codex", "作業中");
+    await flush();
+    void coordinator.sendToAgent("codex", "画像を見て", [], true);
+    expect(events).toContainEqual({ kind: "human", agent: "codex", text: "画像を見て", at: NOW });
+    expect(events.filter((event) => event.kind === "human").every((event) => !event.text.includes("read_conversation"))).toBe(true);
+    expect(coordinator.pendingInputs()).toContainEqual(expect.objectContaining({ agent: "codex", text: "画像を見て" }));
+    expect(coordinator.recoveryState().queue.codex).toContainEqual({ kind: "input", text: "画像を見て", context: true });
+    codex.completeTurn();
+    await flush();
+    expect(codex.sent[1]).toContain("read_conversation");
+    codex.completeTurn();
+  });
+
+  it("/context の配送待ちを復旧しても指示を Agent にだけ添える", async () => {
+    const { codex, coordinator } = setup();
+    coordinator.restore({ interrupted: [], queue: {
+      claude: [], codex: [{ kind: "input", text: "前の依頼", context: true }],
+    } });
+    await flush();
+    expect(codex.sent[0]).toContain("前の依頼");
+    expect(codex.sent[0]).toContain("read_conversation");
+    codex.completeTurn();
+  });
+
   it("人間の入力も同じ mailbox で直列に送る", async () => {
     const { codex, coordinator } = setup();
     const human = coordinator.sendToAgent("codex", "human task");
@@ -665,6 +691,16 @@ describe("Coordinator の取り消しと割り込み", () => {
 });
 
 describe("Coordinator の割り込み（steer）", () => {
+  it("/context の割り込みでは内部指示を Agent にだけ渡す", async () => {
+    const { codex, events, coordinator } = setup();
+    void coordinator.sendToAgent("codex", "作業中");
+    await flush();
+    await coordinator.steerOrSend("codex", "先ほどの会話を確認", true);
+    expect(codex.steered[0]).toContain("read_conversation");
+    expect(events).toContainEqual(expect.objectContaining({ kind: "human", agent: "codex", text: "先ほどの会話を確認", steer: true }));
+    codex.completeTurn();
+  });
+
   it("人間の @agent! は実行中なら steer し、実行中でなければ通常の送信にする", async () => {
     const { codex, events, coordinator } = setup();
     await expect(coordinator.steerOrSend("codex", "first")).resolves.toBe("queued");

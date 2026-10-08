@@ -2,6 +2,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import type { AgentId } from "../agents/agent-adapter.js";
+import { withoutContextInstruction } from "../context/conversation-instruction.js";
 import { DEFAULT_RECENT_ITEMS, type HistoryItem } from "./web-feed.js";
 
 const FEED_EXT = ".jsonl";
@@ -21,6 +22,9 @@ const parseLine = (line: string): HistoryItem | undefined => {
     if (!isObject(item)) return undefined;
     if (item.type === "output" && typeof item.text === "string") return item as HistoryItem;
     if (item.type === "event" && isObject(item.event) && EVENT_KINDS.has(item.event.kind)) {
+      if (item.event.kind === "human" && typeof item.event.text === "string") {
+        item.event.text = withoutContextInstruction(item.event.text);
+      }
       if (item.event.kind === "agent" && (
         !isObject(item.event.event) || typeof item.event.event.type !== "string"
         || (item.event.agent !== "claude" && item.event.agent !== "codex") || typeof item.event.at !== "string"

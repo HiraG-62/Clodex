@@ -14,7 +14,7 @@ describe("recovery store", () => {
   it("配送待ちと作業中の会話だけを保存し、読み直す", () => {
     const { home, project, path } = setup();
     const data = { current: "c1", conversations: {
-      c1: { interrupted: ["claude" as const], queue: { claude: [{ kind: "input" as const, text: "次", images: ["shot.png"] }], codex: [] } },
+      c1: { interrupted: ["claude" as const], queue: { claude: [{ kind: "input" as const, text: "次", images: ["shot.png"], context: true as const }], codex: [] } },
       c2: { interrupted: [], queue: { claude: [], codex: [] } },
     } };
     saveRecovery(home, project, data);

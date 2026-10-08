@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FeedStore, feedDirPath } from "./feed-store.js";
+import { CONTEXT_INSTRUCTION } from "../context/conversation-instruction.js";
 import type { HistoryItem } from "./web-feed.js";
 
 const makeDir = () => join(mkdtempSync(join(tmpdir(), "clodex-feed-")), "nested.feed");
@@ -15,6 +16,13 @@ describe("feedDirPath", () => {
 });
 
 describe("FeedStore", () => {
+  it("以前に保存した /context の内部指示を表示から除く", () => {
+    const store = new FeedStore(makeDir());
+    store.append("a", { type: "event", seq: 1, event: {
+      kind: "human", agent: "codex", at: "2026-10-08T00:00:00Z", text: `依頼\n\n${CONTEXT_INSTRUCTION}`,
+    } });
+    expect(store.load("a")).toMatchObject([{ event: { text: "依頼" } }]);
+  });
   it("command の識別情報とフィールドなしの旧 output をそのまま保存する", () => {
     const store = new FeedStore(makeDir());
     const items: HistoryItem[] = [

@@ -119,15 +119,18 @@ class FakeCoordinator implements ShellCoordinator {
   }
 
   readonly steeredInputs: Array<{ agent: AgentId; text: string }> = [];
-  async steerOrSend(agent: AgentId, text: string): Promise<"steered" | "queued"> {
+  async steerOrSend(agent: AgentId, text: string, context = false): Promise<"steered" | "queued"> {
     this.steeredInputs.push({ agent, text });
+    this.contexts.push(context);
     return "steered";
   }
 
   readonly images: Array<readonly string[] | undefined> = [];
-  sendToAgent(agent: AgentId, text: string, images?: readonly string[]): Promise<TurnResult> {
+  readonly contexts: boolean[] = [];
+  sendToAgent(agent: AgentId, text: string, images?: readonly string[], context = false): Promise<TurnResult> {
     this.sent.push({ agent, text });
     this.images.push(images);
+    this.contexts.push(context);
     return new Promise(() => {}); // ターン完了を待たずに次の入力を受け付けることを確認する
   }
 
@@ -347,9 +350,8 @@ describe("createShell", () => {
     const { coordinator, shell } = setup();
     await shell.handleLine("@codex /context 過去の判断に沿って回答して");
     expect(coordinator.sent).toHaveLength(1);
-    expect(coordinator.sent[0]).toMatchObject({ agent: "codex" });
-    expect(coordinator.sent[0]?.text).toContain("read_conversation");
-    expect(coordinator.sent[0]?.text).toContain("過去の判断に沿って回答して");
+    expect(coordinator.sent[0]).toEqual({ agent: "codex", text: "過去の判断に沿って回答して" });
+    expect(coordinator.contexts).toEqual([true]);
   });
 
   it("@path の画像は実パスで Agent に画像として渡す", async () => {
