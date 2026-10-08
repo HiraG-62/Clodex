@@ -73,6 +73,7 @@ it("役割あり・なしで設計書を先に書いて spec に指定する方�
     expect(text).toContain("spec");
     expect(text).toMatch(/body.*summary/);
     expect(text).toContain("a few lines");
+    expect(text).toContain("set spec on the RESULT");
   }
 });
 

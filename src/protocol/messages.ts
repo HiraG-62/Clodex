@@ -32,7 +32,8 @@ export const sendMessageShape = {
   replyTo: z.string().min(1).optional().describe("ID of the message this replies to"),
   commit: z.string().min(1).optional().describe("Commit hash to look at"),
   spec: z.string().min(1).optional().describe(
-    "Path (relative to the project root) of the design document for this request. Write the design there first; keep body short",
+    "Path (relative to the project root) of the design document for this request. Write the design there first; keep body short. " +
+    "On a RESULT, the design document you updated to answer a QUESTION",
   ),
   files: z.array(z.string().min(1)).optional().describe("File paths relative to the project root"),
   status: z.enum(RESULT_STATUSES).optional().describe("RESULT only"),
@@ -43,10 +44,10 @@ export const sendMessageShape = {
   ),
 };
 
-const TYPES_ALLOWING_SPEC = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST"]);
+const TYPES_ALLOWING_SPEC = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST", "RESULT"]);
 const sendMessageSchema = z.object(sendMessageShape).superRefine((input, ctx) => {
   if (input.spec !== undefined && !TYPES_ALLOWING_SPEC.has(input.type)) {
-    ctx.addIssue({ code: "custom", path: ["spec"], message: "allowed only for DELEGATE or REVIEW_REQUEST" });
+    ctx.addIssue({ code: "custom", path: ["spec"], message: "allowed only for DELEGATE, REVIEW_REQUEST or RESULT" });
   }
 });
 

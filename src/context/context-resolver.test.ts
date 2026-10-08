@@ -88,3 +88,13 @@ it("spec は Commit と Files の間、指示は本文と返信方法の間に�
   expect(buildEnvelope(base)).not.toContain("Spec:");
   expect(buildEnvelope(base)).not.toContain(instruction);
 });
+
+it("RESULT の spec には、更新した設計書に続きの作業で従う指示を添える", () => {
+  const text = buildEnvelope({ ...base, type: "RESULT", replyTo: "msg_q", spec: "docs/specs/T.md" });
+  expect(text).toContain("Spec: docs/specs/T.md");
+  expect(text).toContain(`${base.body}
+
+The spec was updated for this answer. Read it and follow it in your remaining work.
+No reply is required.`);
+  expect(text).not.toContain("Read the spec before you start");
+});

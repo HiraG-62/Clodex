@@ -768,7 +768,7 @@ Agent が指定するフィールド:
 | `replyTo` | RESULT / ACK で必須 | 返信元の message ID |
 | `commit` | | 参照する commit hash |
 | `files` | | 参照する file path（project root からの相対パス） |
-| `spec` | | `DELEGATE` / `REVIEW_REQUEST` のみ。依頼の仕様を書いた設計書の path（project root からの相対パス）。送信時に通常ファイルとして存在しなければ拒否する（project root の外も拒否） |
+| `spec` | | `DELEGATE` / `REVIEW_REQUEST` / `RESULT` のみ。依頼の仕様を書いた設計書の path（project root からの相対パス）。`RESULT` では、`QUESTION` に答えるために更新した設計書を渡す。送信時に通常ファイルとして存在しなければ拒否する（project root の外も拒否） |
 | `status` | | RESULT のみ。`approved` / `changes_requested` / `done` / `failed` |
 | `issues` | | RESULT / ISSUE のみ。`{ file, line?, severity, summary }` の配列。severity は `low` / `medium` / `high` / `critical` |
 
@@ -917,7 +917,7 @@ Write body in Markdown: a one-line summary first, then bullet points. Do not wri
 - 末尾に、人が読む文章の言語（下記 Language）を 1 行で添える。長い会話でも依頼のたびに思い出させる
 - `RESULT` / `ISSUE` には返信を求めない（返信の連鎖を作らない）
 - 会話履歴は含めない。Agent B は必要に応じて Repository を読む
-- `spec` があれば `Spec:` 行と「作業の前に読んで従う。コードと食い違う・曖昧なら推測せず QUESTION で聞く」の 1 行を添える
+- `spec` があれば `Spec:` 行と「作業の前に読んで従う。コードと食い違う・曖昧なら推測せず QUESTION で聞く」の 1 行を添える。`RESULT` では「回答に合わせて更新した設計書を読み、続きの作業で従う」の 1 行にする
 
 ## Spec（設計書）
 
@@ -925,6 +925,7 @@ Write body in Markdown: a one-line summary first, then bullet points. Do not wri
 
 - 既定の置き場所は `docs/specs/<taskId>.md`。project の CLAUDE.md / AGENTS.md や役割で別の場所を指示してもよい
 - `DELEGATE` / `REVIEW_REQUEST` は設計書を書いて `spec` を付けるのを基本にする。body だけで済ませるのは、数行で説明しきれる簡単な依頼だけ
+- `QUESTION` に答えるために設計書を直したら、`RESULT` の `spec` で渡す。`files` に載せるより、読んで従うものだと確実に伝わる
 - 設計書の作成・更新・コミットは送信元の Agent が行う。Coordinator は存在を確かめるだけで中身は見ない
 - 役割の定型文（§13 Roles）でこの方針を伝える
 
@@ -989,7 +990,7 @@ AGENTS.md → Codex
 - 役割の空文字は未設定として扱う（ひな形のままでも、役割が無いのと同じ）
 - UTF-8（BOM の有無は問わない。Windows PowerShell 5.1 は BOM 付きで書く）
 - 優先順位: 起動オプション > project の設定 > ユーザーの設定 > 既定値（primary: `claude`、roles: なし）
-- Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」「権限は人が `/permission` で変えるので、拒否されたらそう伝えること」「依頼を受けたら、作業に入る前に何をするかを 1〜2 文で書くこと」「`send_message` の body は Markdown で 1 行の要約 → 箇条書きで書くこと」「依頼（`DELEGATE` / `REVIEW_REQUEST`）は基本的に設計書を書いて `spec` で渡し、body だけにするのは数行で済む簡単な依頼に限ること（上の Spec）」「人が読む文章の言語（下記 Language）」を伝える
+- Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」「権限は人が `/permission` で変えるので、拒否されたらそう伝えること」「依頼を受けたら、作業に入る前に何をするかを 1〜2 文で書くこと」「`send_message` の body は Markdown で 1 行の要約 → 箇条書きで書くこと」「依頼（`DELEGATE` / `REVIEW_REQUEST`）は基本的に設計書を書いて `spec` で渡し、body だけにするのは数行で済む簡単な依頼に限ること。QUESTION に答えるために設計書を直したら RESULT の `spec` で渡すこと（上の Spec）」「人が読む文章の言語（下記 Language）」を伝える
 - 役割が無い Agent には、相手の Agent がいることだけを伝える
 - 役割の本文は Agent の native configuration（CLAUDE.md / AGENTS.md）と結合しない。追加の指示として渡すだけ
 

@@ -8,12 +8,18 @@ const REQUEST_TYPES = new Set<MessageType>(["QUESTION", "REVIEW_REQUEST", "DELEG
 
 const SPEC_INSTRUCTION =
   "Read the spec before you start and follow it. If the spec conflicts with the code or is unclear, ask with a QUESTION instead of guessing.";
+const UPDATED_SPEC_INSTRUCTION = "The spec was updated for this answer. Read it and follow it in your remaining work.";
 
 // Agent ごとに body の書き方がばらつかないよう、返信の書式を揃える（DESIGN.md §13）
 export const BODY_FORMAT = "Write body in Markdown: a one-line summary first, then bullet points. Do not write one long paragraph.";
 
 const formatIssue = ({ file, line, severity, summary }: Issue): string =>
   `- [${severity}] ${file}${line === undefined ? "" : `:${line}`} ${summary}`;
+
+const specInstruction = (m: AgentMessage): string[] => {
+  if (!m.spec) return [];
+  return [m.type === "RESULT" ? UPDATED_SPEC_INSTRUCTION : SPEC_INSTRUCTION];
+};
 
 const replyInstruction = (m: AgentMessage): string[] =>
   REQUEST_TYPES.has(m.type)
@@ -36,7 +42,7 @@ export const buildEnvelope = (m: AgentMessage, language?: Language): string => {
   if (m.spec) lines.push(`Spec: ${m.spec}`);
   if (m.files?.length) lines.push("Files:", ...m.files.map((file) => `- ${file}`));
   if (m.issues?.length) lines.push("Issues:", ...m.issues.map(formatIssue));
-  lines.push("", m.body, "", ...(m.spec ? [SPEC_INSTRUCTION] : []), ...replyInstruction(m));
+  lines.push("", m.body, "", ...specInstruction(m), ...replyInstruction(m));
   if (language) lines.push(languageDirective(language));
   return lines.join("\n");
 };

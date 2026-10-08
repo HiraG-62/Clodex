@@ -28,7 +28,8 @@ const SUBAGENT_NOTE =
 
 const SPEC_NOTE =
   "For DELEGATE / REVIEW_REQUEST, write the design document first (default: docs/specs/<taskId>.md) and set spec to its path. " +
-  "Keep body to a summary. Use body alone only for simple requests that can be fully explained in a few lines.";
+  "Keep body to a summary. Use body alone only for simple requests that can be fully explained in a few lines. " +
+  "When you update the design document to answer a QUESTION, set spec on the RESULT.";
 
 const ASK_USER_NOTE = `When you need a decision from the human, ask with the ${ASK_USER_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server instead of writing the question in your reply, then end your turn.`;
 
