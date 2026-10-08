@@ -25,7 +25,7 @@ describe("desktop-notify", () => {
     next(state());
     expect(next(event({ type: "turn_started" }))).toBeUndefined();
     expect(next(turn())).toBeUndefined();
-    expect(next(state())).toEqual({ title: "Clodex · 作業終了", body: "Claude: 完了" });
+    expect(next(state())).toEqual({ kind: "finished", title: "Clodex · 作業終了", body: "Claude: 完了" });
     expect(next(state())).toBeUndefined();
   });
 
@@ -64,8 +64,8 @@ describe("desktop-notify", () => {
   it("live の notice と error を通知", () => {
     const next = session();
     next(state());
-    expect(next(notice)).toEqual({ title: "Clodex · 通知", body: "利用枠" });
-    expect(next(event({ type: "error", message: "失敗" }))).toEqual({ title: "Clodex · エラー", body: "Claude: 失敗" });
+    expect(next(notice)).toEqual({ kind: "notice", title: "Clodex · 通知", body: "利用枠" });
+    expect(next(event({ type: "error", message: "失敗" }))).toEqual({ kind: "error", title: "Clodex · エラー", body: "Claude: 失敗" });
   });
 
   it.each(["failed", "interrupted"] as const)("%s は応答本文ではなく状態を通知", (status) => {
@@ -78,17 +78,17 @@ describe("desktop-notify", () => {
 
   it("1 行目を最大 160 文字に省略し英語カタログも利用", () => {
     const current: DesktopNotifyState = { live: true, working: true, lastTurn: { agent: "codex", result: { status: "completed", text: `${"a".repeat(200)}\n後` } } };
-    expect(updateDesktopNotify(current, state(), en).notification).toEqual({ title: "Clodex · Work finished", body: `Codex: ${"a".repeat(159)}…` });
+    expect(updateDesktopNotify(current, state(), en).notification).toEqual({ kind: "finished", title: "Clodex · Work finished", body: `Codex: ${"a".repeat(159)}…` });
   });
 });
 
 it("toast をデスクトップ通知にする", () => {
   const result = updateDesktopNotify({ live: true, working: false }, { type: "toast", text: "切り替え", level: "info" }, ja);
-  expect(result.notification).toEqual({ title: "Clodex · 通知", body: "切り替え" });
+  expect(result.notification).toEqual({ kind: "notice", title: "Clodex · 通知", body: "切り替え" });
 });
 
 it("新しい質問を通知し、履歴の再生時には通知しない", () => {
   const item: FeedItem = { type: "event", seq: 1, event: { kind: "question", id: "q1", agent: "claude", at: "now", questions: [{ question: "方針は", options: [{ label: "A" }, { label: "B" }] }] } };
-  expect(updateDesktopNotify({ live: true, working: true }, item, ja).notification).toEqual({ title: "質問", body: "方針は" });
+  expect(updateDesktopNotify({ live: true, working: true }, item, ja).notification).toEqual({ kind: "question", title: "質問", body: "方針は" });
   expect(updateDesktopNotify({ live: false, working: false }, item, ja).notification).toBeUndefined();
 });

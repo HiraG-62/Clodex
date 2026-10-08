@@ -102,13 +102,14 @@ const main = async (): Promise<void> => {
     if (context) context.saveFeedItem(context.history.currentId, item);
   });
   const notify = (text: string, level: "info" | "warn" = "info") => { feed.publishToast(text, level); printTerminal(text); };
-  // スマホへの通知は、GUI の通知と同じ条件で Hub が決める（DESIGN.md §28 スマホへの通知（Web Push））
+  // スマホへの通知は、GUI の通知と同じ関数で Hub が決める（DESIGN.md §28 スマホへの通知（Web Push））
   const push = new PushService(join(homeDir, ".clodex", "push"));
   let pushState: DesktopNotifyState = { live: false, working: false };
   feed.subscribe((item) => {
     const update = updateDesktopNotify(pushState, item, MESSAGES[language]);
     pushState = update.state;
-    if (update.notification) push.notify(update.notification).catch((error: unknown) => reportRuntimeError(errorMessage(error)));
+    // スマホには作業が終わって返答が来たときだけ送る
+    if (update.notification?.kind === "finished") push.notify({ title: update.notification.title, body: update.notification.body }).catch((error: unknown) => reportRuntimeError(errorMessage(error)));
   });
   reportRuntimeError = message => { const text = t("error.generic", { message }); feed.publishOutput(text); printTerminal(text); };
   hub = new Hub({ homeDir, cwd, openProject: async (projectRoot) => {

@@ -3,6 +3,7 @@ import type { Messages } from "../../i18n/messages.js";
 import type { FeedItem } from "../web-feed.js";
 
 export interface DesktopNotification {
+  kind: "finished" | "question" | "notice" | "error";
   title: string;
   body: string;
 }
@@ -33,16 +34,16 @@ export function updateDesktopNotify(
     const text = result.status === "failed" ? messages["web.turn.failed"]
       : result.status === "interrupted" ? messages["web.turn.interrupted"]
         : firstLine(result.text) || messages["web.turn.completed"];
-    return { state: { live: true, working: false }, notification: { title: messages["desktop.notify.finished"], body: `${names[agent]}: ${text}` } };
+    return { state: { live: true, working: false }, notification: { kind: "finished", title: messages["desktop.notify.finished"], body: `${names[agent]}: ${text}` } };
   }
-  if (item.type === "toast") return { state: previous, notification: { title: messages["desktop.notify.notice"], body: item.text } };
+  if (item.type === "toast") return { state: previous, notification: { kind: "notice", title: messages["desktop.notify.notice"], body: item.text } };
   if (!previous.live || item.type !== "event") return { state: previous };
   const event = item.event;
-  if (event.kind === "question") return { state: previous, notification: { title: messages["web.question.title"], body: event.questions[0]?.question ?? "" } };
-  if (event.kind === "notice") return { state: previous, notification: { title: messages["desktop.notify.notice"], body: event.text } };
+  if (event.kind === "question") return { state: previous, notification: { kind: "question", title: messages["web.question.title"], body: event.questions[0]?.question ?? "" } };
+  if (event.kind === "notice") return { state: previous, notification: { kind: "notice", title: messages["desktop.notify.notice"], body: event.text } };
   if (event.kind !== "agent") return { state: previous };
   if (event.event.type === "turn_started") return { state: { ...previous, working: true } };
   if (event.event.type === "turn") return { state: { ...previous, lastTurn: { agent: event.agent, result: event.event.result } } };
-  if (event.event.type === "error") return { state: previous, notification: { title: messages["desktop.notify.error"], body: `${names[event.agent]}: ${event.event.message}` } };
+  if (event.event.type === "error") return { state: previous, notification: { kind: "error", title: messages["desktop.notify.error"], body: `${names[event.agent]}: ${event.event.message}` } };
   return { state: previous };
 }
