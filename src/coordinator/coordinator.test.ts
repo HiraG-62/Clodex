@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { type SoloMode, Coordinator } from "./coordinator.js";
 import { EventBus, type CoordinatorEvent } from "./event-bus.js";
+import type { CreateMessageResult } from "../protocol/messages.js";
 
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 const NOW = "2026-10-05T07:00:00.000Z";
@@ -802,6 +803,35 @@ describe("Coordinator の spec 検証", () => {
       expect(codex.sent).toEqual([]);
     },
   );
+});
+
+describe("Coordinator の spec の差分", () => {
+  const project = mkdtempSync(join(tmpdir(), "clodex-spec-diff-"));
+  const write = (text: string) => writeFileSync(join(project, "design.md"), text);
+  const changesOf = (result: CreateMessageResult) => (result.ok ? result.message.specChanges : "rejected");
+  const send = (coordinator: ReturnType<typeof setup>["coordinator"], from: "claude" | "codex" = "claude") =>
+    changesOf(coordinator.receiveMessage(from, { ...reviewRequest, to: from === "claude" ? "codex" : "claude", spec: "design.md" }));
+
+  it("宛先に前回渡した中身と比べて、変わった節の見出しを付ける", () => {
+    const { coordinator } = setup(project);
+    write("# 設計\n本文\n");
+    expect(send(coordinator)).toBeUndefined();
+    expect(send(coordinator)).toEqual([]);
+    write("# 設計\n本文\n## 追記\n足した\n");
+    expect(send(coordinator)).toEqual(["## 追記"]);
+  });
+  it("宛先ごとに記録する", () => {
+    const { coordinator } = setup(project);
+    write("# 設計\n本文\n");
+    send(coordinator);
+    expect(send(coordinator, "codex")).toBeUndefined();
+  });
+  it("Agent が送った specChanges は使わない", () => {
+    const { coordinator } = setup(project);
+    write("# 設計\n本文\n");
+    expect(changesOf(coordinator.receiveMessage("claude", { ...reviewRequest, spec: "design.md", specChanges: ["偽"] })))
+      .toBeUndefined();
+  });
 });
 
 describe("人への質問", () => {

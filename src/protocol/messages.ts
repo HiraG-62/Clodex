@@ -60,6 +60,7 @@ export interface AgentMessage extends SendMessageInput {
   from: AgentId;
   repository: string;
   createdAt: string;
+  specChanges?: string[];
 }
 
 export interface MessageContext {

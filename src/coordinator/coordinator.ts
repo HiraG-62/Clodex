@@ -1,10 +1,12 @@
 // Agent 間の routing と lifecycle を決定論的に行う（DESIGN.md §3.9, §12）
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { askUserSchema, answersSchema, type AskUserResult, type PendingQuestion } from "../protocol/questions.js";
 import {
   AGENT_IDS, type AgentAdapter, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult,
 } from "../agents/agent-adapter.js";
-import { isSpecFile } from "../project/spec-file.js";
+import { resolveSpecFile } from "../project/spec-file.js";
+import { changedSections } from "../context/spec-sections.js";
 import { buildEnvelope } from "../context/context-resolver.js";
 import { t } from "../i18n/i18n.js";
 import { languageReminder, type Language } from "../context/language.js";
@@ -89,6 +91,8 @@ export class Coordinator {
   private readonly usage: UsageMonitor;
   private inputSeq = 0;
   private readonly questions = new Map<string, PendingQuestion>();
+  // 宛先ごと・設計書の実パスごとに、前回渡した中身（DESIGN.md §13 Spec の差分）
+  private readonly specSnapshots = new Map<string, string>();
   private readonly liveUsage = new Set<AgentId>();
   private readonly recoveryListeners = new Set<() => void>();
   private stoppingRecovery: ConversationRecovery | undefined;
@@ -220,8 +224,13 @@ export class Coordinator {
     });
     if (!result.ok) return result;
     const { message } = result;
-    if (message.spec !== undefined && !isSpecFile(projectRoot, message.spec)) {
-      return { ok: false, error: "spec: must be a relative path to an existing regular file inside the project root" };
+    let specSnapshot: { key: string; content: string } | undefined;
+    if (message.spec !== undefined) {
+      const specPath = resolveSpecFile(projectRoot, message.spec);
+      if (!specPath) return { ok: false, error: "spec: must be a relative path to an existing regular file inside the project root" };
+      specSnapshot = { key: `${message.to}\0${specPath}`, content: readFileSync(specPath, "utf8") };
+      const previous = this.specSnapshots.get(specSnapshot.key);
+      if (previous !== undefined) message.specChanges = changedSections(previous, specSnapshot.content);
     }
 
     // 送信元が処理中の message を親として chain を決める（DESIGN.md §14）
@@ -231,6 +240,7 @@ export class Coordinator {
       return { ok: false, error: budgetError };
     }
 
+    if (specSnapshot) this.specSnapshots.set(specSnapshot.key, specSnapshot.content);
     bus.publish({ kind: "message", message });
     // ACK は記録のみ。配送して Agent を起こさない（DESIGN.md §12, §25）
     if (message.type !== "ACK") void this.deliver(message);

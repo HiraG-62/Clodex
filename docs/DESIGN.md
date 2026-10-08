@@ -780,6 +780,7 @@ Coordinator が付与するフィールド（Agent の自己申告は使わな�
 | `from` | 送信元。MCP の URL path で決める（§12） |
 | `repository` | project root（§7） |
 | `createdAt` | ISO 8601 |
+| `specChanges` | `spec` があり、宛先に同じ設計書を前に渡しているときだけ付ける。前回から変わった節の見出し（下記 Spec の差分）。変わっていなければ空配列 |
 
 例:
 
@@ -918,6 +919,7 @@ Write body in Markdown: a one-line summary first, then bullet points. Do not wri
 - `RESULT` / `ISSUE` には返信を求めない（返信の連鎖を作らない）
 - 会話履歴は含めない。Agent B は必要に応じて Repository を読む
 - `spec` があれば `Spec:` 行と「作業の前に読んで従う。コードと食い違う・曖昧なら推測せず QUESTION で聞く」の 1 行を添える。`RESULT` では「回答に合わせて更新した設計書を読み、続きの作業で従う」の 1 行にする
+- `specChanges` があれば `Spec:` 行の直後に書く。空なら `Spec:` 行に `(unchanged since you last received it)` を付け、空でなければ `Spec changes since you last received it:` に続けて節の見出しを 1 行ずつ並べる
 
 ## Spec（設計書）
 
@@ -928,6 +930,17 @@ Write body in Markdown: a one-line summary first, then bullet points. Do not wri
 - `QUESTION` に答えるために設計書を直したら、`RESULT` の `spec` で渡す。`files` に載せるより、読んで従うものだと確実に伝わる
 - 設計書の作成・更新・コミットは送信元の Agent が行う。Coordinator は存在を確かめるだけで中身は見ない
 - 役割の定型文（§13 Roles）でこの方針を伝える
+
+### Spec の差分
+
+QUESTION と次の依頼の間に設計書へ書き足すと、受け手はどこが新しいか分からず全文を読み直すことになる。Coordinator は変わった節の見出しを envelope に添える。
+
+- Coordinator は `spec` 付きの message を受理するたびに、宛先 Agent ごと・設計書（実パス）ごとに中身を記録する。記録はメモリだけで、Clodex を起動し直すと消える
+- 同じ宛先に同じ設計書を前に渡していれば、前回の中身と比べて `specChanges` を付ける。初めて渡すときは付けない
+- 節は Markdown の ATX 見出し（`#` 〜 `######`）で区切る。code fence の中の `#` は見出しとみなさない。最初の見出しより前は `(top)` とする
+- 見出しの行から次の見出しの直前までを節の中身とし、中身が変わった節と新しい節を見出しの行のまま並べる。消えた節は `(removed) ` を前に付ける。改行コードと行末の空白の違いは無視する
+- 全文の diff ではなく見出しにするのは、envelope を短く保つため（§3.3）。中身は受け手が設計書を開いて読む
+- 並べる節は 20 件まで。超えた分は `…and N more` の 1 行にまとめる
 
 ## Native configuration
 

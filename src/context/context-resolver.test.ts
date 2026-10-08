@@ -89,6 +89,14 @@ it("spec は Commit と Files の間、指示は本文と返信方法の間に�
   expect(buildEnvelope(base)).not.toContain(instruction);
 });
 
+it("specChanges は Spec 行の直後に書き、空なら変更なしと書く", () => {
+  const changed = buildEnvelope({ ...base, spec: "docs/specs/T.md", specChanges: ["## 追記", "(removed) ## 手順"] });
+  expect(changed).toContain("Spec: docs/specs/T.md\nSpec changes since you last received it:\n- ## 追記\n- (removed) ## 手順\nFiles:");
+  const unchanged = buildEnvelope({ ...base, spec: "docs/specs/T.md", specChanges: [] });
+  expect(unchanged).toContain("Spec: docs/specs/T.md (unchanged since you last received it)\nFiles:");
+  expect(buildEnvelope({ ...base, spec: "docs/specs/T.md" })).not.toContain("since you last received it");
+});
+
 it("RESULT の spec には、更新した設計書に続きの作業で従う指示を添える", () => {
   const text = buildEnvelope({ ...base, type: "RESULT", replyTo: "msg_q", spec: "docs/specs/T.md" });
   expect(text).toContain("Spec: docs/specs/T.md");

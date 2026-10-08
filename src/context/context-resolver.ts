@@ -16,6 +16,12 @@ export const BODY_FORMAT = "Write body in Markdown: a one-line summary first, th
 const formatIssue = ({ file, line, severity, summary }: Issue): string =>
   `- [${severity}] ${file}${line === undefined ? "" : `:${line}`} ${summary}`;
 
+const specLines = (spec: string, changes: readonly string[] | undefined): string[] => {
+  if (!changes) return [`Spec: ${spec}`];
+  if (changes.length === 0) return [`Spec: ${spec} (unchanged since you last received it)`];
+  return [`Spec: ${spec}`, "Spec changes since you last received it:", ...changes.map((change) => `- ${change}`)];
+};
+
 const specInstruction = (m: AgentMessage): string[] => {
   if (!m.spec) return [];
   return [m.type === "RESULT" ? UPDATED_SPEC_INSTRUCTION : SPEC_INSTRUCTION];
@@ -39,7 +45,7 @@ export const buildEnvelope = (m: AgentMessage, language?: Language): string => {
   if (m.interrupt) lines.push("Interrupt: yes");
   lines.push(`Repository: ${m.repository}`);
   if (m.commit) lines.push(`Commit: ${m.commit}`);
-  if (m.spec) lines.push(`Spec: ${m.spec}`);
+  if (m.spec) lines.push(...specLines(m.spec, m.specChanges));
   if (m.files?.length) lines.push("Files:", ...m.files.map((file) => `- ${file}`));
   if (m.issues?.length) lines.push("Issues:", ...m.issues.map(formatIssue));
   lines.push("", m.body, "", ...specInstruction(m), ...replyInstruction(m));
