@@ -15,7 +15,7 @@ export type ShellCommand =
   | { kind: "sendAll"; text: string; steer?: true }
   | { kind: "interrupt"; agent?: AgentId }
   | { kind: "status" }
-  | { kind: "project"; path?: string }
+  | { kind: "project"; path?: string; action?: ProjectAction }
   | { kind: "role"; agent?: AgentId; text?: string }
   | { kind: "help" }
   | { kind: "exit" }
@@ -45,6 +45,10 @@ const COMMAND_PATTERN = /^\/(\S+)\s*(.*)$/;
 
 const isPermissionLevel = (value: string): value is PermissionLevel =>
   (PERMISSION_LEVELS as readonly string[]).includes(value);
+
+// /project pin|remove <path>: 一覧の整理（DESIGN.md §28 D2a）
+export type ProjectAction = "pin" | "remove";
+const PROJECT_ACTION_PATTERN = /^(pin|remove)(?:\s+(.*))?$/;
 
 const usage = (text: string): ShellCommand => ({ kind: "invalid", message: t("input.usage", { usage: text }) });
 const unknownAgent = (agent: string): ShellCommand => ({ kind: "invalid", message: t("input.unknownAgent", { agent }) });
@@ -146,8 +150,13 @@ const parseCommand = (name: string, arg: string): ShellCommand => {
       if (!isAgentId(agent)) return unknownAgent(agent);
       return words.length ? { kind: "role", agent, text: words.join(" ") } : { kind: "role", agent };
     }
-    case "project":
-      return arg ? { kind: "project", path: arg } : { kind: "project" };
+    case "project": {
+      if (!arg) return { kind: "project" };
+      const action = PROJECT_ACTION_PATTERN.exec(arg);
+      if (!action) return { kind: "project", path: arg };
+      const path = action[2]?.trim();
+      return path ? { kind: "project", action: action[1] as ProjectAction, path } : usage("/project pin|remove <path>");
+    }
     case "interrupt":
       if (!arg) return { kind: "interrupt" };
       return isAgentId(arg) ? { kind: "interrupt", agent: arg } : unknownAgent(arg);

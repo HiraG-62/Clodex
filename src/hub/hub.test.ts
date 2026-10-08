@@ -49,4 +49,36 @@ describe("Hub", () => {
     expect(next.lastProject).toBe(resolve(homeDir, "two"));
     expect(next.list().every((project) => !project.open)).toBe(true);
   });
+
+  it("ピン止めした project を先に並べ、ピン止めを保存する", async () => {
+    const { homeDir, hub } = setup();
+    await hub.open("one");
+    await hub.open("two");
+    await hub.open("three");
+    const [one, two, three] = [resolve(homeDir, "one"), resolve(homeDir, "two"), resolve(homeDir, "three")];
+    expect(hub.togglePin(three)).toBe(true);
+    expect(hub.list().map(({ projectRoot, pinned }) => [projectRoot, pinned])).toEqual([[three, true], [one, false], [two, false]]);
+    const next = new Hub({ homeDir, cwd: homeDir, openProject: async (projectRoot: string) => ({ projectRoot, close: async () => {} }) });
+    expect(next.list().map(({ projectRoot }) => projectRoot)).toEqual([three, one, two]);
+    expect(next.togglePin(three)).toBe(false);
+    expect(next.list()[0]).toMatchObject({ projectRoot: one, pinned: false });
+    expect(next.togglePin(resolve(homeDir, "missing"))).toBeUndefined();
+  });
+
+  it("開いていない project だけ一覧から外せ、外したものも開けば戻る", async () => {
+    const { homeDir, hub } = setup();
+    await hub.open("one");
+    await hub.open("two");
+    const [one, two] = [resolve(homeDir, "one"), resolve(homeDir, "two")];
+    expect(hub.remove(two)).toBe("open");
+    expect(hub.remove(resolve(homeDir, "missing"))).toBe("missing");
+    const next = new Hub({ homeDir, cwd: homeDir, openProject: async (projectRoot: string) => ({ projectRoot, close: async () => {} }) });
+    next.togglePin(one);
+    expect(next.remove(one)).toBeUndefined();
+    expect(next.list().map(({ projectRoot }) => projectRoot)).toEqual([two]);
+    const saved = JSON.parse(readFileSync(join(homeDir, ".clodex", "hub.json"), "utf8"));
+    expect(saved).toMatchObject({ projects: [two], pinned: [] });
+    await next.open("one");
+    expect(next.list().map(({ projectRoot }) => projectRoot)).toEqual([two, one]);
+  });
 });

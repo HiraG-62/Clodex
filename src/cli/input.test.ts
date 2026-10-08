@@ -10,6 +10,9 @@ describe("parseInput", () => {
   it("/project を一覧とパス指定に解釈する", () => {
     expect(parseInput("/project", "claude")).toEqual({ kind: "project" });
     expect(parseInput("/project C:\\dev\\app", "claude")).toEqual({ kind: "project", path: "C:\\dev\\app" });
+    expect(parseInput("/project pin C:\\dev\\my app", "claude")).toEqual({ kind: "project", action: "pin", path: "C:\\dev\\my app" });
+    expect(parseInput("/project remove C:\\dev\\app", "claude")).toEqual({ kind: "project", action: "remove", path: "C:\\dev\\app" });
+    expect(parseInput("/project pin", "claude")).toMatchObject({ kind: "invalid" });
   });
   it.each([
     ["", { kind: "empty" }],

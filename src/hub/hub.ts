@@ -7,7 +7,17 @@ import { resolveProjectRoot } from "../project/project-root.js";
 import { hasRecoveryWork, loadRecovery } from "../project/recovery-store.js";
 
 const HUB_PATH = join(".clodex", "hub.json");
-const savedSchema = z.object({ projects: z.array(z.string()), lastProject: z.string().optional() });
+const savedSchema = z.object({ projects: z.array(z.string()), pinned: z.array(z.string()).optional(), lastProject: z.string().optional() });
+
+export interface HubProjectEntry {
+  projectRoot: string;
+  open: boolean;
+  current: boolean;
+  pinned: boolean;
+}
+
+// 一覧から外せない理由（DESIGN.md §28 D2a 一覧の整理）
+export type ProjectRemoveError = "missing" | "open";
 
 export interface HubProject {
   projectRoot: string;
@@ -22,7 +32,8 @@ export interface HubOptions<T extends HubProject> {
 
 export class Hub<T extends HubProject> {
   private readonly contexts = new Map<string, T>();
-  private readonly saved: string[];
+  private saved: string[];
+  private pinned: string[];
   private selected: string | undefined;
   private readonly path: string;
   private latestProject: string | undefined;
@@ -36,6 +47,7 @@ export class Hub<T extends HubProject> {
       // 壊れた保存先は空の一覧として扱う
     }
     this.saved = [...new Set(parsed.projects)];
+    this.pinned = (parsed.pinned ?? []).filter((projectRoot) => this.saved.includes(projectRoot));
     this.latestProject = parsed.lastProject;
   }
 
@@ -56,8 +68,30 @@ export class Hub<T extends HubProject> {
 
   allProjects(): T[] { return [...this.contexts.values()]; }
 
-  list(): Array<{ projectRoot: string; open: boolean; current: boolean }> {
-    return this.saved.map((projectRoot) => ({ projectRoot, open: this.contexts.has(projectRoot), current: projectRoot === this.selected }));
+  list(): HubProjectEntry[] {
+    const entries = this.saved.map((projectRoot) => ({
+      projectRoot, open: this.contexts.has(projectRoot), current: projectRoot === this.selected, pinned: this.pinned.includes(projectRoot),
+    }));
+    return [...entries.filter((entry) => entry.pinned), ...entries.filter((entry) => !entry.pinned)];
+  }
+
+  // 切り替え後のピン止めの状態。一覧に無ければ undefined
+  togglePin(projectRoot: string): boolean | undefined {
+    if (!this.saved.includes(projectRoot)) return undefined;
+    const pinned = !this.pinned.includes(projectRoot);
+    this.pinned = pinned ? [...this.pinned, projectRoot] : this.pinned.filter((entry) => entry !== projectRoot);
+    this.save();
+    return pinned;
+  }
+
+  // 開いている project は Agent を止めることになるので外さない
+  remove(projectRoot: string): ProjectRemoveError | undefined {
+    if (!this.saved.includes(projectRoot)) return "missing";
+    if (this.contexts.has(projectRoot)) return "open";
+    this.saved = this.saved.filter((entry) => entry !== projectRoot);
+    this.pinned = this.pinned.filter((entry) => entry !== projectRoot);
+    this.save();
+    return undefined;
   }
 
   async open(path: string): Promise<T> {
@@ -70,8 +104,13 @@ export class Hub<T extends HubProject> {
     this.selected = projectRoot;
     this.latestProject = projectRoot;
     if (!this.saved.includes(projectRoot)) this.saved.push(projectRoot);
-    writeFileAtomic(this.path, `${JSON.stringify({ projects: this.saved, lastProject: projectRoot }, null, 2)}\n`);
+    this.save();
     return context;
+  }
+
+  private save(): void {
+    const saved = { projects: this.saved, pinned: this.pinned, ...(this.latestProject ? { lastProject: this.latestProject } : {}) };
+    writeFileAtomic(this.path, `${JSON.stringify(saved, null, 2)}\n`);
   }
 
   async closeAll(): Promise<void> {

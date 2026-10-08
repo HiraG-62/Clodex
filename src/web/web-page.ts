@@ -136,6 +136,12 @@ const STYLE = `
   .model-form { display: flex; gap: 6px; }
   .model-form input, .model-form select { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: 14px var(--font-mono); background: var(--panel); color: var(--fg); }
   .model-form button { border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; background: var(--invert-bg); color: var(--invert-fg); font-weight: 600; font-size: 13px; }
+  .project-list { display: grid; gap: 2px; }
+  .project-row { display: grid; grid-template-columns: minmax(0, 1fr) 34px 34px; align-items: center; gap: 2px; padding: 2px 2px 2px 10px; border-radius: var(--r); }
+  .project-row.current { background: var(--sunken); }
+  .project-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+  .project-pin[aria-pressed="false"] { color: var(--muted); }
+  .project-pin[aria-pressed="true"] .i { fill: currentColor; }
   .secondary-action { width: 100%; margin: 14px 0 4px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px; background: var(--panel); color: var(--fg); font-weight: 500; }
   .secondary-action.danger { color: var(--crit); border-color: currentColor; }
   .small { font-size: 12px; }

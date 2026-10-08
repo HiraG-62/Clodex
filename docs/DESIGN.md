@@ -2071,6 +2071,10 @@ D2 の詳細（Hub として複数の project を扱う）。2 段に分ける:
   - 人が見ている project（**今の project**）は 1 つ。terminal と Web UI は今の project の今の会話を表示する
   - `/project` で開いている project の一覧、`/project <path>` でその project を開いて今の project にする（path は resolveProjectRoot と同じ規則で解決する）。Web UI は上部に project の切り替えを出し、`/project <path>` を送る
   - 開いた project の一覧は `~/.clodex/hub.json` に保存し、次の起動で一覧に出す（開くのは選んだとき。ただし復旧する作業がある project は起動時に開く。§18）
+  - **一覧の整理**: `/project pin <path>` でピン止めを切り替え、`/project remove <path>` で一覧から外す。path は一覧にあるものをそのまま指定する（フォルダが消えていても外せるよう、resolveProjectRoot では解決しない）。ピン止めは `hub.json` の `pinned` に保存する
+    - 一覧はピン止めした project を先に、ほかを後に並べる（それぞれ開いた順）
+    - 開いている project（今の project を含む）は外せない。外すと Agent を止めることになるため。外した project も `/project <path>` で開けば一覧に戻る
+    - Web UI の project のセレクトは、ピン止めを「ピン止め」の optgroup にまとめ、最後に「一覧を編集…」を置く。選ぶとシートを開き、project ごとにパス・ピン止めのトグル（pin のアイコン。`aria-pressed`）・外すボタン（開いている project には出さない）を並べる
   - `clodex serve`: terminal の Shell を持たずに Hub と Web UI だけを動かす（`--web` 相当。project は Web UI から開く。起動時の project は省略可）
   - 言語・Web の token・ポートは Hub で 1 つ。project ごとの設定（`.clodex.json`）は ProjectContext ごとに読む
 - **D2b: CLI から Hub へつなぐ**（D4 の TUI と一緒に行う）

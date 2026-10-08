@@ -188,8 +188,10 @@ const setup = ({ withoutProject = false } = {}) => {
   const references: string[] = [];
   let hasProject = !withoutProject;
   const projects = {
-    list: () => [{ projectRoot: "C:\\dev\\one", open: true, current: true }, { projectRoot: "C:\\dev\\two", open: false, current: false }],
+    list: () => [{ projectRoot: "C:\\dev\\one", open: true, current: true, pinned: true }, { projectRoot: "C:\\dev\\two", open: false, current: false, pinned: false }],
     open: async (path: string) => { hasProject = true; return { projectRoot: path, primary: "codex" as AgentId }; },
+    togglePin: (path: string) => (path === "C:\\dev\\two" ? true : undefined),
+    remove: (path: string) => (path === "C:\\dev\\two" ? undefined : path === "C:\\dev\\one" ? "open" as const : "missing" as const),
     hasCurrent: () => hasProject,
   };
   // 本物と同じく、project を開く前に会話を求めると例外にする
@@ -320,6 +322,19 @@ describe("createShell", () => {
     expect(printed.join("\n")).toContain("C:\\dev\\two");
     await shell.handleLine("/project C:\\dev\\two");
     expect(shell.getPrimary()).toBe("codex");
+  });
+  it("/project pin と /project remove で一覧を整理し、結果を通知する", async () => {
+    const { shell, printed, notified, levels } = setup();
+    await shell.handleLine("/project");
+    expect(printed.find((line) => line.startsWith("C:\\dev\\one"))).toContain("(pinned)");
+    for (const line of ["/project pin C:\\dev\\two", "/project pin C:\\dev\\x", "/project remove C:\\dev\\two", "/project remove C:\\dev\\one", "/project remove C:\\dev\\x"]) {
+      await shell.handleLine(line);
+    }
+    expect(notified).toEqual([
+      "Pinned: C:\\dev\\two", "Not in the list: C:\\dev\\x", "Removed from list: C:\\dev\\two",
+      "Open projects can't be removed: C:\\dev\\one", "Not in the list: C:\\dev\\x",
+    ]);
+    expect(levels.slice(-5)).toEqual([undefined, "warn", undefined, "warn", "warn"]);
   });
   it("送信はターン完了を待たずに戻る", async () => {
     const { coordinator, shell } = setup();

@@ -1059,6 +1059,31 @@ export function clientMain({
   window.addEventListener("resize", positionUsage);
   mobile.addEventListener("change", positionUsage);
 
+  // project のセレクト: ピン止めを optgroup にまとめ、最後に一覧の編集を置く（DESIGN.md §28 D2a 一覧の整理）
+  type ProjectEntry = NonNullable<WebState["projects"]>[number];
+  const EDIT_PROJECTS_VALUE = "clodex:edit-projects";
+  const fillProjectSelect = (select: HTMLSelectElement, projects: readonly ProjectEntry[]) => {
+    const key = JSON.stringify(projects.map(({ projectRoot, pinned }) => [projectRoot, pinned]));
+    if (select.dataset.paths !== key) {
+      const option = (value: string, text: string) => {
+        const node = el("option", "", text) as HTMLOptionElement;
+        node.value = value;
+        return node;
+      };
+      const pinned = projects.filter((project) => project.pinned);
+      const group = el("optgroup") as HTMLOptGroupElement;
+      group.label = t("web.top.pinnedProjects");
+      group.append(...pinned.map((project) => option(project.projectRoot, project.projectRoot)));
+      select.replaceChildren(
+        ...(pinned.length ? [group] : []),
+        ...projects.filter((project) => !project.pinned).map((project) => option(project.projectRoot, project.projectRoot)),
+        option(EDIT_PROJECTS_VALUE, t("web.top.editProjects")),
+      );
+      select.dataset.paths = key;
+    }
+    select.value = projects.find((project) => project.current)?.projectRoot ?? "";
+  };
+
   const renderState = () => {
     renderQuestionDock();
     if (!state) return;
@@ -1069,20 +1094,9 @@ export function clientMain({
     if (solo && solo !== "free") target = solo;
     document.body.dataset.to = target ?? state.primary;
     const projects = $("#projects") as HTMLSelectElement;
-    const selectedProject = state.projects?.find((project) => project.current)?.projectRoot ?? "";
     const listedProjects = state.projects ?? [];
-    const projectPaths = listedProjects.map((project) => project.projectRoot);
-    if (projects.dataset.paths !== JSON.stringify(projectPaths)) {
-      projects.replaceChildren(...listedProjects.map((project) => {
-        const option = el("option") as HTMLOptionElement;
-        option.value = project.projectRoot;
-        option.textContent = project.projectRoot;
-        return option;
-      }));
-      projects.dataset.paths = JSON.stringify(projectPaths);
-    }
+    fillProjectSelect(projects, listedProjects);
     projects.hidden = listedProjects.length === 0;
-    projects.value = selectedProject;
     // スマホ: 状態の行
     $("#mobile-title").textContent = state.conversations.find((conversation) => conversation.current)?.title ?? t("web.conv.untitled");
     $("#mobile-project").replaceChildren(icon("folder"), el("span", "", $("#project-name").textContent ?? ""));
@@ -1245,7 +1259,7 @@ export function clientMain({
 
   // ---- シート（スマホの操作パネル・会話・設定） ----
   let sheetAgent: AgentId | undefined;
-  let sheetKind: "agent" | "agentSettings" | "settings" | "conversations" | "conversationMenu" | "artifacts" | "viewer" | undefined;
+  let sheetKind: "agent" | "agentSettings" | "settings" | "conversations" | "conversationMenu" | "projects" | "artifacts" | "viewer" | undefined;
   let pendingPrimary: AgentId | undefined;
   const sheet = $("#sheet");
   let sheetReturnFocus: HTMLElement | undefined;
@@ -1291,14 +1305,9 @@ export function clientMain({
     const footer = el("div", "drawer-projects");
     const projects = el("select") as HTMLSelectElement;
     projects.setAttribute("aria-label", t("web.top.projects"));
-    for (const project of state?.projects ?? []) {
-      const option = el("option") as HTMLOptionElement;
-      option.value = project.projectRoot;
-      option.textContent = project.projectRoot;
-      option.selected = project.current;
-      projects.append(option);
-    }
+    fillProjectSelect(projects, state?.projects ?? []);
     projects.addEventListener("change", () => {
+      if (projects.value === EDIT_PROJECTS_VALUE) return openProjectEditor();
       projects.disabled = true;
       void send(`/project ${projects.value}`).then((ok) => { if (ok) closeSheet(); }).finally(() => { projects.disabled = false; });
     });
@@ -1480,6 +1489,34 @@ export function clientMain({
   };
 
   // 会話の操作: 名前の変更は今の会話だけ（/rename）。今の会話は削除できない
+  const projectEditorList = () => {
+    const projects = state?.projects ?? [];
+    const list = el("div", "project-list");
+    list.dataset.key = JSON.stringify(projects);
+    for (const project of projects) {
+      const row = el("div", `project-row${project.current ? " current" : ""}`);
+      const path = el("span", "project-path", project.projectRoot);
+      path.title = project.projectRoot;
+      const pin = iconButton("pin", t(project.pinned ? "web.conv.unpin" : "web.conv.pin"), "project-pin");
+      pin.setAttribute("aria-pressed", String(project.pinned));
+      pin.addEventListener("click", () => void send(`/project pin ${project.projectRoot}`, pin));
+      row.append(path, pin);
+      // 開いている project は外すと Agent を止めることになるので、外すボタンを出さない
+      if (project.open) row.append(el("span"));
+      else {
+        const remove = iconButton("x", t("web.top.removeProject"), "project-remove");
+        remove.addEventListener("click", () => void send(`/project remove ${project.projectRoot}`, remove));
+        row.append(remove);
+      }
+      list.append(row);
+    }
+    return list;
+  };
+  const openProjectEditor = () => {
+    sheetKind = "projects";
+    sheetAgent = undefined;
+    openSheet(t("web.top.editProjects"), [projectEditorList()]);
+  };
   const openConversationMenu = (conversation: WebState["conversations"][number], number: number) => {
     sheetKind = "conversationMenu";
     sheetAgent = undefined;
@@ -1774,6 +1811,10 @@ export function clientMain({
 
   const refreshOpenSheet = () => {
     if (sheet.hidden) return;
+    if (sheetKind === "projects") {
+      const list = $("#sheet-body").querySelector<HTMLElement>(".project-list");
+      if (list && list.dataset.key !== JSON.stringify(state?.projects ?? [])) list.replaceWith(projectEditorList());
+    }
     if (sheetKind === "agent" && sheetAgent) {
       const agent = state?.agents.find((candidate) => candidate.id === sheetAgent);
       const controls = $("#sheet-body").querySelector<HTMLElement>(".controls");
@@ -1972,6 +2013,10 @@ export function clientMain({
     const value = (event.currentTarget as HTMLSelectElement).value;
     if (!value) return;
     const select = event.currentTarget as HTMLSelectElement;
+    if (value === EDIT_PROJECTS_VALUE) {
+      select.value = state?.projects?.find((project) => project.current)?.projectRoot ?? "";
+      return openProjectEditor();
+    }
     select.disabled = true;
     $("#project-pill").classList.add("is-loading");
     void send(`/project ${value}`).then((ok) => { if (!ok) renderState(); }).finally(() => {

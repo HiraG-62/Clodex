@@ -162,7 +162,11 @@ const main = async (): Promise<void> => {
     history: () => conversationsOf(current()),
     primary: hub.current?.primary ?? DEFAULT_PRIMARY,
     print, notify, toggleVerbose, runner, processes,
-    projects: { list: () => hub.list(), open: openInHub, hasCurrent: () => hub.current !== undefined },
+    projects: {
+      list: () => hub.list(), open: openInHub, hasCurrent: () => hub.current !== undefined,
+      togglePin: (path) => { const pinned = hub.togglePin(path); refreshState(); return pinned; },
+      remove: (path) => { const error = hub.remove(path); refreshState(); return error; },
+    },
     language: { get: () => language, set: (next) => {
       saveUserLanguage(homeDir, next);
       language = next;

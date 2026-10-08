@@ -5,6 +5,7 @@ import type { Language } from "../context/language.js";
 import type { PendingQuestion } from "../protocol/questions.js";
 import { AGENT_IDS, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult } from "../agents/agent-adapter.js";
 import type { SoloMode } from "../coordinator/coordinator.js";
+import type { HubProjectEntry, ProjectRemoveError } from "../hub/hub.js";
 import type { UsageSnapshot } from "../coordinator/usage-monitor.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
 import { t } from "../i18n/i18n.js";
@@ -93,8 +94,10 @@ export interface ShellOptions {
   // @path の参照先が読んでよいファイルなら実パス（DESIGN.md §28 v0.3 A・C）
   resolveReference?: (path: string) => Promise<string | undefined>;
   projects?: {
-    list(): Array<{ projectRoot: string; open: boolean; current: boolean }>;
+    list(): HubProjectEntry[];
     open(path: string): Promise<{ projectRoot: string; primary: AgentId }>;
+    togglePin(path: string): boolean | undefined;
+    remove(path: string): ProjectRemoveError | undefined;
     hasCurrent?(): boolean;
   };
   language?: { get(): Language; set(value: Language): void | Promise<void> };
@@ -347,6 +350,20 @@ export const createShell = ({
         for (const input of coordinator().pendingInputs()) print(t("shell.queued", { id: input.id, agent: input.agent, text: input.text }));
         return "continue";
       case "project":
+        if (command.action && command.path) {
+          if (!projects) return "continue";
+          const project = command.path;
+          if (command.action === "pin") {
+            const pinned = projects.togglePin(project);
+            if (pinned === undefined) notify(t("shell.projectMissing", { project }), "warn");
+            else notify(t(pinned ? "shell.projectPinned" : "shell.projectUnpinned", { project }));
+            return "continue";
+          }
+          const error = projects.remove(project);
+          if (!error) notify(t("shell.projectRemoved", { project }));
+          else notify(t(error === "open" ? "shell.projectOpenNotRemovable" : "shell.projectMissing", { project }), "warn");
+          return "continue";
+        }
         if (command.path) {
           if (!projects) return "continue";
           const opened = await projects.open(command.path);
@@ -356,7 +373,8 @@ export const createShell = ({
         }
         if (!projects?.list().length) print(t("shell.noProjects"));
         else for (const project of projects.list()) {
-          print(`${project.projectRoot}${project.current ? t("shell.projectCurrent") : project.open ? "" : t("shell.projectSaved")}`);
+          const status = project.current ? t("shell.projectCurrent") : project.open ? "" : t("shell.projectSaved");
+          print(`${project.projectRoot}${status}${project.pinned ? t("shell.projectPinnedMark") : ""}`);
         }
         return "continue";
       case "role":
