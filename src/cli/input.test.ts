@@ -55,6 +55,18 @@ describe("parseInput", () => {
     expect(parseInput("hello", "codex")).toEqual({ kind: "send", agent: "codex", text: "hello" });
   });
 
+  it("/context は依頼と送り先を保ち、本文が無ければ送らない", () => {
+    expect(parseInput("/context これまでの方針を踏まえて答えて", "claude"))
+      .toEqual({ kind: "send", agent: "claude", text: "これまでの方針を踏まえて答えて", context: true });
+    expect(parseInput("@codex /context 追加の依頼", "claude"))
+      .toEqual({ kind: "send", agent: "codex", text: "追加の依頼", context: true });
+    expect(parseInput("@all /context 共通の質問", "claude"))
+      .toEqual({ kind: "sendAll", text: "共通の質問", context: true });
+    expect(parseInput("@claude! /context 追記", "codex"))
+      .toEqual({ kind: "send", agent: "claude", text: "追記", steer: true, context: true });
+    for (const line of ["/context", "@codex /context", "@all /context"]) expect(parseInput(line, "claude").kind).toBe("invalid");
+  });
+
   it("/rename・/delete・/pin を解釈する", () => {
     expect(parseInput("/rename 新しい 名前", "claude")).toEqual({ kind: "rename", title: "新しい 名前" });
     expect(parseInput("/delete 2", "claude")).toEqual({ kind: "delete", index: 2 });

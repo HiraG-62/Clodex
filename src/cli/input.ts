@@ -11,8 +11,8 @@ export type ShellCommand =
   | { kind: "sandbox"; action?: "on" | "off" | "uninstall" }
   | { kind: "limits"; values?: Array<{ name: LimitName; value: number }>; reset?: true; unlimited?: true }
   | { kind: "empty" }
-  | { kind: "send"; agent: AgentId; text: string; steer?: true }
-  | { kind: "sendAll"; text: string; steer?: true }
+  | { kind: "send"; agent: AgentId; text: string; steer?: true; context?: true }
+  | { kind: "sendAll"; text: string; steer?: true; context?: true }
   | { kind: "interrupt"; agent?: AgentId }
   | { kind: "status" }
   | { kind: "project"; path?: string; action?: ProjectAction }
@@ -94,6 +94,11 @@ const isConversationNumber = (arg: string) => /^[1-9]\d*$/.test(arg);
 // 行頭の @agent は送り先。Agent でなければ undefined（ファイルの参照として本文に残す）
 // @agent! は実行中のターンへの割り込み（DESIGN.md §28 v0.3 C）
 const STEER_SUFFIX = "!";
+const CONTEXT_COMMAND = "/context";
+const CONTEXT_USAGE = "/context <text>";
+
+const contextText = (text: string): string | undefined =>
+  text === CONTEXT_COMMAND ? "" : text.startsWith(`${CONTEXT_COMMAND} `) ? text.slice(CONTEXT_COMMAND.length).trim() : undefined;
 
 const RUN_AND_SEND_PREFIX = "!>";
 
@@ -106,18 +111,24 @@ const parseRunAndSend = (input: string, agent?: AgentId): ShellCommand => {
 const parseMention = (mention: string, text: string): ShellCommand | undefined => {
   const steer = mention.endsWith(STEER_SUFFIX);
   const name = steer ? mention.slice(0, -STEER_SUFFIX.length) : mention;
+  const request = contextText(text);
+  if (request !== undefined && !request && (name === "all" || isAgentId(name))) return usage(CONTEXT_USAGE);
+  const body = request ?? text;
+  const context = request === undefined ? {} : { context: true as const };
   if (name === "all") {
     if (!text) return { kind: "invalid", message: t("input.empty", { agent: name }) };
-    return steer ? { kind: "sendAll", text, steer: true } : { kind: "sendAll", text };
+    return steer ? { kind: "sendAll", text: body, steer: true, ...context } : { kind: "sendAll", text: body, ...context };
   }
   if (!isAgentId(name)) return undefined;
   if (!steer && text.startsWith(RUN_AND_SEND_PREFIX)) return parseRunAndSend(text, name);
   if (!text) return { kind: "invalid", message: t("input.empty", { agent: name }) };
-  return steer ? { kind: "send", agent: name, text, steer: true } : { kind: "send", agent: name, text };
+  return steer ? { kind: "send", agent: name, text: body, steer: true, ...context } : { kind: "send", agent: name, text: body, ...context };
 };
 
-const parseCommand = (name: string, arg: string): ShellCommand => {
+const parseCommand = (name: string, arg: string, primary: AgentId): ShellCommand => {
   switch (name) {
+    case "context":
+      return arg ? { kind: "send", agent: primary, text: arg, context: true } : usage(CONTEXT_USAGE);
     case "language":
       if (!arg) return { kind: "language" };
       return (LANGUAGES as readonly string[]).includes(arg) ? { kind: "language", value: arg as Language } : usage("/language [ja|en]");
@@ -229,7 +240,7 @@ export const parseInput = (line: string, primary: AgentId): ShellCommand => {
   if (mentioned) return mentioned;
 
   const command = input.match(COMMAND_PATTERN);
-  if (command?.[1] !== undefined && command[2] !== undefined) return parseCommand(command[1], command[2].trim());
+  if (command?.[1] !== undefined && command[2] !== undefined) return parseCommand(command[1], command[2].trim(), primary);
 
   return { kind: "send", agent: primary, text: input };
 };

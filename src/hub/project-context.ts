@@ -21,6 +21,7 @@ import { attachEventLog, defaultLogPath, type DisplayMode } from "../logging/eve
 import { startMcpServer } from "../mcp/server.js";
 import { AgentSettingsStore, agentSettingsPath, resolveStartSettings, type SavedAgentSettings } from "../project/agent-settings.js";
 import { ConversationHistory, conversationStatePath, type Conversation, type SavedSessions } from "../project/conversation-history.js";
+import { ConversationTranscript, transcriptPath } from "../project/conversation-transcript.js";
 import { hasRecoveryWork, loadRecovery, saveRecovery } from "../project/recovery-store.js";
 import { artifactsDirPath, createFilePreview, uploadsDirPath } from "../project/file-preview.js";
 import { createWorktree } from "../project/worktree.js";
@@ -131,10 +132,17 @@ export const openProject = async ({
 
   const createRuntime = async (conversation: Conversation): Promise<ConversationRuntime> => {
     const bus = new EventBus();
+    const transcript = new ConversationTranscript(transcriptPath(statePath, conversation.id));
+    transcript.seed(feedStore.load(conversation.id));
+    bus.subscribe((event) => transcript.append(event));
     const workDir = conversation.workDir ?? projectRoot;
     await sandbox.allowWorktree(workDir);
     let coordinator: Coordinator | undefined;
-    const mcp = await startMcpServer({ sendMessage: (from, input) => coordinator!.receiveMessage(from, input), askUser: (from, input) => coordinator!.askUser(from, input) });
+    const mcp = await startMcpServer({
+      sendMessage: (from, input) => coordinator!.receiveMessage(from, input),
+      askUser: (from, input) => coordinator!.askUser(from, input),
+      readConversation: (_from, input) => transcript.page(input),
+    });
     coordinator = new Coordinator({
       projectRoot: workDir,
       agents: createAgents?.() ?? { claude: new ClaudeAdapter(spawn), codex: new CodexAdapter(spawn) },

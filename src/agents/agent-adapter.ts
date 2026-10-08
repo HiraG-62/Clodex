@@ -16,6 +16,7 @@ export const CLAUDE_EFFORT_LEVELS = [...COMMON_EFFORT_LEVELS, "max"] as const;
 export const COORDINATOR_MCP_SERVER = "clodex";
 export const SEND_MESSAGE_TOOL = "send_message";
 export const ASK_USER_TOOL = "ask_user";
+export const READ_CONVERSATION_TOOL = "read_conversation";
 
 export interface AgentStartOptions {
   cwd: string;

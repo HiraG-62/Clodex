@@ -195,7 +195,7 @@ describe("ClaudeAdapter", () => {
     const args = spawner.calls[0]!.args;
     const config = JSON.parse(args[args.indexOf("--mcp-config") + 1]!);
     expect(config).toEqual({ mcpServers: { clodex: { type: "http", url: "http://127.0.0.1:5000/mcp/claude" } } });
-    expect(args[args.indexOf("--allowedTools") + 1]).toBe("mcp__clodex__send_message,mcp__clodex__ask_user");
+    expect(args[args.indexOf("--allowedTools") + 1]).toBe("mcp__clodex__send_message,mcp__clodex__ask_user,mcp__clodex__read_conversation");
     expect(args[args.indexOf("--disallowedTools") + 1]).toBe("AskUserQuestion");
   });
 

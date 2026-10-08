@@ -343,6 +343,15 @@ describe("createShell", () => {
     expect(coordinator.sent).toEqual([{ agent: "claude", text: "hello" }, { agent: "codex", text: "review" }]);
   });
 
+  it("/context は会話本文の参照を依頼に添えて送る", async () => {
+    const { coordinator, shell } = setup();
+    await shell.handleLine("@codex /context 過去の判断に沿って回答して");
+    expect(coordinator.sent).toHaveLength(1);
+    expect(coordinator.sent[0]).toMatchObject({ agent: "codex" });
+    expect(coordinator.sent[0]?.text).toContain("read_conversation");
+    expect(coordinator.sent[0]?.text).toContain("過去の判断に沿って回答して");
+  });
+
   it("@path の画像は実パスで Agent に画像として渡す", async () => {
     const { coordinator, shell } = setup();
     await shell.handleLine("@codex @shot.png を見て");

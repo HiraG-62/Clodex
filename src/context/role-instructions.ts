@@ -1,5 +1,5 @@
 // Agent の起動時に system prompt へ追加する定型文と役割（DESIGN.md §13 Roles）
-import { AGENT_IDS, COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, ASK_USER_TOOL, type AgentId } from "../agents/agent-adapter.js";
+import { AGENT_IDS, COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, ASK_USER_TOOL, READ_CONVERSATION_TOOL, type AgentId } from "../agents/agent-adapter.js";
 import type { RolesConfig } from "../config/config.js";
 import { BODY_FORMAT } from "./context-resolver.js";
 import { languageDirective, type Language } from "./language.js";
@@ -32,6 +32,7 @@ const SPEC_NOTE =
   "When you update the design document to answer a QUESTION, set spec on the RESULT.";
 
 const ASK_USER_NOTE = `When you need a decision from the human, ask with the ${ASK_USER_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server instead of writing the question in your reply, then end your turn.`;
+const READ_CONVERSATION_NOTE = `Use the ${READ_CONVERSATION_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server when you need the message bodies from this conversation, including exchanges between the human and the other agent.`;
 
 const PLAN_NOTE = "When you receive a request, state in one or two sentences what you will do before you start working.";
 
@@ -61,7 +62,7 @@ export const buildRoleInstructions = (
 ): string => {
   const peer = peerOf(agent);
   return [
-    header(agent, peer), ...roleLines(agent, peer, roles), PERMISSION_NOTE, PLAN_NOTE, ASK_USER_NOTE, SPEC_NOTE, BODY_FORMAT, INTERRUPT_NOTE, SUBAGENT_NOTE,
+    header(agent, peer), ...roleLines(agent, peer, roles), PERMISSION_NOTE, PLAN_NOTE, ASK_USER_NOTE, READ_CONVERSATION_NOTE, SPEC_NOTE, BODY_FORMAT, INTERRUPT_NOTE, SUBAGENT_NOTE,
     ...(artifactsDir ? [artifactsNote(artifactsDir)] : []),
     ...(language ? [languageDirective(language)] : []),
   ].join("\n");

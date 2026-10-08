@@ -4,5 +4,6 @@ import type { AgentId } from "../../agents/agent-adapter.js";
 export function composeInputLine(text: string, target: AgentId | undefined): string {
   if (!target) return text;
   if (text.startsWith("!>")) return `@${target} ${text}`;
+  if (text === "/context" || text.startsWith("/context ")) return `@${target} ${text}`;
   return text.startsWith("/") || text.startsWith("@") || text.startsWith("!") ? text : `@${target} ${text}`;
 }

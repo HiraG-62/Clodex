@@ -25,6 +25,7 @@ const SPECS: readonly SlashCommandSpec[] = [
   { name: "interrupt", args: "[agent]", description: "cmd.interrupt" },
   { name: "cancel", args: "[id]", description: "cmd.cancel" },
   { name: "status", args: "", description: "cmd.status" },
+  { name: "context", args: "<text>", description: "cmd.context" },
   { name: "answer", args: "<id> <json>", description: "cmd.answer" },
   { name: "project", args: "[path|pin <path>|remove <path>]", description: "cmd.project" },
   { name: "role", args: "[agent] [text]", description: "cmd.role" },

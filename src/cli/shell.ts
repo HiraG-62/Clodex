@@ -126,6 +126,7 @@ export type ShellOutcome = "continue" | "exit";
 // 説明の開始位置をそろえる幅
 const HELP_COLUMN = 20;
 const ALL_MESSAGE_PREFIX = "[Sent to both claude and codex]";
+const CONTEXT_INSTRUCTION = "[Clodex] Before responding, use read_conversation to read relevant message bodies from this conversation, including exchanges between the human and the other agent. Follow nextBefore for older messages if needed.";
 const helpLine = (usage: string, description: string) => `${usage.padEnd(HELP_COLUMN - 1)} ${description}`;
 
 const HELP_LINES = (primary: AgentId) => [
@@ -280,7 +281,8 @@ export const createShell = ({
         if (rejectLocked(command.kind === "sendAll" ? AGENT_IDS : [command.agent])) return "continue";
         if (busyElsewhere()) notify(t("notice.sameDirBusy"), "warn");
         const resolved = await resolveReferences(command.text, resolveReference);
-        const text = command.kind === "sendAll" ? `${ALL_MESSAGE_PREFIX}\n${resolved.text}` : resolved.text;
+        const request = command.context ? `${resolved.text}\n\n${CONTEXT_INSTRUCTION}` : resolved.text;
+        const text = command.kind === "sendAll" ? `${ALL_MESSAGE_PREFIX}\n${request}` : request;
         const recipient = coordinator();
         for (const agent of command.kind === "sendAll" ? AGENT_IDS : [command.agent]) {
           if (command.steer) await recipient.steerOrSend(agent, text);

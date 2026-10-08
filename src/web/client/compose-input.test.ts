@@ -13,6 +13,11 @@ describe("composeInputLine", () => {
     expect(composeInputLine("!> pnpm test", undefined)).toBe("!> pnpm test");
   });
 
+  it("/context は選択中の送り先を前置きする", () => {
+    expect(composeInputLine("/context 依頼", "codex")).toBe("@codex /context 依頼");
+    expect(composeInputLine("/context 依頼", undefined)).toBe("/context 依頼");
+  });
+
   it("通常の入力だけ指定された Agent を前置きする", () => {
     expect(composeInputLine("hello", "codex")).toBe("@codex hello");
     expect(composeInputLine("hello", undefined)).toBe("hello");

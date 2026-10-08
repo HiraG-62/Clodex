@@ -4,7 +4,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { AGENT_IDS, COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, ASK_USER_TOOL, type AgentId } from "../agents/agent-adapter.js";
+import { z } from "zod";
+import { AGENT_IDS, COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, ASK_USER_TOOL, READ_CONVERSATION_TOOL, type AgentId } from "../agents/agent-adapter.js";
+import type { ConversationPage, ReadConversationOptions } from "../project/conversation-transcript.js";
 import { askUserShape, type AskUserResult } from "../protocol/questions.js";
 import { sendMessageShape, type CreateMessageResult } from "../protocol/messages.js";
 
@@ -24,6 +26,7 @@ export type SendMessageHandler = (from: AgentId, input: unknown) => CreateMessag
 export interface McpHandlers {
   sendMessage: SendMessageHandler;
   askUser(from: AgentId, input: unknown): AskUserResult;
+  readConversation(from: AgentId, input: ReadConversationOptions): ConversationPage;
 }
 
 export interface McpServerHandle {
@@ -55,6 +58,10 @@ const buildMcpServer = (from: AgentId, handler: McpHandlers): McpServer => {
       ? { content: [{ type: "text", text: `Question ${result.id} is shown to the human. End your turn now; the answer will arrive as a new message.` }] }
       : { content: [{ type: "text", text: `Rejected: ${result.error}` }], isError: true };
   });
+  server.registerTool(READ_CONVERSATION_TOOL, {
+    description: "Read message bodies from this conversation, including the human's exchanges with both agents and formal messages between agents. Returns the latest page in chronological order; pass nextBefore as before to read older messages. Intermediate work and tool activity are excluded.",
+    inputSchema: { before: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(100).optional() },
+  }, async (args) => ({ content: [{ type: "text", text: JSON.stringify(handler.readConversation(from, args)) }] }));
   return server;
 };
 

@@ -425,6 +425,7 @@ Project root の解決順:
 | `@codex ...` | Codex へ直接送信 | ✓ |
 | `@claude! ...` / `@codex! ...` | その Agent の実行中のターンに指示を足す（steer）。実行中でなければ通常の送信（§28 v0.3 C） | ✓ |
 | `@all ...` / `@all! ...` | 両方の Agent へ同じ本文を送る（`@all!` はそれぞれに steer）。下記 | ✓ |
+| `/context <依頼>` / `@<agent> /context <依頼>` | 同じ会話の本文を参照してから依頼に答えるよう Agent に送る | ✓ |
 | `@<path>` | project のファイルへの参照（行頭でも、Agent 名でなければ参照）。存在するファイルを本文の末尾に `Referenced files:` として添える（§28 v0.3 A） | ✓ |
 | `!command` | project root で shell command を実行し、出力を表示する（下記） | ✓ |
 | `!& command` | background process として起動する（§15） | ✓ |
@@ -443,6 +444,7 @@ Project root の解決順:
 - 入力の候補（`@` の後）と強調表示では、`all` を Agent 名と同じに扱う。Web UI の送り先の切り替えには足さない
 - スラッシュコマンドは 1 行で書く。2 行目以降がある入力は invalid として使い方を表示し、Agent には送らない
 - コマンドの一覧は `cli/commands.ts` の 1 か所にまとめ、`/help`・Web UI の候補・CLI の Tab 補完で共有する
+- `/context` は本文のある依頼にだけ使う。省略時は primary、`@claude` / `@codex` / `@all` の後にも置ける。Web UI は選択中の送り先を維持する。送信本文に `read_conversation` を使う指示を添え、同じ会話の本文を参照させる（§12）。通常の入力と同じく送信・steer・ファイル参照を処理する
 
 `!command`（docs/spikes/shell-command.md）:
 
@@ -863,7 +865,7 @@ MCP message を受け取った後、
 - Coordinator は `127.0.0.1` のランダムポートで Streamable HTTP の MCP server を起動する
 - URL は `http://127.0.0.1:<port>/mcp/<token>`。`<token>` は起動ごと・Agent ごとのランダム値
 - 送信元（`from`）は `<token>` から決める。Agent ごとに token を分けるので、同じ PC の他プロセスや相手 Agent が送信元を偽れない
-- tool は `send_message`（入力 schema は §11）と `ask_user`（下記）の 2 つ
+- tool は `send_message`（入力 schema は §11）、`ask_user`（下記）、`read_conversation`（下記）
 
 ## 配送ルール（v0.1）
 
@@ -889,6 +891,13 @@ Agent が人に判断を求めるとき、文章の中に質問を書かせず�
 - 答えていない質問は会話ごとに持つ（未回答の一覧は `state` に入れる）。同じ質問への 2 度目の回答・存在しない ID は拒否する。`/new`・`/resume` で Agent の session が変わっても回答はその Agent に届ける
 - 人が回答せずに普通の入力を送ってもよい（質問は未回答のまま残る）
 - Claude の組み込みの `AskUserQuestion` は `--disallowedTools AskUserQuestion` で使わせない（stream-json では人が答えられないため）。両 Agent の指示（§13 Roles と同じ場所）に「人に判断を求めるときは `ask_user` を使う」と書く
+
+## 会話本文の参照（`read_conversation`）
+
+- 同じ会話の Agent は MCP tool `read_conversation` で、その会話の本文を必要なときに読む。自分への入力に加え、ユーザーともう一方の Agent のやり取り、Agent 間の formal message、質問と回答を含む。別の会話の本文は返さない
+- 返すのはユーザーの入力、Agent の最終応答、formal message の body、質問・回答の本文だけ。途中の text・tool・作業ログ、通知、設定用ターンは含めない
+- 入力は `{ before?: number, limit?: number }`。新しい順のページを取得し、各ページの本文は時系列で返す。`before` は前の応答の `nextBefore`、`limit` は既定 50・最大 100。全件を system prompt や Task envelope に自動挿入しない
+- Event Bus から選んだ本文を会話 ID ごとの JSONL に保存し、Hub の再起動後も読めるようにする。既存の会話は保存済みの feed から読める範囲を初期値にする。MCP server は ConversationRuntime ごとに作るので、tool に会話 ID を指定させない
 
 ---
 
@@ -917,7 +926,7 @@ Write body in Markdown: a one-line summary first, then bullet points. Do not wri
 - 依頼系（`QUESTION` / `REVIEW_REQUEST` / `DELEGATE`）には返信方法を指示する。返信の body の書式（Markdown で 1 行の要約 → 箇条書き。長い 1 段落にしない）も添え、Agent ごとに書き方がばらつかないようにする
 - 末尾に、人が読む文章の言語（下記 Language）を 1 行で添える。長い会話でも依頼のたびに思い出させる
 - `RESULT` / `ISSUE` には返信を求めない（返信の連鎖を作らない）
-- 会話履歴は含めない。Agent B は必要に応じて Repository を読む
+- 会話履歴は envelope に含めない。Agent B は必要に応じて `read_conversation` で同じ会話の本文を読むか、Repository を読む
 - `spec` があれば `Spec:` 行と「作業の前に読んで従う。コードと食い違う・曖昧なら推測せず QUESTION で聞く」の 1 行を添える。`RESULT` では「回答に合わせて更新した設計書を読み、続きの作業で従う」の 1 行にする
 - `specChanges` があれば `Spec:` 行の直後に書く。空なら `Spec:` 行に `(unchanged since you last received it)` を付け、空でなければ `Spec changes since you last received it:` に続けて節の見出しを 1 行ずつ並べる
 
