@@ -131,6 +131,37 @@ describe("applyFeedItem", () => {
     expect(timeline[1]).not.toHaveProperty("processId");
   });
 
+  it("後ろが自分の質問・message だけなら、最終応答は元の枠に入れる", () => {
+    const question: FeedItem = { type: "event", seq: ++seq, event: {
+      kind: "question", id: "q1", agent: "claude", at: AT, questions: [{ question: "どれ？", options: [{ label: "A" }, { label: "B" }] }],
+    } };
+    const message = (from: "claude" | "codex"): FeedItem => ({ type: "event", seq: ++seq, event: { kind: "message", at: AT, message: {
+      id: `msg_${seq}`, from, to: from === "claude" ? "codex" : "claude", type: "DELEGATE", taskId: "T", body: "実装", repository: "C:\\r", createdAt: AT,
+    } } });
+    const timeline = run([
+      agent("claude", { type: "turn_started" }),
+      agent("claude", { type: "text", text: "確認します。" }),
+      question,
+      message("claude"),
+      agent("claude", { type: "turn", result: { status: "completed", text: "選んでください。" } }, LATER),
+    ]);
+    expect(timeline).toMatchObject([
+      { kind: "turn", agent: "claude", status: "completed", text: "選んでください。", plan: "確認します。" },
+      { kind: "question", id: "q1" },
+      { kind: "message" },
+    ]);
+    expect(timeline).toHaveLength(3);
+
+    const replied = run([
+      agent("claude", { type: "turn_started" }),
+      agent("claude", { type: "text", text: "確認します。" }),
+      message("codex"),
+      agent("claude", { type: "turn", result: { status: "completed", text: "完了" } }, LATER),
+    ]);
+    expect(replied).toHaveLength(3);
+    expect(replied[2]).toMatchObject({ kind: "turn", text: "完了" });
+  });
+
   it("後ろが作業中のターンだけなら、最終応答は元の枠に入れる", () => {
     const timeline = run([
       agent("claude", { type: "turn_started" }),

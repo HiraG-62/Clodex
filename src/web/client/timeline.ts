@@ -112,7 +112,10 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
         return { ...turn, status, text, steps };
       };
       const index = items.findLastIndex((entry) => entry.kind === "turn" && entry.agent === agent && entry.status === "working");
-      const later = items.slice(index + 1).some((entry) => entry.kind !== "turn" || entry.status !== "working");
+      // 自分が送った質問・message はターンの一部なので、枠を分ける理由にしない
+      const ownItem = (entry: TimelineItem) => (entry.kind === "question" && entry.agent === agent)
+        || (entry.kind === "message" && entry.message.from === agent);
+      const later = items.slice(index + 1).some((entry) => !ownItem(entry) && (entry.kind !== "turn" || entry.status !== "working"));
       if (index < 0 || !later) return updateTurn(finish);
       // 作業中に後ろへ別の項目が並んだら、最終応答は末尾に出してログを時系列に保つ（DESIGN.md §17 ログ）
       const finished = finish(items[index] as Turn);
