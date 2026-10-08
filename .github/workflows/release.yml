@@ -21,6 +21,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+        # dev の版の番号は、版を上げたコミットからのコミット数で決めるため、履歴をすべて取る。
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -35,7 +38,7 @@ jobs:
       - name: 公開する版を決める
         id: version
         shell: bash
-        run: echo "version=$(node scripts/release-version.mjs "$GITHUB_REF_TYPE" "$GITHUB_REF_NAME" "$GITHUB_RUN_NUMBER")" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(node scripts/release-version.mjs "$GITHUB_REF_TYPE" "$GITHUB_REF_NAME")" >> "$GITHUB_OUTPUT"
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test

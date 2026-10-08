@@ -2095,7 +2095,7 @@ GUI の自動更新（D3 の後）:
 - 版の元は `package.json` の `version` だけにする。`tauri.conf.json` の `version` は `../../package.json` を指す。tag は `v<version>`
 - 公開: GitHub Actions（`.github/workflows/release.yml`、Windows の runner）が `pnpm typecheck`・`pnpm test`（失敗したら公開しない）・`pnpm build` と同梱物の組み立ての後に `tauri-apps/tauri-action` で build し、NSIS のインストーラー・署名（`.sig`）・`latest.json` を Release に上げる
   - 本番: tag `v*` の push。tag と `package.json` の版が違えば失敗させる
-  - dev: master への push（`docs/**` と `*.md` だけの変更は除く）。版は `package.json` の版のパッチを 1 つ上げて `-dev.<実行番号>` を付けたもの（`0.1.0` → `0.1.1-dev.57`）を CI が `package.json` に書いてから build する。tag `v<その版>` は Release の作成で付く。人は版も tag も触らない
+  - dev: master への push（`docs/**` と `*.md` だけの変更は除く）。版は `package.json` の版のパッチを 1 つ上げて `-dev.<N>` を付けたもの（`0.1.0` → `0.1.1-dev.3`）を CI が `package.json` に書いてから build する。N は `package.json` の版を最後に変えたコミットより後の、build の対象になるコミット（`docs/**` と `*.md` だけの変更を除く）の数。本番を出すたびに 1 から数え直す（版上げのコミット自体の build は `dev.0`）。tag `v<その版>` は Release の作成で付く。人は版も tag も触らない
   - dev の build は同時に 1 つだけ動かし、新しい push が来たら古い build を止める（古い build が後から `latest.json` を戻さないように）
   - dev の build の後、dev の prerelease は新しい 3 件だけ残し、古いものは tag ごと消す
   - 版を決める処理は `scripts/release-version.mjs`（テスト付き）
@@ -2105,7 +2105,7 @@ GUI の自動更新（D3 の後）:
   - `dev` の取得先: `https://github.com/HiraG-62/Clodex/releases/download/dev/latest.json`
   - 版に `-` を含むもの（dev の build）は prerelease として公開する。それ以外は通常の Release
   - workflow は、どの Release でも `latest.json` を固定の prerelease `dev`（無ければ作る）に上書きで上げる。`dev` のチャンネルは正式版も含めた最新の版を受け取る
-  - 版の順序は semver（`0.1.0 < 0.1.1-dev.1 < 0.1.1-dev.2 < 0.1.1`）。本番を出したら、その後の dev は自動で次のパッチ（`0.1.2-dev.N`）になる
+  - 版の順序は semver（`0.1.0 < 0.1.1-dev.1 < 0.1.1-dev.2 < 0.1.1`）。本番を出したら、その後の dev は自動で次のパッチ（`0.1.2-dev.1` から）になる
 - 確認と入れ替えは GUI（Rust）が行う
   - 起動時に 1 回、ウィンドウを出した後にバックグラウンドで確認する。新しい版が無いか、確認に失敗したら何も出さない
   - トレイのメニューに「更新を確認」を足す。新しい版が無ければ「最新版」、失敗したらエラーをダイアログで出す
