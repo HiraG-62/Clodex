@@ -367,7 +367,7 @@ export const en = {
   "input.unknownCommand": "unknown command: /{name}",
   "input.oneLine": "slash commands must be one line",
   // CLI: 起動
-  "start.banner": "Clodex v0.1  project: {project}  primary: {primary}",
+  "start.banner": "Clodex v{version}  project: {project}  primary: {primary}",
   "start.log": "log: {path}",
   "start.saved": "saved settings: {settings}",
   "start.resume": "resume: {agents}",
@@ -754,7 +754,7 @@ export const ja: Messages = {
   "input.usage": "使い方: {usage}",
   "input.unknownCommand": "不明なコマンド: /{name}",
   "input.oneLine": "スラッシュコマンドは 1 行で書いてください",
-  "start.banner": "Clodex v0.1  project: {project}  primary: {primary}",
+  "start.banner": "Clodex v{version}  project: {project}  primary: {primary}",
   "start.log": "ログ: {path}",
   "start.saved": "保存した設定: {settings}",
   "start.resume": "再開: {agents}",

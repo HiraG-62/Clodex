@@ -66,7 +66,7 @@ describe.runIf(process.env.CLODEX_E2E === "1")("v0.1 acceptance (real clodex pro
       }
     };
 
-    await waitForOutput(/Clodex v0\.1 {2}project: (.+)/);
+    await waitForOutput(/Clodex v\S+ {2}project: (.+)/);
     expect(output).toContain(`project: ${root}  primary:`);
     const logPath = (await waitForOutput(new RegExp(messagePattern("start.log", { path: "(.+\\.jsonl)" }))))[1]!.trim();
 

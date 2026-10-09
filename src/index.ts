@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Hub の入口。project ごとの初期化は ProjectContext に任せる（DESIGN.md §28 D2a）
 import { readFileSync } from "node:fs";
+import { z } from "zod";
 import { join } from "node:path";
 import { uninstallSandboxes } from "./sandbox/controller.js";
 import { resetSandboxSettings } from "./sandbox/reset-settings.js";
@@ -63,6 +64,9 @@ const conversationsOf = (context: ProjectContext): ConversationList => ({
   remove: (id) => context.history.remove(id),
   togglePin: (id) => context.history.togglePin(id),
 });
+
+// src と dist のどちらから動かしても、1 つ上に package.json がある
+const CLODEX_VERSION = z.object({ version: z.string() }).parse(JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))).version;
 
 const main = async (): Promise<void> => {
   const args = parseCliArgs(process.argv.slice(2));
@@ -281,7 +285,7 @@ const main = async (): Promise<void> => {
   if (!args.serve) {
     const context = hub.current;
     if (context) {
-      printTerminal(t("start.banner", { project: context.projectRoot, primary: context.primary }));
+      printTerminal(t("start.banner", { version: CLODEX_VERSION, project: context.projectRoot, primary: context.primary }));
       printTerminal(t("start.log", { path: defaultLogPath(homeDir, context.projectRoot, context.startedAt, context.history.currentId.slice(0, LOG_SUFFIX_LENGTH)) }));
       const saved = AGENT_IDS.flatMap((id) => Object.entries(context.savedSettings[id] ?? {}).map(([key, value]) => `${id} ${key} ${value}`));
       for (const name of LIMIT_NAMES) {
