@@ -173,6 +173,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
 
   async interrupt(): Promise<void> {
     if (this.status !== "busy") return;
+    this.startInterruptTimeout();
     this.interruptRequested = true;
     this.proc?.write(JSON.stringify({
       type: "control_request", request_id: this.createId(), request: { subtype: "interrupt" },

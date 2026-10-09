@@ -561,6 +561,8 @@ Adapter の必須処理:
 - 実行中ターンへの追加送信（steer）は v0.1 では使わない。busy 中の `send` は Coordinator 側でキューに積む（§12）
 - 予期しない承認要求（Codex の server request）はエラー応答し、`error` を出す。Codex は `approvalPolicy: "never"` で起動し、Coordinator の MCP tool だけ自動承認する
 - 認証違反などでプロセスを止める（abort）ときは、プロセスの終了を待ってから実行中のターンを `failed`（理由は abort の理由）で終える。終了するまで idle に戻さず、終了中のプロセスに次の入力を送らない
+- interrupt してから 30 秒たってもターンが終わらなければ、abort としてプロセスを止める（次の送信で session を resume して起動し直す）
+- Codex の JSON-RPC の要求は、120 秒たっても応答が無ければ失敗にする（起動中なら起動の失敗としてプロセスを止める）
 - ターンの入力をプロセスに書けなかったとき（添付の画像が読めない、sandbox の broker が切れているなど）は、そのターンを `failed`（理由はエラーの文言）で終えて idle に戻す。busy のまま残さない
 - プロセスの終了は stdout を読み切ってから扱う（Node の `close`。`exit` の時点では最後の行が未処理のことがある）
 - プロセスを止めるときはプロセスツリーごと止める（Windows は `taskkill /T /F`。Agent が起動した shell や dev server を残さない。docs/spikes/shell-command.md）

@@ -6,6 +6,7 @@ import {
 import type { AgentProcess } from "./agent-process.js";
 
 const INVALID_LINE_PREVIEW_LENGTH = 200;
+const INTERRUPT_TIMEOUT_MS = 30_000;
 
 // 両 Adapter 共通の status / event / turn / 終了処理。CLI 固有のプロトコルはサブクラスが扱う
 export abstract class BaseAgentAdapter implements AgentAdapter {
@@ -26,6 +27,7 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   private spontaneousTurn: Promise<TurnResult> | undefined;
   private stopping: Promise<void> | undefined;
   private resolveStop: (() => void) | undefined;
+  private interruptTimer: ReturnType<typeof setTimeout> | undefined;
 
   abstract start(options: AgentStartOptions): Promise<void>;
   abstract interrupt(): Promise<void>;
@@ -120,6 +122,8 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
     if (this.abortReason) return;
     const resolve = this.resolveTurn;
     if (!resolve) return;
+    if (this.interruptTimer) clearTimeout(this.interruptTimer);
+    this.interruptTimer = undefined;
     this.resolveTurn = undefined;
     this.spontaneousTurn = undefined;
     if (this.status === "busy") this.status = "idle";
@@ -127,6 +131,15 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
     this.quietTurn = false;
     if (!quiet) this.emit({ type: "turn", result });
     resolve(result);
+  }
+
+  protected startInterruptTimeout(): void {
+    if (this.status !== "busy" || this.interruptTimer) return;
+    this.interruptTimer = setTimeout(() => {
+      this.interruptTimer = undefined;
+      if (this.status === "busy") this.abort(`${this.id}: interrupt timed out`);
+    }, INTERRUPT_TIMEOUT_MS);
+    this.interruptTimer.unref?.();
   }
 
   // 認証違反など継続してはいけない状態。ターンを失敗させてプロセスを止める

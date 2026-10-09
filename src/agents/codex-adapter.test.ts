@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentEvent } from "./agent-adapter.js";
 import { CodexAdapter } from "./codex-adapter.js";
 import { createFakeSpawner, flush, type JsonObject } from "./fake-agent-process.js";
 
 const THREAD_ID = "thr-1";
 const TURN_ID = "turn-1";
+const REQUEST_TIMEOUT_MS = 120_000;
+const INTERRUPT_TIMEOUT_MS = 30_000;
 
 const defaultResponder = (accountType = "chatgpt") => (m: JsonObject): unknown => {
   const params = m.params as JsonObject | undefined;
@@ -38,6 +40,86 @@ const agentMessage = (text: string) => ({
 });
 
 describe("CodexAdapter", () => {
+  it("initialize が応答しなければ期限後に起動を失敗させ、プロセスを止める", async () => {
+    vi.useFakeTimers();
+    try {
+      const spawner = createFakeSpawner();
+      const adapter = new CodexAdapter(spawner.spawn);
+      const started = adapter.start({ cwd: "C:\\dev\\app" });
+      const rejected = expect(started).rejects.toThrow(/initialize/);
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+      await rejected;
+      expect(spawner.last.killed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("interrupt が完了しなければ期限後に abort し、ターンを failed にする", async () => {
+    const { adapter, started, proc, events } = await setup();
+    await started;
+    vi.useFakeTimers();
+    try {
+      const turn = adapter.send("long");
+      await Promise.resolve();
+      await adapter.interrupt();
+      await vi.advanceTimersByTimeAsync(INTERRUPT_TIMEOUT_MS);
+      expect(proc.killed).toBe(true);
+      await expect(turn).resolves.toMatchObject({ status: "failed", text: expect.stringContaining("interrupt timed out") });
+      expect(events).toContainEqual(expect.objectContaining({ type: "error", message: expect.stringContaining("interrupt timed out") }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("turn ID が未確定でも interrupt の期限を開始し、完了済みのターンでは abort しない", async () => {
+    const responder = defaultResponder();
+    const spawner = createFakeSpawner((message) => message.method === "turn/start" ? undefined : responder(message));
+    const adapter = new CodexAdapter(spawner.spawn);
+    await adapter.start({ cwd: "C:\\dev\\app" });
+    vi.useFakeTimers();
+    try {
+      const turn = adapter.send("long");
+      await adapter.interrupt();
+      spawner.last.emit(turnCompleted("interrupted"));
+      await expect(turn).resolves.toMatchObject({ status: "interrupted" });
+      await vi.advanceTimersByTimeAsync(INTERRUPT_TIMEOUT_MS);
+      expect(spawner.last.killed).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("turn ID が未確定のままなら interrupt の期限後に abort する", async () => {
+    const responder = defaultResponder();
+    const spawner = createFakeSpawner((message) => message.method === "turn/start" ? undefined : responder(message));
+    const adapter = new CodexAdapter(spawner.spawn);
+    await adapter.start({ cwd: "C:\\dev\\app" });
+    vi.useFakeTimers();
+    try {
+      const turn = adapter.send("long");
+      await adapter.interrupt();
+      await vi.advanceTimersByTimeAsync(INTERRUPT_TIMEOUT_MS);
+      expect(spawner.last.killed).toBe(true);
+      await expect(turn).resolves.toMatchObject({ status: "failed", text: expect.stringContaining("interrupt timed out") });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("turn/interrupt のエラー応答を呼び出し元に返さず error event にする", async () => {
+    const { adapter, started, proc, events } = await setup();
+    await started;
+    const turn = adapter.send("long");
+    await flush();
+    const interrupted = adapter.interrupt();
+    const request = proc.writtenWith("method", "turn/interrupt")[0]!;
+    proc.emit({ id: request.id, error: { message: "interrupt rejected" } });
+    await expect(interrupted).resolves.toBeUndefined();
+    expect(events).toContainEqual({ type: "error", message: "codex: interrupt failed: interrupt rejected" });
+    proc.emit(turnCompleted("interrupted"));
+    await turn;
+  });
   it("app-server を API key を除いた環境で起動し、initialize → 認証確認 → thread/start を行う", async () => {
     process.env.OPENAI_API_KEY = "sk-should-not-leak";
     const { adapter, spawner, events, started } = await setup();

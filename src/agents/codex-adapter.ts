@@ -30,6 +30,7 @@ const PROJECT_CONFIG_ARGS = [
   "-c", "sandbox_workspace_write.network_access=true",
 ];
 const METHOD_NOT_FOUND = -32601;
+const CODEX_REQUEST_TIMEOUT_MS = 120_000;
 
 interface RpcMessage {
   id?: number | string;
@@ -65,6 +66,7 @@ interface CodexNotificationParams {
 interface PendingRequest {
   resolve: (result: unknown) => void;
   reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
 }
 
 const TURN_STATUS: Record<string, TurnResult["status"]> = { completed: "completed", interrupted: "interrupted" };
@@ -140,12 +142,17 @@ export class CodexAdapter extends BaseAgentAdapter {
 
   async interrupt(): Promise<void> {
     if (this.status !== "busy") return;
+    this.startInterruptTimeout();
     // turn ID が未確定（turn/start の応答前）なら、確定した時点で送る
     if (!this.turnId) {
       this.interruptPending = true;
       return;
     }
-    await this.request("turn/interrupt", { threadId: this.sessionId, turnId: this.turnId });
+    try {
+      await this.request("turn/interrupt", { threadId: this.sessionId, turnId: this.turnId });
+    } catch (error) {
+      this.emit({ type: "error", message: `codex: interrupt failed: ${error instanceof Error ? error.message : String(error)}` });
+    }
   }
 
   private setTurnId(turnId: string | undefined): void {
@@ -153,7 +160,7 @@ export class CodexAdapter extends BaseAgentAdapter {
     this.turnId = turnId;
     if (!this.interruptPending) return;
     this.interruptPending = false;
-    this.interrupt().catch((error: Error) => this.emit({ type: "error", message: `codex: interrupt failed: ${error.message}` }));
+    void this.interrupt();
   }
 
   protected async applyPermission(level: PermissionLevel): Promise<void> {
@@ -199,7 +206,10 @@ export class CodexAdapter extends BaseAgentAdapter {
   }
 
   protected handleExit(code: number | null): void {
-    for (const { reject } of this.pending.values()) reject(new Error(`codex process exited (code ${code})`));
+    for (const { reject, timer } of this.pending.values()) {
+      clearTimeout(timer);
+      reject(new Error(`codex process exited (code ${code})`));
+    }
     this.pending.clear();
     if (this.subagents.size) {
       this.subagents.clear();
@@ -305,6 +315,7 @@ export class CodexAdapter extends BaseAgentAdapter {
     const request = this.pending.get(rpc.id!);
     if (!request) return;
     this.pending.delete(rpc.id!);
+    clearTimeout(request.timer);
     if (rpc.error) request.reject(new Error(rpc.error.message ?? "codex request failed"));
     else request.resolve(rpc.result);
   }
@@ -314,8 +325,19 @@ export class CodexAdapter extends BaseAgentAdapter {
     if (!proc) return Promise.reject(new Error("codex process is not running"));
     const id = this.nextRequestId++;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      proc.write(JSON.stringify({ id, method, params }));
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`codex request timed out: ${method}`));
+      }, CODEX_REQUEST_TIMEOUT_MS);
+      timer.unref?.();
+      this.pending.set(id, { resolve, reject, timer });
+      try {
+        proc.write(JSON.stringify({ id, method, params }));
+      } catch (error) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(error);
+      }
     });
   }
 

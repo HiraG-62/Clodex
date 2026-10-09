@@ -4,6 +4,7 @@ import { ClaudeAdapter } from "./claude-adapter.js";
 import { createFakeSpawner, flush } from "./fake-agent-process.js";
 
 const SESSION_ID = "11111111-1111-1111-1111-111111111111";
+const INTERRUPT_TIMEOUT_MS = 30_000;
 
 const setup = async (options: { resumeSessionId?: string; mcpUrl?: string } = {}) => {
   const spawner = createFakeSpawner();
@@ -342,6 +343,35 @@ describe("ClaudeAdapter", () => {
     proc.emit(result("", "error_during_execution"));
 
     await expect(turn).resolves.toEqual({ status: "interrupted", text: "" });
+  });
+
+  it("interrupt 後にターンが止まらなければ期限後に abort する", async () => {
+    const { adapter, proc } = await setup();
+    vi.useFakeTimers();
+    try {
+      const turn = adapter.send("long task");
+      await adapter.interrupt();
+      await vi.advanceTimersByTimeAsync(INTERRUPT_TIMEOUT_MS);
+      expect(proc.killed).toBe(true);
+      await expect(turn).resolves.toMatchObject({ status: "failed", text: expect.stringContaining("interrupt timed out") });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("interrupt 後にターンが終われば期限後も abort しない", async () => {
+    const { adapter, proc } = await setup();
+    vi.useFakeTimers();
+    try {
+      const turn = adapter.send("short task");
+      await adapter.interrupt();
+      proc.emit(result("", "error_during_execution"));
+      await expect(turn).resolves.toMatchObject({ status: "interrupted" });
+      await vi.advanceTimersByTimeAsync(INTERRUPT_TIMEOUT_MS);
+      expect(proc.killed).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("interrupt していないエラー終了は failed になる", async () => {
