@@ -6,7 +6,25 @@ import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { EMPTY_MODEL_CATALOG } from "../agents/startup-probe.js";
 import { rebuildTimeline, applyFeedItem } from "../web/client/timeline.js";
 import { WebFeed } from "../web/web-feed.js";
-import { openProject } from "./project-context.js";
+import { openProject, protectRecoverySave } from "./project-context.js";
+
+it("復旧状態の保存失敗を呼び出し元へ出さず、連続失敗は一度だけ報告する", () => {
+  const save = vi.fn()
+    .mockImplementationOnce(() => { throw new Error("disk busy"); })
+    .mockImplementationOnce(() => { throw new Error("disk busy"); })
+    .mockImplementationOnce(() => {})
+    .mockImplementationOnce(() => { throw new Error("disk busy again"); });
+  const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+  try {
+    const protectedSave = protectRecoverySave(save);
+    expect(() => { protectedSave(); protectedSave(); protectedSave(); protectedSave(); }).not.toThrow();
+    expect(stderr).toHaveBeenCalledTimes(2);
+    expect(stderr).toHaveBeenNthCalledWith(1, "recovery save failed: disk busy\n");
+    expect(stderr).toHaveBeenNthCalledWith(2, "recovery save failed: disk busy again\n");
+  } finally {
+    stderr.mockRestore();
+  }
+});
 
 it("別 project のターン終了を共有の通知先へ渡す", async () => {
   const homeDir = mkdtempSync(join(tmpdir(), "clodex-other-project-"));

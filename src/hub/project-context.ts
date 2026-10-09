@@ -34,6 +34,19 @@ const LOG_SUFFIX_LENGTH = 8;
 const DEFAULT_PRIMARY: AgentId = "claude";
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
+export const protectRecoverySave = (save: () => void): (() => void) => {
+  let failed = false;
+  return () => {
+    try {
+      save();
+      failed = false;
+    } catch (error) {
+      if (!failed) process.stderr.write(`recovery save failed: ${errorMessage(error)}\n`);
+      failed = true;
+    }
+  };
+};
+
 export interface ProjectContext {
   readonly sandbox: SandboxController;
   probe(): Promise<void>;
@@ -181,7 +194,7 @@ export const openProject = async ({
     activeWorkspace.allRuntimes().find((runtime) => runtime.conversationId === id)?.coordinator.status()
       .filter((agent) => agent.status === "busy" || agent.status === "starting").map((agent) => agent.id) ?? [],
   );
-  const save = () => saveRecovery(homeDir, projectRoot, { current: history.currentId, conversations: activeWorkspace.recoveryConversations() });
+  const save = protectRecoverySave(() => saveRecovery(homeDir, projectRoot, { current: history.currentId, conversations: activeWorkspace.recoveryConversations() }));
   activeWorkspace.onRecoveryChange(save);
   history.onSwitch(save);
   history.onRemove(save);
