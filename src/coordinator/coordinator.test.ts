@@ -1,7 +1,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { ConversationHistory } from "../project/conversation-history.js";
 import { type SoloMode, Coordinator } from "./coordinator.js";
@@ -299,6 +299,18 @@ describe("Coordinator", () => {
     expect(codex.starts).toEqual([{ cwd: PROJECT_ROOT, mcpUrl: mcpUrlFor("codex") }]);
     expect(codex.sent).toHaveLength(1);
     expect(codex.sent[0]).toContain("[Clodex] Message msg_00000001 from claude");
+  });
+
+  it("割り込み配送中の steer が throw したら宛先の error event を出す", async () => {
+    const { codex, events, coordinator } = setup();
+    coordinator.receiveMessage("claude", reviewRequest);
+    await flush();
+    vi.spyOn(codex, "steer").mockRejectedValueOnce(new Error("steer failed"));
+    coordinator.receiveMessage("claude", { ...reviewRequest, interrupt: true });
+    await flush();
+    expect(events).toContainEqual(expect.objectContaining({ kind: "agent", agent: "codex",
+      event: { type: "error", message: "steer failed" } }));
+    codex.completeTurn();
   });
 
   it("Agent ごとの instructions を起動時に渡す", async () => {

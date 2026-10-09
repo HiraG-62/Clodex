@@ -5,6 +5,7 @@ import { Coordinator } from "../coordinator/coordinator.js";
 import { EventBus } from "../coordinator/event-bus.js";
 import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentId } from "../agents/agent-adapter.js";
@@ -34,6 +35,20 @@ const accepted: CreateMessageResult = {
 const readConversation = () => ({ entries: [] });
 
 describe("startMcpServer", () => {
+  it("MCP の接続処理が throw したら HTTP 500 を返す", async () => {
+    server = await startMcpServer({ readConversation, askUser: () => ({ ok: true, id: "q1" }), sendMessage: () => accepted });
+    const connect = vi.spyOn(McpServer.prototype, "connect").mockRejectedValueOnce(new Error("connect failed"));
+    try {
+      const response = await fetch(server.urlFor("claude"), {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      });
+      expect(response.status).toBe(500);
+    } finally {
+      connect.mockRestore();
+    }
+  });
   it("send_message を公開し、URL の agentId を送信元として handler に渡す", async () => {
     const calls: Array<{ from: AgentId; input: unknown }> = [];
     server = await startMcpServer({ readConversation, askUser: () => ({ ok: true, id: "q1" }), sendMessage: (from, input) => {

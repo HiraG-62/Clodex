@@ -13,6 +13,7 @@ import { sendMessageShape, type CreateMessageResult } from "../protocol/messages
 const HOST = "127.0.0.1";
 const TOKEN_BYTES = 16;
 const HTTP_NOT_FOUND = 404;
+const HTTP_INTERNAL_ERROR = 500;
 const SERVER_VERSION = "0.0.0";
 const TOKEN_PATH = /^\/mcp\/([0-9a-f]+)$/;
 
@@ -87,7 +88,12 @@ export const startMcpServer = async (handler: McpHandlers): Promise<McpServerHan
     await transport.handleRequest(req, res);
   };
 
-  const http = createServer((req, res) => void handle(req, res));
+  const http = createServer((req, res) => {
+    void handle(req, res).catch(() => {
+      if (!res.headersSent) res.writeHead(HTTP_INTERNAL_ERROR);
+      if (!res.writableEnded) res.end();
+    });
+  });
   await new Promise<void>((resolve) => http.listen(0, HOST, resolve));
   const origin = `http://${HOST}:${(http.address() as AddressInfo).port}`;
 

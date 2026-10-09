@@ -123,6 +123,14 @@ export class Coordinator {
   private stoppingRecovery: ConversationRecovery | undefined;
 
   onRecoveryChange(listener: () => void): () => void {
+  private detach(promise: Promise<unknown>, agent?: AgentId): void {
+    void promise.catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      if (agent) this.options.bus.publish({ kind: "agent", agent, event: { type: "error", message } });
+      else this.options.bus.publish({ kind: "notice", text: message });
+    });
+  }
+
     this.recoveryListeners.add(listener);
     return () => this.recoveryListeners.delete(listener);
   }
@@ -152,18 +160,18 @@ export class Coordinator {
     for (const question of state.questions ?? []) this.questions.set(question.id, question);
     for (const id of AGENT_IDS) this.mailboxes[id].pause();
     for (const id of state.interrupted) {
-      if (this.mailboxes[id].sessionId) void this.mailboxes[id].enqueue(`${RECOVERY_CONTINUE}${this.recoveryWorkNote(state.lastWork?.[id])}`, { suffix: this.reminder });
+      if (this.mailboxes[id].sessionId) this.detach(this.mailboxes[id].enqueue(`${RECOVERY_CONTINUE}${this.recoveryWorkNote(state.lastWork?.[id])}`, { suffix: this.reminder }), id);
     }
     for (const id of AGENT_IDS) {
       for (const item of state.queue[id]) {
         if (item.kind === "input") {
-          void this.mailboxes[id].enqueue(item.text, {
+          this.detach(this.mailboxes[id].enqueue(item.text, {
             inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, images: item.images,
             suffix: this.inputSuffix(item.context), ...(item.context ? { context: true } : {}),
-          });
+          }), id);
         } else {
           this.budget.restore(item.message);
-          void this.deliver(item.message);
+          this.detach(this.deliver(item.message), item.message.to);
         }
       }
     }
@@ -190,9 +198,9 @@ export class Coordinator {
       });
       // 起動前なので値を保持するだけ（次の起動時に使われる）
       const { permission, model, effort } = settings?.[id] ?? {};
-      if (permission) void agents[id].setPermission(permission);
-      if (model) void agents[id].setModel(model);
-      if (effort) void agents[id].setEffort(effort);
+      if (permission) this.detach(agents[id].setPermission(permission), id);
+      if (model) this.detach(agents[id].setModel(model), id);
+      if (effort) this.detach(agents[id].setEffort(effort), id);
     }
     const createMailbox = (id: AgentId) => {
       const resumeSessionId = options.resumeSessionIds?.[id];
@@ -266,9 +274,9 @@ export class Coordinator {
       this.pendingNotices[peer].push(notice);
       return;
     }
-    void this.steerWithNotice(peer, notice, randomUUID()).then((sent) => {
+    this.detach(this.steerWithNotice(peer, notice, randomUUID()).then((sent) => {
       if (!sent) this.pendingNotices[peer].push(notice);
-    }).catch(() => { this.pendingNotices[peer].push(notice); });
+    }).catch((error: unknown) => { this.pendingNotices[peer].push(notice); throw error; }), peer);
   }
 
   setLimits(limits: BudgetLimits): void {
@@ -300,7 +308,7 @@ export class Coordinator {
     this.options.bus.publish({ kind: "answer", id, agent: question.agent, answers });
     question.questions.forEach((item, index) => this.queueHumanContext(question.agent,
       `${item.header ?? item.question.slice(0, QUESTION_HEADER_LENGTH)}: ${answers[index]!.join(", ")}`));
-    void this.mailboxes[question.agent].enqueue(text, { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, suffix: this.reminder });
+    this.detach(this.mailboxes[question.agent].enqueue(text, { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, suffix: this.reminder }), question.agent);
     this.notifyRecoveryChange();
     return undefined;
   }
@@ -335,7 +343,7 @@ export class Coordinator {
     if (specSnapshot) this.specSnapshots.set(specSnapshot.key, specSnapshot.content);
     bus.publish({ kind: "message", message });
     // ACK は記録のみ。配送して Agent を起こさない（DESIGN.md §12, §25）
-    if (message.type !== "ACK") void this.deliver(message);
+    if (message.type !== "ACK") this.detach(this.deliver(message), message.to);
     return result;
   }
 
@@ -360,7 +368,7 @@ export class Coordinator {
     if (sender.isClosed) return;
     const error = (result.text.split("\n", 1)[0] ?? "").slice(0, ERROR_LINE_LENGTH);
     this.options.bus.publish({ kind: "notice", text: t("notice.handoffFailed", { type: message.type, to: message.to, from: message.from }) });
-    void sender.enqueue(handoffFallback(message, error), { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, suffix: this.reminder });
+    this.detach(sender.enqueue(handoffFallback(message, error), { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, suffix: this.reminder }), message.from);
   }
 
   private autoResult(request: AgentMessage, text: string): void {
@@ -376,7 +384,7 @@ export class Coordinator {
       return;
     }
     this.options.bus.publish({ kind: "message", message });
-    void this.deliver(message);
+    this.detach(this.deliver(message), message.to);
   }
 
   // @agent!: 実行中なら steer し、そうでなければ通常の送信（DESIGN.md §28 v0.3 C）
@@ -387,7 +395,7 @@ export class Coordinator {
       if (!shared) this.queueHumanContext(id, text);
       return "steered";
     }
-    void this.sendToAgent(id, text, [], context, shared);
+    this.detach(this.sendToAgent(id, text, [], context, shared), id);
     return "queued";
   }
 
