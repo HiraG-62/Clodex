@@ -886,6 +886,7 @@ MCP message を受け取った後、
 - 作業を頼む message（`DELEGATE`・`REVIEW_REQUEST`・`QUESTION`）は、配送したターンが失敗（`failed`。混雑や API のエラー）したら 30 秒待って、同じ envelope をもう一度だけ宛先の mailbox に積む。取り消し（`/interrupt`・`/cancel`）と停止（mailbox を閉じた）は失敗に数えない。宛先が利用枠の上限で待っているときも送り直さない（リセット後に続きを送るため。§利用枠の可視化と通知）
   - もう一度失敗したら、送信元の mailbox に「宛先に届かなかった。送り直さずに自分で進める」という指示（英語。message の type・ID・宛先・エラーの 1 行目）を積み、画面に notice（「{to} への {type} が 2 回失敗。{from} が自分で進める」）を出す。`DELEGATE` は自分で実装し、`REVIEW_REQUEST` は自分で確かめ、`QUESTION` は自分で判断して進める
   - 待っている間に Hub が止まったら、再試行はしない（未配送分としても残らない）
+  - 再送の envelope には `[Clodex] Retry: your previous attempt at this message failed partway. Check the current state of the files before continuing; do not redo finished work.` の 1 行を添える（前回のターンが途中まで作業していても、やり直しで二重に作業しないように）
 - 依頼系の message（`DELEGATE`・`REVIEW_REQUEST`・`QUESTION`）を配送したターンが完了（`completed`）したのに、宛先の Agent がそのターンの間に送信元へ formal message を 1 つも送らなかったら、Coordinator がそのターンの最終応答を `RESULT` として送信元へ届ける（Agent が `send_message` を使わずに普通の返答で報告して終えても、依頼元が結果を受け取れるように）
   - `from` は宛先の Agent、`to` は依頼の送信元、`taskId` は依頼と同じ、`replyTo` は依頼の message ID、`status` は `done`、`body` は最終応答（`MAX_BODY_LENGTH` を超えたら切り詰め、末尾に `…`）。最終応答が空なら送らない
   - Coordinator が作ったことを示す `auto: true` を付ける（Coordinator が付与するフィールド。Agent の入力では受け付けない）。envelope には `Auto: the recipient ended its turn without send_message; this is its final reply.` の 1 行を添える。画面の message の行にも自動で届けたことが分かる印を出す
@@ -1663,7 +1664,7 @@ Agent 同士の runaway conversation を禁止する。
 - 上限は §14（chain 単位の hard limit）
 - `ACK` は配送しないので、`ACK → ACK → ACK` の往復は起きない（§12）
 - 返信を求めるのは依頼系の message だけ（§13）
-- message ID は Coordinator が採番するので、v0.1 では重複受信は起きない。再送（retry）を入れる v0.2 で idempotency を扱う
+- message ID は Coordinator が採番するので、重複受信は起きない。再送（§11 配送ルール）は同じ message を送り直し、再送であることを envelope に添える
 
 ---
 

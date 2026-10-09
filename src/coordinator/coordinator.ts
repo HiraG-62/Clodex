@@ -59,6 +59,7 @@ const DEFAULT_LIMIT_RESUME_MARGIN_MS = 60_000;
 const MS_PER_SECOND = 1000;
 const LIMIT_CONTINUE = "[Clodex] Your usage limit has reset. Continue the task you were working on.";
 const MAX_DELIVERY_ATTEMPTS = 2;
+const RETRY_NOTE = "[Clodex] Retry: your previous attempt at this message failed partway. Check the current state of the files before continuing; do not redo finished work.";
 const ERROR_LINE_LENGTH = 200;
 const HUMAN_CONTEXT_LIMIT = 5;
 const HUMAN_CONTEXT_LENGTH = 300;
@@ -122,7 +123,6 @@ export class Coordinator {
   private readonly recoveryListeners = new Set<() => void>();
   private stoppingRecovery: ConversationRecovery | undefined;
 
-  onRecoveryChange(listener: () => void): () => void {
   private detach(promise: Promise<unknown>, agent?: AgentId): void {
     void promise.catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
@@ -131,6 +131,7 @@ export class Coordinator {
     });
   }
 
+  onRecoveryChange(listener: () => void): () => void {
     this.recoveryListeners.add(listener);
     return () => this.recoveryListeners.delete(listener);
   }
@@ -349,7 +350,7 @@ export class Coordinator {
 
   // interrupt: 宛先が送信元からの message を処理中なら、そのターンに足す。足せなければキューに積む（DESIGN.md §28 v0.3 C）
   private async deliver(message: AgentMessage, attempt = 1): Promise<void> {
-    const envelope = buildEnvelope(message, this.language);
+    const envelope = `${attempt > 1 ? `${RETRY_NOTE}\n` : ""}${buildEnvelope(message, this.language)}`;
     const mailbox = this.mailboxes[message.to];
     const steerable = message.interrupt && mailbox.current?.from === message.from;
     if (steerable && await this.steerWithNotice(message.to, envelope, message.id)) return;
