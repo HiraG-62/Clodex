@@ -694,6 +694,28 @@ describe("message で区切るターン", () => {
     }
   });
 
+  it("回答を RESULT で返しても、自動の RESULT でも、質問 → 回答 → 続きの作業中の順に並ぶ", () => {
+    for (const reply of [
+      [
+        agent("codex", { type: "turn_started" }),
+        formal("codex", "回答"),
+        agent("codex", { type: "turn", result: { status: "completed", text: "返しました" } }),
+      ],
+      [
+        agent("codex", { type: "turn_started" }),
+        agent("codex", { type: "turn", result: { status: "completed", text: "回答" } }),
+        formal("codex", "回答", true),
+      ],
+    ]) {
+      const timeline = run([agent("claude", { type: "turn_started" }), formal("claude", "質問"), ...reply]);
+      expect(withWorkingTurnsLast(timeline)).toMatchObject([
+        { kind: "turn", agent: "claude", segment: "closed", messages: [{ message: { body: "質問" } }] },
+        { kind: "turn", agent: "codex", messages: [{ message: { body: "回答" } }] },
+        { kind: "turn", agent: "claude", status: "working", continuation: true },
+      ]);
+    }
+  });
+
   it("区切った枠は、続きで終えた後の次のターンの開始で動かず、中断にもならない", () => {
     const timeline = run([
       agent("claude", { type: "turn_started" }),
