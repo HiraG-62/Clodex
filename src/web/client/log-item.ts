@@ -196,8 +196,8 @@ export function createLogItem(ctx: ClientContext) {
     const head = ctx.el("div", "head");
     head.append(ctx.el("b", `c-${item.agent}`, ctx.AGENTS[item.agent].name), ctx.el("time", "mono", ctx.clock(item.at)));
     const label = ctx.TURN_LABEL[item.status];
-    if (label) head.append(ctx.el("span", `state ${item.status}`, ctx.t(label)));
-    if (item.status === "working") {
+    if (label && item.segment !== "closed") head.append(ctx.el("span", `state ${item.status}`, ctx.t(label)));
+    if (item.status === "working" && item.segment !== "closed") {
       const elapsed = ctx.el("span", "elapsed mono", elapsedText(item.at));
       elapsed.dataset.start = item.at;
       head.append(elapsed);
@@ -215,7 +215,7 @@ export function createLogItem(ctx: ClientContext) {
       for (const step of steps) list.append(stepNode(step));
       node.append(details(item.id, ctx.t("web.turn.steps", { count: steps.length }), list, "steps"));
     }
-    if (item.status === "working") node.append(nowLine(item));
+    if (item.status === "working" && item.segment !== "closed") node.append(nowLine(item));
     if (item.messages?.length) {
       const body = ctx.el("div", "body");
       for (const entry of item.messages) body.append(renderMessage({ ...entry, id: entry.message.id, at: entry.message.createdAt }));

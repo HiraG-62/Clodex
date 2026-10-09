@@ -93,7 +93,9 @@ export function createLogView(ctx: ClientContext) {
   const workingToggle = ctx.$("#working-toggle");
   let previousFeed: WorkingEntry[] = [];
   const renderWorking = () => {
-    const active = ctx.store.items.filter((item): item is Extract<TimelineItem, { kind: "turn" }> => item.kind === "turn" && item.status === "working");
+    const active = ctx.store.items.filter(
+      (item): item is Extract<TimelineItem, { kind: "turn" }> => item.kind === "turn" && item.status === "working" && item.segment !== "closed",
+    );
     const feed = workingFeed(ctx.store.items);
     const count = active.length ? String(active.length) : "";
     if (ctx.$("#working-count").textContent !== count) ctx.$("#working-count").textContent = count;

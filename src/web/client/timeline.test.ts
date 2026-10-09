@@ -240,8 +240,14 @@ describe("applyFeedItem", () => {
       human("claude", "割り込み"),
       agent("claude", { type: "turn", result: { status: "completed", text: "依頼しました" } }, LATER),
     ]);
-    expect(timeline.map(item => item.kind)).toEqual(["human", "turn"]);
-    expect(timeline[1]).toMatchObject({ kind: "turn", plan: "調べます", text: "依頼しました", messages: [{ message: { body: "依頼" } }] });
+    expect(timeline.map(item => item.kind)).toEqual(["turn", "human"]);
+    expect(timeline[0]).toMatchObject({
+      kind: "turn",
+      plan: "調べます",
+      segment: "closed",
+      steps: [{ kind: "say", text: "依頼しました" }],
+      messages: [{ message: { body: "依頼" } }],
+    });
   });
 
   it("履歴を再構築しても message をターンに入れる", () => {
@@ -367,7 +373,7 @@ describe("applyFeedItem", () => {
     expect(timeline[1]).not.toHaveProperty("plan");
   });
 
-  it("自分の質問・message が後ろでも、終わった枠を末尾へ移す", () => {
+  it("自分の質問の後の message で枠を固定し、最終応答は作業に入れる", () => {
     const question: FeedItem = {
       type: "event",
       seq: ++seq,
@@ -406,7 +412,15 @@ describe("applyFeedItem", () => {
     ]);
     expect(timeline).toMatchObject([
       { kind: "question", id: "q1" },
-      { kind: "turn", agent: "claude", status: "completed", text: "選んでください。", plan: "確認します。", messages: [{ message: { body: "実装" } }] },
+      {
+        kind: "turn",
+        agent: "claude",
+        status: "completed",
+        segment: "closed",
+        plan: "確認します。",
+        steps: [{ kind: "say", text: "選んでください。" }],
+        messages: [{ message: { body: "実装" } }],
+      },
     ]);
     expect(timeline).toHaveLength(2);
 
@@ -659,5 +673,123 @@ describe("workingFeed", () => {
         .filter(entry => entry.kind === "head")
         .map(entry => entry.agent),
     ).toEqual(["codex", "claude", "claude"]);
+  });
+});
+
+describe("message で区切るターン", () => {
+  it("質問の枠を回答より前に固定し、続きの作業中の枠を末尾に置く", () => {
+    const events = [
+      agent("claude", { type: "turn_started" }),
+      agent("claude", { type: "text", text: "確認します" }),
+      formal("claude", "質問"),
+      agent("codex", { type: "turn_started" }),
+      agent("codex", { type: "turn", result: { status: "completed", text: "回答" } }),
+    ];
+    for (const timeline of [run(events), rebuildTimeline(events as Extract<FeedItem, { type: "event" | "output" }>[], applyFeedItem)]) {
+      expect(withWorkingTurnsLast(timeline)).toMatchObject([
+        { kind: "turn", agent: "claude", segment: "closed", messages: [{ message: { body: "質問" } }] },
+        { kind: "turn", agent: "codex", status: "completed", text: "回答" },
+        { kind: "turn", agent: "claude", status: "working", continuation: true, steps: [] },
+      ]);
+    }
+  });
+
+  it("区切った枠は、続きで終えた後の次のターンの開始で動かず、中断にもならない", () => {
+    const timeline = run([
+      agent("claude", { type: "turn_started" }),
+      formal("claude", "質問"),
+      agent("claude", { type: "text", text: "続きの作業" }),
+      agent("claude", { type: "turn", result: { status: "completed", text: "完了" } }),
+      human("claude", "次"),
+      agent("claude", { type: "turn_started" }),
+    ]);
+    expect(timeline).toMatchObject([
+      { kind: "turn", segment: "closed", messages: [{ message: { body: "質問" } }] },
+      { kind: "turn", continuation: true, status: "completed", text: "完了" },
+      { kind: "human", text: "次" },
+      { kind: "turn", status: "working" },
+    ]);
+    expect(timeline[0]).not.toMatchObject({ status: "interrupted" });
+  });
+
+  it("依頼の後に最終応答だけなら一つの枠に戻し、畳んだ作業に入れる", () => {
+    const timeline = run([
+      agent("claude", { type: "turn_started" }),
+      formal("claude", "依頼"),
+      agent("claude", { type: "turn", result: { status: "completed", text: "依頼しました" } }),
+    ]);
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0]).toMatchObject({
+      kind: "turn",
+      segment: "closed",
+      status: "completed",
+      messages: [{ message: { body: "依頼" } }],
+      steps: [{ kind: "say", text: "依頼しました" }],
+    });
+  });
+
+  it("最終応答と同じ text event だけが続いた場合も一つの枠に戻す", () => {
+    const timeline = run([
+      agent("claude", { type: "turn_started" }),
+      formal("claude", "依頼"),
+      agent("claude", { type: "text", text: "依頼しました" }),
+      agent("claude", { type: "turn", result: { status: "completed", text: "依頼しました" } }),
+    ]);
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0]).toMatchObject({
+      segment: "closed",
+      steps: [{ kind: "say", text: "依頼しました" }],
+      messages: [{ message: { body: "依頼" } }],
+    });
+  });
+
+  it("区切った後の発言は方針にせず、続きの枠で終了する", () => {
+    const timeline = run([
+      agent("claude", { type: "turn_started" }),
+      agent("claude", { type: "text", text: "方針" }),
+      formal("claude", "質問"),
+      agent("claude", { type: "text", text: "回答を受けた" }),
+      agent("claude", { type: "turn", result: { status: "completed", text: "完了" } }),
+    ]);
+    expect(timeline).toHaveLength(2);
+    expect(timeline[0]).toMatchObject({ segment: "closed", plan: "方針" });
+    expect(timeline[1]).toMatchObject({ continuation: true, status: "completed", steps: [{ kind: "say", text: "回答を受けた" }], text: "完了" });
+    expect(timeline[1]).not.toHaveProperty("plan");
+  });
+
+  it("作業や他の項目を挟まず続けて送った message は同じ枠に入れる", () => {
+    const timeline = run([agent("claude", { type: "turn_started" }), formal("claude", "一件目"), formal("claude", "二件目")]);
+    expect(timeline).toHaveLength(2);
+    expect(timeline[0]).toMatchObject({ segment: "closed", messages: [{ message: { body: "一件目" } }, { message: { body: "二件目" } }] });
+    expect(timeline[1]).toMatchObject({ continuation: true, steps: [] });
+  });
+
+  it("自動の RESULT は送信元の最後の枠に入れる", () => {
+    const timeline = run([
+      agent("claude", { type: "turn_started" }),
+      formal("claude", "質問"),
+      agent("claude", { type: "text", text: "続き" }),
+      agent("claude", { type: "turn", result: { status: "completed", text: "完了" } }),
+      formal("claude", "自動の結果", true),
+    ]);
+    expect(timeline[0]).toMatchObject({ messages: [{ message: { body: "質問" } }] });
+    expect(timeline[1]).toMatchObject({ messages: [{ message: { body: "自動の結果", auto: true } }] });
+  });
+
+  it("区切った枠と続きの枠を同じターンとして直近 2 ターンに数える", () => {
+    const timeline = run([
+      agent("claude", { type: "turn_started" }),
+      agent("claude", { type: "text", text: "古いターン" }),
+      agent("claude", { type: "turn", result: { status: "completed", text: "済" } }),
+      agent("claude", { type: "turn_started" }),
+      agent("claude", { type: "text", text: "一つ前" }),
+      agent("claude", { type: "turn", result: { status: "completed", text: "済" } }),
+      agent("claude", { type: "turn_started" }),
+      agent("claude", { type: "text", text: "今の方針" }),
+      formal("claude", "質問"),
+      agent("claude", { type: "text", text: "今の続き" }),
+    ]);
+    const says = workingFeed(timeline).flatMap(entry => (entry.kind === "say" ? [entry.text] : []));
+    expect(says).toEqual(["一つ前", "今の方針", "今の続き"]);
   });
 });

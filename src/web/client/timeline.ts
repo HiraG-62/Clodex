@@ -16,6 +16,9 @@ export type TimelineItem =
       at: string;
       agent: AgentId;
       status: "working" | TurnResult["status"];
+      segment?: "closed";
+      continuation?: true;
+      rootId?: string;
       steps: TimelineStep[];
       text: string;
       plan?: string; // ターンの最初の発言（方針。DESIGN.md §17 ログ）
@@ -41,8 +44,8 @@ export function limitLiveHistory(history: readonly HistoryItem[], item: HistoryI
 
 export function withWorkingTurnsLast(items: readonly TimelineItem[]): TimelineItem[] {
   return [
-    ...items.filter(item => item.kind !== "turn" || item.status !== "working"),
-    ...items.filter(item => item.kind === "turn" && item.status === "working"),
+    ...items.filter(item => item.kind !== "turn" || item.status !== "working" || item.segment === "closed"),
+    ...items.filter(item => item.kind === "turn" && item.status === "working" && item.segment !== "closed"),
   ];
 }
 
@@ -60,7 +63,7 @@ export function withStartingTurns(
       if (last?.kind === "human" && !last.queued && !last.steer) result[result.indexOf(last)] = { ...last, queued: true };
       continue;
     }
-    if (last?.kind === "turn" && last.status === "working") continue;
+    if (last?.kind === "turn" && last.status === "working" && last.segment !== "closed") continue;
     const waiting = last?.kind === "human" && !last.steer && !last.queued;
     if (agent.status !== "starting" && !waiting) continue;
     result.push({ kind: "starting", id: `starting-${agent.id}`, at: last && "at" in last ? last.at : now, agent: agent.id });
@@ -117,12 +120,41 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   if (event.kind === "message") {
     if (event.message.type !== "ACK") {
       const from = event.message.from;
-      let index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === from && entry.status === "working");
+      let index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === from && entry.status === "working" && entry.segment !== "closed");
       if (index < 0 && event.message.auto) index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === from);
       const turn = items[index];
       if (turn?.kind === "turn") {
         const attached = { message: event.message, ...(item.envelope ? { envelope: item.envelope } : {}) };
-        return [...items.slice(0, index), { ...turn, messages: [...(turn.messages ?? []), attached] }, ...items.slice(index + 1)];
+        if (event.message.auto || turn.status !== "working") {
+          return [...items.slice(0, index), { ...turn, messages: [...(turn.messages ?? []), attached] }, ...items.slice(index + 1)];
+        }
+        const previous = items[index - 1];
+        if (
+          index === items.length - 1 &&
+          turn.continuation &&
+          !turn.steps.length &&
+          !turn.messages?.length &&
+          previous?.kind === "turn" &&
+          previous.segment === "closed" &&
+          previous.agent === from &&
+          (previous.rootId ?? previous.id) === turn.rootId
+        ) {
+          return [...items.slice(0, index - 1), { ...previous, messages: [...(previous.messages ?? []), attached] }, turn];
+        }
+        // 区切った枠は作業中として扱わない（次のターンの開始で中断にしたり、一番下へ寄せたりしない）。状態は画面に出さない
+        const closed: Turn = { ...turn, status: "completed", segment: "closed", messages: [...(turn.messages ?? []), attached] };
+        const continuation: Turn = {
+          kind: "turn",
+          id: `${id}-next`,
+          at: event.at,
+          agent: from,
+          status: "working",
+          steps: [],
+          text: "",
+          continuation: true,
+          rootId: turn.rootId ?? turn.id,
+        };
+        return limit([...items.slice(0, index), ...items.slice(index + 1), closed, continuation]);
       }
     }
     return limit([...items, { kind: "message", id, at: event.at, message: event.message, ...(item.envelope ? { envelope: item.envelope } : {}) }]);
@@ -137,7 +169,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   const updateTurn = (update: (turn: Turn) => Turn): TimelineItem[] => {
     for (let i = items.length - 1; i >= 0; i--) {
       const candidate = items[i];
-      if (candidate?.kind === "turn" && candidate.agent === agent && candidate.status === "working") {
+      if (candidate?.kind === "turn" && candidate.agent === agent && candidate.status === "working" && candidate.segment !== "closed") {
         return [...items.slice(0, i), update(candidate), ...items.slice(i + 1)];
       }
     }
@@ -154,7 +186,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
     }
     case "text":
       return updateTurn(turn =>
-        turn.plan === undefined
+        turn.plan === undefined && !turn.continuation
           ? { ...turn, plan: agentEvent.text, planAt: at }
           : { ...turn, steps: [...turn.steps, { kind: "say", text: agentEvent.text, at }] },
       );
@@ -176,9 +208,23 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
         }
         return { ...turn, status, text, steps };
       };
-      const index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === agent && entry.status === "working");
+      const index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === agent && entry.status === "working" && entry.segment !== "closed");
       if (index < 0) return limit([...items, finish(newTurn())]);
-      return limit([...items.slice(0, index), ...items.slice(index + 1), finish(items[index] as Turn)]);
+      const active = items[index] as Turn;
+      const finalTextOnly = active.steps.length === 1 && active.steps[0]?.kind === "say" && active.steps[0].text.trim() === text.trim();
+      if (active.continuation && !active.plan && (!active.steps.length || finalTextOnly) && !active.messages?.length) {
+        const previousIndex = items.findLastIndex(
+          (entry, i) =>
+            i < index && entry.kind === "turn" && entry.agent === agent && entry.segment === "closed" && (entry.rootId ?? entry.id) === active.rootId,
+        );
+        const previous = items[previousIndex] as Turn | undefined;
+        if (previous) {
+          const steps = text ? [...previous.steps, { kind: "say" as const, text, at }] : previous.steps;
+          const completed: Turn = { ...previous, status, steps };
+          return limit(items.filter((_, i) => i !== index).map((entry, i) => (i === previousIndex ? completed : entry)));
+        }
+      }
+      return limit([...items.slice(0, index), ...items.slice(index + 1), finish(active)]);
     }
     case "error":
       return limit([...items, { kind: "error", id, at, agent, text: agentEvent.message }]);
@@ -197,14 +243,16 @@ export type WorkingEntry =
 export function workingFeed(items: readonly TimelineItem[]): WorkingEntry[] {
   type Turn = Extract<TimelineItem, { kind: "turn" }>;
   const RECENT_TURNS = 2;
-  const counts: Partial<Record<AgentId, number>> = {};
+  const roots: Partial<Record<AgentId, Set<string>>> = {};
   const turns: Turn[] = [];
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
     if (item?.kind !== "turn") continue;
-    const count = counts[item.agent] ?? 0;
-    if (count >= RECENT_TURNS) continue;
-    counts[item.agent] = count + 1;
+    const seen = roots[item.agent] ?? new Set<string>();
+    const root = item.rootId ?? item.id;
+    if (!seen.has(root) && seen.size >= RECENT_TURNS) continue;
+    seen.add(root);
+    roots[item.agent] = seen;
     turns.unshift(item);
   }
   const says = turns.flatMap(turn => [
@@ -223,7 +271,14 @@ export function workingFeed(items: readonly TimelineItem[]): WorkingEntry[] {
       const { id, agent, at, plan } = event.turn;
       // 直後の発言が方針そのものなら、見出しには重ねて出さない
       const showPlan = plan !== undefined && event.text !== plan;
-      entries.push({ kind: "head", turnId: id, agent, at, ...(showPlan ? { plan } : {}), ...(event.turn.status === "working" ? {} : { done: true as const }) });
+      entries.push({
+        kind: "head",
+        turnId: id,
+        agent,
+        at,
+        ...(showPlan ? { plan } : {}),
+        ...(event.turn.status === "working" && event.turn.segment !== "closed" ? {} : { done: true as const }),
+      });
       current = event.turn;
     }
     if (event.text !== undefined) entries.push({ kind: "say", agent: event.turn.agent, text: event.text });
