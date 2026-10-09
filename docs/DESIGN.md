@@ -2,7 +2,8 @@
 
 > Claude Code × Codex  
 > Small Core / Long-Term Architecture  
-> Status: v0.3 実装済み
+> Status: v0.3 実装済み  
+> v0.1 当時の計画（範囲・構成・実装順・初期の役割分担・最初の指示）: [docs/history/v0.1-plan.md](history/v0.1-plan.md)
 
 ## 1. このプロジェクトは何か
 
@@ -319,39 +320,37 @@ npm run electron:dev
 # 5. Architecture
 
 ```text
-┌───────────────────────────────────────────────────┐
-│ Human / Terminal / Future TUI                     │
-└───────────────────────┬───────────────────────────┘
-                        │
-                        ▼
-┌───────────────────────────────────────────────────┐
-│ Development Shell                                 │
-│                                                   │
-│  Coordinator                                      │
-│  ├── Input Router                                 │
-│  ├── Task Manager                                 │
-│  ├── Message Router                              │
-│  ├── Context Resolver                            │
-│  ├── Budget Manager                              │
-│  ├── Process Manager                             │
-│  └── Event Store                                 │
-└───────────────┬───────────────────┬───────────────┘
-                │                   │
-                ▼                   ▼
-       ┌────────────────┐  ┌────────────────┐
-       │ Claude Adapter │  │ Codex Adapter  │
-       └───────┬────────┘  └───────┬────────┘
-               │                   │
-               ▼                   ▼
-       Claude Code CLI         Codex CLI
-               │                   │
-               └────────┬──────────┘
-                        ▼
-              Git / Files / Artifacts
-                        │
-                        ▼
-               C:\dev\my-project
+ Terminal（readline）   TUI（ink）   Web UI / GUI（Tauri）
+         │                  │ HTTP + SSE       │
+         └──────────────────┼──────────────────┘
+                            ▼
+┌──────────────────────────────────────────────────────────┐
+│ Hub（1 プロセス。hub.lock・Web server・開いた project の一覧） │
+│                                                          │
+│  ProjectContext（project ごと。設定・会話の履歴・feed・復旧）    │
+│   └── Workspace（会話ごとの runtime を管理）                 │
+│        └── ConversationRuntime（会話ごと）                  │
+│             ├── Coordinator                              │
+│             │    ├── AgentMailbox（Agent ごとの配送待ち）     │
+│             │    ├── Budget Manager                      │
+│             │    └── Context Resolver                    │
+│             ├── Event Bus → Event Log・feed・UI           │
+│             └── MCP server（send_message など）            │
+│  Process Manager（!command）  Sandbox                     │
+└──────────────────┬───────────────────┬───────────────────┘
+                   ▼                   ▼
+          ┌────────────────┐  ┌────────────────┐
+          │ Claude Adapter │  │ Codex Adapter  │
+          └───────┬────────┘  └───────┬────────┘
+                  ▼                   ▼
+           Claude Code CLI        Codex CLI
+                  └─────────┬─────────┘
+                            ▼
+                Git / Files / Artifacts
 ```
+
+- 依存の向きは Coordinator → AgentAdapter interface ← 各 Adapter。Coordinator は Claude / Codex 固有の実装に依存しない
+- Hub・ProjectContext・ConversationRuntime の詳細は §28 D
 
 ---
 
@@ -1511,44 +1510,6 @@ workspaces
 
 ---
 
-# 19. v0.1 Scope
-
-v0.1 の目的は、
-
-> Windows 上で Claude Code と Codex の双方向 communication と session continuation が成立することを証明する
-
-こと。
-
-## 必須
-
-- [x] TypeScript / Node.js project
-- [x] Windows native execution
-- [x] Project root detection
-- [x] Claude Code CLI launch
-- [x] Codex CLI launch
-- [x] Real-time observable output
-- [x] Formal Claude → Codex message
-- [x] Formal Codex → Claude message
-- [x] Target Agent wake / resume
-- [x] Message logging
-- [x] Human interrupt
-- [x] Existing subscription authentication
-- [x] Minimal hard budget limits
-
-## v0.1 では作らない
-
-- [ ] Polished TUI
-- [ ] SQLite persistence
-- [ ] Automatic Worktree
-- [ ] Auto merge
-- [ ] AI Planner
-- [ ] AI Coordinator
-- [ ] Mass Agent spawning
-- [ ] Web UI
-- [ ] Complex scheduling
-
----
-
 # 20. v0.1 Acceptance Criteria
 
 以下がすべて成立したら v0.1 成功。
@@ -1684,150 +1645,6 @@ pay-per-token API
 ```text
 docs/spikes/authentication.md
 ```
-
----
-
-# 22. Recommended v0.1 Structure
-
-```text
-src/
-├── index.ts
-│
-├── coordinator/
-│   ├── coordinator.ts
-│   ├── agent-mailbox.ts
-│   ├── event-bus.ts
-│   ├── task-manager.ts
-│   └── budget-manager.ts
-│
-├── agents/
-│   ├── agent-adapter.ts
-│   ├── claude-adapter.ts
-│   └── codex-adapter.ts
-│
-├── protocol/
-│   └── messages.ts
-│
-├── context/
-│   └── context-resolver.ts
-│
-├── mcp/
-│   └── server.ts
-│
-└── logging/
-    └── event-log.ts
-```
-
-依存方向:
-
-```text
-Coordinator
-     │
-     ▼
-AgentAdapter interface
-     ▲
-     │
-Claude / Codex adapters
-```
-
-Coordinator が Claude/Codex 固有実装へ直接依存しすぎないこと。
-
----
-
-# 23. Implementation Order
-
-Claude Code は以下の順番で進める。
-
-```text
-1. Bootstrap TypeScript project
-
-2. Project root detection
-
-3. Windows PTY spike（Spike C）
-
-4. Claude Code lifecycle spike（Spike A）
-
-5. Codex CLI lifecycle spike（Spike B）
-
-6. Authentication spike（Spike E）
-
-7. MCP spike（Spike D）
-
-8. Observed capabilities を元に AgentAdapter を確定（Option C、§10）
-
-9. In-memory event bus
-
-10. Formal message schema
-
-11. Claude → Codex delegation
-
-12. Codex result → Claude resume
-
-13. Codex → Claude delegation
-
-14. Minimal Budget Manager
-
-15. Event log
-
-16. End-to-end acceptance test
-```
-
-以下には進まない。
-
-```text
-TUI
-SQLite
-Automatic Worktree
-Auto merge
-AI Planner
-Web UI
-```
-
-v0.1 Acceptance Criteria を満たすまでは不要。
-
----
-
-# 24. Claude Code / Codex の役割
-
-この節は **Clodex 自身の初期開発**（Clodex 完成前、Claude Code + Codex plugin で開発していた期間）での役割分担である。Clodex を使った開発での役割は、ユーザーが設定する（§3.1、§13 Roles）。
-
-初期開発では **Claude Code を primary implementer** とする。
-
-Codex は independent reviewer。
-
-Codex を利用する場面:
-
-```text
-- architecture decisions with significant uncertainty
-- Codex CLI integration
-- MCP protocol design
-- Windows process / PTY behavior
-- independent review after major implementation phases
-- difficult bugs after the first investigation fails
-```
-
-利用しない場面:
-
-```text
-- trivial edits
-- formatting
-- simple type errors
-- straightforward implementation
-- questions answerable confidently from the local codebase
-```
-
-Codex review request では、
-
-```text
-Relevant files
-Git diff
-Commit
-Objective
-```
-
-のみを優先して渡す。
-
-Full conversation history は渡さない。
 
 ---
 
@@ -2285,84 +2102,3 @@ Agent の設定（model・effort・権限）:
   - Web UI: 入力欄の枠と左端の印をコードの緑（インラインコードと同じ色）にし、本文を等幅フォントにする。入力欄の上に小さなラベル「コマンド」を出す。送り先の切り替えは使わないので薄くして無効にする。送信ボタンの文言は「実行」
   - TUI: 入力欄の枠をコードの緑にし、枠の上辺に「コマンド」のラベルを出す
 
----
-
-# 29. Self-hosting / Dogfooding
-
-v0.1 が完成するまでは:
-
-```text
-Claude Code
-   │
-   └── Codex Plugin
-          │
-          ▼
-Development Shell を開発
-```
-
-v0.1 完成後:
-
-```text
-Development Shell
-├── Claude
-└── Codex
-     │
-     ▼
-Development Shell 自身を開発
-```
-
-以後は実際に使用して発生した摩擦を根拠に改善する。
-
-想像上のマルチ Agent 要件を先回りして実装しない。
-
----
-
-# 30. Claude Code への最初の指示
-
-この設計書全体は **長期的な設計思想と方向性** として理解すること。
-
-ただし、最初の実装対象は **Phase 0 と v0.1 のみ**。
-
-最初から完成形を作ろうとしない。
-
-特に以下を先回りして実装しないこと。
-
-```text
-- polished TUI
-- SQLite persistence
-- automatic Git worktrees
-- automatic merge
-- AI planner
-- web UI
-- large multi-agent orchestration
-```
-
-まず CLI lifecycle / Windows PTY / MCP / Subscription authentication を実測する。
-
-推測で Adapter API を作り込まず、Spike で確認した実際の Claude Code / Codex CLI capabilities を元に確定する。
-
-また、Codex を無条件に呼び出さない。
-
-Codex は主に、
-
-```text
-Codex integration
-MCP
-Windows PTY
-architecture uncertainty
-major review
-difficult bug
-```
-
-で利用する。
-
-このプロジェクトで最も重要なのは機能数ではない。
-
-```text
-Claude Code と Codex を
-Windows ネイティブ環境で
-低 Context・低無駄コストのまま
-対等かつ観測可能に協調させる
-```
-
-ことを優先する。

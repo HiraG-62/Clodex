@@ -45,4 +45,7 @@ pnpm build       # clodex コマンドに反映する
 - `src/coordinator/`: Coordinator・mailbox・Budget・利用枠・Event Bus
 - `src/mcp/`: Agent → Coordinator の formal message（`send_message`）
 - `src/cli/`、`src/index.ts`: 入力の解釈と terminal I/O
+- `src/hub/`: Hub・ProjectContext・Workspace（会話ごとの runtime）・復旧
+- `src/web/`（`client/` はブラウザ側）、`src/tui/`、`gui/`（Tauri）: 画面
+- `src/project/`: 会話の履歴・設定などの保存、`src/sandbox/`: Windows の sandbox
 - 依存の向き: Coordinator → AgentAdapter interface ← 各 Adapter
