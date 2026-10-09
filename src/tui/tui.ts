@@ -191,6 +191,7 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
         setNotice(item.text);
         toastTimer = setTimeout(() => setNotice(""), TOAST_DURATION_MS);
       } else if (item.type === "notify") {
+        clearTimeout(toastTimer);
         setNotice(`${item.notification.title} ${item.notification.body}`);
         toastTimer = setTimeout(() => setNotice(""), TOAST_DURATION_MS);
       } else if (item.type === "state") { setLanguage(item.state.language); setState(item.state); }
