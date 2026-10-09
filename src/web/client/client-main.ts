@@ -308,11 +308,15 @@ export function clientMain({
   $("#cycle-theme").addEventListener("click", cycleTheme);
 
   // ---- トースト ----
-  const showToast = (text: string, level: "info" | "warn" = "info") => {
+  // heading: 通知のタイトル。本文の上の行に出す
+  const showToast = (text: string, level: "info" | "warn" = "info", heading?: string) => {
     const container = $("#toast");
     const toast = el("button", `toast-item ${level}`);
-    toast.append(icon(level === "warn" ? "alert" : "check-circle"), el("span", "", text), icon("x"));
-    toast.setAttribute("aria-label", `${text} · ${t("web.sheet.close")}`);
+    const content = el("span", "toast-text");
+    if (heading) content.append(el("b", "toast-title", heading));
+    content.append(el("span", "", text));
+    toast.append(icon(level === "warn" ? "alert" : "check-circle"), content, icon("x"));
+    toast.setAttribute("aria-label", `${heading ? `${heading} ` : ""}${text} · ${t("web.sheet.close")}`);
     toast.title = t("web.sheet.close");
     const dismiss = () => { toast.classList.add("leaving"); window.setTimeout(() => toast.remove(), TOAST_EXIT_MS); };
     container.append(toast);
@@ -2546,8 +2550,8 @@ export function clientMain({
       if (reloading) return;
       const item = JSON.parse(e.data) as FeedItem;
       if (item.type === "notify") {
-        showToast(`${item.notification.title} ${item.notification.body}`,
-          ["failed", "interrupted", "limitHold", "error"].includes(item.notification.kind) ? "warn" : "info");
+        showToast(item.notification.body,
+          ["failed", "interrupted", "limitHold", "error"].includes(item.notification.kind) ? "warn" : "info", item.notification.title);
         void notify(item.notification);
         return;
       }

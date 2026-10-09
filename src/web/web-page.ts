@@ -309,9 +309,11 @@ const STYLE = `
 
   .conn { padding: 6px 16px; font-size: 12.5px; background: var(--warn); color: var(--invert-fg); text-align: center; }
   .toast { position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top)); transform: translateX(-50%);
-    display: grid; gap: 8px; max-width: calc(100% - 32px); z-index: 30; }
+    display: grid; gap: 8px; width: max-content; max-width: calc(100% - 32px); z-index: 30; }
   .toast-item { padding: 8px 14px; border: 0; border-radius: 8px; background: var(--invert-bg); color: var(--invert-fg); font-size: 13px; cursor: pointer; }
   .toast-item.warn { background: var(--warn); }
+  .toast-text { display: grid; gap: 2px; text-align: left; min-width: 0; }
+  .toast-title { font-weight: 600; font-size: 12px; overflow-wrap: anywhere; }
   @media (min-width: 800px) { .toast { left: auto; right: 16px; transform: none; max-width: 420px; } }
 
   .sheet { position: fixed; inset: 0; z-index: 20; display: grid; align-items: end; }
