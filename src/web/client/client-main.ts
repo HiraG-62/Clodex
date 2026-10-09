@@ -447,26 +447,34 @@ export function clientMain({
       plan.innerHTML = renderMarkdown(item.plan);
       node.append(plan);
     }
-    if (item.steps.length) {
+    const finalStep = item.messages?.length && item.text ? [{ kind: "say" as const, text: item.text, at: item.at }] : [];
+    const steps = [...item.steps, ...finalStep];
+    if (steps.length) {
       const list = el("ol");
-      for (const step of item.steps) {
+      for (const step of steps) {
         const li = el("li");
         if (step.kind === "say") li.append(el("span", "k", "say"), el("span", "say", step.text));
         else li.append(el("span", "k", toolLabel(step.name)), el("span", "run", step.input));
         list.append(li);
       }
-      node.append(details(item.id, t("web.turn.steps", { count: item.steps.length }), list, "steps"));
+      node.append(details(item.id, t("web.turn.steps", { count: steps.length }), list, "steps"));
     }
     if (item.status === "working") node.append(nowLine(item));
-    const body = el("div", "body md");
-    if (item.text) body.innerHTML = renderMarkdown(item.text);
-    else if (item.status === "completed" && !item.resultId) body.append(el("span", "muted", t("web.turn.completed")));
-    if (body.childNodes.length) node.append(body);
+    if (item.messages?.length) {
+      const body = el("div", "body");
+      for (const entry of item.messages) body.append(renderMessage({ ...entry, id: entry.message.id, at: entry.message.createdAt }));
+      node.append(body);
+    } else {
+      const body = el("div", "body md");
+      if (item.text) body.innerHTML = renderMarkdown(item.text);
+      else if (item.status === "completed" && !item.resultId) body.append(el("span", "muted", t("web.turn.completed")));
+      if (body.childNodes.length) node.append(body);
+    }
     appendImagePreviews(node, [item.plan, item.text].filter(Boolean).join("\n"), item.at);
     return node;
   };
 
-  const renderMessage = (item: Extract<TimelineItem, { kind: "message" }>) => {
+  const renderMessage = (item: Pick<Extract<TimelineItem, { kind: "message" }>, "id" | "at" | "message" | "envelope">) => {
     const { message } = item;
     const node = el("section", "handoff");
     const route = el("div", "route");

@@ -15,6 +15,7 @@ export type TimelineItem =
     status: "working" | TurnResult["status"]; steps: TimelineStep[]; text: string;
     plan?: string; // ターンの最初の発言（方針。DESIGN.md §17 ログ）
     planAt?: string;
+    messages?: Array<{ message: AgentMessage; envelope?: string }>;
     resultId?: string; // 最終応答を後ろの別の項目に出した枠の、その項目
     processId?: string; // 最終応答だけの項目の、方針と作業を残した枠
   }
@@ -78,6 +79,16 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   }
   if (event.kind === "notice") return limit([...items, { kind: "notice", id, at: event.at, text: event.text }]);
   if (event.kind === "message") {
+    if (event.message.type !== "ACK") {
+      const from = event.message.from;
+      let index = items.findLastIndex((entry) => entry.kind === "turn" && entry.agent === from && entry.status === "working");
+      if (index < 0 && event.message.auto) index = items.findLastIndex((entry) => entry.kind === "turn" && entry.agent === from);
+      const turn = items[index];
+      if (turn?.kind === "turn") {
+        const attached = { message: event.message, ...(item.envelope ? { envelope: item.envelope } : {}) };
+        return [...items.slice(0, index), { ...turn, messages: [...(turn.messages ?? []), attached] }, ...items.slice(index + 1)];
+      }
+    }
     return limit([...items, { kind: "message", id, at: event.at, message: event.message, ...(item.envelope ? { envelope: item.envelope } : {}) }]);
   }
 
@@ -131,9 +142,11 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
       if (index < 0 || !later) return updateTurn(finish);
       // 作業中に後ろへ別の項目が並んだら、最終応答は末尾に出してログを時系列に保つ（DESIGN.md §17 ログ）
       const finished = finish(items[index] as Turn);
-      const result: Turn = { kind: "turn", id, at, agent, status, steps: [], text };
+      const result: Turn = { kind: "turn", id, at, agent, status, steps: [], text,
+        ...(finished.messages ? { messages: finished.messages } : {}) };
       if (finished.plan === undefined && finished.steps.length === 0) return limit([...items.slice(0, index), ...items.slice(index + 1), result]);
-      return limit([...items.slice(0, index), { ...finished, text: "", resultId: id }, ...items.slice(index + 1), { ...result, processId: finished.id }]);
+      const { messages: _moved, ...process } = finished;
+      return limit([...items.slice(0, index), { ...process, text: "", resultId: id }, ...items.slice(index + 1), { ...result, processId: finished.id }]);
     }
     case "error":
       return limit([...items, { kind: "error", id, at, agent, text: agentEvent.message }]);

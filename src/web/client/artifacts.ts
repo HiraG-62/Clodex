@@ -22,6 +22,11 @@ export function collectArtifacts(items: readonly TimelineItem[]): Artifact[] {
   const images = (text: string, at: string) => {
     for (const match of text.matchAll(IMAGE_PATH)) add(match[0], "image", at);
   };
+  const addMessage = (message: Extract<TimelineItem, { kind: "message" }>["message"], at: string) => {
+    if (message.spec) add(message.spec, "referenced", at);
+    for (const file of message.files ?? []) add(file, "referenced", at);
+    images(message.body, at);
+  };
 
   for (const item of items) {
     if (item.kind === "turn") {
@@ -31,12 +36,9 @@ export function collectArtifacts(items: readonly TimelineItem[]): Artifact[] {
       }
       if (item.plan) images(item.plan, item.at);
       images(item.text, item.at);
+      for (const { message } of item.messages ?? []) addMessage(message, item.at);
     }
-    if (item.kind === "message") {
-      if (item.message.spec) add(item.message.spec, "referenced", item.at);
-      for (const file of item.message.files ?? []) add(file, "referenced", item.at);
-      images(item.message.body, item.at);
-    }
+    if (item.kind === "message") addMessage(item.message, item.at);
   }
   return [...found.values()].reverse();
 }

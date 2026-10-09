@@ -31,6 +31,17 @@ describe("collectArtifacts", () => {
     const items: TimelineItem[] = [{ kind: "turn", id: "t", at: "1", agent: "codex", status: "completed", text: "a.pngx と png と .png", steps: [] }];
     expect(collectArtifacts(items)).toEqual([]);
   });
+
+  it("ターンに含まれた message の参照と画像も拾う", () => {
+    const items: TimelineItem[] = [{ kind: "turn", id: "t", at: "1", agent: "claude", status: "completed", text: "", steps: [],
+      messages: [{ message: { ...message(["src/a.ts"], "図は docs/a.png"), spec: "docs/specs/T.md" } }],
+    }];
+    expect(collectArtifacts(items)).toEqual([
+      { path: "docs/a.png", kind: "image", at: "1" },
+      { path: "src/a.ts", kind: "referenced", at: "1" },
+      { path: "docs/specs/T.md", kind: "referenced", at: "1" },
+    ]);
+  });
 });
 
 describe("findImagePaths", () => {
