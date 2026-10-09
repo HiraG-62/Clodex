@@ -13,10 +13,15 @@ const itemSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("input"), text: z.string(), images: z.array(z.string()).optional(), context: z.literal(true).optional() }),
   z.strictObject({ kind: z.literal("message"), message: messageSchema }),
 ]);
+const workSchema = z.strictObject({ plan: z.string().optional(), actions: z.array(z.string()).max(5) });
+const lastWorkSchema = z.strictObject({
+  claude: workSchema.optional().catch(undefined), codex: workSchema.optional().catch(undefined),
+});
 const conversationSchema = z.strictObject({
   questions: z.array(pendingQuestionSchema).optional(),
   interrupted: z.array(z.enum(AGENT_IDS)),
   queue: z.strictObject({ claude: z.array(itemSchema), codex: z.array(itemSchema) }),
+  lastWork: lastWorkSchema.optional().catch(undefined),
 });
 const recoverySchema = z.strictObject({
   current: z.string().min(1), conversations: z.record(z.string(), conversationSchema),

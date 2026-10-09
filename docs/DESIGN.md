@@ -989,6 +989,9 @@ AGENTS.md → Codex
 - 設定ファイルの `language`（`ja` / `en`）。無ければ OS のロケールから決める（`ja` で始まれば `ja`、それ以外は `en`）
 - Agent には system prompt の定型文と Task envelope の末尾で「人が読む文章はすべてこの言語で書く。コード・識別子・コマンド・パスはそのまま」と指示する。指示の本体（定型文・envelope）はモデル向けなので英語のまま
 - さらに、人の入力（割り込みを含む）を Agent に渡すときは、末尾に言語の 1 行（例: `[Clodex] Write your reply and every progress note between tool calls in Japanese.`）を足す。system prompt の指示は長い会話で弱まり、`/resume` した session には入っていないこともあるため、直近の指示として毎回添える。画面・履歴・送信待ちには人が打った本文だけを出す
+- 人が片方の Agent に送った入力と質問への回答は、もう片方の Agent にも、次に何かを届けるとき（人の入力・formal message の envelope・続きの指示のどれでも）に末尾へ添える（`[Clodex] Since your last turn, the human said to <agent>:` に続けて 1 件ずつ。1 件は先頭 300 文字、最大 5 件で、超えた分は件数だけ）。片方にだけ伝えた承認や方針が、もう片方に届かないのを防ぐため
+  - 対象は、前回その Agent に届けた後に、人が相手の Agent に送った入力（`@all` で両方に送ったものは除く）と、相手の Agent の質問への回答（質問の見出しと回答）。届けたら消す。保存はしない（Hub を再起動したら消える。本文は `read_conversation` で読める）
+  - 添えた行は画面・保存した会話本文・送信待ちの表示には出さない
 - 守られることは保証できない（自動翻訳はしない）。英語が残る場合は指示の文言を見直す
 - Clodex の画面の文言（Web UI・CLI・通知）もこの言語で出す（§28 v0.3 の i18n）
 - `/language` で変えると、Clodex の画面はすぐに切り替える（Web UI は画面の版が変わるので再読み込みする）。Agent に毎回添える言語の 1 行も次の入力から変わる。system prompt の指示は、次に始める session から変わる
@@ -1095,6 +1098,10 @@ Agent Adapter の `rate_limit` event（Claude: `rate_limit_event`、Codex: `acco
 - 上限に達したときの CLI の出力（エラーの文言・種類）は実測できていないので、文言では判定しない。Agent に送ったターンが失敗（`failed`）し、その時点でその Agent の最新の利用状況に、使用率が 100% 以上でリセット前の枠（5 時間・週）があれば、上限で止まったとみなす（リセット時刻は、該当する枠のうち遅いもの）
 - 上限で止まったら、その Agent の mailbox の配送を止め（残りの項目は捨てずに待たせる。続けて送って失敗させない）、notice（「{agent} が利用枠の上限。{時刻} に再開」）を出す
 - Agent が自分から始めたターン（Claude が裏の subagent や task の完了を受けて続けるターンなど。mailbox が送っていないもの）が失敗したときも同じ判定をし、上限なら同じように配送を止めて再開を予約する（裏で subagent を動かしていると、上限に当たるのがこのターンになりやすい）
+- 上限で止まったら、相手の Agent に知らせる（`[Clodex] <agent> hit its usage limit and resumes at <時刻>. Its last plan: <方針の 1 行目>. Files it edited in its last turn: <ファイル>. Do not edit these files until it resumes.`）。相手が作業中なら実行中のターンに割り込みで足し（steer）、そうでなければ次に届けるものの末尾に添える。solo のときと、相手が止まっている（stopped）ときは知らせない
+  - 編集したファイルは、止まった Agent のそのターンの `tool` event の `files`（Edit・Write など）から集める。無ければその部分を省く
+- 再開の指示（続きの指示）には、止まっている間に相手の Agent が編集したファイル（`tool` event の `files`）を添える（`While you were stopped, <agent> edited: <ファイル>. Check them before continuing.`）。無ければ添えない
+- ファイルのロック（相手が作業中のファイルへの書き込みを止める・警告する）は作らない。上の知らせで足りなければ考える
 - リセット時刻の 1 分後に、mailbox の先頭に「利用枠が戻った。止まった作業を続ける」の指示（英語。人の入力と同じく言語の 1 行を添える）を積んで配送を再開する。止まったターンの入力は session に残っているので送り直さない
 - 待っている Agent は復旧の状態で「作業中だった」に含める。Hub を再起動したら、復旧の「続き」を送り、まだ上限なら同じ判定でまた待つ
 - 待っている間に人が `/interrupt` したら、待つのをやめ、続きの指示は積まずに配送を再開する
@@ -1456,6 +1463,7 @@ GUI の入れ直しや `/exit`、異常終了で Hub が止まっても、受け
 
 - `queue` は配送待ちのうち、人間の入力（本文・画像のパス）と formal message（message そのもの）だけ。`/compact`・model・effort の待ちは戻さない（設定は §9 で保存済み）
 - `interrupted` は、ターンを実行中だった Agent。そのターンが処理していたものは配送済みなので `queue` には入らない
+- `interrupted` の Agent ごとに、そのターンの方針（最初の発言の 1 行目）と、最後の数件（5 件まで）の tool 呼び出し（名前と入力の要約）を `lastWork` として残す。復旧の続きの指示（`RECOVERY_CONTINUE`）に `Before the restart you were: <方針>. Last actions: <tool の一覧>.` を添え、途中の状態を確かめ直す手間を減らす
 - 配送待ちが変わるたび・ターンが始まる・終わるたびに書き直す（異常終了でも直前の状態が残る）。戻す作業が 1 つも無い会話は書かない
 - Hub の停止（`/exit`・GUI の終了）では、mailbox を閉じる前の状態のまま残す（閉じたことで空にしない）。Ctrl+D は配送が終わるのを待つので、戻すものは残らない
 

@@ -32,8 +32,8 @@ export interface AgentState {
 }
 
 export interface ShellCoordinator {
-  sendToAgent(agent: AgentId, text: string, images?: readonly string[], context?: boolean): Promise<TurnResult>;
-  steerOrSend(agent: AgentId, text: string, context?: boolean): Promise<"steered" | "queued">;
+  sendToAgent(agent: AgentId, text: string, images?: readonly string[], context?: boolean, shared?: boolean): Promise<TurnResult>;
+  steerOrSend(agent: AgentId, text: string, context?: boolean, shared?: boolean): Promise<"steered" | "queued">;
   interrupt(agent?: AgentId): Promise<void>;
   compact(agent?: AgentId): Promise<unknown>;
   setPermission(level: PermissionLevel, agent?: AgentId): Promise<void>;
@@ -286,8 +286,8 @@ export const createShell = ({
         const text = command.kind === "sendAll" ? `${ALL_MESSAGE_PREFIX}\n${resolved.text}` : resolved.text;
         const recipient = coordinator();
         for (const agent of command.kind === "sendAll" ? AGENT_IDS : [command.agent]) {
-          if (command.steer) await recipient.steerOrSend(agent, text, command.context);
-          else void recipient.sendToAgent(agent, text, resolved.images, command.context);
+          if (command.steer) await recipient.steerOrSend(agent, text, command.context, command.kind === "sendAll");
+          else void recipient.sendToAgent(agent, text, resolved.images, command.context, command.kind === "sendAll");
         }
         if (command.kind === "sendAll") print(t("notice.sentAll"));
         return "continue";

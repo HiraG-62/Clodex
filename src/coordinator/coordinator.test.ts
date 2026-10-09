@@ -32,6 +32,79 @@ const setup = (projectRoot = PROJECT_ROOT) => {
 
 const reviewRequest = { to: "codex", type: "REVIEW_REQUEST", taskId: "T-1", body: "review please", files: ["a.ts"] };
 
+describe("人の判断と作業の引き継ぎ", () => {
+  it("片方への入力と回答を相手の次の配送にだけ添え、@all は共有しない", async () => {
+    const { claude, codex, coordinator } = setup();
+    void coordinator.sendToAgent("claude", "方針を A に変更");
+    await flush();
+    void coordinator.sendToAgent("codex", "実装");
+    await flush();
+    expect(codex.sent[0]).toContain("the human said to claude");
+    expect(codex.sent[0]).toContain("方針を A に変更");
+    codex.completeTurn();
+    await flush();
+    void coordinator.sendToAgent("codex", "続き");
+    await flush();
+    expect(codex.sent[1]).not.toContain("the human said to claude");
+    codex.completeTurn();
+    await flush();
+    void coordinator.sendToAgent("claude", "全員向け", [], false, true);
+    void coordinator.sendToAgent("codex", "全員向け", [], false, true);
+    await flush();
+    expect(codex.sent[2]).not.toContain("the human said to claude");
+    const asked = coordinator.askUser("claude", { questions: [{ header: "方針", question: "選択", options: [{ label: "A" }, { label: "B" }] }] });
+    if (!asked.ok) throw new Error(asked.error);
+    expect(coordinator.answer(asked.id, [["A"]])).toBeUndefined();
+    codex.completeTurn();
+    await flush();
+    void coordinator.sendToAgent("codex", "確認");
+    await flush();
+    expect(codex.sent[3]).toContain("方針: A");
+    claude.completeTurn();
+  });
+
+  it("6 件以上は 5 件と残り件数にまとめ、steer にも添える", async () => {
+    const { claude, codex, coordinator } = setup();
+    void coordinator.sendToAgent("codex", "作業中");
+    await flush();
+    for (let index = 0; index < 6; index++) void coordinator.sendToAgent("claude", `判断 ${index}`);
+    await coordinator.steerOrSend("codex", "修正");
+    expect(codex.steered[0]).toContain("判断 0");
+    expect(codex.steered[0]).not.toContain("判断 5");
+    expect(codex.steered[0]).toContain("(+1 more)");
+    claude.completeTurn();
+    codex.completeTurn();
+  });
+
+  it("相手へ添える人の発言は 300 文字で切る", async () => {
+    const { codex, coordinator } = setup();
+    void coordinator.sendToAgent("claude", "あ".repeat(305));
+    void coordinator.sendToAgent("codex", "確認");
+    await flush();
+    expect(codex.sent[0]).toContain(`- ${"あ".repeat(300)}…`);
+    expect(codex.sent[0]).not.toContain("あ".repeat(301));
+  });
+
+  it("作業中の方針と最後の 5 tool を復旧し、続きの指示へ添える", async () => {
+    const { claude, coordinator } = setup();
+    void coordinator.sendToAgent("claude", "実装");
+    await flush();
+    claude.emit({ type: "turn_started" });
+    claude.emit({ type: "text", text: "方針の一行目\n補足" });
+    for (let index = 0; index < 6; index++) claude.emit({ type: "tool", name: "Read", input: `file-${index}` });
+    const recovery = coordinator.recoveryState();
+    expect(recovery.lastWork?.claude).toEqual({ plan: "方針の一行目", actions: ["Read file-1", "Read file-2", "Read file-3", "Read file-4", "Read file-5"] });
+    const resumed = new FakeAgentAdapter("claude");
+    const after = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude: resumed, codex: new FakeAgentAdapter("codex") }, bus: new EventBus(), mcpUrlFor,
+      resumeSessionIds: { claude: "previous-session" } });
+    after.restore(recovery);
+    await flush();
+    expect(resumed.sent[0]).toContain("Before the restart you were: 方針の一行目");
+    expect(resumed.sent[0]).toContain("Read file-5");
+    expect(resumed.sent[0]).not.toContain("Read file-0");
+  });
+});
+
 describe("自動 RESULT", () => {
   it("依頼先が返事を送らず完了したら最終応答を依頼元へ届ける", async () => {
     const { claude, codex, events, coordinator } = setup();
@@ -405,9 +478,70 @@ describe("Coordinator", () => {
       const events: CoordinatorEvent[] = [];
       bus.subscribe((e) => events.push(e));
       const coordinator = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus, mcpUrlFor, limitResumeMarginMs: 0 });
-      return { claude, events, coordinator };
+      return { claude, codex, events, coordinator };
     };
     const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    it("上限停止を作業中の相手へ伝え、相手の編集ファイルを再開時に添える", async () => {
+      const { claude, codex, coordinator } = setupLimit();
+      void coordinator.sendToAgent("codex", "別作業");
+      void coordinator.sendToAgent("claude", "実装");
+      await flush();
+      claude.emit({ type: "turn_started" });
+      claude.emit({ type: "text", text: "設計をまとめる\n詳細" });
+      claude.emit({ type: "tool", name: "Edit", input: "a.ts", files: ["a.ts"] });
+      claude.emit({ type: "rate_limit", fiveHour: { usedPercent: 100, resetsAt: Date.now() / 1000 + 0.1 } });
+      claude.completeTurn({ status: "failed", text: "limit" });
+      await flush();
+      expect(codex.steered[0]).toContain("claude hit its usage limit");
+      expect(codex.steered[0]).toContain("設計をまとめる");
+      expect(codex.steered[0]).toContain("a.ts");
+      codex.emit({ type: "tool", name: "Edit", input: "b.ts", files: ["b.ts"] });
+      await wait(200);
+      expect(claude.sent[1]).toContain("codex edited: b.ts");
+      claude.completeTurn();
+      codex.completeTurn();
+    });
+
+    it("相手が待機中なら次の配送に上限停止を添え、方針とファイルが無ければ省く", async () => {
+      const { claude, codex, coordinator } = setupLimit();
+      await codex.start({ cwd: PROJECT_ROOT });
+      void coordinator.sendToAgent("claude", "作業");
+      await flush();
+      claude.emit({ type: "rate_limit", fiveHour: { usedPercent: 100, resetsAt: Date.now() / 1000 + 0.1 } });
+      claude.completeTurn({ status: "failed", text: "limit" });
+      await flush();
+      expect(codex.steered).toEqual([]);
+      void coordinator.sendToAgent("codex", "引き継ぎ");
+      await flush();
+      expect(codex.sent[0]).toContain("claude hit its usage limit");
+      expect(codex.sent[0]).not.toContain("Its last plan");
+      expect(codex.sent[0]).not.toContain("Files it edited");
+      codex.completeTurn();
+      await wait(200);
+      claude.completeTurn();
+    });
+
+    it("相手が停止中、または solo 中なら上限停止を知らせない", async () => {
+      for (const solo of [false, true]) {
+        const claude = new FakeAgentAdapter("claude");
+        const codex = new FakeAgentAdapter("codex");
+        const coordinator = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor,
+          limitResumeMarginMs: 0, solo: () => solo ? "free" : undefined });
+        if (solo) await codex.start({ cwd: PROJECT_ROOT });
+        void coordinator.sendToAgent("claude", "作業");
+        await flush();
+        claude.emit({ type: "rate_limit", fiveHour: { usedPercent: 100, resetsAt: Date.now() / 1000 + 3600 } });
+        claude.completeTurn({ status: "failed", text: "limit" });
+        await flush();
+        expect(codex.steered).toEqual([]);
+        void coordinator.sendToAgent("codex", "次");
+        await flush();
+        expect(codex.sent[0]).not.toContain("hit its usage limit");
+        await coordinator.interrupt("claude");
+        codex.completeTurn();
+      }
+    });
 
     it("spontaneous turn の失敗で上限なら再開を予約する", async () => {
       const { claude, events, coordinator } = setupLimit();

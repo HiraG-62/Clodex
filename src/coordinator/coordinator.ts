@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { askUserSchema, answersSchema, type AskUserResult, type PendingQuestion } from "../protocol/questions.js";
 import {
-  AGENT_IDS, type AgentAdapter, type AgentId, type AgentStatus, type PermissionLevel, type SubagentState, type TurnResult,
+  AGENT_IDS, type AgentAdapter, type AgentEvent, type AgentId, type AgentStatus, type PermissionLevel, type SubagentState, type TurnResult,
 } from "../agents/agent-adapter.js";
 import { resolveSpecFile } from "../project/spec-file.js";
 import { changedSections } from "../context/spec-sections.js";
@@ -60,6 +60,10 @@ const MS_PER_SECOND = 1000;
 const LIMIT_CONTINUE = "[Clodex] Your usage limit has reset. Continue the task you were working on.";
 const MAX_DELIVERY_ATTEMPTS = 2;
 const ERROR_LINE_LENGTH = 200;
+const HUMAN_CONTEXT_LIMIT = 5;
+const HUMAN_CONTEXT_LENGTH = 300;
+const LAST_ACTIONS_LIMIT = 5;
+const OTHER_AGENT: Record<AgentId, AgentId> = { claude: "codex", codex: "claude" };
 const HANDOFF_ACTION: Partial<Record<AgentMessage["type"], string>> = {
   DELEGATE: "Implement it yourself",
   REVIEW_REQUEST: "Review the changes yourself",
@@ -109,6 +113,12 @@ export class Coordinator {
   private readonly specSnapshots = new Map<string, string>();
   private readonly liveUsage = new Set<AgentId>();
   private readonly subagents: Record<AgentId, SubagentState[]> = { claude: [], codex: [] };
+  private readonly humanContext: Record<AgentId, { entries: Array<{ to: AgentId; text: string }>; extra: number }> = {
+    claude: { entries: [], extra: 0 }, codex: { entries: [], extra: 0 },
+  };
+  private readonly pendingNotices: Record<AgentId, string[]> = { claude: [], codex: [] };
+  private readonly turnWork: Partial<Record<AgentId, { plan?: string; actions: string[]; files: Set<string> }>> = {};
+  private readonly holdContext: Partial<Record<AgentId, { peerFiles: Set<string> }>> = {};
   private readonly recoveryListeners = new Set<() => void>();
   private stoppingRecovery: ConversationRecovery | undefined;
 
@@ -124,10 +134,17 @@ export class Coordinator {
 
   recoveryState(): ConversationRecovery {
     if (this.stoppingRecovery) return this.stoppingRecovery;
+    const interrupted = AGENT_IDS.filter((id) => this.mailboxes[id].activeSending || this.mailboxes[id].holding || this.options.agents[id].status === "busy");
+    const lastWork: NonNullable<ConversationRecovery["lastWork"]> = {};
+    for (const id of interrupted) {
+      const work = this.turnWork[id];
+      if (work && (work.plan || work.actions.length)) lastWork[id] = { ...(work.plan ? { plan: work.plan } : {}), actions: [...work.actions] };
+    }
     return {
       questions: this.pendingQuestions(),
-      interrupted: AGENT_IDS.filter((id) => this.mailboxes[id].activeSending || this.mailboxes[id].holding || this.options.agents[id].status === "busy"),
+      interrupted,
       queue: { claude: this.mailboxes.claude.recoveryQueue, codex: this.mailboxes.codex.recoveryQueue },
+      ...(Object.keys(lastWork).length ? { lastWork } : {}),
     };
   }
 
@@ -135,7 +152,7 @@ export class Coordinator {
     for (const question of state.questions ?? []) this.questions.set(question.id, question);
     for (const id of AGENT_IDS) this.mailboxes[id].pause();
     for (const id of state.interrupted) {
-      if (this.mailboxes[id].sessionId) void this.mailboxes[id].enqueue(RECOVERY_CONTINUE, { suffix: this.reminder });
+      if (this.mailboxes[id].sessionId) void this.mailboxes[id].enqueue(`${RECOVERY_CONTINUE}${this.recoveryWorkNote(state.lastWork?.[id])}`, { suffix: this.reminder });
     }
     for (const id of AGENT_IDS) {
       for (const item of state.queue[id]) {
@@ -163,6 +180,7 @@ export class Coordinator {
       agents[id].onEvent((event) => {
         if (event.type === "rate_limit") this.liveUsage.add(id);
         if (event.type === "subagents") this.subagents[id] = [...event.running];
+        this.recordWork(id, event);
         bus.publish({ kind: "agent", agent: id, event });
         if (event.type !== "turn" || event.result.status !== "failed") return;
         const mailbox = this.mailboxes?.[id];
@@ -204,8 +222,53 @@ export class Coordinator {
     if (resetAt === undefined) return undefined;
     const resumeAt = resetAt * MS_PER_SECOND + (this.options.limitResumeMarginMs ?? DEFAULT_LIMIT_RESUME_MARGIN_MS);
     const time = new Date(resumeAt).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    this.holdContext[id] = { peerFiles: new Set() };
+    this.notifyPeerLimit(id, resumeAt);
     this.options.bus.publish({ kind: "notice", text: t("notice.limitHold", { agent: id, time }) });
     return { resumeAt, text: `${LIMIT_CONTINUE}${this.reminder}` };
+  }
+
+  private recordWork(id: AgentId, event: AgentEvent): void {
+    if (event.type === "turn_started") this.turnWork[id] = { actions: [], files: new Set() };
+    if (event.type === "text") {
+      const work = this.turnWork[id];
+      if (work) work.plan ??= event.text.split(/\r?\n/, 1)[0];
+    }
+    if (event.type === "tool") {
+      const work = this.turnWork[id];
+      if (work) {
+        work.actions.push(`${event.name} ${event.input}`.trim());
+        if (work.actions.length > LAST_ACTIONS_LIMIT) work.actions.shift();
+      }
+      for (const file of event.files ?? []) {
+        work?.files.add(file);
+        this.holdContext[OTHER_AGENT[id]]?.peerFiles.add(file);
+      }
+    }
+    if (["turn_started", "text", "tool", "turn"].includes(event.type)) this.notifyRecoveryChange();
+  }
+
+  private recoveryWorkNote(work: NonNullable<ConversationRecovery["lastWork"]>[AgentId]): string {
+    if (!work) return "";
+    const plan = work.plan ? `Before the restart you were: ${work.plan}.` : "";
+    const actions = work.actions.length ? `Last actions:\n${work.actions.map((action) => `- ${action}`).join("\n")}` : "";
+    return `\n${[plan, actions].filter(Boolean).join(" ")}`;
+  }
+
+  private notifyPeerLimit(id: AgentId, resumeAt: number): void {
+    const peer = OTHER_AGENT[id];
+    if (this.options.solo?.() || this.options.agents[peer].status === "stopped") return;
+    const work = this.turnWork[id];
+    const plan = work?.plan ? ` Its last plan: ${work.plan}.` : "";
+    const files = work?.files.size ? ` Files it edited in its last turn: ${[...work.files].join(", ")}. Do not edit these files until it resumes.` : "";
+    const notice = `[Clodex] ${id} hit its usage limit and resumes at ${new Date(resumeAt).toISOString()}.${plan}${files}`;
+    if (this.options.agents[peer].status !== "busy") {
+      this.pendingNotices[peer].push(notice);
+      return;
+    }
+    void this.steerWithNotice(peer, notice, randomUUID()).then((sent) => {
+      if (!sent) this.pendingNotices[peer].push(notice);
+    }).catch(() => { this.pendingNotices[peer].push(notice); });
   }
 
   setLimits(limits: BudgetLimits): void {
@@ -235,6 +298,8 @@ export class Coordinator {
       `- ${item.header ?? item.question.slice(0, QUESTION_HEADER_LENGTH)}: ${answers[index]!.join(", ")}`).join("\n");
     this.questions.delete(id);
     this.options.bus.publish({ kind: "answer", id, agent: question.agent, answers });
+    question.questions.forEach((item, index) => this.queueHumanContext(question.agent,
+      `${item.header ?? item.question.slice(0, QUESTION_HEADER_LENGTH)}: ${answers[index]!.join(", ")}`));
     void this.mailboxes[question.agent].enqueue(text, { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, suffix: this.reminder });
     this.notifyRecoveryChange();
     return undefined;
@@ -315,29 +380,63 @@ export class Coordinator {
   }
 
   // @agent!: 実行中なら steer し、そうでなければ通常の送信（DESIGN.md §28 v0.3 C）
-  async steerOrSend(id: AgentId, text: string, context = false): Promise<"steered" | "queued"> {
+  async steerOrSend(id: AgentId, text: string, context = false, shared = false): Promise<"steered" | "queued"> {
     const steerId = randomUUID();
     if (await this.steerWithNotice(id, `${text}${this.inputSuffix(context)}`, steerId)) {
       this.options.bus.publish({ kind: "human", agent: id, text, steer: true, steerId });
+      if (!shared) this.queueHumanContext(id, text);
       return "steered";
     }
-    void this.sendToAgent(id, text, [], context);
+    void this.sendToAgent(id, text, [], context, shared);
     return "queued";
   }
 
   private deliveryNote(id: AgentId): string {
-    return this.options.consumeSoloReleased?.(id) ? `\n\n${SOLO_RELEASED_NOTE}` : "";
+    const note = this.peekDeliveryNote(id);
+    this.consumeDeliveryNote(id);
+    return note;
+  }
+
+  private peekDeliveryNote(id: AgentId): string {
+    const human = this.humanContext[id];
+    const humanNote = human.entries.length
+      ? `\n\n[Clodex] Since your last turn, the human said to ${human.entries[0]!.to}:\n${human.entries.map((item) => `- ${this.previewHuman(item.text)}`).join("\n")}${human.extra ? `\n- (+${human.extra} more)` : ""}`
+      : "";
+    const notices = this.pendingNotices[id].map((notice) => `\n\n${notice}`).join("");
+    const edited = [...(this.holdContext[id]?.peerFiles ?? [])];
+    const holdNote = edited.length ? `\n\nWhile you were stopped, ${OTHER_AGENT[id]} edited: ${edited.join(", ")}. Check them before continuing.` : "";
+    const soloNote = this.options.soloReleased?.(id) ? `\n\n${SOLO_RELEASED_NOTE}` : "";
+    return `${soloNote}${humanNote}${notices}${holdNote}`;
+  }
+
+  private consumeDeliveryNote(id: AgentId): void {
+    if (this.options.soloReleased?.(id)) this.options.consumeSoloReleased?.(id);
+    this.humanContext[id] = { entries: [], extra: 0 };
+    this.pendingNotices[id] = [];
+    delete this.holdContext[id];
+  }
+
+  private previewHuman(text: string): string {
+    const line = text.replace(/\s+/g, " ").trim();
+    return line.length > HUMAN_CONTEXT_LENGTH ? `${line.slice(0, HUMAN_CONTEXT_LENGTH)}…` : line;
+  }
+
+  private queueHumanContext(to: AgentId, text: string): void {
+    const queue = this.humanContext[OTHER_AGENT[to]];
+    if (queue.entries.length < HUMAN_CONTEXT_LIMIT) queue.entries.push({ to, text });
+    else queue.extra++;
   }
 
   private async steerWithNotice(id: AgentId, text: string, steerId: string): Promise<boolean> {
-    const note = this.options.soloReleased?.(id) ? `\n\n${SOLO_RELEASED_NOTE}` : "";
+    const note = this.peekDeliveryNote(id);
     if (!await this.options.agents[id].steer(`${text}${note}`, steerId)) return false;
-    if (note) this.options.consumeSoloReleased?.(id);
+    this.consumeDeliveryNote(id);
     return true;
   }
 
-  sendToAgent(id: AgentId, text: string, images: readonly string[] = [], context = false): Promise<TurnResult> {
+  sendToAgent(id: AgentId, text: string, images: readonly string[] = [], context = false, shared = false): Promise<TurnResult> {
     this.options.bus.publish({ kind: "human", agent: id, text });
+    if (!shared) this.queueHumanContext(id, text);
     return this.mailboxes[id].enqueue(text, {
       inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, images,
       suffix: this.inputSuffix(context), ...(context ? { context: true } : {}),
@@ -425,7 +524,10 @@ export class Coordinator {
   async interrupt(id?: AgentId): Promise<void> {
     if (!id) this.stopExchanges();
     const targets = id ? [id] : AGENT_IDS;
-    for (const target of targets) this.mailboxes[target].releaseHold();
+    for (const target of targets) {
+      this.mailboxes[target].releaseHold();
+      delete this.holdContext[target];
+    }
     await Promise.all(targets.map((target) => this.options.agents[target].interrupt()));
   }
 

@@ -121,18 +121,21 @@ class FakeCoordinator implements ShellCoordinator {
   }
 
   readonly steeredInputs: Array<{ agent: AgentId; text: string }> = [];
-  async steerOrSend(agent: AgentId, text: string, context = false): Promise<"steered" | "queued"> {
+  readonly sharedFlags: boolean[] = [];
+  async steerOrSend(agent: AgentId, text: string, context = false, shared = false): Promise<"steered" | "queued"> {
     this.steeredInputs.push({ agent, text });
     this.contexts.push(context);
+    this.sharedFlags.push(shared);
     return "steered";
   }
 
   readonly images: Array<readonly string[] | undefined> = [];
   readonly contexts: boolean[] = [];
-  sendToAgent(agent: AgentId, text: string, images?: readonly string[], context = false): Promise<TurnResult> {
+  sendToAgent(agent: AgentId, text: string, images?: readonly string[], context = false, shared = false): Promise<TurnResult> {
     this.sent.push({ agent, text });
     this.images.push(images);
     this.contexts.push(context);
+    this.sharedFlags.push(shared);
     return new Promise(() => {}); // ターン完了を待たずに次の入力を受け付けることを確認する
   }
 
@@ -304,6 +307,7 @@ describe("createShell", () => {
     expect(coordinator.sent.map(({ agent }) => agent)).toEqual(["claude", "codex"]);
     expect(coordinator.sent.every(({ text }) => text.startsWith("[Sent to both claude and codex]\n"))).toBe(true);
     expect(coordinator.images).toEqual([["C:/up/shot.png"], ["C:/up/shot.png"]]);
+    expect(coordinator.sharedFlags).toEqual([true, true]);
     expect(printed).toContain("@all: sent to claude and codex");
     expect(references).toEqual(["shot.png"]);
   });
@@ -311,6 +315,7 @@ describe("createShell", () => {
     const { shell, coordinator } = setup();
     await shell.handleLine("@all! hello");
     expect(coordinator.steeredInputs).toEqual(["claude", "codex"].map((agent) => ({ agent, text: "[Sent to both claude and codex]\nhello" })));
+    expect(coordinator.sharedFlags).toEqual([true, true]);
   });
   it("/role で役割を表示し、編集後に次の session の案内を出す", async () => {
     const { shell, printed, roles } = setup();

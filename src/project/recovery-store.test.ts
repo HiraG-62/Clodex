@@ -30,6 +30,18 @@ describe("recovery store", () => {
     writeFileSync(path, "not JSON");
     expect(loadRecovery(home, project)).toBeUndefined();
   });
+
+  it("lastWork を保存し、壊れた Agent の値だけを無視する", () => {
+    const { home, project, path } = setup();
+    const conversation = { interrupted: ["claude" as const], queue: { claude: [], codex: [] },
+      lastWork: { claude: { plan: "方針", actions: ["Read a.ts"] } } };
+    saveRecovery(home, project, { current: "c1", conversations: { c1: conversation } });
+    expect(loadRecovery(home, project)?.conversations.c1?.lastWork).toEqual(conversation.lastWork);
+    const saved = JSON.parse(readFileSync(path, "utf8"));
+    saved.conversations.c1.lastWork.codex = { actions: "broken" };
+    writeFileSync(path, JSON.stringify(saved));
+    expect(loadRecovery(home, project)?.conversations.c1?.lastWork).toEqual(conversation.lastWork);
+  });
 });
 
 it("未回答だけの会話も保存する", () => {
