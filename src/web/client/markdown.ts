@@ -1,8 +1,7 @@
-// Web と TUI で marked の GFM 解析を共有する。ブラウザ側では UMD の global marked を使う。
+// Web と TUI で marked の GFM 解析を共有する。
 import { marked } from "marked";
 
 export function renderMarkdown(source: string): string {
-  const parser = (globalThis as typeof globalThis & { marked?: typeof marked }).marked ?? marked;
   const escape = (text: string) => text.replace(/[&<>"']/g, (char) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] ?? char);
   const safeUrl = (href: string) => {
@@ -11,7 +10,7 @@ export function renderMarkdown(source: string): string {
       return url.protocol === "http:" || url.protocol === "https:";
     } catch { return false; }
   };
-  const renderer = new parser.Renderer();
+  const renderer = new marked.Renderer();
   renderer.html = ({ text }) => escape(text);
   renderer.heading = ({ tokens }) => `<p class="md-h">${renderer.parser.parseInline(tokens)}</p>`;
   renderer.link = ({ href, tokens }) => {
@@ -22,5 +21,5 @@ export function renderMarkdown(source: string): string {
   // 絶対パスは本文より目立たないよう控えめに出す。/limits のようなコマンドは区切りが 1 つなので含めない
   const ABSOLUTE_PATH = /^(?:[A-Za-z]:[\\/]|~[\\/]|\/[^\s/]+\/)/;
   renderer.codespan = ({ text }) => `<code${ABSOLUTE_PATH.test(text) ? ' class="abs-path"' : ""}>${escape(text)}</code>`;
-  return parser.parse(source, { gfm: true, breaks: true, renderer }) as string;
+  return marked.parse(source, { gfm: true, breaks: true, renderer }) as string;
 }

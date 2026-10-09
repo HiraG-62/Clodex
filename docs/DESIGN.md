@@ -1283,6 +1283,14 @@ PC で動いている `clodex` を、スマホ等のブラウザから GUI で�
                                                     └── POST /api/input 1 行の入力
 ```
 
+クライアントの組み立て:
+
+- 画面の振る舞いは `src/web/client/` に TypeScript のモジュールとして書き、入口（`src/web/client/index.ts`）から esbuild で 1 つの script（IIFE）に bundle する。CSS は `src/web/client/style.css` に置く。どちらもページに inline で埋め込む（HTML 1 枚のまま）
+- `pnpm build` で `dist/web/client.js` と `dist/web/style.css` を作る。GUI に同梱するのはこの成果物で、esbuild は同梱しない（devDependency）。ソースから動かすとき（`pnpm dev`・テスト）は、成果物が無ければ起動時に esbuild で bundle する
+- 画面に渡す値（文言のカタログ・コマンドの一覧・画面の配置・版）は、`<script type="application/json">` に JSON で置き、入口が読む。関数のソースを `toString()` で埋め込まない
+- 画面の版（再読み込みの判定。§17）は、bundle・CSS・HTML・渡す値から作る
+
+
 ### 接続と認証
 
 - **起動**: `clodex --web` または設定ファイルの `"web": { "port": 4319 }`。既定ポートは 4319
@@ -1379,7 +1387,7 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
 - Agent の応答・Agent 間の message の本文・人間の入力は GFM（GitHub Flavored Markdown）として表示する。解析は自前で書かず `marked` を使い、Web UI と TUI で同じ解析結果を使う
   - 対象: 段落、改行（単独の改行も `<br>` にする。`breaks: true`）、見出し、太字・斜体・取り消し線、インラインコード、コードブロック、箇条書き・番号付きリスト（入れ子を含む。書かれた番号から始める）、引用（`>`）、表、区切り線、リンク
   - 生の HTML は描画せず、文字としてエスケープして表示する（Agent や人の入力に `<script>` などが混ざっても実行しない）。リンクは `http:` / `https:` だけをリンクにし、新しいタブで開く（`rel="noopener noreferrer"`）。それ以外の URL は文字のまま
-  - Web UI のクライアントは `toString()` でページに埋め込むため、`marked` のブラウザ用ビルド（UMD）をページに埋め込む
+  - `marked` はクライアントの bundle に含める（§17 の「クライアントの組み立て」）
 - Agent 間の message は、送信元 → 宛先、種類、本文、関連ファイル、指摘（severity 付き）、相手に渡した全文（畳む）を表示する
 - Agent の質問（§12 `ask_user`）は、未回答のものをログの外の「質問欄」に出す。質問欄は入力欄の上にくっつけて置き、ログのスクロールに影響されない
   - 出すのは state の未回答の質問（`questions`）の最も古い 1 組。1 組の中の質問は 1 問ずつ出す: 見出し・質問文・選択肢のボタン（説明を添える。`recommended` は label の横に星のアイコン。`multiSelect` はチェック）・「その他」の入力欄

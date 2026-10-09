@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { runInNewContext } from "node:vm";
 import { readFileSync } from "node:fs";
 import { applyFeedItem, rebuildTimeline } from "./client/timeline.js";
+import { workingFeed } from "./client/timeline.js";
 import { renderMarkdown } from "./client/markdown.js";
+import { draftKey, staleDraftKeys } from "./client/drafts.js";
+import { findImagePaths, splitImagePaths } from "./client/artifacts.js";
+import { fitView, zoomView } from "./client/image-zoom.js";
+import { nextUnanswered } from "./client/question-flow.js";
 import { buildWebPage, ICON_SVG, MANIFEST } from "./web-page.js";
 import { ja } from "../i18n/messages.js";
 
@@ -60,23 +64,14 @@ describe("buildWebPage", () => {
   it("通知の状態遷移は画面に埋め込まない", () => {
     expect(buildWebPage("ja").html).not.toContain("updateDesktopNotify:");
   });
-  it("会話ごとの下書き関数を外部依存なく埋め込む", () => {
-    const script = scriptsOf(buildWebPage("ja").html)[1]!;
-    const deps = script.slice(script.lastIndexOf("draftKey:"), script.lastIndexOf("isSendKey:"));
-    const embedded = runInNewContext(`({${deps}})`) as {
-      draftKey: (projectRoot: string, conversationId: string) => string;
-      staleDraftKeys: (keys: string[], projectRoot: string, conversationIds: string[]) => string[];
-    };
-    const kept = embedded.draftKey("C:\\work", "a");
-    const stale = embedded.draftKey("C:\\work", "b");
-    expect(embedded.staleDraftKeys([kept, stale], "C:\\work", ["a"])).toEqual([stale]);
+  it("会話ごとの下書きを分ける", () => {
+    const kept = draftKey("C:\\work", "a");
+    const stale = draftKey("C:\\work", "b");
+    expect(staleDraftKeys([kept, stale], "C:\\work", ["a"])).toEqual([stale]);
   });
-  it("画像パス抽出を自己完結した関数として埋め込み、会話本文にプレビューを付ける", () => {
+  it("画像パスを抽出し、会話本文にプレビューを付ける", () => {
     const { html } = buildWebPage("ja");
-    const script = scriptsOf(html)[1]!;
-    const deps = script.slice(script.lastIndexOf("findImagePaths:"), script.lastIndexOf("displayPath:"));
-    const findPaths = runInNewContext(`({${deps}}).findImagePaths`) as (text: string) => string[];
-    expect(findPaths("C:\\out\\shot.png c:/OUT/shot.PNG")).toEqual(["C:\\out\\shot.png"]);
+    expect(findImagePaths("C:\\out\\shot.png c:/OUT/shot.PNG")).toEqual(["C:\\out\\shot.png"]);
     expect(html).toContain('appendImagePreviews(node, [item.plan, item.text].filter(Boolean).join("\\n"), item.at)');
     expect(html).toContain("appendImagePreviews(node, item.text, item.at)");
     expect(html).toContain("appendImagePreviews(node, message.body, item.at)");
@@ -84,35 +79,26 @@ describe("buildWebPage", () => {
     expect(html).toContain("appendImagePreviews(field, [question.question, ...question.options.map");
     expect(html).not.toContain("appendImagePreviews(node, step.text)");
     expect(html).toContain('image.loading = "lazy"');
-    expect(html).toContain('image.src = fileUrl("file", path, version)');
     expect(html).toContain("unlinkImagePath(node, path)");
-    expect(html).toContain("linkImagePaths(node, version);");
     expect(html).toContain("link.title = part.path;");
     expect(html).toMatch(/\.image-link\s*\{[^}]*cursor:\s*zoom-in/);
     expect(html).toContain(".md a, .image-link { color: var(--link); text-decoration: underline;");
-    const split = runInNewContext(`({${deps}}).splitImagePaths`) as (text: string) => Array<{ text: string; path?: string }>;
-    expect(split("見て C:/out/a.png")).toEqual([{ text: "見て " }, { text: "C:/out/a.png", path: "C:/out/a.png" }]);
+    expect(splitImagePaths("見て C:/out/a.png")).toEqual([{ text: "見て " }, { text: "C:/out/a.png", path: "C:/out/a.png" }]);
     expect(html).toMatch(/\.image-previews\s*\{[^}]*flex-wrap:\s*wrap/);
     expect(html).toMatch(/\.image-preview img\s*\{[^}]*max-height:\s*96px;\s*max-width:\s*160px/);
   });
-  it("画像は全画面のビューアで開き、拡大縮小の計算を自己完結した関数として埋め込む", () => {
+  it("画像は全画面のビューアで開き、拡大縮小できる", () => {
     const { html } = buildWebPage("ja");
     expect(html).toContain('id="lightbox"');
     expect(html).toContain('aria-label="拡大"');
     expect(html).toContain('aria-label="新しいタブで開く"');
-    expect(html).toContain('button.addEventListener("click", () => openImage(path, version))');
-    const script = scriptsOf(html)[1]!;
-    const deps = script.slice(script.lastIndexOf("fitView:"), script.lastIndexOf("createInputAssist:"));
-    const { fitView, zoomView } = runInNewContext(`({${deps}})`) as { fitView: (a: object, b: object) => { scale: number }; zoomView: (v: object, f: number, p: object) => { scale: number } };
     expect(fitView({ width: 2000, height: 1000 }, { width: 1000, height: 1000 }).scale).toBe(0.5);
     expect(zoomView({ scale: 1, x: 0, y: 0 }, 2, { x: 0, y: 0 }).scale).toBe(2);
   });
 
-  it("作業ログは発言を時系列に並べる関数を埋め込んで描く", () => {
+  it("作業ログは発言を時系列に並べて描く", () => {
     const { html } = buildWebPage("ja");
-    const script = scriptsOf(html)[1]!;
-    const deps = script.slice(script.lastIndexOf("workingFeed:"), script.lastIndexOf("withStartingTurns:"));
-    expect(runInNewContext(`({${deps}}).workingFeed`)([])).toEqual([]);
+    expect(workingFeed([])).toEqual([]);
     expect(html).toContain("const feed = workingFeed(items);");
     expect(html).toContain('el("div", "working-say md")');
     expect(html).not.toContain("working-entry");
@@ -138,10 +124,7 @@ describe("buildWebPage", () => {
     const composer = html.slice(html.indexOf('<form class="composer"'), html.indexOf('<div class="box">'));
     expect(composer).toContain('id="question-dock"');
     expect(html).not.toContain("question-toggle");
-    const script = scriptsOf(html)[1]!;
-    const deps = script.slice(script.lastIndexOf("nextUnanswered:"), script.lastIndexOf("withStartingTurns:"));
-    const { nextUnanswered } = runInNewContext(`({${deps}})`) as { nextUnanswered: (q: object[], d: object, c: number) => number | undefined };
-    expect(nextUnanswered([{ options: [] }, { options: [] }], { selected: [new Set([0]), new Set()], other: ["", ""] }, 0)).toBe(1);
+    expect(nextUnanswered([{ question: "a", options: [] }, { question: "b", options: [] }], { selected: [new Set([0]), new Set()], other: ["", ""] }, 0)).toBe(1);
     expect(html).toContain("if (!question.multiSelect && !wasSelected) return advance();");
     expect(html).toMatch(/\.question-dock-body\s*\{[^}]*max-height:\s*50vh;\s*overflow-y:\s*auto/);
   });
@@ -170,17 +153,30 @@ describe("buildWebPage", () => {
     expect(html).toContain('<select id="projects" aria-label="プロジェクト">');
     expect(html).toMatch(/id="open-project"[^>]*aria-label="開く"[^>]*title="開く"/);
   });
-  it("埋め込んだ script が構文として正しい（実行はしない）", () => {
+  it("bundle が構文として正しい（実行はしない）", () => {
     for (const language of ["ja", "en"] as const) {
       const scripts = scriptsOf(buildWebPage(language).html);
-      expect(scripts).toHaveLength(2);
+      expect(scripts).toHaveLength(1);
       for (const script of scripts) expect(() => new Function(script)).not.toThrow();
     }
   });
 
-  it("UMD を読み込んだブラウザでも同じ Markdown renderer が動く", () => {
-    const [umd] = scriptsOf(buildWebPage("ja").html);
-    const rendered = runInNewContext(`${umd}\n(${renderMarkdown.toString()})("> 引用\\n\\n| A | B |\\n|---|---|\\n| 1 | 2 |")`);
+  it("設定の JSON に </script> があっても script 要素を閉じない", () => {
+    const original = ja["web.notice.compacted"];
+    try {
+      ja["web.notice.compacted"] = "</script><script>broken</script>";
+      const html = buildWebPage("ja").html;
+      const config = html.match(/<script type="application\/json" id="clodex-config">(.*?)<\/script>/s)?.[1];
+      expect(config).toBeDefined();
+      expect(config).not.toContain("</script>");
+      expect(JSON.parse(config!).messages["web.notice.compacted"]).toBe("</script><script>broken</script>");
+    } finally {
+      ja["web.notice.compacted"] = original;
+    }
+  });
+
+  it("bundle と同じ Markdown renderer が動く", () => {
+    const rendered = renderMarkdown("> 引用\n\n| A | B |\n|---|---|\n| 1 | 2 |");
     expect(rendered).toContain("<blockquote>");
     expect(rendered).toContain("<table>");
   });
@@ -188,7 +184,7 @@ describe("buildWebPage", () => {
   it("画面の版を埋め込み、言語ごとに版が変わる", () => {
     const ja = buildWebPage("ja");
     expect(ja.version).toMatch(/^[0-9a-f]{12}$/);
-    expect(ja.html).toContain(`version: "${ja.version}"`);
+    expect(ja.html).toContain(`"version":"${ja.version}"`);
     expect(buildWebPage("en").version).not.toBe(ja.version);
   });
 
@@ -249,9 +245,6 @@ describe("buildWebPage", () => {
   });
 });
 
-it("履歴の再構築をブラウザで呼べる関数として埋め込む", () => {
-  const script = scriptsOf(buildWebPage("ja").html)[1]!;
-  const source = script.slice(script.lastIndexOf("rebuildTimeline:"), script.lastIndexOf("composeInputLine:"));
-  const rebuild = runInNewContext(`({${source}}).rebuildTimeline`) as typeof rebuildTimeline;
-  expect(rebuild([{ type: "output", seq: 1, text: "過去" }], applyFeedItem)).toEqual([{ kind: "output", id: "o1", text: "過去" }]);
+it("履歴の再構築を行う", () => {
+  expect(rebuildTimeline([{ type: "output", seq: 1, text: "過去" }], applyFeedItem)).toEqual([{ kind: "output", id: "o1", text: "過去" }]);
 });

@@ -1,72 +1,43 @@
 import type { WEB_LAYOUT } from "../layout.js";
-import type { CommandStarts, PendingDeadlines, PendingSettings, resolvePendingSettings as ResolvePendingSettings, isNavigationCommand as IsNavigationCommand, nextCommandStarts as NextCommandStarts } from "./pending.js";
+import { resolvePendingSettings, isNavigationCommand, nextCommandStarts } from "./pending.js";
+import type { CommandStarts, PendingDeadlines, PendingSettings } from "./pending.js";
 // Web UI の画面の振る舞い（DESIGN.md §17 Web UI）。
-// ブラウザ側にそのまま埋め込むため、外部のものを参照しない 1 つの関数として書く（型の import のみ）。
-// 純関数（renderMarkdown 等）とコマンドの一覧は引数で受け取る
 import type { AgentId, AgentStatus, TurnResult } from "../../agents/agent-adapter.js";
 import type { AgentState } from "../../cli/shell.js";
-import type { isShellInput as IsShellInput } from "./shell-input.js";
+import { isShellInput } from "./shell-input.js";
 import type { FeedItem, GuiAction, GuiInfo, GuiUpdate, HistoryItem, HistoryPage, WebState } from "../web-feed.js";
-import type { renderMarkdown as RenderMarkdown } from "./markdown.js";
-import type { nextUnanswered as NextUnanswered, questionAnswers as QuestionAnswers } from "./question-flow.js";
+import { renderMarkdown } from "./markdown.js";
+import { nextUnanswered, questionAnswers } from "./question-flow.js";
 import type { PendingQuestion } from "../../protocol/questions.js";
 import type { AgentMessage, Issue } from "../../protocol/messages.js";
-import type { TimelineItem, DisplayTimelineItem, withWorkingTurnsLast as WithWorkingTurnsLast, withStartingTurns as WithStartingTurns, withSubagentRows as WithSubagentRows, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline, workingFeed as WorkingFeed, mergeReplayHistory as MergeReplayHistory, announcementKind as AnnouncementKind } from "./timeline.js";
-import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
-import type { isSendKey as IsSendKey, SendKey } from "./send-key.js";
-import type { fitView as FitView, zoomView as ZoomView } from "./image-zoom.js";
+import { withWorkingTurnsLast, withStartingTurns, withSubagentRows, applyFeedItem, rebuildTimeline, workingFeed, mergeReplayHistory, announcementKind } from "./timeline.js";
+import type { TimelineItem, DisplayTimelineItem } from "./timeline.js";
+import { composeInputLine } from "./compose-input.js";
+import { isSendKey } from "./send-key.js";
+import type { SendKey } from "./send-key.js";
+import { fitView, zoomView } from "./image-zoom.js";
 import type { SlashCommand } from "../../cli/commands.js";
-import type { Suggestion, createInputAssist as CreateInputAssist } from "./input-assist.js";
-import type { collectArtifacts as CollectArtifacts, displayPath as DisplayPath, findImagePaths as FindImagePaths, splitImagePaths as SplitImagePaths } from "./artifacts.js";
+import { createInputAssist } from "./input-assist.js";
+import type { Suggestion } from "./input-assist.js";
+import { collectArtifacts, displayPath, findImagePaths, splitImagePaths } from "./artifacts.js";
 import type { MessageKey, Messages } from "../../i18n/messages.js";
-import type { chooseProjectPath as ChooseProjectPath } from "./project-picker.js";
+import { chooseProjectPath } from "./project-picker.js";
 import type { HubNotification } from "../../hub/notify-format.js";
-import type { settingsSections as SettingsSections, SettingsItem, SettingsSectionId } from "./settings-sections.js";
-import type { limitChanges as LimitChanges } from "./limit-changes.js";
-import type { pendingRows as PendingRows } from "./pending-rows.js";
+import { settingsSections } from "./settings-sections.js";
+import type { SettingsItem, SettingsSectionId } from "./settings-sections.js";
+import { limitChanges } from "./limit-changes.js";
+import { pendingRows } from "./pending-rows.js";
 import type { LimitName } from "../../coordinator/budget-manager.js";
-import type { draftKey as DraftKey, staleDraftKeys as StaleDraftKeys } from "./drafts.js";
+import { draftKey, staleDraftKeys } from "./drafts.js";
 
 export interface ClientDeps {
   layout: typeof WEB_LAYOUT;
-  withWorkingTurnsLast: typeof WithWorkingTurnsLast;
-  withStartingTurns: typeof WithStartingTurns;
-  withSubagentRows: typeof WithSubagentRows;
-  resolvePendingSettings: typeof ResolvePendingSettings;
-  isNavigationCommand: typeof IsNavigationCommand;
-  nextCommandStarts: typeof NextCommandStarts;
-  isShellInput: typeof IsShellInput;
-  renderMarkdown: typeof RenderMarkdown;
-  applyFeedItem: typeof ApplyFeedItem;
-  rebuildTimeline: typeof RebuildTimeline;
-  mergeReplayHistory: typeof MergeReplayHistory;
-  announcementKind: typeof AnnouncementKind;
-  workingFeed: typeof WorkingFeed;
-  nextUnanswered: typeof NextUnanswered;
-  questionAnswers: typeof QuestionAnswers;
-  composeInputLine: typeof ComposeInputLine;
-  isSendKey: typeof IsSendKey;
-  fitView: typeof FitView;
-  zoomView: typeof ZoomView;
-  createInputAssist: typeof CreateInputAssist;
-  collectArtifacts: typeof CollectArtifacts;
-  findImagePaths: typeof FindImagePaths;
-  splitImagePaths: typeof SplitImagePaths;
-  displayPath: typeof DisplayPath;
   commands: readonly SlashCommand[];
   messages: Messages;
-  chooseProjectPath: typeof ChooseProjectPath;
-  settingsSections: typeof SettingsSections;
-  limitChanges: typeof LimitChanges;
-  pendingRows: typeof PendingRows;
-  draftKey: typeof DraftKey;
-  staleDraftKeys: typeof StaleDraftKeys;
   version: string;
 }
 
-export function clientMain({
-  layout, withWorkingTurnsLast, withStartingTurns, withSubagentRows, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, mergeReplayHistory, announcementKind, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, settingsSections, limitChanges, pendingRows, draftKey, staleDraftKeys,
-}: ClientDeps): void {
+export function clientMain({ layout, commands, messages, version }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
     messages[key].replace(/\{(\w+)\}/g, (match, name: string) => (name in params ? String(params[name]) : match));
