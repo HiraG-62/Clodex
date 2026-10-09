@@ -25,6 +25,20 @@ pnpm build       # clodex コマンドに反映する
 - 実 CLI を使う E2E（`*.e2e.test.ts`）はサブスクリプションの利用枠を消費する。`CLODEX_E2E=1` を付けたときだけ実行され、実行前に人の了承を取る
 - `src/acceptance.e2e.test.ts` は v0.1 の受入シナリオ。起動処理や表示を変えたら実行する
 
+## 画面の確認（Web UI）
+
+本物の Hub・設定・会話に触れないよう、一時の Hub で確かめる。
+
+- `pnpm dev`（tsx）ではページで `__name is not defined` が出て動かない。ビルド版を使う
+- ビルドと一時ファイルはリポジトリの外（`%TEMP%` の下など）に置く。`rm` は使えないので、リポジトリの中に残さない
+  - `pnpm exec tsc -p tsconfig.build.json --outDir <一時フォルダ>\dist`
+  - 一時フォルダに `package.json` を写し、`node_modules` へのジャンクションを置く（`New-Item -ItemType Junction -Path <一時フォルダ>\node_modules -Target <リポジトリ>\node_modules`）
+- `CLODEX_HOME` に空の一時フォルダを指定し、その `.clodex/config.json` に別のポート（例: `{"web":{"port":47999}}`）を書いて `node <一時フォルダ>\dist\index.js serve` で起動する
+  - 実データ（`~/.clodex/state`）を写すときは、`*.recovery.json` を写さない。写すと作業中だった Agent を本物のセッションで動かしてしまう
+  - PowerShell では `$HOME`（予約済みの変数で本物のホームを指す）を一時フォルダの変数名に使わない。本物の `~/.clodex/config.json` を上書きしてしまう
+- 終わったら一時の Hub を止める（`<一時ホーム>\.clodex\hub.lock` の `pid` を `taskkill /PID <pid> /T /F`）
+- スクリーンショットは `C:\Users\Horry\.clodex\artifacts\<project>\` に保存する
+
 ## 構成
 
 - `src/agents/`: Claude / Codex の Adapter（stdio プロトコル。DESIGN.md §9・§10）
