@@ -18,6 +18,7 @@ Claude Code と Codex CLI を Windows ネイティブ環境で協調させる薄
 
 ```powershell
 pnpm test        # ユニットテスト
+pnpm test:spikes # spikes/ の実測のテスト（spike を直したときだけ）
 pnpm typecheck
 pnpm build       # clodex コマンドに反映する
 ```
