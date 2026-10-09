@@ -15,7 +15,7 @@ import { clientMain } from "./client/client-main.js";
 import { createInputAssist } from "./client/input-assist.js";
 import { collectArtifacts, displayPath, findImagePaths, splitImagePaths } from "./client/artifacts.js";
 import { renderMarkdown } from "./client/markdown.js";
-import { applyFeedItem, rebuildTimeline, withStartingTurns, workingFeed } from "./client/timeline.js";
+import { applyFeedItem, rebuildTimeline, withStartingTurns, withSubagentRows, workingFeed } from "./client/timeline.js";
 import { nextUnanswered, questionAnswers } from "./client/question-flow.js";
 import { composeInputLine } from "./client/compose-input.js";
 import { isSendKey } from "./client/send-key.js";
@@ -468,6 +468,7 @@ const STYLE = `
   .is-loading::after { content: ""; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px; border: 1.75px solid var(--fg-2); border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes state-pulse { 50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--agent) 20%, transparent); } }
+  @keyframes subagent-pulse { 50% { opacity: .7; box-shadow: 0 0 0 3px color-mix(in srgb, var(--agent) 18%, transparent); } }
   @keyframes sheet-in { from { opacity: 0; transform: scale(.98); } }
   @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } }
   @media (min-width: 900px) and (hover: hover) and (pointer: fine) {
@@ -515,7 +516,7 @@ const STYLE = `
   .strip-who { min-width: 0; }
   .agent-strip h2 { grid-area: auto; display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; font-size: 13px; line-height: 20px; }
   .agent-strip h2 .state { margin-left: 0; padding: 0; border-radius: 0; background: transparent; font-weight: 400; font-size: 11.5px; gap: 5px; }
-  .subagent-badge { display: inline-flex; align-items: center; gap: 2px; align-self: center; padding: 1px 5px; border-radius: 999px; background: var(--sunken); color: var(--fg-2); font: 600 10px/14px var(--font-mono); white-space: nowrap; }
+  .subagent-badge { display: inline-flex; align-items: center; gap: 2px; align-self: center; padding: 1px 5px; border-radius: 999px; background: color-mix(in srgb, var(--agent) 85%, var(--fg)); color: var(--invert-fg); font: 600 10px/14px var(--font-mono); white-space: nowrap; animation: subagent-pulse 1.4s ease-in-out infinite; }
   .subagent-badge .i { width: 12px; height: 12px; }
   .agent-strip .state.working::after { display: none; }
   .agent-strip .state .elapsed { font-size: 10.5px; }
@@ -576,6 +577,11 @@ const STYLE = `
   .starting-turn .body { display: grid; gap: 9px; padding: 12px; background: var(--sunken); border-radius: var(--r-outer); }
   .starting-turn .body .sk:first-child { width: 65%; }
   .starting-turn .body .sk:last-child { width: 42%; }
+  .subagent-turn .state { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; background: var(--sunken); border-radius: var(--r-pill); }
+  .subagent-turn .state::before { content: ""; width: 9px; height: 9px; border: 1px dashed var(--agent); border-radius: 50%; animation: spin 1.2s linear infinite; }
+  .subagent-turn .body { display: grid; gap: 5px; padding: 10px 12px; background: var(--sunken); border-radius: var(--r-outer); font-size: 12px; }
+  .subagent-turn .subagent-description { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .subagent-turn .subagent-description::before { content: "•"; margin-right: 8px; color: var(--agent); }
   .agent-strip button.mini-gauges { border: 0; padding: 0; background: transparent; text-align: left; border-radius: var(--r); color: inherit; font: inherit; }
   .agent-strip button.mini-gauges:hover, .agent-strip button.mini-gauges[aria-expanded="true"] { background: var(--hover-bg); box-shadow: var(--ring); }
   .usage-popover { position: fixed; z-index: 18; padding: 16px; display: grid; gap: 16px; background: var(--panel); border-radius: var(--r-outer); box-shadow: var(--shadow-pop); }
@@ -670,7 +676,7 @@ const STYLE = `
     .apill[data-state="starting"] .dot { background: none; border: 1px dashed var(--agent); border-radius: 50%; animation: spin 1s linear infinite; }
     .apill[data-state="stopped"] .dot { background: var(--muted); }
     .apill .shield { width: 12px; height: 12px; color: var(--warn); margin-left: -2px; }
-    .apill .subagent-badge { padding: 1px 3px; background: var(--panel); }
+    .apill .subagent-badge { padding: 1px 3px; }
     .ring { width: 20px; height: 20px; transform: rotate(-90deg); }
     .ring circle { fill: none; stroke-width: 2.6; }
     .ring .bg { stroke: var(--line-strong); } .ring .fg { stroke: var(--agent); stroke-linecap: round; }
@@ -889,6 +895,7 @@ const FUNCTIONS = `
   nextUnanswered: ${inlineScript(nextUnanswered.toString())},
   questionAnswers: ${inlineScript(questionAnswers.toString())},
   withStartingTurns: ${inlineScript(withStartingTurns.toString())},
+  withSubagentRows: ${inlineScript(withSubagentRows.toString())},
   resolvePendingSettings: ${inlineScript(resolvePendingSettings.toString())},
   isNavigationCommand: ${inlineScript(isNavigationCommand.toString())},
   nextCommandStarts: ${inlineScript(nextCommandStarts.toString())},

@@ -1,6 +1,6 @@
 // feed からログの項目を組み立てる（DESIGN.md §17 Web UI）。
 // ブラウザ側にそのまま埋め込むため、外部のものを参照しない 1 つの関数として書く（型の import のみ）
-import type { AgentId, AgentStatus, TurnResult } from "../../agents/agent-adapter.js";
+import type { AgentId, AgentStatus, SubagentState, TurnResult } from "../../agents/agent-adapter.js";
 import type { UserQuestion } from "../../protocol/questions.js";
 import type { AgentMessage } from "../../protocol/messages.js";
 import type { FeedItem, HistoryItem } from "../web-feed.js";
@@ -23,7 +23,9 @@ export type TimelineItem =
   | { kind: "error"; id: string; at: string; agent: AgentId; text: string }
   | { kind: "output"; id: string; text: string };
 
-export type DisplayTimelineItem = TimelineItem | { kind: "starting"; id: string; at: string; agent: AgentId };
+export type DisplayTimelineItem = TimelineItem
+  | { kind: "starting"; id: string; at: string; agent: AgentId }
+  | { kind: "subagents"; id: string; agent: AgentId; running: SubagentState[] };
 
 export function withStartingTurns(items: readonly TimelineItem[], agents: readonly { id: AgentId; status: AgentStatus }[], now: string, pendingInputs: readonly { agent: AgentId }[] = []): DisplayTimelineItem[] {
   const result: DisplayTimelineItem[] = [...items];
@@ -38,6 +40,16 @@ export function withStartingTurns(items: readonly TimelineItem[], agents: readon
     const waiting = last?.kind === "human" && !last.steer && !last.queued;
     if (agent.status !== "starting" && !waiting) continue;
     result.push({ kind: "starting", id: `starting-${agent.id}`, at: last && "at" in last ? last.at : now, agent: agent.id });
+  }
+  return result;
+}
+
+export function withSubagentRows(items: readonly DisplayTimelineItem[], agents: readonly { id: AgentId; status: AgentStatus; subagents: readonly SubagentState[] }[]): DisplayTimelineItem[] {
+  const result = [...items];
+  for (const agent of agents) {
+    if (agent.status === "busy" || agent.status === "starting" || !agent.subagents.length) continue;
+    if (items.some((item) => item.kind === "starting" && item.agent === agent.id)) continue;
+    result.push({ kind: "subagents", id: `subagents-${agent.id}`, agent: agent.id, running: [...agent.subagents] });
   }
   return result;
 }

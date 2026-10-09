@@ -10,7 +10,7 @@ import type { FeedItem, GuiAction, GuiInfo, GuiUpdate, HistoryItem, HistoryPage,
 import type { renderMarkdown as RenderMarkdown } from "./markdown.js";
 import type { nextUnanswered as NextUnanswered, questionAnswers as QuestionAnswers } from "./question-flow.js";
 import type { PendingQuestion } from "../../protocol/questions.js";
-import type { TimelineItem, DisplayTimelineItem, withStartingTurns as WithStartingTurns, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline, workingFeed as WorkingFeed } from "./timeline.js";
+import type { TimelineItem, DisplayTimelineItem, withStartingTurns as WithStartingTurns, withSubagentRows as WithSubagentRows, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline, workingFeed as WorkingFeed } from "./timeline.js";
 import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
 import type { isSendKey as IsSendKey, SendKey } from "./send-key.js";
 import type { fitView as FitView, zoomView as ZoomView } from "./image-zoom.js";
@@ -28,6 +28,7 @@ import type { LimitName } from "../../coordinator/budget-manager.js";
 export interface ClientDeps {
   layout: typeof WEB_LAYOUT;
   withStartingTurns: typeof WithStartingTurns;
+  withSubagentRows: typeof WithSubagentRows;
   resolvePendingSettings: typeof ResolvePendingSettings;
   isNavigationCommand: typeof IsNavigationCommand;
   nextCommandStarts: typeof NextCommandStarts;
@@ -58,7 +59,7 @@ export interface ClientDeps {
 }
 
 export function clientMain({
-  layout, withStartingTurns, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify, settingsSections, limitChanges, pendingRows,
+  layout, withStartingTurns, withSubagentRows, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify, settingsSections, limitChanges, pendingRows,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -669,6 +670,22 @@ export function clientMain({
         node.append(head, body);
         return node;
       }
+      case "subagents": {
+        const node = el("article", "entry subagent-turn");
+        node.dataset.agent = item.agent;
+        const head = el("div", "head");
+        head.append(el("b", `c-${item.agent}`, AGENTS[item.agent].name),
+          el("span", "state", `${t("web.agent.subagents")} ${item.running.length}`));
+        const body = el("div", "body");
+        for (const subagent of item.running) {
+          const description = subagent.description || subagent.id;
+          const row = el("div", "subagent-description", description);
+          row.title = description;
+          body.append(row);
+        }
+        node.append(mark(item.agent), head, body);
+        return node;
+      }
       case "human": {
         const node = el("article", "entry you");
         const head = el("div", "head");
@@ -791,8 +808,10 @@ export function clientMain({
   // 変わった項目だけ描き直す（開閉やスクロール位置を保つ）
   const renderLog = (force = false) => {
     const stick = nearBottom();
-    const visibleItems = withStartingTurns(items, state?.agents ?? [], new Date().toISOString(), state?.pendingInputs ?? []);
-    items = visibleItems.filter((item): item is TimelineItem => item.kind !== "starting");
+    const visibleItems = withSubagentRows(
+      withStartingTurns(items, state?.agents ?? [], new Date().toISOString(), state?.pendingInputs ?? []), state?.agents ?? [],
+    );
+    items = visibleItems.filter((item): item is TimelineItem => item.kind !== "starting" && item.kind !== "subagents");
     let changed = false;
     for (const item of visibleItems) {
       if (item.kind !== "starting") continue;
@@ -2538,7 +2557,7 @@ export function clientMain({
       items = applyFeedItem(items, item);
       if (item.type === "output") commandStarts = nextCommandStarts(commandStarts, item.command, new Date().toISOString(), items.at(-1)?.id);
       if (item.type === "event" && item.event.kind === "human") {
-        items = withStartingTurns(items, state?.agents ?? [], item.event.at, state?.pendingInputs ?? []).filter((entry): entry is TimelineItem => entry.kind !== "starting");
+        items = withStartingTurns(items, state?.agents ?? [], item.event.at, state?.pendingInputs ?? []).filter((entry): entry is TimelineItem => entry.kind !== "starting" && entry.kind !== "subagents");
       }
       scheduleLog();
     };

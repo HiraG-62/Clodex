@@ -2029,7 +2029,8 @@ dogfooding で出た要望を 4 段階で入れる。小さく確実なものか
     - Codex: 親の thread の `subAgentActivity` の `started` で足し、`completed` で外す（`id` は `agentThreadId`、`description` は `agentPath`）（docs/spikes/steer-image-subagent.md）
     - プロセスが終わったら（停止・異常終了・`/new` などの起動し直し）空の一覧を出す
   - Coordinator は Agent ごとに最新の一覧を持ち、state の `AgentState.subagents` に入れる。保存はしない（Hub を再起動したら消える。CLI のプロセスも作り直すため）
-  - Web UI: Agent ストリップのカードとスマホの Agent ピルに、動いている subagent があるときだけ小さな印（アイコンと数）を出す。title に各 subagent の説明を並べる。スマホの Agent のシートには説明の一覧を出す
+  - Web UI: Agent ストリップのカードとスマホの Agent ピルに、動いている subagent があるときだけ印（アイコンと数）を出す。印はその Agent の色で塗り、作業中の表示と同じ調子でゆっくり明滅させる（`prefers-reduced-motion` では動かさない）。title に各 subagent の説明を並べる。スマホの Agent のシートには説明の一覧を出す
+  - ログの末尾: Agent が作業中でなく、動いている subagent があるとき、ログの一番下（起動中の行と同じ置き方。保存しない表示だけの行）に Agent ごとの行を出す。Agent の mark・名前・回る印・「サブエージェント {数}」と、説明を 1 行ずつ。subagent が無くなるか Agent が作業を始めたら消す（作業中のターンの枠が出るため）
   - TUI: 下の行の Agent の状態に、動いている subagent の数を添える
 
 画像の貼り付け:

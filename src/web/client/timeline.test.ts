@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "../../agents/agent-adapter.js";
 import type { FeedItem } from "../web-feed.js";
-import { rebuildTimeline, applyFeedItem, withStartingTurns, workingFeed, type TimelineItem } from "./timeline.js";
+import { rebuildTimeline, applyFeedItem, withStartingTurns, withSubagentRows, workingFeed, type TimelineItem } from "./timeline.js";
 
 const AT = "2026-10-05T12:00:00.000Z";
 const LATER = "2026-10-05T12:05:00.000Z";
@@ -47,6 +47,37 @@ describe("withStartingTurns", () => {
     expect(withStartingTurns(done, [{ id: "codex", status: "idle" }], AT)).toEqual(done);
     const steer = [{ kind: "human" as const, id: "steer", agent: "codex" as const, text: "修正", at: AT, steer: true }];
     expect(withStartingTurns(steer, [{ id: "codex", status: "busy" }], AT)).toEqual(steer);
+  });
+});
+
+describe("withSubagentRows", () => {
+  const running = [{ id: "sub-1", description: "調査" }, { id: "sub-2", description: "" }];
+
+  it("待機中の Agent ごとに、ログ末尾へ表示用の行を足す", () => {
+    const items = run([output("履歴")]);
+    const result = withSubagentRows(items, [
+      { id: "claude", status: "idle", subagents: running },
+      { id: "codex", status: "idle", subagents: [{ id: "sub-x", description: "/root/review" }] },
+    ]);
+    expect(result.slice(-2)).toEqual([
+      { kind: "subagents", id: "subagents-claude", agent: "claude", running },
+      { kind: "subagents", id: "subagents-codex", agent: "codex", running: [{ id: "sub-x", description: "/root/review" }] },
+    ]);
+    expect(items).toHaveLength(1);
+  });
+
+  it("作業中・起動中・空の一覧では行を足さない", () => {
+    const result = withSubagentRows([], [
+      { id: "claude", status: "busy", subagents: running },
+      { id: "codex", status: "starting", subagents: running },
+    ]);
+    expect(result).toEqual([]);
+    expect(withSubagentRows([], [{ id: "claude", status: "idle", subagents: [] }])).toEqual([]);
+  });
+
+  it("起動中の行がある Agent には重ねない", () => {
+    const starting = withStartingTurns([], [{ id: "claude", status: "starting" }], AT);
+    expect(withSubagentRows(starting, [{ id: "claude", status: "idle", subagents: running }])).toEqual(starting);
   });
 });
 
