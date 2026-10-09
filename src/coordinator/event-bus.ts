@@ -9,7 +9,7 @@ export type CoordinatorEventInput =
   | { kind: "human"; agent: AgentId; text: string; steer?: boolean; steerId?: string } // steer: 実行中のターンに足した
   | { kind: "question"; id: string; agent: AgentId; questions: UserQuestion[] }
   | { kind: "answer"; id: string; agent: AgentId; answers: string[][] }
-  | { kind: "notice"; text: string };
+  | { kind: "notice"; text: string; limitHold?: { agent: AgentId; time: string } };
 
 export type CoordinatorEvent = CoordinatorEventInput & { at: string };
 

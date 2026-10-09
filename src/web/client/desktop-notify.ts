@@ -1,55 +1,42 @@
-import type { AgentId, TurnResult } from "../../agents/agent-adapter.js";
-import type { Messages } from "../../i18n/messages.js";
+import type { AgentId } from "../../agents/agent-adapter.js";
+import type { NotificationInput } from "../../hub/notify-format.js";
 import type { FeedItem } from "../web-feed.js";
 
-export interface DesktopNotification {
-  kind: "finished" | "question" | "notice" | "error";
-  title: string;
-  body: string;
-}
+export type NotificationCandidate = Omit<NotificationInput, "projectRoot" | "conversationTitle">;
 
 export interface DesktopNotifyState {
   live: boolean;
   working: boolean;
-  lastTurn?: { agent: AgentId; result: TurnResult };
-}
-
-export function backgroundPushPayload(kind: "finished" | "question" | undefined, body: string, messages: Messages):
-  Pick<DesktopNotification, "title" | "body"> | undefined {
-  if (!kind) return undefined;
-  return { title: messages[kind === "finished" ? "desktop.notify.finished" : "web.question.title"], body };
+  toolUsed: Partial<Record<AgentId, boolean>>;
+  lastTurn?: NotificationCandidate;
 }
 
 export function updateDesktopNotify(
   previous: DesktopNotifyState,
   item: FeedItem,
-  messages: Messages,
-): { state: DesktopNotifyState; notification?: DesktopNotification } {
-  const MAX_LINE_LENGTH = 160;
-  const names = { claude: "Claude", codex: "Codex" };
-  const firstLine = (text: string) => {
-    const line = Array.from(text.split(/\r?\n/, 1)[0] ?? "");
-    return line.length > MAX_LINE_LENGTH ? `${line.slice(0, MAX_LINE_LENGTH - 1).join("")}…` : line.join("");
-  };
-  if (item.type === "reset" || item.type === "version") return { state: { live: false, working: false } };
+): { state: DesktopNotifyState; notification?: NotificationCandidate } {
+  if (item.type === "reset" || item.type === "version") return { state: { live: false, working: false, toolUsed: {} } };
   if (item.type === "state") {
     const working = item.state.agents.some((agent) => agent.status === "busy") || item.state.pendingInputs.length > 0;
     const state: DesktopNotifyState = { ...previous, live: true, working };
     if (!previous.live || !previous.working || working || !previous.lastTurn) return { state };
-    const { agent, result } = previous.lastTurn;
-    const text = result.status === "failed" ? messages["web.turn.failed"]
-      : result.status === "interrupted" ? messages["web.turn.interrupted"]
-        : firstLine(result.text) || messages["web.turn.completed"];
-    return { state: { live: true, working: false }, notification: { kind: "finished", title: messages["desktop.notify.finished"], body: `${names[agent]}: ${text}` } };
+    return { state: { ...state, lastTurn: undefined }, notification: previous.lastTurn };
   }
-  if (item.type === "toast") return { state: previous, notification: { kind: "notice", title: messages["desktop.notify.notice"], body: item.text } };
-  if (!previous.live || item.type !== "event") return { state: previous };
+  if (item.type !== "event") return { state: previous };
   const event = item.event;
-  if (event.kind === "question") return { state: previous, notification: { kind: "question", title: messages["web.question.title"], body: event.questions[0]?.question ?? "" } };
-  if (event.kind === "notice") return { state: previous, notification: { kind: "notice", title: messages["desktop.notify.notice"], body: event.text } };
+  if (event.kind === "agent" && event.event.type === "turn_started") return { state: { ...previous, working: true, toolUsed: { ...previous.toolUsed, [event.agent]: false } } };
+  if (event.kind === "agent" && event.event.type === "tool") return { state: { ...previous, toolUsed: { ...previous.toolUsed, [event.agent]: true } } };
+  if (!previous.live) return { state: previous };
+  if (event.kind === "question") return { state: previous, notification: { kind: "question", agent: event.agent } };
+  if (event.kind === "notice") return event.limitHold
+    ? { state: { ...previous, lastTurn: undefined }, notification: { kind: "limitHold", agent: event.limitHold.agent, time: event.limitHold.time } }
+    : { state: previous, notification: { kind: "notice", line: event.text } };
   if (event.kind !== "agent") return { state: previous };
-  if (event.event.type === "turn_started") return { state: { ...previous, working: true } };
-  if (event.event.type === "turn") return { state: { ...previous, lastTurn: { agent: event.agent, result: event.event.result } } };
-  if (event.event.type === "error") return { state: previous, notification: { kind: "error", title: messages["desktop.notify.error"], body: `${names[event.agent]}: ${event.event.message}` } };
+  if (event.event.type === "turn") {
+    const status = event.event.result.status;
+    const kind = status === "completed" ? previous.toolUsed[event.agent] ? "work" : "reply" : status;
+    return { state: { ...previous, lastTurn: { kind, agent: event.agent } } };
+  }
+  if (event.event.type === "error") return { state: previous, notification: { kind: "error", agent: event.agent, line: event.event.message } };
   return { state: previous };
 }

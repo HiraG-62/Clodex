@@ -121,6 +121,18 @@ it("toast は購読者だけに届き履歴にも保存にも入らない", () =
   expect(recorded).toEqual([]);
 });
 
+it("notify は購読者だけに届き履歴にも保存にも入らない", () => {
+  const recorded: FeedItem[] = [];
+  const received: FeedItem[] = [];
+  const feed = new WebFeed(DEFAULT_RECENT_ITEMS, (item) => recorded.push(item));
+  feed.subscribe((item) => received.push(item));
+  const notification = { kind: "reply", project: "app", conversation: "会話", agent: "claude", title: "Clodex【app】「会話」", body: "応答しました。（Claude）" } as const;
+  feed.publishNotify(notification);
+  expect(received).toEqual([{ type: "notify", notification }]);
+  expect(feed.recent()).toEqual([]);
+  expect(recorded).toEqual([]);
+});
+
 it("初回と replace は直近 200 件だけを配り、前の履歴も保持する", () => {
   const feed = new WebFeed();
   for (let i = 1; i <= 1001; i++) feed.publishOutput(String(i));

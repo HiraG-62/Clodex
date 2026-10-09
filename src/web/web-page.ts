@@ -26,7 +26,6 @@ import { pendingRows } from "./client/pending-rows.js";
 import { fitView, zoomView } from "./client/image-zoom.js";
 import { isShellInput } from "./client/shell-input.js";
 import { chooseProjectPath } from "./client/project-picker.js";
-import { updateDesktopNotify } from "./client/desktop-notify.js";
 
 const STYLE = `
   :root {
@@ -928,7 +927,7 @@ const FUNCTIONS = `
   splitImagePaths: ${inlineScript(splitImagePaths.toString())},
   displayPath: ${inlineScript(displayPath.toString())},
   chooseProjectPath: ${inlineScript(chooseProjectPath.toString())},
-  updateDesktopNotify: ${inlineScript(updateDesktopNotify.toString())},`;
+  `;
 const json = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
 
 // ホーム画面に置けるようにする（DESIGN.md §28 D: PWA）

@@ -20,7 +20,7 @@ describe("Hub recovery", () => {
     const open = async (serve: boolean) => {
       const context = await openProject({
         projectRoot, homeDir, args: { models: {}, resume: false, web: false, serve }, language: "en",
-        printTerminal: () => {}, notify: () => {}, displayMode: () => "normal", isCurrent: () => true,
+        printTerminal: () => {}, notify: () => {}, notifyAgent: () => {}, displayMode: () => "normal", isCurrent: () => true,
         modelCatalog: EMPTY_MODEL_CATALOG, registerCoordinator: () => () => {},
         createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") }),
       });
@@ -56,7 +56,7 @@ describe("Hub recovery", () => {
     const events: CoordinatorEvent[][] = [];
     const makeHub = () => new Hub({ homeDir, cwd: homeDir, openProject: async (path) => {
       const context = await openProject({
-      projectRoot: path, homeDir, args, language: "en", printTerminal: () => {}, notify: () => {}, displayMode: () => "normal",
+      projectRoot: path, homeDir, args, language: "en", printTerminal: () => {}, notify: () => {}, notifyAgent: () => {}, displayMode: () => "normal",
       isCurrent: () => true, modelCatalog: EMPTY_MODEL_CATALOG, registerCoordinator: () => () => {},
       createAgents: () => {
         const pair = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") };

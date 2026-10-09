@@ -36,7 +36,7 @@ const setup = (worktree: WorktreeResult = { ok: true, worktree: { workDir: "C:\\
     return runtime;
   };
   const notify = vi.fn();
-  const workspace = new Workspace({ notify, history, projectRoot: ROOT, isCurrentProject: () => currentProject,
+  const workspace = new Workspace({ notifyAgent: notify, history, projectRoot: ROOT, isCurrentProject: () => currentProject,
     createRuntime, createWorktree: async () => worktree });
   const seen: Array<{ conversationId: string; event: CoordinatorEvent; current: boolean }> = [];
   workspace.onEvent((runtime, event, current) => seen.push({ conversationId: runtime.conversationId, event, current }));
@@ -57,22 +57,30 @@ describe("Workspace", () => {
     await workspace.init();
     setCurrentProject(false);
     workspace.current.bus.publish({ kind: "agent", agent: "codex", event: { type: "turn", result: { status: "completed", text: "ok" } } });
-    expect(notify).toHaveBeenCalledWith(expect.stringMatching(/^app · /), "info", "finished");
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ projectRoot: ROOT, kind: "reply", agent: "codex" }));
   });
   it("今の project の裏の会話の質問を通知する", async () => {
     const { workspace, created, notify } = setup();
     await workspace.init();
     await workspace.startNew();
     created[0]!.bus.publish({ kind: "question", id: "q1", agent: "codex", questions: [{ question: "方針は", options: [{ label: "A" }] }] });
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining("codex"), "info", "question");
-    expect(notify.mock.lastCall?.[0]).not.toMatch(/^app · /);
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ projectRoot: ROOT, kind: "question", agent: "codex" }));
   });
   it("ほかの project の質問を project 名付きで通知する", async () => {
     const { workspace, notify, setCurrentProject } = setup();
     await workspace.init();
     setCurrentProject(false);
     workspace.current.bus.publish({ kind: "question", id: "q1", agent: "claude", questions: [{ question: "方針は", options: [{ label: "A" }] }] });
-    expect(notify).toHaveBeenCalledWith(expect.stringMatching(/^app · /), "info", "question");
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ projectRoot: ROOT, kind: "question", agent: "claude" }));
+  });
+  it("裏の会話で tool を使ったターンは作業完了と判定する", async () => {
+    const { workspace, notify, setCurrentProject } = setup();
+    await workspace.init();
+    setCurrentProject(false);
+    workspace.current.bus.publish({ kind: "agent", agent: "claude", event: { type: "turn_started" } });
+    workspace.current.bus.publish({ kind: "agent", agent: "claude", event: { type: "tool", name: "Read", input: "a.ts" } });
+    workspace.current.bus.publish({ kind: "agent", agent: "claude", event: { type: "turn", result: { status: "completed", text: "ok" } } });
+    expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "work", agent: "claude" }));
   });
   it("起動時に今の会話の runtime を作り、会話の切り替えでは前の会話の Agent を止めない", async () => {
     const { history, workspace, created } = setup();
@@ -114,12 +122,23 @@ describe("Workspace", () => {
     await workspace.startNew();
     created[0]!.bus.publish({ kind: "agent", agent: "codex", event: { type: "turn", result: { status: "completed", text: "ok" } } });
     expect(seen.some((s) => s.event.kind === "notice")).toBe(false);
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining("裏で進める作業"), "info", "finished");
-    expect(notify.mock.lastCall?.[0]).not.toMatch(/^app · /);
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ conversationTitle: "裏で進める作業", kind: "reply", agent: "codex" }));
     created[0]!.bus.publish({ kind: "agent", agent: "codex", event: { type: "turn", result: { status: "failed", text: "" } } });
-    expect(notify).toHaveBeenLastCalledWith(expect.any(String), "warn", "finished");
+    await flush();
+    expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "failed", agent: "codex" }));
     // 裏の会話の event も current: false として届く
     expect(seen.some((s) => s.conversationId === created[0]!.conversationId && !s.current)).toBe(true);
+  });
+
+  it("利用枠の上限の notice は失敗の通知を置き換える", async () => {
+    const { workspace, notify, setCurrentProject } = setup();
+    await workspace.init();
+    setCurrentProject(false);
+    workspace.current.bus.publish({ kind: "agent", agent: "claude", event: { type: "turn", result: { status: "failed", text: "" } } });
+    workspace.current.bus.publish({ kind: "notice", text: "上限", limitHold: { agent: "claude", time: "01:00" } });
+    await flush();
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "limitHold", agent: "claude", time: "01:00" }));
   });
 
   it("worktree 付きの新しい会話はその作業場所で動き、作れなければ理由を返して切り替えない", async () => {

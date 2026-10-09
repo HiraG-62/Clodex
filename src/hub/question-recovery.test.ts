@@ -18,7 +18,7 @@ it("Hub 再起動後に未回答のカードを読み直し、元の session に
     const agents = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") };
     const context = await openProject({
       projectRoot, homeDir, args: { models: {}, resume: false, web: false, serve: true }, language: "en",
-      printTerminal: () => {}, notify: () => {}, displayMode: () => "normal", isCurrent: () => true,
+      printTerminal: () => {}, notify: () => {}, notifyAgent: () => {}, displayMode: () => "normal", isCurrent: () => true,
       modelCatalog: EMPTY_MODEL_CATALOG, registerCoordinator: () => () => {}, createAgents: () => agents,
     });
     context.workspace.onEvent((runtime, event) => {

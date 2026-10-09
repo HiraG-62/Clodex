@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 import { applyFeedItem, rebuildTimeline } from "./client/timeline.js";
 import { renderMarkdown } from "./client/markdown.js";
 import { buildWebPage, ICON_SVG, MANIFEST } from "./web-page.js";
-import type { updateDesktopNotify } from "./client/desktop-notify.js";
 import { ja } from "../i18n/messages.js";
 
 const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1] ?? "");
@@ -44,11 +43,8 @@ describe("buildWebPage", () => {
     expect(JSON.parse(MANIFEST)).toMatchObject({ background_color: "#000000", theme_color: "#000000" });
   });
 
-  it("通知の状態遷移を外部依存のない関数として埋め込む", () => {
-    const script = scriptsOf(buildWebPage("ja").html)[1]!;
-    const deps = script.slice(script.lastIndexOf("updateDesktopNotify:"), script.lastIndexOf("commands:"));
-    const update = runInNewContext(`({${deps}}).updateDesktopNotify`) as typeof updateDesktopNotify;
-    expect(update({ live: true, working: false }, { type: "event", seq: 1, event: { kind: "notice", text: "通知", at: "now" } }, ja).notification?.body).toBe("通知");
+  it("通知の状態遷移は画面に埋め込まない", () => {
+    expect(buildWebPage("ja").html).not.toContain("updateDesktopNotify:");
   });
   it("会話ごとの下書き関数を外部依存なく埋め込む", () => {
     const script = scriptsOf(buildWebPage("ja").html)[1]!;

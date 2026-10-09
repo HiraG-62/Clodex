@@ -190,6 +190,9 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
         clearTimeout(toastTimer);
         setNotice(item.text);
         toastTimer = setTimeout(() => setNotice(""), TOAST_DURATION_MS);
+      } else if (item.type === "notify") {
+        setNotice(`${item.notification.title} ${item.notification.body}`);
+        toastTimer = setTimeout(() => setNotice(""), TOAST_DURATION_MS);
       } else if (item.type === "state") { setLanguage(item.state.language); setState(item.state); }
       else if (item.type === "reset" || item.type === "version") {
         history.current = [];

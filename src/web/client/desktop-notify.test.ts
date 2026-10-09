@@ -1,99 +1,87 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "../../agents/agent-adapter.js";
-import { en, ja } from "../../i18n/messages.js";
 import type { FeedItem, WebState } from "../web-feed.js";
-import { backgroundPushPayload, updateDesktopNotify, type DesktopNotifyState } from "./desktop-notify.js";
+import { updateDesktopNotify, type DesktopNotifyState } from "./desktop-notify.js";
 
 const IDLE: WebState = { project: "app", primary: "claude", roles: {}, agents: [], tabs: [], conversations: [], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } };
 const state = (pending = false): FeedItem => ({ type: "state", state: { ...IDLE, pendingInputs: pending ? [{ id: "1", agent: "claude", text: "次" }] : [] } });
 const event = (value: AgentEvent, agent: "claude" | "codex" = "claude"): FeedItem => ({ type: "event", seq: 1, event: { kind: "agent", agent, event: value, at: "now" } });
-const turn = (text = "完了\n詳細", status: "completed" | "failed" | "interrupted" = "completed") => event({ type: "turn", result: { status, text } });
-const notice: FeedItem = { type: "event", seq: 2, event: { kind: "notice", text: "利用枠", at: "now" } };
+const turn = (status: "completed" | "failed" | "interrupted" = "completed", agent: "claude" | "codex" = "claude") =>
+  event({ type: "turn", result: { status, text: "本文" } }, agent);
 
-describe("desktop-notify", () => {
-  it("裏の会話の通知種別に応じた Web Push の本文を返す", () => {
-    expect(backgroundPushPayload("finished", "完了", ja)).toEqual({ title: "Clodex · 作業終了", body: "完了" });
-    expect(backgroundPushPayload("question", "質問", ja)).toEqual({ title: "質問", body: "質問" });
-    expect(backgroundPushPayload(undefined, "通常通知", ja)).toBeUndefined();
-  });
-  const session = () => {
-    let current: DesktopNotifyState = { live: false, working: false };
-    return (item: FeedItem) => {
-      const result = updateDesktopNotify(current, item, ja);
-      current = result.state;
-      return result.notification;
-    };
+const session = () => {
+  let current: DesktopNotifyState = { live: false, working: false, toolUsed: {} };
+  return (item: FeedItem) => {
+    const result = updateDesktopNotify(current, item);
+    current = result.state;
+    return result.notification;
   };
+};
 
-  it("短いターンも state の集約で失わず、作業終了で一度だけ通知", () => {
-    const next = session();
-    next(state());
-    expect(next(event({ type: "turn_started" }))).toBeUndefined();
-    expect(next(turn())).toBeUndefined();
-    expect(next(state())).toEqual({ kind: "finished", title: "Clodex · 作業終了", body: "Claude: 完了" });
-    expect(next(state())).toBeUndefined();
-  });
-
-  it("配送待ちの間は通知せず最後に終了した Agent の応答を使用", () => {
-    const next = session();
-    next(state());
-    next(state(true));
-    next(turn());
-    expect(next(state(true))).toBeUndefined();
-    next(event({ type: "turn", result: { status: "completed", text: "最後" } }, "codex"));
-    expect(next(state())?.body).toBe("Codex: 最後");
-  });
-
-  it("初回 state が busy なら終了を通知し、他の Agent が busy の間は待つ", () => {
-    const next = session();
-    const busy: FeedItem = { type: "state", state: { ...IDLE, agents: [{ id: "codex", status: "busy", sessionId: undefined, permission: "edit", models: [], usage: {}, subagents: [] }] } };
-    expect(next(busy)).toBeUndefined();
-    next(turn());
-    expect(next(busy)).toBeUndefined();
-    next(event({ type: "turn", result: { status: "completed", text: "終了" } }, "codex"));
-    expect(next(state())?.body).toBe("Codex: 終了");
-  });
-
-  it("初回・reset・再接続の再生では通知しない", () => {
-    const next = session();
-    for (const boundary of [{ type: "reset" }, { type: "version", version: "v" }] as const) {
-      next(boundary);
-      expect(next(notice)).toBeUndefined();
-      next(event({ type: "turn_started" }));
-      next(turn());
-      expect(next(state())).toBeUndefined();
-    }
-    expect(next(notice)?.body).toBe("利用枠");
-  });
-
-  it("live の notice と error を通知", () => {
-    const next = session();
-    next(state());
-    expect(next(notice)).toEqual({ kind: "notice", title: "Clodex · 通知", body: "利用枠" });
-    expect(next(event({ type: "error", message: "失敗" }))).toEqual({ kind: "error", title: "Clodex · エラー", body: "Claude: 失敗" });
-  });
-
-  it.each(["failed", "interrupted"] as const)("%s は応答本文ではなく状態を通知", (status) => {
+describe("updateDesktopNotify", () => {
+  it("tool の無いターンは全員が止まってから 1 回だけ応答通知にする", () => {
     const next = session();
     next(state());
     next(event({ type: "turn_started" }));
-    next(turn("本文", status));
-    expect(next(state())?.body).toBe(`Claude: ${ja[status === "failed" ? "web.turn.failed" : "web.turn.interrupted"]}`);
+    next(turn());
+    expect(next(state())).toEqual({ kind: "reply", agent: "claude" });
+    expect(next(state())).toBeUndefined();
   });
 
-  it("1 行目を最大 160 文字に省略し英語カタログも利用", () => {
-    const current: DesktopNotifyState = { live: true, working: true, lastTurn: { agent: "codex", result: { status: "completed", text: `${"a".repeat(200)}\n後` } } };
-    expect(updateDesktopNotify(current, state(), en).notification).toEqual({ kind: "finished", title: "Clodex · Work finished", body: `Codex: ${"a".repeat(159)}…` });
+  it("tool を使ったターンは作業完了にし、配送待ちと他 Agent の作業中は待つ", () => {
+    const next = session();
+    next(state());
+    next(state(true));
+    next(event({ type: "turn_started" }));
+    next(event({ type: "tool", name: "Read", input: "a.ts" }));
+    next(turn());
+    expect(next(state(true))).toBeUndefined();
+    next(turn("completed", "codex"));
+    expect(next(state())).toEqual({ kind: "reply", agent: "codex" });
   });
-});
 
-it("toast をデスクトップ通知にする", () => {
-  const result = updateDesktopNotify({ live: true, working: false }, { type: "toast", text: "切り替え", level: "info" }, ja);
-  expect(result.notification).toEqual({ kind: "notice", title: "Clodex · 通知", body: "切り替え" });
-});
+  it("tool の有無、失敗・中断、質問、エラー、上限を判定する", () => {
+    const next = session();
+    next(state());
+    next(event({ type: "turn_started" }));
+    next(event({ type: "tool", name: "Read", input: "a.ts" }));
+    next(turn());
+    expect(next(state())).toEqual({ kind: "work", agent: "claude" });
+    for (const kind of ["failed", "interrupted"] as const) {
+      next(event({ type: "turn_started" }));
+      next(turn(kind));
+      expect(next(state())).toEqual({ kind, agent: "claude" });
+    }
+    expect(next({ type: "event", seq: 2, event: { kind: "question", id: "q", agent: "codex", questions: [], at: "now" } })).toEqual({ kind: "question", agent: "codex" });
+    expect(next(event({ type: "error", message: "失敗" }))).toEqual({ kind: "error", agent: "claude", line: "失敗" });
+    expect(next({ type: "event", seq: 3, event: { kind: "notice", text: "上限", limitHold: { agent: "claude", time: "01:00" }, at: "now" } })).toEqual({ kind: "limitHold", agent: "claude", time: "01:00" });
+  });
 
-it("新しい質問を通知し、履歴の再生時には通知しない", () => {
-  const item: FeedItem = { type: "event", seq: 1, event: { kind: "question", id: "q1", agent: "claude", at: "now", questions: [{ question: "方針は", options: [{ label: "A" }, { label: "B" }] }] } };
-  expect(updateDesktopNotify({ live: true, working: true }, item, ja).notification).toEqual({ kind: "question", title: "質問", body: "方針は" });
-  expect(updateDesktopNotify({ live: false, working: false }, item, ja).notification).toBeUndefined();
+  it("上限の notice が来たら直前の失敗を重ねて通知しない", () => {
+    const next = session();
+    next(state());
+    next(event({ type: "turn_started" }));
+    next(turn("failed"));
+    expect(next({ type: "event", seq: 4, event: { kind: "notice", text: "上限", limitHold: { agent: "claude", time: "01:00" }, at: "now" } })).toEqual({ kind: "limitHold", agent: "claude", time: "01:00" });
+    expect(next(state())).toBeUndefined();
+  });
+
+  it("初回と履歴の再生では通知しない", () => {
+    const next = session();
+    expect(next(event({ type: "error", message: "履歴" }))).toBeUndefined();
+    next({ type: "reset" });
+    expect(next(event({ type: "error", message: "履歴" }))).toBeUndefined();
+    next(state());
+    expect(next(event({ type: "error", message: "新規" }))).toEqual({ kind: "error", agent: "claude", line: "新規" });
+  });
+
+  it("再生中の tool は覚え、再接続後に完了したターンを作業完了と判定する", () => {
+    const next = session();
+    next({ type: "reset" });
+    next(event({ type: "turn_started" }));
+    next(event({ type: "tool", name: "Read", input: "a.ts" }));
+    expect(next(state(true))).toBeUndefined();
+    next(turn());
+    expect(next(state())).toEqual({ kind: "work", agent: "claude" });
+  });
 });

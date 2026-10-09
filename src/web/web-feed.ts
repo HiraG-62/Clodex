@@ -8,6 +8,7 @@ import type { CommandLifecycle } from "../cli/command-runner.js";
 import type { CoordinatorEvent } from "../coordinator/event-bus.js";
 import type { PendingMessage } from "../coordinator/coordinator.js";
 import type { Conversation } from "../project/conversation-history.js";
+import type { HubNotification } from "../hub/notify-format.js";
 
 export const DEFAULT_RECENT_ITEMS = 1000;
 export const INITIAL_HISTORY_ITEMS = 200;
@@ -50,6 +51,7 @@ export type FeedItem =
   | { type: "output"; seq: number; text: string; command?: CommandLifecycle }
   | { type: "state"; state: WebState }
   | { type: "toast"; text: string; level: "info" | "warn" }
+  | { type: "notify"; notification: HubNotification }
   | { type: "reset" }
   // 接続のたびに最初に送る。画面の版が違えば再読み込みする
   | { type: "version"; version: string }
@@ -96,6 +98,10 @@ export class WebFeed {
 
   publishToast(text: string, level: "info" | "warn" = "info"): void {
     this.deliver({ type: "toast", text, level });
+  }
+
+  publishNotify(notification: HubNotification): void {
+    this.deliver({ type: "notify", notification });
   }
 
   publishState(state: WebState): void {

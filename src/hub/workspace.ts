@@ -2,15 +2,12 @@
 // 人が見ている会話（今の会話）は 1 つ。会話を切り替えても、前の会話の Agent は止めない
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { basename } from "node:path";
 import type { Coordinator } from "../coordinator/coordinator.js";
 import type { RecoveryState, ConversationRecovery } from "../project/recovery-store.js";
 import type { CoordinatorEvent, EventBus } from "../coordinator/event-bus.js";
-import { t } from "../i18n/i18n.js";
+import type { NotificationInput } from "./notify-format.js";
 import type { Conversation, ConversationHistory } from "../project/conversation-history.js";
 import type { WorktreeResult } from "../project/worktree.js";
-
-const NOTICE_TITLE_LENGTH = 30;
 
 // 会話 1 つ分の実行環境（Event Bus・Coordinator・Agent・MCP server 等）
 export interface ConversationRuntime {
@@ -24,10 +21,8 @@ export interface ConversationRuntime {
 export type ConversationActivity = "busy" | "idle" | "stopped";
 
 export type RuntimeEventListener = (runtime: ConversationRuntime, event: CoordinatorEvent, current: boolean) => void;
-export type BackgroundNoticeKind = "finished" | "question";
-
 export interface WorkspaceOptions {
-  notify(text: string, level: "info" | "warn", kind?: BackgroundNoticeKind): void;
+  notifyAgent(input: NotificationInput): void;
   isCurrentProject(): boolean;
   history: ConversationHistory;
   projectRoot: string;
@@ -42,6 +37,8 @@ export class Workspace {
   private readonly switchListeners: Array<(runtime: ConversationRuntime) => void> = [];
   private readonly runtimeListeners: Array<(runtime: ConversationRuntime) => void> = [];
   private readonly recoveryListeners: Array<() => void> = [];
+  private readonly toolUse = new Map<string, Partial<Record<"claude" | "codex", boolean>>>();
+  private readonly pendingFailure = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private readonly options: WorkspaceOptions) {}
 
@@ -134,10 +131,15 @@ export class Workspace {
   }
 
   async closeAll(): Promise<void> {
+    for (const timer of this.pendingFailure.values()) clearTimeout(timer);
+    this.pendingFailure.clear();
     await Promise.all([...this.runtimes.values()].map((runtime) => runtime.close()));
   }
 
   async restart(): Promise<void> {
+    for (const timer of this.pendingFailure.values()) clearTimeout(timer);
+    this.pendingFailure.clear();
+    this.toolUse.clear();
     const ids = [...this.runtimes.keys()];
     for (const detach of this.detach.values()) detach();
     this.detach.clear();
@@ -173,24 +175,42 @@ export class Workspace {
   private handleEvent(runtime: ConversationRuntime, event: CoordinatorEvent): void {
     const current = this.runtimes.get(this.options.history.currentId) === runtime;
     for (const listener of this.eventListeners) listener(runtime, event, current);
-    if (event.kind !== "question" && event.kind !== "agent") return;
-    if (event.kind === "agent" && event.event.type !== "turn") return;
-    const currentProject = this.options.isCurrentProject();
-    if (current && currentProject) return;
-    const title = this.options.history.list().find((c) => c.id === runtime.conversationId)?.title ?? runtime.conversationId;
-    let text: string;
-    let level: "info" | "warn";
-    let kind: BackgroundNoticeKind;
-    if (event.kind === "question") {
-      text = t("notice.backgroundQuestion", { title: title.slice(0, NOTICE_TITLE_LENGTH), agent: event.agent });
-      level = "info";
-      kind = "question";
-    } else if (event.kind === "agent" && event.event.type === "turn") {
-      text = t("notice.background", { title: title.slice(0, NOTICE_TITLE_LENGTH), agent: event.agent, status: event.event.result.status });
-      level = event.event.result.status === "completed" ? "info" : "warn";
-      kind = "finished";
-    } else return;
-    this.options.notify(currentProject ? text : t("notice.backgroundProject", { project: basename(this.options.projectRoot), text }),
-      level, kind);
+    const used = this.toolUse.get(runtime.conversationId) ?? {};
+    if (event.kind === "agent") {
+      if (event.event.type === "turn_started") used[event.agent] = false;
+      if (event.event.type === "tool") used[event.agent] = true;
+      this.toolUse.set(runtime.conversationId, used);
+    }
+    if (current && this.options.isCurrentProject()) return;
+    const conversationTitle = this.options.history.list().find((c) => c.id === runtime.conversationId)?.title
+      ?? (this.options.history.currentId === runtime.conversationId ? this.options.history.current.title : undefined);
+    const base = { projectRoot: this.options.projectRoot, conversationTitle };
+    if (event.kind === "question") this.options.notifyAgent({ ...base, kind: "question", agent: event.agent });
+    else if (event.kind === "notice") {
+      if (event.limitHold) {
+        const key = `${runtime.conversationId}:${event.limitHold.agent}`;
+        clearTimeout(this.pendingFailure.get(key));
+        this.pendingFailure.delete(key);
+      }
+      this.options.notifyAgent(event.limitHold
+        ? { ...base, kind: "limitHold", agent: event.limitHold.agent, time: event.limitHold.time }
+        : { ...base, kind: "notice", line: event.text });
+    }
+    else if (event.kind === "agent" && event.event.type === "error") this.options.notifyAgent({ ...base, kind: "error", agent: event.agent, line: event.event.message });
+    else if (event.kind === "agent" && event.event.type === "turn") {
+      const status = event.event.result.status;
+      const input: NotificationInput = { ...base, kind: status === "completed" ? used[event.agent] ? "work" : "reply" : status, agent: event.agent };
+      if (status !== "failed") this.options.notifyAgent(input);
+      else {
+        const key = `${runtime.conversationId}:${event.agent}`;
+        clearTimeout(this.pendingFailure.get(key));
+        const timer = setTimeout(() => {
+          this.pendingFailure.delete(key);
+          this.options.notifyAgent(input);
+        }, 0);
+        timer.unref?.();
+        this.pendingFailure.set(key, timer);
+      }
+    }
   }
 }

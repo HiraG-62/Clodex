@@ -36,7 +36,7 @@ it("全会話を新規 session にし、履歴を残して permission と保存�
   const probe = vi.fn(async () => ({ models: EMPTY_MODEL_CATALOG(), usage: {} }));
   const context = await openProject({
     projectRoot, homeDir, args: { models: {}, resume: false, web: false, serve: false }, language: "en",
-    printTerminal: () => {}, notify: () => {}, displayMode: () => "normal", isCurrent: () => true,
+    printTerminal: () => {}, notify: () => {}, notifyAgent: () => {}, displayMode: () => "normal", isCurrent: () => true,
     modelCatalog: EMPTY_MODEL_CATALOG, registerCoordinator: () => () => {}, sandboxPlatform: platform, startupProbe: probe,
     createAgents: () => {
       const agents = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") };
@@ -85,7 +85,7 @@ it("保存済み on の初期化失敗でも project を開き、off に復帰�
   const platform:SandboxPlatform={inspect:async()=>false,connect:vi.fn(),grant:vi.fn(),release:vi.fn(),close:vi.fn(),spawn:vi.fn()};
   const agents={claude:new FakeAgentAdapter("claude"),codex:new FakeAgentAdapter("codex")};
   const context=await openProject({projectRoot,homeDir,args:{models:{},resume:false,web:false,serve:false},language:"en",
-    printTerminal:()=>{},notify,displayMode:()=>"normal",isCurrent:()=>true,modelCatalog:EMPTY_MODEL_CATALOG,
+    printTerminal:()=>{},notify,notifyAgent:()=>{},displayMode:()=>"normal",isCurrent:()=>true,modelCatalog:EMPTY_MODEL_CATALOG,
     registerCoordinator:()=>()=>{},sandboxPlatform:platform,createAgents:()=>agents});
   try{
     expect(notify).toHaveBeenCalled();

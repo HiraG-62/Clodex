@@ -21,11 +21,11 @@ import { installRuntimeErrors } from "./hub/runtime-errors.js";
 import { clearHubLock, isHubAlive, readHubLock, writeHubLock } from "./hub/hub-lock.js";
 import { LIMIT_KEYS, LIMIT_NAMES } from "./coordinator/budget-manager.js";
 import { openProject, type ProjectContext } from "./hub/project-context.js";
-import type { BackgroundNoticeKind } from "./hub/workspace.js";
+import { formatNotification, shouldPushNotification, type NotificationInput } from "./hub/notify-format.js";
 import { selectProject } from "./hub/project-selection.js";
 import { MESSAGES, setLanguage, t } from "./i18n/i18n.js";
 import { PushService } from "./web/push.js";
-import { backgroundPushPayload, updateDesktopNotify, type DesktopNotification, type DesktopNotifyState } from "./web/client/desktop-notify.js";
+import { updateDesktopNotify, type DesktopNotifyState } from "./web/client/desktop-notify.js";
 import { defaultLogPath, type DisplayMode } from "./logging/event-log.js";
 import { pruneLogs } from "./logging/log-retention.js";
 import { listProjectFiles } from "./project/project-files.js";
@@ -63,8 +63,6 @@ const conversationsOf = (context: ProjectContext): ConversationList => ({
   remove: (id) => context.history.remove(id),
   togglePin: (id) => context.history.togglePin(id),
 });
-
-const PUSH_KINDS: ReadonlySet<DesktopNotification["kind"]> = new Set(["finished", "question"]);
 
 const main = async (): Promise<void> => {
   const args = parseCliArgs(process.argv.slice(2));
@@ -106,26 +104,32 @@ const main = async (): Promise<void> => {
     const context = hub.current;
     if (context) context.saveFeedItem(context.history.currentId, item);
   });
-  // スマホへの通知は、GUI の通知と同じ関数で Hub が決める（DESIGN.md §28 スマホへの通知（Web Push））
   const push = new PushService(join(homeDir, ".clodex", "push"));
-  const notify = (text: string, level: "info" | "warn" = "info", kind?: BackgroundNoticeKind) => {
+  const notifyAgent = (input: NotificationInput) => {
+    const notification = formatNotification(input, MESSAGES[language]);
+    feed.publishNotify(notification);
+  };
+  const notify = (text: string, level: "info" | "warn" = "info") => {
     feed.publishToast(text, level);
     printTerminal(text);
-    const payload = backgroundPushPayload(kind, text, MESSAGES[language]);
-    if (payload) push.notify(payload).catch((error: unknown) => reportRuntimeError(errorMessage(error)));
   };
-  let pushState: DesktopNotifyState = { live: false, working: false };
+  let pushState: DesktopNotifyState = { live: false, working: false, toolUsed: {} };
   feed.subscribe((item) => {
-    const update = updateDesktopNotify(pushState, item, MESSAGES[language]);
+    if (item.type === "notify") {
+      if (shouldPushNotification(item.notification.kind)) push.notify({ title: item.notification.title, body: item.notification.body })
+        .catch((error: unknown) => reportRuntimeError(errorMessage(error)));
+      return;
+    }
+    const update = updateDesktopNotify(pushState, item);
     pushState = update.state;
-    // スマホには、作業が終わって返答が来たときと、Agent が人に質問したときだけ送る
-    if (update.notification && PUSH_KINDS.has(update.notification.kind)) push.notify({ title: update.notification.title, body: update.notification.body }).catch((error: unknown) => reportRuntimeError(errorMessage(error)));
+    const context = hub.current;
+    if (update.notification && context) notifyAgent({ ...update.notification, projectRoot: context.projectRoot, conversationTitle: context.history.current.title });
   });
   reportRuntimeError = message => { const text = t("error.generic", { message }); feed.publishOutput(text); printTerminal(text); };
   hub = new Hub({ homeDir, cwd, openProject: async (projectRoot) => {
     let context: ProjectContext;
     context = await openProject({
-      projectRoot, homeDir, args, language: () => language, printTerminal, notify, displayMode: () => displayMode,
+      projectRoot, homeDir, args, language: () => language, printTerminal, notify, notifyAgent, displayMode: () => displayMode,
       isCurrent: () => hub.current === context, modelCatalog: () => modelCatalog, registerCoordinator,
     });
     context.workspace.onEvent((runtime, event, current) => {

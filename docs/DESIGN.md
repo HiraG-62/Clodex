@@ -2126,9 +2126,7 @@ D2 の詳細（Hub として複数の project を扱う）。2 段に分ける:
 - **D2a: 1 つのプロセスで複数の project**
   - 今の `main()` の project ごとの部分（設定・履歴・Agent の設定・Workspace・feed の保存・成果物のプレビュー・アップロード先）を **ProjectContext** として切り出す（`hub/project-context.ts`）。Hub は project root ごとに ProjectContext を持ち、開いた project を残す（会話と同じく、切り替えても Agent を止めない）
   - 人が見ている project（**今の project**）は 1 つ。terminal と Web UI は今の project の今の会話を表示する
-  - 裏で動いている会話（今の project の今の会話以外。ほかの project の会話はその project の今の会話も含む）の Agent のターンが終わったら、toast で知らせる（GUI ではウィンドウが裏にあれば Windows の通知になる）。ほかの project なら先頭に project 名（フォルダ名）を付ける（例: `roguelike · 「会話名」の claude のターンが終わりました（completed）`）。文言は今の project の裏の会話と同じものを使い、project 名だけを足す
-  - 裏で動いている会話で Agent が人に質問（`ask_user`）したときも、同じように toast で知らせる（例: `roguelike · 「会話名」の claude から質問`）。質問そのものは、その会話を開けば質問欄に出る
-  - 裏の会話のターン終了と質問は、スマホへの通知（Web Push。下記）にも送る。タイトルは今の会話のときと同じ（「作業終了」「質問」）で、本文は toast の文言
+  - 裏で動いている会話（今の project の今の会話以外。ほかの project の会話はその project の今の会話も含む）の Agent のターンが終わったときと、Agent が人に質問（`ask_user`）したときも、今の会話と同じ通知を出す（下記「通知の形式」。GUI の Windows 通知・Web Push・画面の toast）
   - `/project` で開いている project の一覧、`/project <path>` でその project を開いて今の project にする（path は resolveProjectRoot と同じ規則で解決する）。Web UI は上部に project の切り替えを出し、`/project <path>` を送る
   - 開いた project の一覧は `~/.clodex/hub.json` に保存し、次の起動で一覧に出す（開くのは選んだとき。ただし復旧する作業がある project は起動時に開く。§18）
   - **一覧の整理**: `/project pin <path>` でピン止めを切り替え、`/project remove <path>` で一覧から外す。path は一覧にあるものをそのまま指定する（フォルダが消えていても外せるよう、resolveProjectRoot では解決しない）。ピン止めは `hub.json` の `pinned` に保存する
@@ -2163,13 +2161,24 @@ D3 の詳細（Tauri GUI。Windows）:
 通知とトレイ常駐（D3 の後）:
 
 - **トレイ常駐**: ウィンドウを閉じても終了せず、ウィンドウを隠してトレイに残る（Hub と Agent は動き続ける）。トレイのアイコンを左クリックするとウィンドウを出す。メニューは「開く」「終了」で、「終了」で GUI を終える（GUI が起動した Hub は今どおり止める）。GUI をもう一度起動したら、新しいウィンドウを作らず既存のウィンドウを出す（single instance）
+- **通知の形式**: GUI の Windows 通知・Web Push・画面の toast は、今の会話・裏の会話・ほかの project の会話で同じ形式にする。通知は Hub が作り、feed の `notify` の項目（`{ kind, project, conversation, agent?, title, body }`）として流す。GUI と画面はそれを出すだけにする（今の会話の通知も画面では作らない）
+  - タイトル: `Clodex【<project 名>】「<会話名>」`（project 名はフォルダ名。会話名が無ければ「（入力なし）」）。英語も同じ形
+  - 本文: `<内容>（<Agent 名>）`。内容は種類で変える
+    - ターンが終わり、そのターンで tool を使った: 「作業完了しました。」/ "Work finished."
+    - ターンが終わり、tool を使わず返答だけ: 「応答しました。」/ "Replied."
+    - ターンが失敗した: 「失敗しました。」/ "Failed."、中断した: 「中断しました。」/ "Interrupted."
+    - 人への質問（`ask_user`）: 「ユーザの回答待ちです。」/ "Waiting for your answer."
+    - 利用枠の上限で止まった: 「利用枠の上限で停止しました。再開 <時刻>。」/ "Stopped at usage limit. Resumes <time>."
+    - Agent のエラー: 「エラー: <1 行目>」/ "Error: <first line>"
+    - Agent に関係しない通知（利用枠の偏りなどの `notice`）は、本文をその文のままにし、`（Agent 名）` を付けない
+  - 今の会話は、今どおり「どの Agent も作業中でなく配送待ちも無い」状態になったときに、最後に終わったターンで 1 回だけ出す。裏の会話・ほかの project は、ターンが終わるたびに出す
+  - 画面の feed の読み込み（再生）では出さない
 - **通知**: Tauri の中の Web UI が、ウィンドウが見えていないかフォーカスが無いときに、Windows の通知を出す（`tauri-plugin-notification`）。ブラウザの Web UI では出さない
-  - 今の会話の作業が終わったとき: 作業中（どれかの Agent が busy か配送待ちがある）から、どの Agent も busy でなく配送待ちも無い状態になったとき。本文は最後に終わったターンの Agent と最終応答の 1 行目
-  - `notice`（利用枠など）・`toast`（ほかの会話・ほかの project の完了など）と `error`
+  - 出すのは上の「通知の形式」の `notify` の項目
   - 画面を開いたときや会話を切り替えたときの feed の読み込み（再生）では出さない
   - 音は Windows の既定の通知音（plugin は `sound` を指定しないと無音にする）
-- **スマホへの通知（Web Push）**: 上の通知のうち、今の会話の作業が終わったとき（Agent の返答）と Agent の質問（`ask_user`）、裏で動いている会話（ほかの project を含む）のターン終了と質問（§28 D2a）だけを、登録した端末（ホーム画面に追加した PWA。iOS 16.4 以降）に Web Push で届ける。画面を開いていなくても届く
-  - 通知を出すかは Hub が決める。Hub は feed を購読し、上の通知と同じ関数（`updateDesktopNotify`）で通知を作り、種類（`kind`）が `finished` と `question` のものだけを送る。会話の切り替えなどの再生は feed の購読に流れないので、通知しない
+- **スマホへの通知（Web Push）**: 上の通知のうち、ターンの終わり（作業完了・応答・失敗・中断）と人への質問の `notify` だけを、登録した端末（ホーム画面に追加した PWA。iOS 16.4 以降）に Web Push で届ける。画面を開いていなくても届く
+  - 送るのは Hub が作る `notify` の項目（上の「通知の形式」）のうち、ターンの終わりと人への質問の種類だけ。タイトルと本文はそのまま使う。会話の切り替えなどの再生では作らないので、通知しない
   - 送り先から外す: その端末の画面が見えている間（下の `visible`）は送らない。iOS は Push を受けて通知を出さないと購読を取り消すことがあるので、Service Worker では間引かず、Hub が送る前に間引く
   - 鍵: VAPID の鍵は初回に作り `~/.clodex/push/vapid.json` に置く（subject は `https://github.com/HiraG-62/Clodex`）。購読は `~/.clodex/push/subscriptions.json`（`{ id, endpoint, keys }[]`。`id` は endpoint の SHA-256 の先頭 16 文字）。送信が 404 / 410 なら購読を消す
   - API（token で認証）: `GET /api/push/key`（公開鍵）、`POST /api/push/subscribe`（購読。`id` を返す）、`POST /api/push/unsubscribe`（`{ id }`）、`POST /api/push/visibility`（`{ id, visible }`）。Service Worker の `/sw.js` は秘密を含まないので token なしで返す

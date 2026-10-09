@@ -19,7 +19,7 @@ import type { Suggestion, createInputAssist as CreateInputAssist } from "./input
 import type { collectArtifacts as CollectArtifacts, displayPath as DisplayPath, findImagePaths as FindImagePaths, splitImagePaths as SplitImagePaths } from "./artifacts.js";
 import type { MessageKey, Messages } from "../../i18n/messages.js";
 import type { chooseProjectPath as ChooseProjectPath } from "./project-picker.js";
-import type { DesktopNotification, DesktopNotifyState, updateDesktopNotify as UpdateDesktopNotify } from "./desktop-notify.js";
+import type { HubNotification } from "../../hub/notify-format.js";
 import type { settingsSections as SettingsSections, SettingsItem, SettingsSectionId } from "./settings-sections.js";
 import type { limitChanges as LimitChanges } from "./limit-changes.js";
 import type { pendingRows as PendingRows } from "./pending-rows.js";
@@ -53,7 +53,6 @@ export interface ClientDeps {
   commands: readonly SlashCommand[];
   messages: Messages;
   chooseProjectPath: typeof ChooseProjectPath;
-  updateDesktopNotify: typeof UpdateDesktopNotify;
   settingsSections: typeof SettingsSections;
   limitChanges: typeof LimitChanges;
   pendingRows: typeof PendingRows;
@@ -63,7 +62,7 @@ export interface ClientDeps {
 }
 
 export function clientMain({
-  layout, withWorkingTurnsLast, withStartingTurns, withSubagentRows, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify, settingsSections, limitChanges, pendingRows, draftKey, staleDraftKeys,
+  layout, withWorkingTurnsLast, withStartingTurns, withSubagentRows, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, settingsSections, limitChanges, pendingRows, draftKey, staleDraftKeys,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -2498,19 +2497,18 @@ export function clientMain({
   });
 
   // ---- 接続 ----
-  let notificationState: DesktopNotifyState = { live: false, working: false };
   // 指定しないと Tauri の通知は無音になる
   const NOTIFICATION_SOUND = "Default";
-  const notify = async (notification: DesktopNotification) => {
+  const notify = async (notification: HubNotification) => {
     const plugin = (window as Window & { __TAURI__?: { notification?: {
       isPermissionGranted(): Promise<boolean>;
       requestPermission(): Promise<string>;
-      sendNotification(notification: DesktopNotification & { sound: string }): void | Promise<void>;
+      sendNotification(notification: Pick<HubNotification, "title" | "body"> & { sound: string }): void | Promise<void>;
     } } }).__TAURI__?.notification;
     if (!plugin || (!document.hidden && document.hasFocus())) return;
     try {
       const granted = await plugin.isPermissionGranted() || await plugin.requestPermission() === "granted";
-      if (granted && (document.hidden || !document.hasFocus())) await plugin.sendNotification({ ...notification, sound: NOTIFICATION_SOUND });
+      if (granted && (document.hidden || !document.hasFocus())) await plugin.sendNotification({ title: notification.title, body: notification.body, sound: NOTIFICATION_SOUND });
     } catch { /* 通知の失敗で feed の描画を止めない */ }
   };
   const conn = $("#conn");
@@ -2538,7 +2536,6 @@ export function clientMain({
     if (pushId) { query.set("push", pushId); query.set("visible", document.visibilityState === "visible" ? "1" : "0"); }
     const events = new EventSource(query.toString() ? `/events?${query}` : "/events");
     events.onopen = () => {
-      notificationState = { live: false, working: false };
       replaying = true;
       historyGeneration++;
       historyLoading = false;
@@ -2548,9 +2545,12 @@ export function clientMain({
     events.onmessage = (e: MessageEvent<string>) => {
       if (reloading) return;
       const item = JSON.parse(e.data) as FeedItem;
-      const update = updateDesktopNotify(notificationState, item, messages);
-      notificationState = update.state;
-      if (update.notification) void notify(update.notification);
+      if (item.type === "notify") {
+        showToast(`${item.notification.title} ${item.notification.body}`,
+          ["failed", "interrupted", "limitHold", "error"].includes(item.notification.kind) ? "warn" : "info");
+        void notify(item.notification);
+        return;
+      }
       if (item.type === "version") {
         if (item.version !== version) {
           reloading = true;

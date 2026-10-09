@@ -12,18 +12,18 @@ it("別 project のターン終了を共有の通知先へ渡す", async () => {
   const homeDir = mkdtempSync(join(tmpdir(), "clodex-other-project-"));
   const projectRoot = join(homeDir, "other-project");
   mkdirSync(projectRoot);
-  const notify = vi.fn();
+  const notifyAgent = vi.fn();
   const context = await openProject({
     projectRoot, homeDir, args: { models: {}, resume: false, web: false, serve: false }, language: "ja",
-    printTerminal: () => {}, notify, displayMode: () => "normal", isCurrent: () => false,
+    printTerminal: () => {}, notify: () => {}, notifyAgent, displayMode: () => "normal", isCurrent: () => false,
     modelCatalog: EMPTY_MODEL_CATALOG, registerCoordinator: () => () => {},
     createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") }),
   });
   try {
     context.workspace.current.bus.publish({ kind: "agent", agent: "claude", event: { type: "turn", result: { status: "completed", text: "完了" } } });
-    expect(notify).toHaveBeenCalledWith(expect.stringMatching(/^other-project · /), "info", "finished");
+    expect(notifyAgent).toHaveBeenCalledWith(expect.objectContaining({ projectRoot, kind: "reply", agent: "claude" }));
     context.workspace.current.bus.publish({ kind: "question", id: "q1", agent: "codex", questions: [{ question: "方針は", options: [{ label: "A" }] }] });
-    expect(notify).toHaveBeenCalledWith(expect.stringMatching(/^other-project · /), "info", "question");
+    expect(notifyAgent).toHaveBeenCalledWith(expect.objectContaining({ projectRoot, kind: "question", agent: "codex" }));
   } finally { await context.close(); }
 });
 
@@ -35,7 +35,7 @@ it("言語変更で session を作り直さず、次の session の system promp
   const agents: FakeAgentAdapter[] = [];
   const context = await openProject({
     projectRoot, homeDir, args: { models: {}, resume: false, web: false, serve: false }, language: () => language,
-    printTerminal: () => {}, notify: () => {}, displayMode: () => "normal", isCurrent: () => true,
+    printTerminal: () => {}, notify: () => {}, notifyAgent: () => {}, displayMode: () => "normal", isCurrent: () => true,
     modelCatalog: EMPTY_MODEL_CATALOG, registerCoordinator: () => () => {},
     sandboxPlatform: { inspect: async () => false, connect: async () => {}, grant: async () => {}, release: async () => {}, close: async () => {}, spawn: vi.fn() },
     createAgents: () => {
@@ -66,7 +66,7 @@ it("起動中・作業中の会話に戻ってもターンを中断せず、完�
   const agents: FakeAgentAdapter[] = [];
   const context = await openProject({
     projectRoot, homeDir, args: { models: {}, resume: false, web: false, serve: false }, language: "en",
-    printTerminal: () => {}, notify: () => {}, displayMode: () => "normal", isCurrent: () => true,
+    printTerminal: () => {}, notify: () => {}, notifyAgent: () => {}, displayMode: () => "normal", isCurrent: () => true,
     modelCatalog: EMPTY_MODEL_CATALOG, registerCoordinator: () => () => {},
     createAgents: () => {
       const claude = new FakeAgentAdapter("claude");
@@ -104,7 +104,7 @@ it("project の上限を保存し、既存・新規の会話と再起動に反�
   writeFileSync(join(projectRoot, ".clodex.json"), JSON.stringify({ limits: { maxMessagesPerChain: 12 } }));
   const open = () => openProject({
     projectRoot, homeDir, args: { models: {}, resume: false, web: false, serve: false }, language: "en",
-    printTerminal: () => {}, notify: () => {}, displayMode: () => "normal", isCurrent: () => true,
+    printTerminal: () => {}, notify: () => {}, notifyAgent: () => {}, displayMode: () => "normal", isCurrent: () => true,
     modelCatalog: EMPTY_MODEL_CATALOG, registerCoordinator: () => () => {},
     createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") }),
   });
@@ -158,7 +158,7 @@ it("sandbox off の project を開いても実機の検査や broker 接続を�
   const connect = vi.fn(async () => {});
   const context = await openProject({
     projectRoot, homeDir, args: { models: {}, resume: false, web: false, serve: false }, language: "ja",
-    printTerminal: () => {}, notify: () => {}, displayMode: () => "normal", isCurrent: () => true,
+    printTerminal: () => {}, notify: () => {}, notifyAgent: () => {}, displayMode: () => "normal", isCurrent: () => true,
     modelCatalog: EMPTY_MODEL_CATALOG, registerCoordinator: () => () => {},
     sandboxPlatform: { ready, inspect, connect, setupRecorded: () => true, grant: async () => {}, release: async () => {}, close: async () => {}, spawn: vi.fn() },
     createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") }),

@@ -16,7 +16,8 @@ import { buildRoleInstructions } from "../context/role-instructions.js";
 import { DEFAULT_LIMITS, LIMIT_KEYS, UNLIMITED_LIMITS, type BudgetLimits, type LimitName } from "../coordinator/budget-manager.js";
 import { Coordinator } from "../coordinator/coordinator.js";
 import { EventBus } from "../coordinator/event-bus.js";
-import { Workspace, type BackgroundNoticeKind, type ConversationRuntime } from "./workspace.js";
+import { Workspace, type ConversationRuntime } from "./workspace.js";
+import type { NotificationInput } from "./notify-format.js";
 import { attachEventLog, defaultLogPath, type DisplayMode } from "../logging/event-log.js";
 import { startMcpServer } from "../mcp/server.js";
 import { AgentSettingsStore, agentSettingsPath, resolveStartSettings, type SavedAgentSettings } from "../project/agent-settings.js";
@@ -66,7 +67,8 @@ export interface OpenProjectOptions {
   homeDir: string;
   args: CliArgs;
   language: Language | (() => Language);
-  notify(text: string, level: "info" | "warn", kind?: BackgroundNoticeKind): void;
+  notify(text: string, level: "info" | "warn"): void;
+  notifyAgent(input: NotificationInput): void;
   printTerminal(line: string): void;
   displayMode(): DisplayMode;
   isCurrent(): boolean;
@@ -78,7 +80,7 @@ export interface OpenProjectOptions {
 }
 
 export const openProject = async ({
-  projectRoot, homeDir, args, language, printTerminal, notify, displayMode, isCurrent, modelCatalog, registerCoordinator, createAgents, sandboxPlatform, startupProbe,
+  projectRoot, homeDir, args, language, printTerminal, notify, notifyAgent, displayMode, isCurrent, modelCatalog, registerCoordinator, createAgents, sandboxPlatform, startupProbe,
 }: OpenProjectOptions): Promise<ProjectContext> => {
   const config = loadConfig({ homeDir, projectRoot });
   const primary = args.primary ?? config.primary ?? DEFAULT_PRIMARY;
@@ -172,7 +174,7 @@ export const openProject = async ({
     return { conversationId: conversation.id, workDir, bus, coordinator: created,
       close: async () => { registered.get(created)?.(); registered.delete(created); await created.stop(); await mcp.close(); } };
   };
-  workspace = new Workspace({ notify, history, projectRoot, isCurrentProject: isCurrent, createRuntime, createWorktree });
+  workspace = new Workspace({ notifyAgent, history, projectRoot, isCurrentProject: isCurrent, createRuntime, createWorktree });
   await workspace.init();
   const activeWorkspace = workspace;
   const working = (id: string): ReadonlySet<AgentId> => new Set(

@@ -224,7 +224,7 @@ export class Coordinator {
     const time = new Date(resumeAt).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
     this.holdContext[id] = { peerFiles: new Set() };
     this.notifyPeerLimit(id, resumeAt);
-    this.options.bus.publish({ kind: "notice", text: t("notice.limitHold", { agent: id, time }) });
+    this.options.bus.publish({ kind: "notice", text: t("notice.limitHold", { agent: id, time }), limitHold: { agent: id, time } });
     return { resumeAt, text: `${LIMIT_CONTINUE}${this.reminder}` };
   }
 
