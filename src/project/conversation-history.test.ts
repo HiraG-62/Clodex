@@ -224,6 +224,24 @@ describe("ConversationHistory のリネーム・削除・ピン止め", () => {
     expect(history.list()[0]?.title).toBe("設計の相談");
   });
 
+  it("ID を指定して別の会話と今の会話の名前を変え、保存する", () => {
+    const { history, human, path } = setup();
+    human("旧会話");
+    const oldId = history.currentId;
+    history.startNew();
+    human("今の会話");
+    const currentId = history.currentId;
+    history.renameConversation(oldId, "別の会話");
+    history.renameConversation(currentId, "選択中の会話");
+    human("次の入力");
+    const saved = new ConversationHistory(path, { resumeLatest: false }).list();
+    expect(saved.find((conversation) => conversation.id === oldId)?.title).toBe("別の会話");
+    expect(saved.find((conversation) => conversation.id === currentId)?.title).toBe("選択中の会話");
+    expect(history.current.title).toBe("選択中の会話");
+    history.renameConversation(oldId, "長".repeat(100));
+    expect(history.list().find((conversation) => conversation.id === oldId)?.title).toBe("長".repeat(60));
+  });
+
   it("今の会話以外を削除し、削除を通知する。今の会話・無い会話は理由を返す", () => {
     const { history, human, path } = setup();
     human("old");

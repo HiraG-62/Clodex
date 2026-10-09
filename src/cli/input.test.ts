@@ -35,6 +35,9 @@ describe("parseInput", () => {
     ["/compact claude", { kind: "compact", agent: "claude" }],
     ["/new codex", { kind: "new", agent: "codex" }],
     ["/resume 3", { kind: "resume", index: 3 }],
+    ["/rename 名前", { kind: "rename", title: "名前" }],
+    ["/rename 2 日目", { kind: "rename", title: "2 日目" }],
+    ["/rename #2 新しい名前", { kind: "rename", index: 2, title: "新しい名前" }],
     ["/permission codex read-only", { kind: "permission", agent: "codex", level: "read-only" }],
     ["/model claude haiku", { kind: "model", agent: "claude", model: "haiku" }],
     ["/model codex gpt-6-sol", { kind: "model", agent: "codex", model: "gpt-6-sol" }],
@@ -43,6 +46,10 @@ describe("parseInput", () => {
     ["/effort codex minimal", { kind: "effort", agent: "codex", level: "minimal" }],
   ])("%j", (line, expected) => {
     expect(parseInput(line, "claude")).toEqual(expected);
+  });
+
+  it.each(["/rename", "/rename #2", "/rename #x 名前", "/rename #0 名前"])('%s は使い方を返す', (line) => {
+    expect(parseInput(line, "claude")).toMatchObject({ kind: "invalid", message: expect.stringContaining("/rename [#<number>] <title>") });
   });
 
   it("!command は shell command として実行する", () => {

@@ -117,6 +117,9 @@ export function createInputAssist(commands: readonly SlashCommand[], agents: rea
         case "resume": case "delete": case "pin":
           if (index === 0) values = state.conversations.map((conversation, i) => ({ value: String(i + 1), detail: conversation.title ?? labels.conversation }));
           break;
+        case "rename":
+          if (index === 0) values = state.conversations.map((conversation, i) => ({ value: `#${i + 1}`, detail: conversation.title ?? labels.conversation }));
+          break;
         case "project": {
           const projects = (state.projects ?? []).map(({ projectRoot }) => ({ value: projectRoot, detail: labels.project }));
           if (index === 0) values = [...simple(["pin", "remove"], ""), ...projects];

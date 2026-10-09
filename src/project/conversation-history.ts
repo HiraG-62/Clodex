@@ -103,7 +103,12 @@ export class ConversationHistory {
 
   // /rename: 今の会話の名前を変える
   rename(title: string): void {
-    this.update({ title: title.slice(0, TITLE_LENGTH) });
+    this.renameConversation(this.currentConversation.id, title);
+  }
+
+  renameConversation(id: string, title: string): void {
+    if (!this.find(id)) return;
+    this.updateConversation(id, { title: title.slice(0, TITLE_LENGTH) });
   }
 
   // /solo: 今の会話の solo を変える。undefined で解除

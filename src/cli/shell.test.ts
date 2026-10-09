@@ -38,6 +38,8 @@ class FakeHistory implements ConversationList {
   }
   readonly renamed: string[] = [];
   rename(title: string) { this.renamed.push(title); }
+  readonly renamedById: Array<{ id: string; title: string }> = [];
+  renameConversation(id: string, title: string) { this.renamedById.push({ id, title }); }
   setSolo(mode: SoloMode | undefined) {
     const current = this.conversations.find((c) => c.id === this.currentId);
     if (!current) return;
@@ -550,6 +552,14 @@ describe("createShell", () => {
     await shell.handleLine("/rename 設計の相談 その2");
     expect(history.renamed).toEqual(["設計の相談 その2"]);
     expect(notified).toEqual(["renamed: \"設計の相談 その2\""]);
+    expect(printed).toEqual([]);
+  });
+
+  it("/rename #番号 はその会話の名前を変えて通知する", async () => {
+    const { history, printed, notified, shell } = setup();
+    await shell.handleLine("/rename #2 新しい名前");
+    expect(history.renamedById).toEqual([{ id: "conv-old", title: "新しい名前" }]);
+    expect(notified).toEqual(['renamed: "新しい名前"']);
     expect(printed).toEqual([]);
   });
 

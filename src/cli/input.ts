@@ -29,7 +29,7 @@ export type ShellCommand =
   | { kind: "compact"; agent?: AgentId }
   | { kind: "answer"; id: string; text: string }
   | { kind: "cancel"; id?: string }
-  | { kind: "rename"; title: string }
+  | { kind: "rename"; title: string; index?: number }
   | { kind: "solo"; mode?: SoloMode }
   | { kind: "delete"; index: number }
   | { kind: "pin"; index: number }
@@ -199,8 +199,15 @@ const parseCommand = (name: string, arg: string, primary: AgentId): ShellCommand
     case "resume":
       if (!arg) return { kind: "resume" };
       return isConversationNumber(arg) ? { kind: "resume", index: Number(arg) } : usage("/resume [number]");
-    case "rename":
-      return arg ? { kind: "rename", title: arg } : usage("/rename <title>");
+    case "rename": {
+      const renameUsage = "/rename [#<number>] <title>";
+      if (!arg) return usage(renameUsage);
+      if (!arg.startsWith("#")) return { kind: "rename", title: arg };
+      const match = arg.match(/^#([1-9]\d*)\s+(.+)$/);
+      return match?.[1] && match[2]
+        ? { kind: "rename", index: Number(match[1]), title: match[2] }
+        : usage(renameUsage);
+    }
     case "solo":
       if (!arg || arg === "enable") return { kind: "solo", mode: "free" };
       if (arg === "disable") return { kind: "solo" };

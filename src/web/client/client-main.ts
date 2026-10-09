@@ -1564,7 +1564,6 @@ export function clientMain({
     await show("file");
   };
 
-  // 会話の操作: 名前の変更は今の会話だけ（/rename）。今の会話は削除できない
   const projectEditorList = () => {
     const projects = state?.projects ?? [];
     const list = el("div", "project-list");
@@ -1598,13 +1597,11 @@ export function clientMain({
     sheetAgent = undefined;
     const title = conversation.title ?? t("web.conv.untitled");
     const actions: HTMLElement[] = [];
-    if (conversation.current) {
-      actions.push(sheetButton(t("web.conv.rename"), "secondary-action", (button) => {
-        const name = window.prompt(t("web.conv.renamePrompt"), conversation.title ?? "")?.trim();
-        if (name) void send(`/rename ${name}`, button).then((ok) => { if (ok) closeSheet(); });
-        else closeSheet();
-      }));
-    }
+    actions.push(sheetButton(t("web.conv.rename"), "secondary-action", (button) => {
+      const name = window.prompt(t("web.conv.renamePrompt"), conversation.title ?? "")?.trim();
+      if (name) void send(`/rename #${number} ${name}`, button).then((ok) => { if (ok) closeSheet(); });
+      else closeSheet();
+    }));
     actions.push(sheetButton(t(conversation.pinned ? "web.conv.unpin" : "web.conv.pin"), "secondary-action", (button) => {
       void send(`/pin ${number}`, button).then((ok) => { if (ok) closeSheet(); });
     }));

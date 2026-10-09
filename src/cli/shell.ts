@@ -65,6 +65,7 @@ export interface ConversationList {
   startNew(options?: { worktree?: boolean }): Promise<string | undefined>;
   clearSession(agent: AgentId): void;
   rename(title: string): void;
+  renameConversation(id: string, title: string): void;
   setSolo(mode: SoloMode | undefined): void;
   // 削除できなければ理由を返す
   remove(id: string): string | undefined;
@@ -422,7 +423,11 @@ export const createShell = ({
         notify(soloLabel(command.mode));
         return "continue";
       case "rename":
-        history().rename(command.title);
+        if (command.index !== undefined) {
+          const picked = pickConversation(command.index);
+          if (!picked) return "continue";
+          history().renameConversation(picked.id, command.title);
+        } else history().rename(command.title);
         notify(t("shell.renamed", { title: command.title }));
         return "continue";
       case "delete": {

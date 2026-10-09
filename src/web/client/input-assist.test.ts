@@ -28,6 +28,7 @@ describe("suggest", () => {
     expect(suggest("/model codex ", 13, FILES, state)?.items.map((i) => i.insert)).toContain("gpt-6-sol ");
     expect(suggest("/permission claude f", 20, FILES, state)?.items.map((i) => i.insert)).toContain("full ");
     expect(suggest("/resume ", 8, FILES, state)?.items.map((i) => i.insert)).toContain("1 ");
+    expect(suggest("/rename #", 9, FILES, state)?.items.map((i) => i.insert)).toContain("#2 ");
     expect(suggest("/project C", 10, FILES, state)?.items.map((i) => i.insert)).toContain("C:\\dev\\app ");
     expect(suggest("/project p", 10, FILES, state)?.items.map((i) => i.insert)).toEqual(["pin "]);
     expect(suggest("/project remove C", 17, FILES, state)?.items.map((i) => i.insert)).toContain("C:\\dev\\app ");
