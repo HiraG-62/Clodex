@@ -1305,7 +1305,12 @@ PC で動いている `clodex` を、スマホ等のブラウザから GUI で�
 - **起動**: `clodex --web` または設定ファイルの `"web": { "port": 4319 }`。既定ポートは 4319
 - **待ち受け**: `127.0.0.1` だけ。外部からの接続は Tailscale の `tailscale serve`（tailnet 内の端末だけが HTTPS で入れる）に任せ、Clodex は `0.0.0.0` で待ち受けない
 - **認証**: 起動をまたいで同じ token を使う（`~/.clodex/web-token`、初回に生成）。`/?token=<token>` で開くと HttpOnly cookie を設定し、以後は cookie で認証する。token が無い・違うリクエストは 401
-- 依存パッケージを増やさない（`node:http` と SSE のみ。画面も外部の JS ライブラリを使わない）
+- 依存パッケージを増やさない（`node:http` と SSE のみ。画面も外部の JS ライブラリを使わない）。例外は Hub 側で QR コードを作る `qrcode` と、同梱のフォント
+- **スマホからの接続の案内**: 設定の Clodex の節に「スマホ」の行を置き、開くとスマホで読み取る QR コードと接続の URL（`?token=` 付き）を出す。URL はコピーできる
+  - URL は tailscale の CLI（PATH に無ければ `C:\Program Files\Tailscale	ailscale.exe`）から求める。`tailscale status --json` の `Self.DNSName` と、`tailscale serve status --json` の `Web` のうち、Hub のポートへ proxy している `/` の handler の HTTPS の入口（例: `https://<name>.<tailnet>.ts.net/`）。パス付きの handler（`/clodex` など）は、画面がルートからの絶対パスを使うので使えない（`serve` 未設定と同じ扱い）
+  - 状態は 4 つ: 接続できる / `serve` が Hub のポートに向いていない（`tailscale serve --bg <port>` を出してコピーできるようにする）/ tailscale が止まっている / tailscale が無い。文言は短く（「serve 未設定」「Tailscale 停止中」「Tailscale 未導入」）
+  - API: `GET /api/connect`（token 認証）が状態・URL・QR コードの SVG を返す。QR コードは Hub が `qrcode` パッケージで作る。開くたびに tailscale に問い合わせる（キャッシュしない）
+  - token を含むので、出すのは認証済みの画面だけ。`/api/connect` を token なしで返さない
 
 ### feed（`/events`）
 

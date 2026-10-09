@@ -22,6 +22,7 @@ CLI: Claude Code 2.1.289 / codex-cli 0.156.1
 | P Codex の project doc とネットワーク | `-c project_doc_fallback_filenames=["CLAUDE.md"]` で `CLAUDE.md` を読む（`AGENTS.md` が優先）。`workspace-write` は既定でネットワーク不可、`network_access` / `networkAccess` で Node・pnpm は通る（Schannel の TLS は不可） | [codex-project-config.md](codex-project-config.md) |
 | Q Claude の background Agent | `task_started` / `task_notification` の `local_agent` で開始・終了、`background_tasks_changed.tasks` で稼働数を取れる。子の完了後、親の自発ターンが始まる | [claude-subagent.md](claude-subagent.md) |
 | R Hub 異常終了時の孤児プロセス | PowerShell 経由の孫は残る。見張りでは親子関係の消失により止められず、Job Object は登録後に起動した孫まで停止した | [orphan-processes.md](orphan-processes.md) |
+| S Tailscale の接続状態 | `Running`・末尾に `.` のある DNS 名と、443 から Hub の 4319 番ポートへの Serve proxy を確認した | [tailscale.md](tailscale.md) |
 
 ## 設計への影響
 

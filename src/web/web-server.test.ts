@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import type { ConnectionStatus } from "./tailscale.js";
 import { type FeedItem, WebFeed, type WebState } from "./web-feed.js";
 import { buildWebPage } from "./web-page.js";
 
@@ -31,7 +32,7 @@ afterEach(async () => {
   server = undefined;
 });
 
-const setup = async (onInput?: (line: string) => Promise<void>) => {
+const setup = async (onInput?: (line: string) => Promise<void>, connect?: () => Promise<ConnectionStatus>) => {
   const feed = new WebFeed();
   const inputs: string[] = [];
   const errors: unknown[] = [];
@@ -41,6 +42,7 @@ const setup = async (onInput?: (line: string) => Promise<void>) => {
     feed,
     page: PAGE,
     onInput: onInput ?? (async line => void inputs.push(line)),
+    connect,
     onError: e => errors.push(e),
     listFiles: async () => ["README.md", "src/a.ts"],
     preview: {
@@ -120,6 +122,18 @@ describe("startWebServer", () => {
     expect((await fetch(`${base}/events`, { headers: { cookie: "clodex_token=wrong" } })).status).toBe(401);
     expect((await fetch(`${base}/api/input`, { method: "POST", body: "{}" })).status).toBe(401);
     expect((await fetch(`${base}/?token=wrong`, { redirect: "manual" })).status).toBe(401);
+  });
+
+  it("/api/connect は token で守り、接続 URL と QR SVG を返す", async () => {
+    const { base } = await setup(undefined, async () => ({ state: "ready", url: "https://desktop.example.ts.net/" }));
+    expect((await fetch(`${base}/api/connect`)).status).toBe(401);
+    const response = await fetch(`${base}/api/connect`, { headers: { cookie: COOKIE } });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const value = (await response.json()) as { state: string; url: string; qrSvg: string };
+    expect(value.state).toBe("ready");
+    expect(value.url).toBe(`https://desktop.example.ts.net/?token=${TOKEN}`);
+    expect(value.qrSvg).toContain("<svg");
   });
 
   it("/?token= で開くと HttpOnly cookie を設定して / へ移動する", async () => {

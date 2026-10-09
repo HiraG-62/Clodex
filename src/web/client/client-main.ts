@@ -8,6 +8,7 @@ import { createDom } from "./dom.js";
 import { createGuiPush } from "./gui-push.js";
 import { createLogItem } from "./log-item.js";
 import { createLogView } from "./log-view.js";
+import { createMobileConnect } from "./mobile-connect.js";
 import { createPendingView } from "./pending-view.js";
 import { createQuestionDock } from "./question-dock.js";
 import { createSend } from "./send.js";
@@ -38,6 +39,7 @@ export function clientMain(deps: ClientDeps): void {
   Object.assign(ctx, createArtifactsLightbox(ctx));
   Object.assign(ctx, createConversationSheets(ctx));
   Object.assign(ctx, createAgentSettings(ctx));
+  Object.assign(ctx, createMobileConnect(ctx));
   Object.assign(ctx, createSettingsSheet(ctx));
   Object.assign(ctx, createGuiPush(ctx));
   Object.assign(ctx, createSettingsRefresh(ctx));

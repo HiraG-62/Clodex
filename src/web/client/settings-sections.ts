@@ -1,4 +1,4 @@
-export type SettingsItem = "rolePreset" | "sandbox" | "limits" | "sendKey" | "push" | "language" | "guiUpdate";
+export type SettingsItem = "rolePreset" | "sandbox" | "limits" | "sendKey" | "push" | "language" | "mobileConnect" | "guiUpdate";
 export type SettingsSectionId = "project" | "device" | "clodex";
 export interface SettingsSection {
   id: SettingsSectionId;
@@ -19,6 +19,6 @@ export function settingsSections({
   if (!mobile) device.push("sendKey");
   if (pushSupported) device.push("push");
   if (device.length) sections.push({ id: "device", items: device });
-  sections.push({ id: "clodex", items: guiConnected ? ["language", "guiUpdate"] : ["language"] });
+  sections.push({ id: "clodex", items: guiConnected ? ["language", "mobileConnect", "guiUpdate"] : ["language", "mobileConnect"] });
   return sections;
 }

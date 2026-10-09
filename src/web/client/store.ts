@@ -37,7 +37,7 @@ export interface SharedStore {
   target: AgentId | undefined;
   sheetAgent: AgentId | undefined;
   usageAgent: AgentId | undefined;
-  sheetKind: "agent" | "agentSettings" | "settings" | "conversations" | "conversationMenu" | "projects" | "artifacts" | "viewer" | undefined;
+  sheetKind: "agent" | "agentSettings" | "settings" | "mobileConnect" | "conversations" | "conversationMenu" | "projects" | "artifacts" | "viewer" | undefined;
   sendKey: SendKey;
   gui: GuiInfo | null;
   settingsRequests: Set<string>;
@@ -171,6 +171,8 @@ export interface ClientContext extends ClientDeps {
   SWIPE_CLOSE_PX: 72;
   KEYBOARD_THRESHOLD_PX: 120;
   openSettings: () => void;
+  mobileConnectSection: () => HTMLElement;
+  openMobileConnect: () => Promise<void>;
   openArtifacts: () => void;
   renderLog: (force?: boolean) => void;
   nearBottom: () => boolean;

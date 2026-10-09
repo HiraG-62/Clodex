@@ -604,6 +604,14 @@
   .settings-card > .setting + .setting, .settings-card > .limits-settings { border-top: 1px solid var(--line); }
   .settings-card > .setting:not(.limits-settings) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px; align-items: center; min-height: 44px; padding: 2px 0; }
   .settings-card > .setting > .eyebrow { margin: 0; color: var(--fg); font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+  .mobile-connect-setting > .icon-btn { width: 44px; height: 44px; justify-self: end; }
+  .mobile-connect-body { display: grid; justify-items: center; gap: 14px; padding: 20px 0 10px; }
+  .mobile-connect-qr { width: 240px; height: 240px; padding: 8px; border-radius: 8px; background: white; }
+  .mobile-connect-qr svg { display: block; width: 100%; height: 100%; }
+  .mobile-connect-value { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 8px; border-radius: 8px; background: var(--sunken); }
+  .mobile-connect-value code { flex: 1; min-width: 0; overflow-wrap: anywhere; font: 12px/1.5 var(--font-mono); user-select: all; }
+  .mobile-connect-value .icon-btn { flex: none; }
+  .mobile-connect-status { margin: 0; color: var(--fg-2); font-size: 13px; }
   .sandbox-ready { display: inline-flex; vertical-align: middle; margin-left: 6px; color: var(--muted); }
   .sandbox-ready .i { width: 14px; height: 14px; }
   .settings-card .limits-unlimited { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-height: 44px; }
@@ -752,4 +760,3 @@
     body.kbd .working-tabs { display: none; }
     body.kbd .composer { padding-bottom: 6px; }
   }
-

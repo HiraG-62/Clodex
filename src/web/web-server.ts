@@ -4,10 +4,12 @@ import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import * as QRCode from "qrcode";
 import type { PreviewResult } from "../project/file-preview.js";
 import { APPLE_TOUCH_ICON_PNG_BASE64 } from "./apple-touch-icon.js";
 import { fontFilePath } from "./fonts.js";
 import { SERVICE_WORKER } from "./service-worker.js";
+import { type ConnectionStatus, queryTailscale } from "./tailscale.js";
 import { type FeedItem, GUI_ACTIONS, type GuiAction, type GuiInfo, type GuiUpdate, type WebFeed } from "./web-feed.js";
 import { ICON_SVG, MANIFEST, type WebPage } from "./web-page.js";
 
@@ -46,6 +48,7 @@ export interface WebServerOptions {
   // 貼り付けた画像を保存し、フルパスを返す（DESIGN.md §28 v0.3 C）
   upload: { maxBytes: number; accepts(contentType: string): boolean; save(contentType: string, body: Buffer): Promise<string> };
   onError?: (error: unknown) => void;
+  connect?: () => Promise<ConnectionStatus>;
   // スマホへの通知（DESIGN.md §28 スマホへの通知（Web Push））
   push?: PushEndpoints;
 }
@@ -149,8 +152,10 @@ export const startWebServer = async ({
   preview,
   upload,
   onError,
+  connect,
   push,
 }: WebServerOptions): Promise<WebServerHandle> => {
+  const getConnection = connect ?? (() => queryTailscale(port));
   const streams = new Set<ServerResponse>();
   // GUI の中の画面の接続（DESIGN.md §28 Web UI の設定からの更新）
   let guiStream: ServerResponse | undefined;
@@ -301,6 +306,21 @@ export const startWebServer = async ({
       return handlePush(req, res, url.pathname, push);
     }
     if (req.method === "GET" && url.pathname === "/api/state") return sendJson(res, feed.latestState() ?? null);
+    if (req.method === "GET" && url.pathname === "/api/connect") {
+      try {
+        const connection = await getConnection();
+        if (connection.state === "ready") {
+          const remoteUrl = `${connection.url}?token=${encodeURIComponent(token)}`;
+          const qrSvg = await QRCode.toString(remoteUrl, { type: "svg", width: 240, margin: 2 });
+          return sendJson(res, { state: "ready", url: remoteUrl, qrSvg });
+        }
+        if (connection.state === "noServe") return sendJson(res, { state: "noServe", command: `tailscale serve --bg ${port}` });
+        return sendJson(res, connection);
+      } catch (error) {
+        res.writeHead(HTTP.serverError, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        return void res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+      }
+    }
     if (req.method === "GET" && url.pathname === "/api/files") return sendJson(res, await listFiles());
     if (req.method === "GET" && url.pathname === "/api/history") {
       const before = url.searchParams.get("before");

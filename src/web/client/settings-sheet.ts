@@ -178,6 +178,7 @@ export function createSettingsSheet(ctx: ClientContext) {
       sendKey: sendKeyChoice,
       push: ctx.pushSection(),
       language,
+      mobileConnect: ctx.mobileConnectSection(),
       guiUpdate: ctx.guiUpdateSection(),
     };
     const headings: Record<SettingsSectionId, string> = { project: ctx.t("web.settings.project"), device: ctx.t("web.settings.device"), clodex: "Clodex" };
