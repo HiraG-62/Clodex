@@ -13,120 +13,118 @@ afterEach(cleanup);
 
 const fakeClient = () => {
   let listener: (item: FeedItem) => void = () => {};
+  let resolveConnected: () => void = () => {};
+  const connected = new Promise<void>((resolve) => { resolveConnected = resolve; });
   const client: FeedClient = {
-    connect: async (onItem) => { listener = onItem; return () => {}; },
+    connect: async (onItem) => { listener = onItem; resolveConnected(); return () => {}; },
     send: async () => {}, files: async () => [], history: async () => ({ items: [], hasMore: false }),
   };
-  return { client, emit: (item: FeedItem) => listener(item) };
+  return { client, connected, emit: (item: FeedItem) => listener(item) };
 };
-const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+const waitFor = (assertion: () => void) => vi.waitFor(assertion, { interval: 5 });
 
 describe("TuiApp", () => {
   it("本体が待機中でも動いているサブエージェントの数を表示する", async () => {
     setLanguage("ja");
-    const { client, emit } = fakeClient();
+    const { client, emit, connected } = fakeClient();
     const app = render(React.createElement(TuiApp, { client }));
-    await tick();
+    await connected;
     emit({ type: "state", state: { project: "app", primary: "claude", roles: {},
       agents: [{ id: "claude", status: "idle", sessionId: "s", permission: "edit", models: [], usage: {}, subagents: [{ id: "a", description: "調査" }, { id: "b", description: "実装" }] }],
       tabs: [], conversations: [], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "ja",
       sandbox: { enabled: false, ready: false }, limitsUnlimited: false,
       limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
-    await tick();
-    expect(app.lastFrame()).toContain("待機中 · sub 2");
+    await waitFor(() => expect(app.lastFrame()).toContain("待機中 · sub 2"));
   });
 
   it("送信待ちの件数に Agent 間メッセージを含める", async () => {
     setLanguage("ja");
-    const { client, emit } = fakeClient();
+    const { client, emit, connected } = fakeClient();
     const app = render(React.createElement(TuiApp, { client }));
-    await tick();
+    await connected;
     emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], tabs: [], conversations: [],
       pendingInputs: [], pendingMessages: [{ id: "msg_1", agent: "codex", from: "claude", type: "DELEGATE", taskId: "T", text: "作業" }],
       questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false,
       limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
-    await tick();
-    expect(app.lastFrame()).toContain("送信待ち 1 件");
+    await waitFor(() => expect(app.lastFrame()).toContain("送信待ち 1 件"));
   });
   it("先頭の ! の入力と削除でコマンドの枠ラベルを切り替える", async () => {
     setLanguage("ja");
-    const { client } = fakeClient();
+    const { client, connected } = fakeClient();
     const app = render(React.createElement(TuiApp, { client }));
-    await tick();
+    await connected;
     app.stdin.write("!");
-    await tick();
-    expect(app.lastFrame()).toContain("╭─ コマンド ");
+    await waitFor(() => expect(app.lastFrame()).toContain("╭─ コマンド "));
     app.stdin.write("\x7f");
-    await tick();
+    await waitFor(() => expect(app.lastFrame()).toContain("メッセージ"));
     expect(app.lastFrame()).not.toContain("╭─ コマンド ");
   });
   it("作業中のターンと候補を下部に表示する", async () => {
     setLanguage("ja");
-    const { client, emit } = fakeClient();
+    const { client, emit, connected } = fakeClient();
     const app = render(React.createElement(TuiApp, { client }));
-    await tick();
+    await connected;
     emit({ type: "event", seq: 1, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "turn_started" } } });
     emit({ type: "event", seq: 2, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "text", text: "方針を確認" } } });
     app.stdin.write("/");
-    await tick();
-    expect(app.lastFrame()).toContain("Claude · 作業中");
-    expect(app.lastFrame()).toContain("方針を確認");
-    expect(app.lastFrame()).toContain("/status");
+    await waitFor(() => {
+      expect(app.lastFrame()).toContain("Claude · 作業中");
+      expect(app.lastFrame()).toContain("方針を確認");
+      expect(app.lastFrame()).toContain("/status");
+    });
   });
 
   it("完了したターンをログに表示する", async () => {
     setLanguage("ja");
-    const { client, emit } = fakeClient();
+    const { client, emit, connected } = fakeClient();
     const app = render(React.createElement(TuiApp, { client }));
-    await tick();
+    await connected;
     emit({ type: "event", seq: 1, event: { kind: "agent", agent: "codex", at: new Date().toISOString(), event: { type: "turn_started" } } });
     emit({ type: "event", seq: 2, event: { kind: "agent", agent: "codex", at: new Date().toISOString(), event: { type: "turn", result: { status: "completed", text: "# 完了しました" } } } });
-    await tick();
-    expect(app.frames.join("\n")).toContain("完了しました");
-    expect(app.frames.join("\n")).toContain("Codex · 完了");
+    await waitFor(() => {
+      expect(app.frames.join("\n")).toContain("完了しました");
+      expect(app.frames.join("\n")).toContain("Codex · 完了");
+    });
   });
 
   it("Ctrl+O 以後に完了するターンの作業を展開する", async () => {
     setLanguage("ja");
-    const { client, emit } = fakeClient();
+    const { client, emit, connected } = fakeClient();
     const app = render(React.createElement(TuiApp, { client }));
-    await tick();
+    await connected;
     app.stdin.write("\x0f");
     emit({ type: "event", seq: 1, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "turn_started" } } });
     emit({ type: "event", seq: 2, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "tool", name: "Read", input: "src/a.ts" } } });
     emit({ type: "event", seq: 3, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "turn", result: { status: "completed", text: "終了" } } } });
-    await tick();
-    expect(app.frames.join("\n")).toContain("Read: src/a.ts");
+    await waitFor(() => expect(app.frames.join("\n")).toContain("Read: src/a.ts"));
   });
 
   it("Ctrl+O で過去のターンの作業も開閉する", async () => {
     setLanguage("ja");
-    const { client, emit } = fakeClient();
+    const { client, emit, connected } = fakeClient();
     const app = render(React.createElement(TuiApp, { client }));
-    await tick();
+    await connected;
     emit({ type: "event", seq: 1, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "turn_started" } } });
     emit({ type: "event", seq: 2, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "tool", name: "Read", input: "old.ts" } } });
     emit({ type: "event", seq: 3, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "turn", result: { status: "completed", text: "完了" } } } });
-    await tick();
+    await waitFor(() => expect(app.lastFrame()).toContain("完了"));
     expect(app.lastFrame()).not.toContain("Read: old.ts");
     app.stdin.write("\x0f");
-    await tick();
-    expect(app.lastFrame()).toContain("Read: old.ts");
+    await waitFor(() => expect(app.lastFrame()).toContain("Read: old.ts"));
   });
 
   it("中継 stream のホイールでログをスクロールし、マウス入力を入力欄に入れない", async () => {
     setLanguage("ja");
     const source = Object.assign(new PassThrough(), { isTTY: true, setRawMode: vi.fn() });
     const mouseInput = new MouseInputRelay(source);
-    const { client, emit } = fakeClient();
+    const { client, emit, connected } = fakeClient();
     const app = render(React.createElement(TuiApp, { client, mouseInput }));
-    await tick();
+    await connected;
     for (let seq = 1; seq <= 30; seq++) emit({ type: "output", seq, text: `ログ ${seq}` });
-    await tick();
-    expect(app.lastFrame()).toContain("ログ 30");
+    await waitFor(() => expect(app.lastFrame()).toContain("ログ 30"));
     source.write("\x1b[<64;12;8M");
     source.write("\x1b[<0;12;8M");
-    await tick();
+    await waitFor(() => expect(app.lastFrame()).toContain("ログ 1"));
     expect(app.lastFrame()).not.toContain("ログ 30");
     expect(app.lastFrame()).toContain("メッセージ");
     expect(app.lastFrame()).not.toContain("<0;12;8");
@@ -135,44 +133,45 @@ describe("TuiApp", () => {
 
   it("空の入力欄はカーソルと同じ行に薄い案内を出し、入力すると消す", async () => {
     setLanguage("ja");
-    const { client } = fakeClient();
+    const { client, connected } = fakeClient();
     const app = render(React.createElement(TuiApp, { client }));
-    await tick();
+    await connected;
+    await waitFor(() => expect(app.lastFrame()).toContain("メッセージ"));
     const lines = (app.lastFrame() ?? "").split("\n");
     const inputLine = lines.findIndex((line) => line.includes("メッセージ"));
     expect(lines[inputLine + 1]).toContain("╰");
     app.stdin.write("a");
-    await tick();
+    await waitFor(() => expect(app.lastFrame()).toContain("│ a"));
     expect(app.lastFrame()).not.toContain("メッセージ");
   });
 
   it("Windows の Backspace と Ctrl+End を Ink の入力として扱う", async () => {
     setLanguage("ja");
-    const { client, emit } = fakeClient();
+    const { client, emit, connected } = fakeClient();
     const app = render(React.createElement(TuiApp, { client }));
-    await tick();
+    await connected;
     app.stdin.write("ab\x7f");
-    await tick();
-    expect(app.lastFrame()).toContain("a");
+    await waitFor(() => expect(app.lastFrame()).toContain("│ a"));
     expect(app.lastFrame()).not.toContain("ab");
     for (let seq = 1; seq <= 30; seq++) emit({ type: "output", seq, text: `ログ ${seq}` });
-    await tick();
+    await waitFor(() => expect(app.lastFrame()).toContain("ログ 30"));
     app.stdin.write("\x1b[5~");
-    await tick();
+    await waitFor(() => expect(app.lastFrame()).toContain("ログ 1"));
     expect(app.lastFrame()).not.toContain("ログ 30");
     app.stdin.write("\x1b[1;5F");
-    await tick();
-    expect(app.lastFrame()).toContain("ログ 30");
+    await waitFor(() => expect(app.lastFrame()).toContain("ログ 30"));
   });
 
   it("マウスの開始（VT 入力の設定）に失敗したら notice を 1 行出す", async () => {
     setLanguage("ja");
-    const { client } = fakeClient();
+    const { client, connected } = fakeClient();
     const startMouse = vi.fn().mockRejectedValue(new Error("失敗"));
     const app = render(React.createElement(TuiApp, { client, startMouse }));
-    await tick();
-    expect(startMouse).toHaveBeenCalledTimes(1);
-    expect(app.lastFrame()).toContain(t("tui.mouseUnavailable"));
+    await connected;
+    await waitFor(() => {
+      expect(startMouse).toHaveBeenCalledTimes(1);
+      expect(app.lastFrame()).toContain(t("tui.mouseUnavailable"));
+    });
   });
 });
 
@@ -226,9 +225,10 @@ describe("Windows の VT 入力", () => {
     const instance = renderInk(React.createElement(TuiApp, { client,
       startMouse: async () => { events.push("vt"); } }),
       { stdin, stdout, stderr: new PassThrough(), interactive: true, patchConsole: false, exitOnCtrlC: false });
-    await tick();
-    expect(events.indexOf("raw")).toBeGreaterThanOrEqual(0);
-    expect(events.indexOf("vt")).toBeGreaterThan(events.indexOf("raw"));
+    await waitFor(() => {
+      expect(events.indexOf("raw")).toBeGreaterThanOrEqual(0);
+      expect(events.indexOf("vt")).toBeGreaterThan(events.indexOf("raw"));
+    });
     instance.unmount();
     await instance.waitUntilExit();
   });
@@ -267,83 +267,83 @@ describe("代替画面とマウス", () => {
 });
 
 it("reset と version で前の会話のログを消す", async () => {
-  const { client, emit } = fakeClient();
+  const { client, emit, connected } = fakeClient();
   const app = render(React.createElement(TuiApp, { client }));
-  await tick();
+  await connected;
   for (const boundary of [{ type: "reset" }, { type: "version", version: "v" }] as const) {
     emit({ type: "output", seq: 1, text: "前の会話のログ" });
-    await tick();
-    expect(app.lastFrame()).toContain("前の会話のログ");
+    await waitFor(() => expect(app.lastFrame()).toContain("前の会話のログ"));
+    const frameCount = app.frames.length;
     emit(boundary);
-    await tick();
+    await waitFor(() => expect(app.frames.length).toBeGreaterThan(frameCount));
     expect(app.lastFrame()).not.toContain("前の会話のログ");
   }
 });
 
 it("接続中の言語変更ではログを保持し、以後のラベルと候補を切り替える", async () => {
   setLanguage("ja");
-  const { client, emit } = fakeClient();
+  const { client, emit, connected } = fakeClient();
   const app = render(React.createElement(TuiApp, { client }));
-  await tick();
+  await connected;
   emit({ type: "version", version: "ja" });
   emit({ type: "output", seq: 1, text: "保持するログ" });
-  await tick();
+  await waitFor(() => expect(app.lastFrame()).toContain("保持するログ"));
   emit({ type: "version", version: "en" });
   emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], tabs: [], conversations: [], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "en", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
   app.stdin.write("/language");
-  await tick();
-  expect(app.lastFrame()).toContain("保持するログ");
-  expect(app.lastFrame()).toContain("show or change language");
+  await waitFor(() => {
+    expect(app.lastFrame()).toContain("保持するログ");
+    expect(app.lastFrame()).toContain("show or change language");
+  });
   setLanguage("ja");
 });
 
 it("上端で履歴を読み、reset 後に届いた前の会話の履歴を捨てる", async () => {
-  const { client, emit } = fakeClient();
+  const { client, emit, connected } = fakeClient();
   let finish: ((page: Awaited<ReturnType<FeedClient["history"]>>) => void) | undefined;
   const history = vi.fn(() => new Promise<Awaited<ReturnType<FeedClient["history"]>>>((resolve) => { finish = resolve; }));
   client.history = history;
   const app = render(React.createElement(TuiApp, { client }));
-  await tick();
+  await connected;
   emit({ type: "output", seq: 201, text: "現在のログ" });
-  await tick();
+  await waitFor(() => expect(app.lastFrame()).toContain("現在のログ"));
   app.stdin.write("\x1b[5~");
-  await tick();
-  expect(history).toHaveBeenCalledWith(201);
+  await waitFor(() => expect(history).toHaveBeenCalledWith(201));
   app.stdin.write("\x1b[5~");
-  await tick();
+  await new Promise((resolve) => setTimeout(resolve, 20));
   expect(history).toHaveBeenCalledTimes(1);
+  const frameCount = app.frames.length;
   emit({ type: "reset" });
   finish?.({ items: [{ type: "output", seq: 1, text: "古い応答" }], hasMore: false });
-  await tick();
+  await waitFor(() => expect(app.frames.length).toBeGreaterThan(frameCount));
   expect(app.lastFrame()).not.toContain("古い応答");
 });
 
 it("履歴追加後も表示中の行を保ち、hasMore が false なら再取得しない", async () => {
-  const { client, emit } = fakeClient();
+  const { client, emit, connected } = fakeClient();
   const history = vi.fn(async () => ({ items: [{ type: "output" as const, seq: 1, text: "過去のログ" }], hasMore: false }));
   client.history = history;
   const app = render(React.createElement(TuiApp, { client }));
-  await tick();
+  await connected;
   for (let seq = 201; seq <= 212; seq++) emit({ type: "output", seq, text: `現在の行 ${seq}` });
-  await tick();
+  await waitFor(() => expect(app.lastFrame()).toContain("現在の行 212"));
   app.stdin.write("\x1b[5~");
-  await tick();
-  expect(history).toHaveBeenCalledWith(201);
-  expect(app.lastFrame()).toContain("現在の行 201");
+  await waitFor(() => {
+    expect(history).toHaveBeenCalledWith(201);
+    expect(app.lastFrame()).toContain("現在の行 201");
+  });
   expect(app.lastFrame()).not.toContain("過去のログ");
   app.stdin.write("\x1b[5~");
-  await tick();
-  expect(app.lastFrame()).toContain("過去のログ");
+  await waitFor(() => expect(app.lastFrame()).toContain("過去のログ"));
   expect(history).toHaveBeenCalledTimes(1);
 });
 
 it("今の会話が solo なら下の行に出す", async () => {
   setLanguage("ja");
-  const { client, emit } = fakeClient();
+  const { client, emit, connected } = fakeClient();
   const app = render(React.createElement(TuiApp, { client }));
-  await tick();
+  await connected;
   const conversation = { id: "c1", startedAt: "2026-10-08T00:00:00Z", updatedAt: "2026-10-08T00:00:00Z", sessions: {}, current: true, solo: "codex" as const };
   emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], tabs: [], conversations: [conversation], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
-  await tick();
-  expect(app.lastFrame()).toContain("app · solo · Codex");
+  await waitFor(() => expect(app.lastFrame()).toContain("app · solo · Codex"));
 });
