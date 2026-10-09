@@ -29,11 +29,7 @@ pnpm build       # clodex コマンドに反映する
 
 本物の Hub・設定・会話に触れないよう、一時の Hub で確かめる。
 
-- `pnpm dev`（tsx）ではページで `__name is not defined` が出て動かない。ビルド版を使う
-- ビルドと一時ファイルはリポジトリの外（`%TEMP%` の下など）に置く。`rm` は使えないので、リポジトリの中に残さない
-  - `pnpm exec tsc -p tsconfig.build.json --outDir <一時フォルダ>\dist`
-  - 一時フォルダに `package.json` を写し、`node_modules` へのジャンクションを置く（`New-Item -ItemType Junction -Path <一時フォルダ>\node_modules -Target <リポジトリ>\node_modules`）
-- `CLODEX_HOME` に空の一時フォルダを指定し、その `.clodex/config.json` に別のポート（例: `{"web":{"port":47999}}`）を書いて `node <一時フォルダ>\dist\index.js serve` で起動する
+- `CLODEX_HOME` に空の一時フォルダを指定し、その `.clodex/config.json` に別のポート（例: `{"web":{"port":47999}}`）を書いて `pnpm dev serve` で起動する。一時フォルダはリポジトリの外（`%TEMP%` の下など）に置く（`rm` は使えないので、リポジトリの中に残さない）
   - 実データ（`~/.clodex/state`）を写すときは、`*.recovery.json` を写さない。写すと作業中だった Agent を本物のセッションで動かしてしまう
   - PowerShell では `$HOME`（予約済みの変数で本物のホームを指す）を一時フォルダの変数名に使わない。本物の `~/.clodex/config.json` を上書きしてしまう
 - 終わったら一時の Hub を止める（`<一時ホーム>\.clodex\hub.lock` の `pid` を `taskkill /PID <pid> /T /F`）

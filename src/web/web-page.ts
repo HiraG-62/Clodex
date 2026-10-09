@@ -899,6 +899,8 @@ const inlineScript = (source: string) => source.replace(/<\/script/gi, "<\\/scri
 const MARKED_UMD = inlineScript(readFileSync(join(dirname(fileURLToPath(import.meta.resolve("marked/package.json"))), "lib", "marked.umd.js"), "utf8"));
 
 const PAGE_VERSION_LENGTH = 12;
+// tsx（esbuild の keepNames）で動かすと、関数のソースに __name(...) の呼び出しが入る。toString() で埋め込んだ先のブラウザには __name が無いので、何もしない関数を置く
+const NAME_SHIM = "var __name = (target) => target;";
 const CLIENT_SOURCE = inlineScript(clientMain.toString());
 const FUNCTIONS = `
   isShellInput: ${inlineScript(isShellInput.toString())},
@@ -978,6 +980,7 @@ export const buildWebPage = (language: Language): WebPage => {
 ${html}
 <script>${MARKED_UMD}</script>
 <script>
+${NAME_SHIM}
 (${CLIENT_SOURCE})({${deps}
   version: "${version}",
 });
