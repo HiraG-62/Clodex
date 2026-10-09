@@ -29,7 +29,9 @@ const SUBAGENT_NOTE =
 const SPEC_NOTE =
   "For DELEGATE / REVIEW_REQUEST, write the design document first (default: docs/specs/<taskId>.md) and set spec to its path. " +
   "Keep body to a summary. Use body alone only for simple requests that can be fully explained in a few lines. " +
-  "When you update the design document to answer a QUESTION, set spec on the RESULT.";
+  "When you update the design document to answer a QUESTION, set spec on the RESULT. " +
+  "In the spec, include the files that generation commands (build, codegen, dictionary updates) rewrite in the files the implementer may change. " +
+  "Updating files rewritten by generation commands is allowed by default.";
 
 const ASK_USER_NOTE = `When you need a decision from the human, ask with the ${ASK_USER_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server instead of writing the question in your reply, then end your turn.`;
 const READ_CONVERSATION_NOTE = `Use the ${READ_CONVERSATION_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server when you need the message bodies from this conversation, including exchanges between the human and the other agent.`;
@@ -50,7 +52,8 @@ const roleLines = (agent: AgentId, peer: AgentId, roles: RolesConfig | undefined
 
 // 証跡の画像は project の外に置かせ、Web UI の成果物に出す（DESIGN.md §28 v0.3 B）
 const artifactsNote = (dir: string) =>
-  `To show the human an image (for example a screenshot as evidence), save it under ${dir} and write its full path in your reply.`;
+  `To show the human an image, save it under ${dir} and write its full path in your final reply or in an ask_user question, ` +
+  "either as the plain path or as a Markdown link [name](<full path>). It is shown as a preview. Paths in intermediate progress notes are not shown.";
 
 export interface RoleInstructionOptions {
   language?: Language;

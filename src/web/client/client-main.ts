@@ -454,7 +454,7 @@ export function clientMain({
     if (item.text) body.innerHTML = renderMarkdown(item.text);
     else if (item.status === "completed" && !item.resultId) body.append(el("span", "muted", t("web.turn.completed")));
     if (body.childNodes.length) node.append(body);
-    appendImagePreviews(node, item.text, item.at);
+    appendImagePreviews(node, [item.plan, item.text].filter(Boolean).join("\n"), item.at);
     return node;
   };
 
@@ -503,10 +503,15 @@ export function clientMain({
     head.append(el("b", `c-${item.agent}`, AGENTS[item.agent].name), el("time", "mono", clock(item.at)),
       el("span", "kind", t(item.answers ? "web.question.answered" : "web.question.waiting")));
     node.append(mark(item.agent), head);
-    if (!item.answers) return node;
+    const previewText = item.questions.flatMap((question) => [question.question, ...question.options.map((option) => option.description ?? "")]).join("\n");
+    if (!item.answers) {
+      appendImagePreviews(node, previewText, item.at);
+      return node;
+    }
     const record = el("dl", "question-record");
     item.questions.forEach((question, index) => record.append(el("dt", "", question.question), el("dd", "", (item.answers?.[index] ?? []).join(", "))));
     node.append(record);
+    appendImagePreviews(node, previewText, item.at);
     return node;
   };
 
@@ -650,6 +655,7 @@ export function clientMain({
     const nav = el("div", "question-nav");
     nav.append(prev, next, submit);
     field.append(options, other);
+    appendImagePreviews(field, [question.question, ...question.options.map((option) => option.description ?? "")].join("\n"), current.id);
     body.append(...(total > 1 ? [dots] : []), field, nav);
     questionDock.replaceChildren(header, body);
     refresh();

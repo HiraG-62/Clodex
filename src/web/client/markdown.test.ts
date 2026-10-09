@@ -51,6 +51,13 @@ describe("renderMarkdown", () => {
   });
 
   it("空文字は空", () => expect(renderMarkdown("")).toBe(""));
+
+  it("画像記法は説明とパスを文字で残し、画像を埋め込まない", () => {
+    const html = renderMarkdown(String.raw`![説明](<C:\x\a.png>) ![](<C:\x\b.png>)`);
+    expect(html).toContain(String.raw`説明 C:\x\a.png`);
+    expect(html).toContain(String.raw`C:\x\b.png`);
+    expect(html).not.toContain("<img");
+  });
 });
 
 it("絶対パスのインラインコードに abs-path の class を付け、ほかのコードには付けない", () => {

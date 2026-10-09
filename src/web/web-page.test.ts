@@ -56,9 +56,11 @@ describe("buildWebPage", () => {
     const deps = script.slice(script.lastIndexOf("findImagePaths:"), script.lastIndexOf("displayPath:"));
     const findPaths = runInNewContext(`({${deps}}).findImagePaths`) as (text: string) => string[];
     expect(findPaths("C:\\out\\shot.png c:/OUT/shot.PNG")).toEqual(["C:\\out\\shot.png"]);
-    expect(html.match(/appendImagePreviews\(node, item.text, item.at\)/g)).toHaveLength(2);
+    expect(html).toContain('appendImagePreviews(node, [item.plan, item.text].filter(Boolean).join("\\n"), item.at)');
+    expect(html).toContain("appendImagePreviews(node, item.text, item.at)");
     expect(html).toContain("appendImagePreviews(node, message.body, item.at)");
-    expect(html).not.toContain("appendImagePreviews(node, item.plan)");
+    expect(html).toContain("appendImagePreviews(node, previewText, item.at)");
+    expect(html).toContain("appendImagePreviews(field, [question.question, ...question.options.map");
     expect(html).not.toContain("appendImagePreviews(node, step.text)");
     expect(html).toContain('image.loading = "lazy"');
     expect(html).toContain('image.src = fileUrl("file", path, version)');

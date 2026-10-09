@@ -52,8 +52,11 @@ describe("buildRoleInstructions の方針と言語", () => {
   });
 
   it("artifacts ディレクトリがあれば証跡の画像の置き場所を伝える", () => {
-    expect(buildRoleInstructions("claude", undefined, { artifactsDir: "C:\\home\\.clodex\\artifacts\\p" }))
-      .toContain("save it under C:\\home\\.clodex\\artifacts\\p");
+    const text = buildRoleInstructions("claude", undefined, { artifactsDir: "C:\\home\\.clodex\\artifacts\\p" });
+    expect(text).toContain("save it under C:\\home\\.clodex\\artifacts\\p");
+    expect(text).toContain("final reply or in an ask_user question");
+    expect(text).toContain("plain path or as a Markdown link [name](<full path>)");
+    expect(text).toContain("Paths in intermediate progress notes are not shown.");
   });
 });
 
@@ -74,6 +77,8 @@ it("役割あり・なしで設計書を先に書いて spec に指定する方�
     expect(text).toMatch(/body.*summary/);
     expect(text).toContain("a few lines");
     expect(text).toContain("set spec on the RESULT");
+    expect(text).toContain("generation commands (build, codegen, dictionary updates)");
+    expect(text).toContain("Updating files rewritten by generation commands is allowed by default.");
   }
 });
 
