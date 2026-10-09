@@ -406,6 +406,18 @@ describe("GUI の更新の中継", () => {
     expect((await post(base, "/api/gui/update", { action: "remove" })).status).toBe(400);
     expect((await post(base, "/api/gui/status", { status: "available" })).status).toBe(400);
     expect((await post(base, "/api/gui/status", { status: "error" })).status).toBe(400);
+    for (const progress of [-1, 100.5, 101, "50", null]) {
+      expect((await post(base, "/api/gui/status", { status: "installing", progress })).status).toBe(400);
+    }
     expect((await post(base, "/api/gui/update", { action: "check" }, "clodex_token=wrong")).status).toBe(401);
+  });
+
+  it("GUI の更新割合を全画面に流す", async () => {
+    const { base } = await setup();
+    const phone = await events(base);
+    await events(base, "?gui=0.1.2");
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect((await post(base, "/api/gui/status", { status: "installing", progress: 45 })).status).toBe(204);
+    expect((await readEvents(phone, 3)).at(-1)).toEqual({ type: "gui", gui: { version: "0.1.2", update: { status: "installing", progress: 45 } } });
   });
 });

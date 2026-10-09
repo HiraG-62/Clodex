@@ -123,7 +123,13 @@ const parseGuiAction = (body: string): GuiAction | undefined => {
 const parseGuiUpdate = (body: string): GuiUpdate | undefined => {
   const value = parseJson(body);
   const status = value?.status;
-  if (status === "checking" || status === "latest" || status === "installing") return { status };
+  if (status === "checking" || status === "latest") return { status };
+  if (status === "installing") {
+    const progress = value?.progress;
+    if (progress === undefined) return { status };
+    if (typeof progress !== "number" || !Number.isInteger(progress) || progress < 0 || progress > 100) return undefined;
+    return { status, progress };
+  }
   if (status === "available" && typeof value?.version === "string") return { status, version: value.version };
   if (status === "error" && typeof value?.message === "string") return { status, message: value.message };
   return undefined;

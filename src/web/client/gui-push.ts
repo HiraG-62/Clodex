@@ -1,8 +1,28 @@
+import type { MessageKey } from "../../i18n/messages.js";
 import type { GuiAction, GuiUpdate } from "../web-feed.js";
 import type { ClientContext } from "./store.js";
 
+export const shouldReportProgress = (previous: number, progress: number): boolean => (progress === 100 ? previous !== 100 : progress - previous >= 5);
+
+export const guiUpdateButton = (
+  update: GuiUpdate | undefined,
+): { key: MessageKey; params?: Record<string, string | number>; action?: GuiAction; disabled: boolean } => {
+  if (update?.status === "checking") return { key: "web.settings.updateChecking" as const, disabled: true };
+  if (update?.status === "installing")
+    return update.progress === undefined
+      ? { key: "web.settings.updateInstalling" as const, disabled: true }
+      : { key: "web.settings.updateInstallingProgress" as const, params: { progress: update.progress }, disabled: true };
+  if (update?.status === "available")
+    return { key: "web.settings.updateVersion" as const, params: { version: update.version }, action: "install" as const, disabled: false };
+  return { key: "web.settings.checkUpdate" as const, action: "check" as const, disabled: false };
+};
+
 export function createGuiPush(ctx: ClientContext) {
-  type TauriApi = { app?: { getVersion(): Promise<string> }; core?: { invoke<T>(command: string): Promise<T> } };
+  type ProgressChannel = { onmessage: (progress: number) => void };
+  type TauriApi = {
+    app?: { getVersion(): Promise<string> };
+    core?: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>; Channel: new () => ProgressChannel };
+  };
 
   // ---- GUI の更新（DESIGN.md §28 Web UI の設定からの更新）----
 
@@ -15,7 +35,19 @@ export function createGuiPush(ctx: ClientContext) {
     const invoke = tauriApi?.core?.invoke;
     if (!invoke) return;
     try {
-      if (action === "install") return void (await invoke<void>("install_update"));
+      if (action === "install") {
+        const ProgressChannel = tauriApi?.core?.Channel;
+        if (!ProgressChannel) throw new Error("Tauri Channel unavailable");
+        const onProgress = new ProgressChannel();
+        let reported = 0;
+        onProgress.onmessage = progress => {
+          if (!shouldReportProgress(reported, progress)) return;
+          reported = progress;
+          void postJson("/api/gui/status", { status: "installing", progress } satisfies GuiUpdate);
+        };
+        await invoke<void>("install_update", { onProgress });
+        return;
+      }
       const version = await invoke<string | null>("check_update");
       await postJson("/api/gui/status", version ? { status: "available", version } : { status: "latest" });
     } catch (error) {
@@ -26,17 +58,16 @@ export function createGuiPush(ctx: ClientContext) {
   const guiUpdateSection = () => {
     const section = ctx.el("section", "setting gui-update");
     const row = ctx.el("div", "gui-update-row");
-    const check = ctx.el("button", "btn gui-check", ctx.t("web.settings.checkUpdate")) as HTMLButtonElement;
-    check.type = "button";
-    check.addEventListener("click", () => requestGuiUpdate("check", check));
-    const install = ctx.el("button", "btn gui-install", ctx.t("web.settings.update")) as HTMLButtonElement;
-    install.type = "button";
-    install.addEventListener("click", () => {
-      if (ctx.store.gui?.update?.status !== "available" || !window.confirm(ctx.t("web.settings.updateConfirm", { version: ctx.store.gui.update.version })))
-        return;
-      requestGuiUpdate("install", install);
+    const button = ctx.el("button", "btn gui-update-action", ctx.t("web.settings.checkUpdate")) as HTMLButtonElement;
+    button.type = "button";
+    button.addEventListener("click", () => {
+      const update = ctx.store.gui?.update;
+      const { action } = guiUpdateButton(update);
+      if (!action) return;
+      if (action === "install" && update?.status === "available" && !window.confirm(ctx.t("web.settings.updateConfirm", { version: update.version }))) return;
+      requestGuiUpdate(action, button);
     });
-    row.append(ctx.el("span", "muted small gui-version"), check, ctx.el("span", "small gui-status"), install);
+    row.append(ctx.el("span", "muted small gui-version"), button, ctx.el("span", "small gui-status"));
     section.append(row);
     return section;
   };
@@ -95,12 +126,9 @@ export function createGuiPush(ctx: ClientContext) {
     if (ctx.store.pushId) void postJson("/api/push/visibility", { id: ctx.store.pushId, visible: document.visibilityState === "visible" });
   });
   const guiStatusText = (update: GuiUpdate | undefined): string => {
-    if (!update) return "";
-    if (update.status === "available") return ctx.t("web.settings.updateAvailable", { version: update.version });
-    if (update.status === "error") return ctx.t("web.settings.updateFailed", { message: update.message });
-    return ctx.t(
-      update.status === "checking" ? "web.settings.updateChecking" : update.status === "latest" ? "web.settings.updateLatest" : "web.settings.updateInstalling",
-    );
+    if (update?.status === "latest") return ctx.t("web.settings.updateLatest");
+    if (update?.status === "error") return ctx.t("web.settings.updateFailed", { message: update.message });
+    return "";
   };
   const refreshGuiUpdate = (body: HTMLElement) => {
     let section = body.querySelector<HTMLElement>(".gui-update");
@@ -111,11 +139,12 @@ export function createGuiPush(ctx: ClientContext) {
     if (!section) return;
     section.hidden = !ctx.store.gui;
     if (!ctx.store.gui) return;
-    const busy = ctx.store.gui.update?.status === "checking" || ctx.store.gui.update?.status === "installing";
+    const state = guiUpdateButton(ctx.store.gui.update);
     section.querySelector<HTMLElement>(".gui-version")!.textContent = ctx.t("web.settings.version", { version: ctx.store.gui.version });
-    section.querySelector<HTMLButtonElement>(".gui-check")!.disabled = busy;
+    const button = section.querySelector<HTMLButtonElement>(".gui-update-action")!;
+    button.textContent = ctx.t(state.key, state.params);
+    button.disabled = state.disabled;
     section.querySelector<HTMLElement>(".gui-status")!.textContent = guiStatusText(ctx.store.gui.update);
-    section.querySelector<HTMLButtonElement>(".gui-install")!.hidden = ctx.store.gui.update?.status !== "available";
   };
   return { pushSection, guiUpdateSection, refreshGuiUpdate, refreshPush, runGuiCommand, tauriApi };
 }

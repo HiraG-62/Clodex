@@ -64,7 +64,11 @@ export type FeedItem =
 
 export const GUI_ACTIONS = ["check", "install"] as const;
 export type GuiAction = (typeof GUI_ACTIONS)[number];
-export type GuiUpdate = { status: "checking" | "latest" | "installing" } | { status: "available"; version: string } | { status: "error"; message: string };
+export type GuiUpdate =
+  | { status: "checking" | "latest" }
+  | { status: "installing"; progress?: number }
+  | { status: "available"; version: string }
+  | { status: "error"; message: string };
 export interface GuiInfo {
   version: string;
   update?: GuiUpdate;

@@ -2071,10 +2071,14 @@ GUI の自動更新（D3 の後）:
 - GUI が起動していない Hub（CLI の `clodex serve`）は止めない。その Hub は入れ替えの対象外
 - Web UI の設定からの更新: スマホ等の Web UI からも、GUI に確認と入れ替えをさせる。Hub が中継する
   - GUI の中の Web UI（`window.__TAURI__` がある画面）は `/events?gui=<GUI の版>`（`core:app:allow-version` で取得）でつなぐ。Hub はこの接続を GUI として覚える（複数あれば最後のもの。切れたら外す）
-  - Hub は GUI の有無と更新の状態を feed の `{ type: "gui", gui: { version, update } | null }` で全画面に送る（接続時と変わったとき）。`update` は `checking` / `latest` / `available`（`version`）/ `installing` / `error`（`message`）。GUI がつながっていなければ状態は消す
-  - 設定画面の「Clodex」の節に、GUI の版と「更新を確認」を出す。GUI がつながっていないときはこの項目を出さない。状態は「確認中…」「最新版」「<version> あり」と「更新」ボタン、「更新中…」、「失敗: <message>」。「更新」は確認（「Clodex <version> に更新しますか？作業中のターンは止まります」）の後に送る
+  - Hub は GUI の有無と更新の状態を feed の `{ type: "gui", gui: { version, update } | null }` で全画面に送る（接続時と変わったとき）。`update` は `checking` / `latest` / `available`（`version`）/ `installing`（`progress`: ダウンロードの割合 0〜100。分からなければ無し）/ `error`（`message`）。GUI がつながっていなければ状態は消す
+  - 設定画面の「Clodex」の節に、GUI の版と更新のボタンを 1 つ出す。GUI がつながっていないときはこの項目を出さない。ボタンの文言と押したときの動きは状態で変える
+    - 未確認・最新版・失敗: 「更新を確認」（`check`）。最新版なら版の横に「最新版」、失敗なら「失敗: <message>」を小さく出す
+    - 確認中: 「確認中…」（押せない）
+    - 更新あり: 「更新 <version>」（`install`）。押したら確認（「Clodex <version> に更新しますか？作業中のターンは止まります」）の後に送る
+    - 入れ替え中: 「更新中… <progress>%」（押せない。割合が分からなければ「更新中…」）
   - 画面は `POST /api/gui/update`（`{ action: "check" | "install" }`）を送る。Hub は状態を `checking` / `installing` にし、GUI の接続へ `{ type: "gui_command", action }` を送る。GUI が無ければ 409
-  - GUI の画面は Tauri command（`check_update` / `install_update`）を呼び、結果を `POST /api/gui/status` で Hub に返す。`install_update` はダイアログを出さずに入れ替える（上の入れ替えと同じく Hub を止めてからインストーラーを起動する）。入れ替え後に GUI と Hub が起動し直し、各画面は再接続で新しい版の画面を読み込む
+  - GUI の画面は Tauri command（`check_update` / `install_update`）を呼び、結果を `POST /api/gui/status` で Hub に返す。`install_update` はダウンロードの進み具合（受け取った量と全体の大きさ）を channel で画面に返し、画面は割合が 5% 変わるたびに `installing`（`progress`）を `POST /api/gui/status` で送る。`install_update` はダイアログを出さずに入れ替える（上の入れ替えと同じく Hub を止めてからインストーラーを起動する）。入れ替え後に GUI と Hub が起動し直し、各画面は再接続で新しい版の画面を読み込む
   - Tauri 2.11.1 以降は、外部 URL の画面（Hub の `http://127.0.0.1`）から app の command を呼ぶには ACL の許可が要る。`build.rs` の `AppManifest` に command を並べ、capability `main` で `allow-check-update` / `allow-install-update` を許可する（`check_update` は新しい版の版か `null` を返す）
 
 
