@@ -10,6 +10,7 @@ import type { FeedItem, GuiAction, GuiInfo, GuiUpdate, HistoryItem, HistoryPage,
 import type { renderMarkdown as RenderMarkdown } from "./markdown.js";
 import type { nextUnanswered as NextUnanswered, questionAnswers as QuestionAnswers } from "./question-flow.js";
 import type { PendingQuestion } from "../../protocol/questions.js";
+import type { AgentMessage, Issue } from "../../protocol/messages.js";
 import type { TimelineItem, DisplayTimelineItem, withWorkingTurnsLast as WithWorkingTurnsLast, withStartingTurns as WithStartingTurns, withSubagentRows as WithSubagentRows, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline, workingFeed as WorkingFeed, mergeReplayHistory as MergeReplayHistory, announcementKind as AnnouncementKind } from "./timeline.js";
 import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
 import type { isSendKey as IsSendKey, SendKey } from "./send-key.js";
@@ -69,6 +70,7 @@ export function clientMain({
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
     messages[key].replace(/\{(\w+)\}/g, (match, name: string) => (name in params ? String(params[name]) : match));
+  const displayDefault = (value: string | undefined) => !value || value === "default" ? t("web.agent.default") : value;
   const AGENTS: Record<AgentId, { name: string; mark: string }> = {
     claude: { name: "Claude", mark: "C" },
     codex: { name: "Codex", mark: "X" },
@@ -340,8 +342,8 @@ export function clientMain({
 
   // tool 名を短い種類にする（Claude: Read / Bash / mcp__clodex__send_message、Codex: command / clodex.send_message）
   const toolLabel = (name: string) => {
-    if (name.includes("send_message")) return "send";
-    if (name === "command" || name === "Bash" || name === "PowerShell") return "run";
+    if (name.includes("send_message")) return t("web.step.send");
+    if (name === "command" || name === "Bash" || name === "PowerShell") return t("web.step.run");
     const short = name.replace(/^mcp__/, "").toLowerCase();
     return short.length > 8 ? `${short.slice(0, 7)}…` : short;
   };
@@ -447,7 +449,7 @@ export function clientMain({
       const list = el("ol");
       for (const step of steps) {
         const li = el("li");
-        if (step.kind === "say") li.append(el("span", "k", "say"), el("span", "say", step.text));
+        if (step.kind === "say") li.append(el("span", "k", t("web.step.say")), el("span", "say", step.text));
         else li.append(el("span", "k", toolLabel(step.name)), el("span", "run", step.input));
         list.append(li);
       }
@@ -473,7 +475,11 @@ export function clientMain({
     const node = el("section", "handoff");
     const route = el("div", "route");
     route.append(mark(message.from), el("span", "arrow", "→"), mark(message.to), el("span", "kind", message.type));
-    if (message.status) route.append(el("span", "kind", message.status.replace(/_/g, " ").toUpperCase()));
+    const statusKeys: Record<NonNullable<AgentMessage["status"]>, MessageKey> = {
+      approved: "web.message.status.approved", changes_requested: "web.message.status.changesRequested",
+      done: "web.message.status.done", failed: "web.message.status.failed",
+    };
+    if (message.status) route.append(el("span", "kind", t(statusKeys[message.status])));
     if (message.auto) route.append(el("span", "kind", t("web.message.auto")));
     if (message.interrupt) route.append(el("span", "kind steer", t("web.steer")));
     route.append(el("span", "task mono", `${message.taskId} · ${clock(item.at)}`));
@@ -498,9 +504,12 @@ export function clientMain({
       }
       node.append(refs);
     }
+    const severityKeys: Record<Issue["severity"], MessageKey> = {
+      low: "web.issue.low", medium: "web.issue.medium", high: "web.issue.high", critical: "web.issue.critical",
+    };
     for (const issue of message.issues ?? []) {
       const finding = el("div", `finding ${issue.severity}`);
-      finding.append(el("span", "sev", issue.severity), el("span", "loc", issue.line ? `${issue.file}:${issue.line}` : issue.file), el("span", "desc", issue.summary));
+      finding.append(el("span", "sev", t(severityKeys[issue.severity])), el("span", "loc", issue.line ? `${issue.file}:${issue.line}` : issue.file), el("span", "desc", issue.summary));
       node.append(finding);
     }
     if (item.envelope) node.append(details(item.id, t("web.message.envelope", { agent: AGENTS[message.to].name }), el("pre", "", item.envelope), "envelope"));
@@ -725,7 +734,7 @@ export function clientMain({
       case "question": return renderQuestion(item);
       case "turn": return renderTurn(item);
       case "message": return renderMessage(item);
-      case "notice": return el("div", "notice", item.text);
+      case "notice": return el("div", "notice", item.compactAgent ? t("web.notice.compacted", { agent: AGENTS[item.compactAgent].name }) : item.text);
       case "error": return el("div", "error-row", `${AGENTS[item.agent].name}: ${item.text}`);
       case "output": return el("pre", "output", item.text);
     }
@@ -883,7 +892,7 @@ export function clientMain({
   };
 
   // ---- 状態の描画 ----
-  const gauge = (label: string, value: string, percent: number | undefined, agent: AgentId, over = false, tick?: number, reset = "") => {
+  const gauge = (label: string, shortLabel: string, labelId: string, value: string, percent: number | undefined, agent: AgentId, over = false, tick?: number, reset = "") => {
     const node = el("div", "gauge");
     node.append(el("span", "k", label), el("span", `v mono${over ? " over" : ""}`, value));
     node.querySelector<HTMLElement>(".v")!.prepend(el("span", "gauge-reset", reset));
@@ -900,18 +909,20 @@ export function clientMain({
     }
     node.append(track);
     node.title = `${label}: ${value}`;
-    node.dataset.label = label === t("web.gauge.context") ? "ctx" : label.split(" · ")[0]?.split("（")[0]?.split(" (")[0] ?? label;
-    node.querySelector<HTMLElement>(".k")!.textContent = label.split(" · ")[0]?.split("（")[0]?.split(" (")[0] ?? label;
+    node.dataset.label = labelId;
+    node.dataset.shortLabel = shortLabel;
+    node.querySelector<HTMLElement>(".k")!.textContent = shortLabel;
     return node;
   };
 
-  const syncGauge = (node: HTMLElement, label: string, value: string, percent: number | undefined, over = false, tick?: number, reset = "") => {
+  const syncGauge = (node: HTMLElement, label: string, shortLabel: string, labelId: string, value: string, percent: number | undefined, over = false, tick?: number, reset = "") => {
     node.title = `${label}: ${value}`;
-    node.dataset.label = label === t("web.gauge.context") ? "ctx" : label.split(" · ")[0]?.split("（")[0]?.split(" (")[0] ?? label;
+    node.dataset.label = labelId;
+    node.dataset.shortLabel = shortLabel;
     const key = node.querySelector<HTMLElement>(".k")!;
     const val = node.querySelector<HTMLElement>(".v")!;
     const track = node.querySelector<HTMLElement>(".track")!;
-    key.textContent = label.split(" · ")[0]?.split("（")[0]?.split(" (")[0] ?? label;
+    key.textContent = shortLabel;
     val.replaceChildren(el("span", "gauge-reset", reset), document.createTextNode(value));
     val.dataset.compact = percent === undefined ? "—" : `${Math.round(percent)}%`;
     val.classList.toggle("over", over);
@@ -939,17 +950,20 @@ export function clientMain({
       ? "—" : `${kTokens(usage.contextTokens)}${usage.contextWindow ? ` / ${kTokens(usage.contextWindow)}` : ""}`;
     return [
       {
+        shortLabel: t("web.gauge.fiveHour"), labelId: "fiveHour",
         label: `${t("web.gauge.fiveHour")}${resetLabel(usage.fiveHourResetsAt, false)}`,
         value: usage.fiveHourPercent === undefined ? "—" : `${usage.fiveHourPercent}%`,
         percent: usage.fiveHourPercent, over: false, tick: undefined, reset: usage.fiveHourResetsAt === undefined ? "" : clock(new Date(usage.fiveHourResetsAt * MS_PER_SECOND).toISOString()),
       },
       {
+        shortLabel: t("web.gauge.weekly"), labelId: "weekly",
         label: `${t("web.gauge.weekly")}${pace === undefined ? "" : t("web.gauge.pace", { pace: `${pace > 0 ? "+" : ""}${pace}` })}${resetLabel(usage.weeklyResetsAt, true)}`,
         value: usage.weeklyPercent === undefined ? "—" : `${usage.weeklyPercent}%`,
         percent: usage.weeklyPercent, over: (pace ?? 0) > 0, reset: usage.weeklyResetsAt === undefined ? "" : shortDate(new Date(usage.weeklyResetsAt * MS_PER_SECOND).toISOString()),
         tick: pace === undefined || usage.weeklyPercent === undefined ? undefined : usage.weeklyPercent - pace,
       },
       {
+        shortLabel: t("web.gauge.context"), labelId: "ctx",
         label: t("web.gauge.context"), value: contextValue,
         percent: usage.contextTokens && usage.contextWindow ? (usage.contextTokens / usage.contextWindow) * PERCENT : 0,
         over: false, tick: undefined, reset: "",
@@ -981,13 +995,13 @@ export function clientMain({
       chips.append(button);
       return button;
     };
-    const modelChip = chip(agent.modelLabel ?? agent.model ?? "default");
-    const effortChip = chip(agent.effort ?? "default");
+    const modelChip = chip(agent.modelLabel ?? displayDefault(agent.model));
+    const effortChip = chip(displayDefault(agent.effort));
     const permissionChip = chip(agent.permission);
     const updateChips = (incoming: AgentState) => {
       const current = displayedAgent(incoming);
-      modelChip.textContent = current.modelLabel ?? current.model ?? "default";
-      effortChip.textContent = current.effort ?? "default";
+      modelChip.textContent = current.modelLabel ?? displayDefault(current.model);
+      effortChip.textContent = displayDefault(current.effort);
       permissionChip.replaceChildren(icon(current.permission === "full" ? "shield-alert" : "shield"), document.createTextNode(current.permission === "full" ? "" : current.permission));
       modelChip.prepend(icon("cpu"));
       effortChip.prepend(icon("gauge"));
@@ -1003,7 +1017,7 @@ export function clientMain({
       }
     };
     updateChips(agent);
-    const gauges = gaugeValues(agent.usage).map((g) => gauge(g.label, g.value, g.percent, agent.id, g.over, g.tick, g.reset));
+    const gauges = gaugeValues(agent.usage).map((g) => gauge(g.label, g.shortLabel, g.labelId, g.value, g.percent, agent.id, g.over, g.tick, g.reset));
     const minis = el("div", "mini-gauges");
     minis.append(...gauges);
     wrap.append(chips, minis);
@@ -1032,7 +1046,7 @@ export function clientMain({
       currentStatus.textContent = t(STATUS_LABEL[current.status]);
       gaugeValues(current.usage).forEach((g, index) => {
         const node = gauges[index];
-        if (node) syncGauge(node, g.label, g.value, g.percent, g.over, g.tick, g.reset);
+        if (node) syncGauge(node, g.label, g.shortLabel, g.labelId, g.value, g.percent, g.over, g.tick, g.reset);
       });
       interrupt.disabled = current.status !== "busy";
       compact.disabled = current.status === "stopped";
@@ -1080,15 +1094,15 @@ export function clientMain({
   };
   const syncUsageDetails = (container: HTMLElement, agent: AgentState) => {
     if (container.dataset.agent !== agent.id) {
-      container.replaceChildren(...gaugeValues(agent.usage).map((g) => gauge(g.label, g.value, g.percent, agent.id, g.over, g.tick, g.reset)));
+      container.replaceChildren(...gaugeValues(agent.usage).map((g) => gauge(g.label, g.shortLabel, g.labelId, g.value, g.percent, agent.id, g.over, g.tick, g.reset)));
       container.dataset.agent = agent.id;
     }
     gaugeValues(agent.usage).forEach((g, index) => {
       const node = container.children[index] as HTMLElement;
-      const value = g.label === t("web.gauge.context") && agent.usage.contextWindow && agent.usage.contextTokens !== undefined
+      const value = g.labelId === "ctx" && agent.usage.contextWindow && agent.usage.contextTokens !== undefined
         ? `${g.value} · ${Math.round(g.percent ?? 0)}%` : g.value;
-      syncGauge(node, g.label, value, g.percent, g.over, g.tick, g.reset);
-      node.querySelector<HTMLElement>(".k")!.textContent = g.label.split(" · ")[0]!;
+      syncGauge(node, g.label, g.shortLabel, g.labelId, value, g.percent, g.over, g.tick, g.reset);
+      node.querySelector<HTMLElement>(".k")!.textContent = g.shortLabel;
       node.querySelector<HTMLElement>(".track")!.hidden = g.value === "—";
       node.querySelector<HTMLElement>(".gauge-reset")!.hidden = g.value === "—";
     });
@@ -1255,10 +1269,10 @@ export function clientMain({
       if (badge) h2.append(badge);
       const current = displayedAgent(agent);
       const summary = el("div", "strip-summary");
-      summary.title = t("web.agent.summary", { model: current.modelLabel ?? current.model ?? "default", effort: current.effort ?? "default", permission: current.permission });
+      summary.title = t("web.agent.summary", { model: current.modelLabel ?? displayDefault(current.model), effort: displayDefault(current.effort), permission: current.permission });
       summary.setAttribute("aria-label", summary.title);
-      summary.append(el("span", "model", current.modelLabel ?? current.model ?? "default"),
-        el("span", "", `· ${current.effort ?? "default"} ·`), el("span", current.permission === "full" ? "permission-full" : "", current.permission));
+      summary.append(el("span", "model", current.modelLabel ?? displayDefault(current.model)),
+        el("span", "", `· ${displayDefault(current.effort)} ·`), el("span", current.permission === "full" ? "permission-full" : "", current.permission));
       if (Object.keys(pendingSettings[agent.id] ?? {}).length) {
         summary.classList.add("pending");
         summary.title += ` · ${t("web.setting.pending")}`;
@@ -1352,8 +1366,16 @@ export function clientMain({
       button.type = "button";
       const activity = conversation.activity ? `${t(STATUS_LABEL[conversation.activity])} · ` : "";
       const branch = conversation.branch ? ` · ⎇ ${conversation.branch}` : "";
-      const meta = `${conversation.pinned ? t("web.conv.pinned") : ""}${activity}${shortDate(conversation.updatedAt)} · ${Object.keys(conversation.sessions).join(", ") || "—"}${branch}${conversation.current ? t("web.conv.current") : ""}`;
-      button.append(el("span", "t", conversation.title ?? t("web.conv.untitled")), el("span", "m", meta));
+      const meta = `${activity}${shortDate(conversation.updatedAt)} · ${Object.keys(conversation.sessions).join(", ") || "—"}${branch}`;
+      const title = el("span", "t", conversation.title ?? t("web.conv.untitled"));
+      if (conversation.pinned) {
+        const pin = el("span", "conv-pinned");
+        pin.append(icon("pin"));
+        pin.setAttribute("aria-label", t("web.conv.pinnedLabel"));
+        pin.title = t("web.conv.pinnedLabel");
+        title.append(pin);
+      }
+      button.append(title, el("span", "m", meta));
       button.disabled = conversation.current;
       button.dataset.command = `/resume ${index + 1}`;
       button.addEventListener("click", () => {
@@ -1375,9 +1397,22 @@ export function clientMain({
   let sheetKind: "agent" | "agentSettings" | "settings" | "conversations" | "conversationMenu" | "projects" | "artifacts" | "viewer" | undefined;
   let pendingPrimary: AgentId | undefined;
   const sheet = $("#sheet");
+  const focusable = 'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]';
+  const rememberFocus = () => document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+  const restoreFocus = (previous: HTMLElement | undefined) => { if (previous?.isConnected) previous.focus({ preventScroll: true }); };
+  const trapTab = (event: KeyboardEvent, container: HTMLElement) => {
+    if (event.key !== "Tab") return;
+    const controls = [...container.querySelectorAll<HTMLElement>(focusable)].filter((node) => node.getClientRects().length > 0);
+    const first = controls[0];
+    const last = controls.at(-1);
+    if (!first || !last) return;
+    if (!container.contains(document.activeElement)) { event.preventDefault(); first.focus(); }
+    else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  };
   let sheetReturnFocus: HTMLElement | undefined;
   const openSheet = (title: string, content: HTMLElement[]) => {
-    if (sheet.hidden && document.activeElement instanceof HTMLElement) sheetReturnFocus = document.activeElement;
+    if (sheet.hidden) sheetReturnFocus = rememberFocus();
     sheet.classList.remove("mobile-pop", "add-pop");
     sheet.classList.toggle("settings-sheet", sheetKind === "settings");
     $("#sheet-title").textContent = title;
@@ -1392,7 +1427,7 @@ export function clientMain({
   const closeSheet = () => {
     sheet.hidden = true;
     sheet.classList.remove("drawer", "mobile-pop", "add-pop");
-    if (sheetReturnFocus?.isConnected) sheetReturnFocus.focus({ preventScroll: true });
+    restoreFocus(sheetReturnFocus);
     sheetReturnFocus = undefined;
     for (const pill of document.querySelectorAll(".apill")) pill.setAttribute("aria-expanded", "false");
     sheetAgent = undefined;
@@ -1457,6 +1492,7 @@ export function clientMain({
   };
   // ---- 画像のビューア（DESIGN.md §28 成果物）: 全画面で拡大縮小・移動する ----
   const lightbox = $("#lightbox");
+  let lightboxReturnFocus: HTMLElement | undefined;
   const lbStage = $("#lb-stage");
   const lbImage = $("#lb-image") as HTMLImageElement;
   const LB_STEP = 1.25;
@@ -1492,6 +1528,7 @@ export function clientMain({
     else zoomImage(1 / lbView.scale, point);
   };
   const openImage = (path: string, version?: string) => {
+    if (lightbox.hidden) lightboxReturnFocus = rememberFocus();
     const shown = displayPath(path, state?.project ?? "");
     $("#lb-name").textContent = shown.split(/[\/]/).at(-1) ?? shown;
     $("#lb-name").title = path;
@@ -1506,6 +1543,8 @@ export function clientMain({
   const closeImage = () => {
     lightbox.hidden = true;
     lbImage.removeAttribute("src");
+    restoreFocus(lightboxReturnFocus);
+    lightboxReturnFocus = undefined;
   };
   $("#lb-close").addEventListener("click", closeImage);
   $("#lb-zoom-in").addEventListener("click", () => zoomImage(LB_STEP));
@@ -1565,6 +1604,7 @@ export function clientMain({
   document.addEventListener("keydown", (event) => {
     if (lightbox.hidden) return;
     if (event.key === "Escape") { event.stopImmediatePropagation(); return closeImage(); }
+    if (event.key === "Tab") { event.stopImmediatePropagation(); return trapTab(event, lightbox); }
     if (event.key === "+" || event.key === "=") return zoomImage(LB_STEP);
     if (event.key === "-") return zoomImage(1 / LB_STEP);
     if (event.key === "0") return fitImage();
@@ -1690,7 +1730,7 @@ export function clientMain({
     const field = el("input") as HTMLInputElement;
     field.name = "model";
     field.autocomplete = "off";
-    field.placeholder = agent.modelLabel ?? agent.model ?? "default";
+    field.placeholder = agent.modelLabel ?? displayDefault(agent.model);
     field.setAttribute("aria-label", t("web.agentSettings.modelLabel", { agent: AGENTS[id].name }));
     field.hidden = select.value !== "__other__";
     select.addEventListener("change", () => { field.hidden = select.value !== "__other__"; if (!field.hidden) field.focus(); });
@@ -1794,15 +1834,18 @@ export function clientMain({
       });
       refreshOpenSheet();
     });
-    sandbox.append(el("p", "muted small sandbox-ready"));
+    sandbox.querySelector(".eyebrow")!.append(el("span", "sandbox-ready"));
     const limits = el("form", "setting limits-settings") as HTMLFormElement;
     limits.append(el("div", "eyebrow", t("web.settings.limits")));
+    const unlimited = settingsSwitch("unlimited", t("web.settings.unlimited"), state.limitsUnlimited, (checked, button) =>
+      sendLimits(`/limits ${checked ? "unlimited" : "reset"}`, button));
+    unlimited.classList.add("limits-unlimited");
+    limits.append(unlimited);
     for (const name of Object.keys(LIMIT_LABEL) as Array<keyof WebState["limits"]>) {
       const row = el("div", "limit-row");
       row.dataset.limit = name;
       const label = el("label", "limit-label", t(LIMIT_LABEL[name])) as HTMLLabelElement;
       label.htmlFor = `limit-${name}`;
-      label.title = name;
       const mark = el("span", "limit-changed", "•");
       mark.title = t("web.settings.changed");
       mark.setAttribute("aria-label", mark.title);
@@ -1831,9 +1874,6 @@ export function clientMain({
     const reset = el("button", "btn limits-reset", t("web.settings.reset")) as HTMLButtonElement;
     reset.type = "button";
     reset.addEventListener("click", () => sendLimits("/limits reset", reset));
-    const unlimited = el("button", "btn limits-unlimited", t("web.settings.unlimited")) as HTMLButtonElement;
-    unlimited.type = "button";
-    unlimited.addEventListener("click", () => sendLimits("/limits unlimited", unlimited));
     const apply = el("button", "btn limits-apply", t("web.settings.apply")) as HTMLButtonElement;
     apply.type = "submit";
     limits.addEventListener("submit", event => {
@@ -1844,7 +1884,7 @@ export function clientMain({
       sendLimits(`/limits ${changes.map(({ name, value }) => `${name} ${value}`).join(" ")}`, apply);
     });
     const actions = el("div", "limits-actions");
-    actions.append(reset, unlimited, apply);
+    actions.append(reset, apply);
     limits.append(actions);
     const language = settingsChoice("language", t("web.settings.language"), ["ja", "en"] as const, state.language, value => value === "ja" ? "日本語" : "English");
     // 端末ごとの設定なので Hub には送らない。スマホは常に Enter で改行するので出さない
@@ -2026,7 +2066,7 @@ export function clientMain({
           if (field) field.hidden = select.value !== "__other__";
         }
       }
-      if (field) field.placeholder = agent.modelLabel ?? agent.model ?? "default";
+      if (field) field.placeholder = agent.modelLabel ?? displayDefault(agent.model);
       const apply = body.querySelector<HTMLButtonElement>(".model-form button");
       if (apply) { setPending(apply, waiting?.model !== undefined); apply.disabled = waiting?.model !== undefined; }
       if (select) select.disabled = waiting?.model !== undefined;
@@ -2055,12 +2095,22 @@ export function clientMain({
         }
       }
       const ready = body.querySelector<HTMLElement>(".sandbox-ready");
-      if (ready) ready.textContent = t(state.sandbox.ready ? "web.settings.ready" : "web.settings.notReady");
+      if (ready) {
+        const label = t(state.sandbox.ready ? "web.settings.ready" : "web.settings.notReady");
+        ready.replaceChildren(icon(state.sandbox.ready ? "check-circle" : "alert"));
+        ready.setAttribute("aria-label", label);
+        ready.title = label;
+      }
       refreshGuiUpdate(body);
       refreshPush(body);
       body.querySelector(".limits-settings")?.classList.toggle("unlimited", state.limitsUnlimited);
-      body.querySelector(".limits-unlimited")?.setAttribute("aria-pressed", String(state.limitsUnlimited));
       const limitsBusy = settingsRequests.has("limits");
+      const unlimitedSwitch = body.querySelector<HTMLButtonElement>('[data-choice="unlimited"][role="switch"]');
+      if (unlimitedSwitch) {
+        unlimitedSwitch.setAttribute("aria-checked", String(state.limitsUnlimited));
+        setPending(unlimitedSwitch, limitsBusy);
+        unlimitedSwitch.disabled = limitsBusy;
+      }
       for (const row of body.querySelectorAll<HTMLElement>("[data-limit]")) {
         const name = row.dataset.limit as keyof WebState["limits"];
         const limit = state.limits[name];
@@ -2178,12 +2228,7 @@ export function clientMain({
   document.addEventListener("keydown", (e) => {
     if (sheet.hidden) return;
     if (e.key === "Escape") closeSheet();
-    if (e.key !== "Tab") return;
-    const controls = [...sheet.querySelectorAll<HTMLElement>('.sheet-panel button:not(:disabled), .sheet-panel input:not(:disabled), .sheet-panel select:not(:disabled), .sheet-panel textarea:not(:disabled), .sheet-panel [tabindex="0"]')].filter((node) => node.getClientRects().length > 0);
-    const first = controls[0];
-    const last = controls.at(-1);
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+    trapTab(e, sheet.querySelector<HTMLElement>(".sheet-panel")!);
   });
   $("#open-conversations").addEventListener("click", openConversations);
   $("#open-settings").addEventListener("click", openSettings);

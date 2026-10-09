@@ -153,6 +153,8 @@ const STYLE = `
   .conv.current { background: var(--sunken); }
   .conv:disabled { opacity: 1; }
   .conv .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv-pinned { display: inline-flex; vertical-align: middle; margin-left: 5px; color: var(--muted); }
+  .conv-pinned .i { width: 12px; height: 12px; }
   .conv .m { color: var(--muted); font-size: 11.5px; }
 
   .log-wrap { position: relative; min-height: 0; display: grid; }
@@ -441,7 +443,7 @@ const STYLE = `
   .agent-strip .gauge .v { grid-column: 3; grid-row: 1; text-align: right; font-size: 0; display: flex; justify-content: flex-end; height: 12px; }
   .agent-strip .gauge .v::after { content: attr(data-compact); font-size: 10.5px; line-height: 12px; }
   .agent-strip .gauge .k { display: none; }
-  .agent-strip .gauge::before { grid-column: 1; grid-row: 1; content: attr(data-label); overflow: hidden; white-space: nowrap; }
+  .agent-strip .gauge::before { grid-column: 1; grid-row: 1; content: attr(data-short-label); overflow: hidden; white-space: nowrap; }
   .gauge { margin: 0; gap: 4px 5px; font-size: 10.5px; }
   .gauge .k, .gauge .v { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .track { height: 4px; border-radius: var(--r-inner); }
@@ -630,7 +632,6 @@ const STYLE = `
   .limits-actions { display: flex; gap: 8px; justify-content: flex-end; }
   .gui-update-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   .gui-update[hidden] { display: none; }
-  .limits-unlimited[aria-pressed="true"] { color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .limits-settings.unlimited .limit-row { opacity: .45; }
   .settings-sheet .sheet-panel { max-width: 480px; padding: 0 16px 16px; }
   .settings-sheet .sheet-head { position: sticky; top: 0; z-index: 1; margin: 0 -16px; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
@@ -641,14 +642,15 @@ const STYLE = `
   .settings-card > .setting + .setting, .settings-card > .limits-settings { border-top: 1px solid var(--line); }
   .settings-card > .setting:not(.limits-settings) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px; align-items: center; min-height: 44px; padding: 2px 0; }
   .settings-card > .setting > .eyebrow { margin: 0; color: var(--fg); font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; }
-  .settings-card > .setting > .sandbox-ready { grid-column: 1; margin: -4px 0 0; font-size: 10px; line-height: 1.2; }
+  .sandbox-ready { display: inline-flex; vertical-align: middle; margin-left: 6px; color: var(--muted); }
+  .sandbox-ready .i { width: 14px; height: 14px; }
+  .settings-card .limits-unlimited { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-height: 44px; }
   .settings-card > .limits-settings { padding: 4px 0; }
   .settings-card > .limits-settings > .eyebrow { margin: 4px 0; color: var(--fg); font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; }
   .settings-card .limit-row + .limit-row { border-top: 1px solid var(--line); }
   .settings-card .limits-actions { width: 100%; padding: 4px 0; border-top: 1px solid var(--line); }
   .settings-card .limits-actions .btn { min-height: 28px; border: 0; padding: 3px 7px; background: transparent; color: var(--fg-2); font-size: 11px; }
   .settings-card .limits-actions .limits-apply { background: var(--invert-bg); color: var(--invert-fg); border-radius: 4px; }
-  .settings-card .limits-unlimited[aria-pressed="true"] { background: var(--sunken); box-shadow: none; color: var(--fg); }
   .settings-card > .setting.gui-update { display: block; min-height: 44px; padding: 2px 0; }
   .settings-card .gui-update-row { gap: 6px; min-height: 40px; }
   .settings-card .gui-version { margin-right: auto; }
@@ -822,7 +824,7 @@ ${UI_ICONS}
   </header>
   <nav class="conversation-tabs" id="conversation-tabs" aria-label="${m("web.side.conversations")}" hidden></nav>
   <div class="conn" id="conn" hidden role="status"><span class="spin" id="conn-spinner"></span><span id="conn-label">${m("web.conn.lost")}</span><button class="btn" id="reload" type="button" hidden>${m("web.conn.reload")}</button></div>
-  <section class="agent-strip" id="agents" aria-label="Agent"><div class="strip-well" aria-hidden="true">${[0, 1].map(() => '<div class="strip-skeleton"><span class="sk sk-avatar"></span><div class="sk-identity"><div><span class="sk sk-name"></span><span class="sk sk-state"></span></div><span class="sk sk-settings"></span></div><div class="sk-gauges"><span class="sk"></span><span class="sk"></span><span class="sk"></span></div></div>').join("")}</div></section>
+  <section class="agent-strip" id="agents" aria-label="${m("web.agents.label")}"><div class="strip-well" aria-hidden="true">${[0, 1].map(() => '<div class="strip-skeleton"><span class="sk sk-avatar"></span><div class="sk-identity"><div><span class="sk sk-name"></span><span class="sk sk-state"></span></div><span class="sk sk-settings"></span></div><div class="sk-gauges"><span class="sk"></span><span class="sk"></span><span class="sk"></span></div></div>').join("")}</div></section>
   <aside class="side">
     <section>
       <div class="side-head"><div class="eyebrow">${m("web.side.conversations")}</div>${button("new-conversation", "square-pen", "web.side.newConversation")}</div>

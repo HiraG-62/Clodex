@@ -366,7 +366,7 @@ describe("applyFeedItem", () => {
       { kind: "message", message, envelope: "FULL" },
       { kind: "notice", text: "ahead of pace" },
       { kind: "error", agent: "codex", text: "boom" },
-      { kind: "notice", text: "claude: compacted" },
+      { kind: "notice", text: "", compactAgent: "claude" },
     ]);
   });
 

@@ -18,7 +18,7 @@ export type TimelineItem =
     messages?: Array<{ message: AgentMessage; envelope?: string }>;
   }
   | { kind: "message"; id: string; at: string; message: AgentMessage; envelope?: string }
-  | { kind: "notice"; id: string; at: string; text: string }
+  | { kind: "notice"; id: string; at: string; text: string; compactAgent?: AgentId }
   | { kind: "error"; id: string; at: string; agent: AgentId; text: string }
   | { kind: "output"; id: string; text: string };
 
@@ -147,7 +147,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
     case "error":
       return limit([...items, { kind: "error", id, at, agent, text: agentEvent.message }]);
     case "compacted":
-      return limit([...items, { kind: "notice", id, at, text: `${agent}: compacted` }]);
+      return limit([...items, { kind: "notice", id, at, text: "", compactAgent: agent }]);
     default:
       return items;
   }

@@ -643,7 +643,7 @@ describe("createShell", () => {
     await shell.handleLine("/resume 1");
     await shell.handleLine("/resume 9");
     expect(coordinator.switched).toEqual([]);
-    expect(printed).toEqual(["already in this conversation", "no conversation #9"]);
+    expect(printed).toEqual(["Already open", "no conversation #9"]);
   });
 
   it("/new は新しい会話を今の会話にし、前の会話の Agent は止めない", async () => {

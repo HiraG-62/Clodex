@@ -9,6 +9,14 @@ import { ja } from "../i18n/messages.js";
 const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1] ?? "");
 
 describe("buildWebPage", () => {
+  it("Agent のラベルと設定のスイッチを言語別に表示する", () => {
+    const jaPage = buildWebPage("ja").html;
+    expect(jaPage).toContain('id="agents" aria-label="Agent"');
+    expect(buildWebPage("en").html).toContain('id="agents" aria-label="Agents"');
+    expect(jaPage).toContain('settingsSwitch("unlimited"');
+    expect(jaPage).not.toContain('aria-pressed="true"] { background: var(--sunken); box-shadow: none; color: var(--fg); }');
+    expect(jaPage.includes('label.split(" · ")')).toBe(false);
+  });
   it("ログ全体を読み上げず、完了と質問の通知領域を持つ", () => {
     const html = buildWebPage("ja").html;
     expect(html).toMatch(/<main class="log" id="log"[^>]*>/);
