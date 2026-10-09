@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakeSpawner, flush } from "./fake-agent-process.js";
-import { fetchStartupProbe, modelLabel, parseClaudeModels, parseClaudeUsage, parseCodexModels, parseCodexUsage } from "./startup-probe.js";
+import { fetchStartupProbe, parseClaudeModels, parseClaudeUsage, parseCodexModels, parseCodexUsage } from "./startup-probe.js";
+import { modelLabel } from "./model-catalog.js";
 
 const CLAUDE_MODELS = [
   { value: "default", resolvedModel: "claude-opus-5-5", displayName: "Default (recommended)", description: "Opus 5.5 · Best for everyday tasks" },

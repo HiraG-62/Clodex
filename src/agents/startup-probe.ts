@@ -1,10 +1,10 @@
 import type { AgentEvent, AgentId, RateLimitWindow } from "./agent-adapter.js";
 import { agentEnv, spawnAgentProcess, type AgentProcess, type SpawnAgentProcess } from "./agent-process.js";
 import { codexRateLimitEvent, type CodexRateLimits } from "./rate-limits.js";
+import type { ModelCatalog, ModelOption } from "./model-catalog.js";
+export { EMPTY_MODEL_CATALOG } from "./model-catalog.js";
+export type { ModelCatalog, ModelOption } from "./model-catalog.js";
 
-export interface ModelOption { value: string; label: string; resolved?: string }
-export type ModelCatalog = Record<AgentId, ModelOption[]>;
-export const EMPTY_MODEL_CATALOG = (): ModelCatalog => ({ claude: [], codex: [] });
 export type RateLimitEvent = Extract<AgentEvent, { type: "rate_limit" }>;
 export interface StartupProbe { models: ModelCatalog; usage: Partial<Record<AgentId, RateLimitEvent>> }
 
@@ -60,15 +60,6 @@ export const parseClaudeUsage = (message: unknown): RateLimitEvent => {
 export const parseCodexUsage = (result: unknown): RateLimitEvent => {
   const rateLimits = asRecord(asRecord(result)?.rateLimits);
   return codexRateLimitEvent(rateLimits as CodexRateLimits | undefined);
-};
-
-export const modelLabel = (value: string | undefined, models: readonly ModelOption[]): string => {
-  if (!value) return "default";
-  const direct = models.find((item) => item.value === value);
-  if (direct) return direct.label;
-  const resolved = models.find((item) => item.resolved === value && item.value !== "default")
-    ?? models.find((item) => item.resolved === value);
-  return resolved?.label ?? value;
 };
 
 interface ProbeOne { models: ModelOption[]; usage?: RateLimitEvent }
