@@ -1,7 +1,8 @@
 import { renderMarkdown } from "./markdown.js";
+import { discardMissingOpened, sameWorkingEntry } from "./log-diff.js";
 import type { ClientContext } from "./store.js";
 import type { DisplayTimelineItem, TimelineItem } from "./timeline.js";
-import { withStartingTurns, withSubagentRows, withWorkingTurnsLast, workingFeed } from "./timeline.js";
+import { withStartingTurns, withSubagentRows, withWorkingTurnsLast, workingFeed, type WorkingEntry } from "./timeline.js";
 
 export function createLogView(ctx: ClientContext) {
 
@@ -80,37 +81,53 @@ export function createLogView(ctx: ClientContext) {
 
   const workingPanel = ctx.$("#working-panel");
   const workingToggle = ctx.$("#working-toggle");
+  let previousFeed: WorkingEntry[] = [];
   const renderWorking = () => {
     const active = ctx.store.items.filter((item): item is Extract<TimelineItem, { kind: "turn" }> => item.kind === "turn" && item.status === "working");
     const feed = workingFeed(ctx.store.items);
-    ctx.$("#working-count").textContent = active.length ? String(active.length) : "";
-    workingToggle.dataset.agent = active.length > 1 ? ctx.store.state?.primary ?? "claude" : active[0]?.agent ?? "claude";
-    workingToggle.hidden = feed.length === 0;
-    if (!feed.length) { workingPanel.hidden = true; workingToggle.setAttribute("aria-expanded", "false"); }
+    const count = active.length ? String(active.length) : "";
+    if (ctx.$("#working-count").textContent !== count) ctx.$("#working-count").textContent = count;
+    const agent = active.length > 1 ? ctx.store.state?.primary ?? "claude" : active[0]?.agent ?? "claude";
+    if (workingToggle.dataset.agent !== agent) workingToggle.dataset.agent = agent;
+    if (workingToggle.hidden !== (feed.length === 0)) workingToggle.hidden = feed.length === 0;
+    if (!feed.length && !workingPanel.hidden) {
+      workingPanel.hidden = true;
+      workingToggle.setAttribute("aria-expanded", "false");
+    }
     const list = ctx.$("#working-list");
+    const feedChanged = feed.length !== previousFeed.length || feed.some((entry, index) => !previousFeed[index] || !sameWorkingEntry(previousFeed[index], entry));
+    if (!feedChanged) return;
     const following = workingPanel.scrollHeight - workingPanel.scrollTop - workingPanel.clientHeight < ctx.NEAR_BOTTOM_PX;
-    list.replaceChildren(...feed.map((entry) => {
+    feed.forEach((entry, index) => {
+      if (previousFeed[index] && sameWorkingEntry(previousFeed[index], entry)) return;
+      let node: HTMLElement;
       if (entry.kind === "say") {
         const say = ctx.el("div", "working-say md");
         say.innerHTML = renderMarkdown(entry.text);
-        return say;
+        enhanceMarkdown(say);
+        node = say;
+      } else {
+        const button = ctx.el("button", "working-head") as HTMLButtonElement;
+        button.type = "button";
+        button.append(ctx.el("span", `name c-${entry.agent}`, ctx.AGENTS[entry.agent].name));
+        if (entry.plan) button.append(ctx.el("span", "plan", (entry.plan.split("\n", 1)[0] ?? "").replace(/`/g, "")));
+        if (!entry.done) {
+          const elapsed = ctx.el("span", "elapsed", ctx.elapsedText(entry.at));
+          elapsed.dataset.start = entry.at;
+          button.append(elapsed);
+        }
+        button.addEventListener("click", () => {
+          workingPanel.hidden = true;
+          workingToggle.setAttribute("aria-expanded", "false");
+          ctx.store.rendered.get(entry.turnId)?.node.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+        node = button;
       }
-      const button = ctx.el("button", "working-head") as HTMLButtonElement;
-      button.type = "button";
-      button.append(ctx.el("span", `name c-${entry.agent}`, ctx.AGENTS[entry.agent].name));
-      if (entry.plan) button.append(ctx.el("span", "plan", (entry.plan.split("\n", 1)[0] ?? "").replace(/`/g, "")));
-      if (!entry.done) {
-        const elapsed = ctx.el("span", "elapsed", ctx.elapsedText(entry.at));
-        elapsed.dataset.start = entry.at;
-        button.append(elapsed);
-      }
-      button.addEventListener("click", () => {
-        workingPanel.hidden = true;
-        workingToggle.setAttribute("aria-expanded", "false");
-        ctx.store.rendered.get(entry.turnId)?.node.scrollIntoView({ behavior: "smooth", block: "center" });
-      });
-      return button;
-    }));
+      const old = list.children[index];
+      if (old) old.replaceWith(node); else list.append(node);
+    });
+    while (list.children.length > feed.length) list.lastElementChild?.remove();
+    previousFeed = feed;
     if (following) workingPanel.scrollTop = workingPanel.scrollHeight;
   };
   workingToggle.addEventListener("click", () => {
@@ -182,15 +199,26 @@ export function createLogView(ctx: ClientContext) {
         ctx.store.rendered.delete(id);
       }
     }
+    discardMissingOpened(ctx.store.opened, keep);
     let previous: HTMLElement | undefined;
+    const updatedMarkdown: HTMLElement[] = [];
     for (const item of visibleItems) {
       const current = ctx.store.rendered.get(item.id);
       let node = current?.node;
       const sameStarting = current?.item.kind === "starting" && item.kind === "starting" && current.item.at === item.at;
       if (!current || (current.item !== item && !sameStarting) || force) {
-        node = renderItem(item);
-        if (current) current.node.replaceWith(node);
-        ctx.store.rendered.set(item.id, { item, node });
+        const update = !force && current?.item.kind === "turn" && item.kind === "turn"
+          ? (ctx as ClientContext & { updateTurn: (node: HTMLElement, previous: Extract<TimelineItem, { kind: "turn" }>, next: Extract<TimelineItem, { kind: "turn" }>) => HTMLElement[] | undefined }).updateTurn(current.node, current.item, item)
+          : undefined;
+        if (update) {
+          updatedMarkdown.push(...update);
+          ctx.store.rendered.set(item.id, { item, node: current!.node });
+        } else {
+          node = renderItem(item);
+          if (current) current.node.replaceWith(node);
+          ctx.store.rendered.set(item.id, { item, node });
+          updatedMarkdown.push(node);
+        }
       }
       // まだ DOM に無い要素、または位置がずれた要素を、直前の要素の後ろへ置く
       if (node && (node.parentNode !== ctx.log || node.previousElementSibling !== (previous ?? null))) {
@@ -212,7 +240,7 @@ export function createLogView(ctx: ClientContext) {
       clockRow.append(ctx.el("span", "spin"), ctx.el("span", "", `#${id} · ${ctx.t("web.command.running")}`), elapsed);
       ctx.store.rendered.get(commandStart.outputId)?.node.before(clockRow);
     }
-    enhanceMarkdown(ctx.log);
+    for (const node of updatedMarkdown) enhanceMarkdown(node);
     if (stick) scrollToBottom(); else syncNewer();
     renderWorking();
   };

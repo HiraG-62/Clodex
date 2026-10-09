@@ -26,6 +26,13 @@ export type DisplayTimelineItem = TimelineItem
   | { kind: "starting"; id: string; at: string; agent: AgentId }
   | { kind: "subagents"; id: string; agent: AgentId; running: SubagentState[] };
 
+export const MAX_ITEMS = 1500;
+
+export function limitLiveHistory(history: readonly HistoryItem[], item: HistoryItem): HistoryItem[] {
+  const next = [...history, item];
+  return next.length > MAX_ITEMS ? next.slice(next.length - MAX_ITEMS) : next;
+}
+
 export function withWorkingTurnsLast(items: readonly TimelineItem[]): TimelineItem[] {
   return [
     ...items.filter((item) => item.kind !== "turn" || item.status !== "working"),
@@ -62,7 +69,6 @@ export function withSubagentRows(items: readonly DisplayTimelineItem[], agents: 
 
 // 変更した項目だけを新しいオブジェクトにして返す（画面は項目の同一性で差分を描画する）
 export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineItem[] {
-  const MAX_ITEMS = 1500;
   const limit = (list: TimelineItem[]) => (list.length > MAX_ITEMS ? list.slice(list.length - MAX_ITEMS) : list);
   type Turn = Extract<TimelineItem, { kind: "turn" }>;
 

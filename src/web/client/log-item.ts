@@ -2,6 +2,7 @@ import type { MessageKey } from "../../i18n/messages.js";
 import type { AgentMessage, Issue } from "../../protocol/messages.js";
 import { displayPath, findImagePaths, splitImagePaths } from "./artifacts.js";
 import { renderMarkdown } from "./markdown.js";
+import { diffTurn } from "./log-diff.js";
 import type { ClientContext } from "./store.js";
 import type { TimelineItem } from "./timeline.js";
 
@@ -88,18 +89,96 @@ export function createLogItem(ctx: ClientContext) {
     linkImagePaths(node, version);
     const previews = ctx.el("div", "image-previews");
     for (const path of paths) {
-      const button = ctx.el("button", "image-preview") as HTMLButtonElement;
-      button.type = "button";
-      const image = document.createElement("img");
-      image.alt = displayPath(path, ctx.store.state?.project ?? "");
-      image.loading = "lazy";
-      image.addEventListener("error", () => { button.remove(); unlinkImagePath(node, path); });
-      image.src = ctx.fileUrl("file", path, version);
-      button.addEventListener("click", () => ctx.openImage(path, version));
-      button.append(image);
-      previews.append(button);
+      previews.append(imagePreview(node, path, version));
     }
     node.append(previews);
+  };
+
+  const imagePreview = (node: HTMLElement, path: string, version: string) => {
+    const button = ctx.el("button", "image-preview") as HTMLButtonElement;
+    button.type = "button";
+    button.dataset.path = path;
+    const image = document.createElement("img");
+    image.alt = displayPath(path, ctx.store.state?.project ?? "");
+    image.loading = "lazy";
+    image.addEventListener("error", () => { button.remove(); unlinkImagePath(node, path); });
+    image.src = ctx.fileUrl("file", path, version);
+    button.addEventListener("click", () => ctx.openImage(path, version));
+    button.append(image);
+    return button;
+  };
+
+  const stepNode = (step: Extract<TimelineItem, { kind: "turn" }>["steps"][number]) => {
+    const li = ctx.el("li");
+    if (step.kind === "say") li.append(ctx.el("span", "k", ctx.t("web.step.say")), ctx.el("span", "say", step.text));
+    else li.append(ctx.el("span", "k", toolLabel(step.name)), ctx.el("span", "run", step.input));
+    return li;
+  };
+
+  const updateTurn = (node: HTMLElement, previous: Extract<TimelineItem, { kind: "turn" }>, next: Extract<TimelineItem, { kind: "turn" }>): HTMLElement[] | undefined => {
+    const change = diffTurn(previous, next);
+    if (change.replace) return undefined;
+    const updated: HTMLElement[] = [];
+    const head = node.querySelector<HTMLElement>(":scope > .head")!;
+    if (change.plan) {
+      node.querySelector(":scope > .plan")?.remove();
+      if (next.plan) {
+        const plan = ctx.el("div", "plan md");
+        plan.innerHTML = renderMarkdown(next.plan);
+        linkImagePaths(plan, next.at);
+        head.after(plan);
+        updated.push(plan);
+      }
+    }
+    if (change.steps.length) {
+      let steps = node.querySelector<HTMLDetailsElement>(":scope > .steps");
+      if (!steps) {
+        const list = ctx.el("ol");
+        steps = details(next.id, "", list, "steps");
+        (node.querySelector(":scope > .plan") ?? head).after(steps);
+      }
+      const list = steps.querySelector("ol")!;
+      for (const index of change.steps) {
+        const li = stepNode(next.steps[index]!);
+        const old = list.children[index];
+        if (old) old.replaceWith(li); else list.append(li);
+      }
+      steps.querySelector("summary")!.textContent = ctx.t("web.turn.steps", { count: next.steps.length });
+      node.querySelector(":scope > .now")?.replaceWith(nowLine(next));
+    }
+    if (change.body) {
+      node.querySelector(":scope > .body")?.remove();
+      if (next.text) {
+        const body = ctx.el("div", "body md");
+        body.innerHTML = renderMarkdown(next.text);
+        linkImagePaths(body, next.at);
+        node.querySelector(":scope > .image-previews")?.before(body);
+        if (!body.parentNode) node.append(body);
+        updated.push(body);
+      }
+    }
+    if (change.images.add.length || change.images.remove.length || change.images.orderChanged) {
+      let previews = node.querySelector<HTMLElement>(":scope > .image-previews");
+      for (const path of change.images.remove) {
+        const key = imageKey(path);
+        for (const button of previews?.querySelectorAll<HTMLButtonElement>(".image-preview") ?? []) {
+          if (imageKey(button.dataset.path ?? "") === key) button.remove();
+        }
+      }
+      if (change.images.add.length && !previews) {
+        previews = ctx.el("div", "image-previews");
+        node.append(previews);
+      }
+      const added = new Set(change.images.add.map(imageKey));
+      for (const path of change.images.paths) {
+        const button = [...(previews?.querySelectorAll<HTMLButtonElement>(".image-preview") ?? [])]
+          .find((entry) => imageKey(entry.dataset.path ?? "") === imageKey(path));
+        if (button) previews!.append(button);
+        else if (added.has(imageKey(path))) previews!.append(imagePreview(node, path, next.at));
+      }
+      if (previews && !previews.children.length) previews.remove();
+    }
+    return updated;
   };
 
   const renderTurn = (item: Extract<TimelineItem, { kind: "turn" }>) => {
@@ -124,12 +203,7 @@ export function createLogItem(ctx: ClientContext) {
     const steps = [...item.steps, ...finalStep];
     if (steps.length) {
       const list = ctx.el("ol");
-      for (const step of steps) {
-        const li = ctx.el("li");
-        if (step.kind === "say") li.append(ctx.el("span", "k", ctx.t("web.step.say")), ctx.el("span", "say", step.text));
-        else li.append(ctx.el("span", "k", toolLabel(step.name)), ctx.el("span", "run", step.input));
-        list.append(li);
-      }
+      for (const step of steps) list.append(stepNode(step));
       node.append(details(item.id, ctx.t("web.turn.steps", { count: steps.length }), list, "steps"));
     }
     if (item.status === "working") node.append(nowLine(item));
@@ -210,5 +284,5 @@ export function createLogItem(ctx: ClientContext) {
     appendImagePreviews(node, previewText, item.at);
     return node;
   };
-  return { appendImagePreviews, elapsedText, renderQuestion, renderTurn, renderMessage };
+  return { appendImagePreviews, elapsedText, renderQuestion, renderTurn, renderMessage, updateTurn };
 }

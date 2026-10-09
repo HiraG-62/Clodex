@@ -5,7 +5,7 @@ import { nextCommandStarts, resolvePendingSettings } from "./pending.js";
 import { connectionQuery } from "./connection-query.js";
 import type { ClientContext } from "./store.js";
 import type { TimelineItem } from "./timeline.js";
-import { announcementKind, applyFeedItem, mergeReplayHistory, rebuildTimeline, withStartingTurns } from "./timeline.js";
+import { announcementKind, applyFeedItem, limitLiveHistory, mergeReplayHistory, rebuildTimeline, withStartingTurns } from "./timeline.js";
 
 export function createConnection(ctx: ClientContext) {
 
@@ -150,7 +150,7 @@ export function createConnection(ctx: ClientContext) {
         if (agent) ctx.announcements.textContent = `${ctx.AGENTS[agent].name}: ${ctx.t(`notify.${announcement}`)}`;
       }
       if (!ctx.nearBottom()) ctx.store.unreadWhileReading = true;
-      ctx.store.history.push(item);
+      ctx.store.history = limitLiveHistory(ctx.store.history, item);
       ctx.store.items = applyFeedItem(ctx.store.items, item);
       if (item.type === "output") ctx.store.commandStarts = nextCommandStarts(ctx.store.commandStarts, item.command, new Date().toISOString(), ctx.store.items.at(-1)?.id);
       if (item.type === "event" && item.event.kind === "human") {

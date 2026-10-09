@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "../../agents/agent-adapter.js";
 import type { AgentMessage } from "../../protocol/messages.js";
 import type { FeedItem } from "../web-feed.js";
-import { rebuildTimeline, applyFeedItem, withWorkingTurnsLast, withStartingTurns, withSubagentRows, workingFeed, mergeReplayHistory, announcementKind, type TimelineItem } from "./timeline.js";
+import { rebuildTimeline, applyFeedItem, withWorkingTurnsLast, withStartingTurns, withSubagentRows, workingFeed, mergeReplayHistory, announcementKind, limitLiveHistory, MAX_ITEMS, type TimelineItem } from "./timeline.js";
 
 const AT = "2026-10-05T12:00:00.000Z";
 const LATER = "2026-10-05T12:05:00.000Z";
@@ -20,6 +20,13 @@ const formal = (from: "claude" | "codex", body: string, auto = false): FeedItem 
   return { type: "event", seq, event: { kind: "message", message, at: AT }, envelope: `封筒: ${body}` };
 };
 const run = (items: FeedItem[]) => items.reduce<TimelineItem[]>(applyFeedItem, []);
+
+it("live の履歴だけを表示と同じ上限で切る", () => {
+  const history = Array.from({ length: MAX_ITEMS }, (_, index) => ({ type: "output" as const, seq: index, text: String(index) }));
+  const next = { type: "output" as const, seq: MAX_ITEMS, text: "next" };
+  expect(limitLiveHistory(history, next)).toEqual([...history.slice(1), next]);
+  expect(history).toHaveLength(MAX_ITEMS);
+});
 
 describe("mergeReplayHistory", () => {
   it("同じ流れなら読み足した履歴を残す", () => {
