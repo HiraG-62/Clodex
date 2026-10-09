@@ -904,6 +904,7 @@ Agent が人に判断を求めるとき、文章の中に質問を書かせず�
 
 - 同じ会話の Agent は MCP tool `read_conversation` で、その会話の本文を必要なときに読む。自分への入力に加え、ユーザーともう一方の Agent のやり取り、Agent 間の formal message、質問と回答を含む。別の会話の本文は返さない
 - 返すのはユーザーの入力、Agent の最終応答、formal message の body、質問・回答の本文だけ。途中の text・tool・作業ログ、通知、設定用ターンは含めない
+- 各本文の時刻（`at`）は、Hub のある端末の時間帯のオフセット付き ISO 8601（例: `2026-10-09T22:13:38+09:00`）で返す。保存は今どおり UTC。Agent が UTC の時刻をそのまま人に伝え、画面の時刻（端末の時間帯）と食い違うのを防ぐため
 - 入力は `{ before?: number, limit?: number }`。新しい順のページを取得し、各ページの本文は時系列で返す。`before` は前の応答の `nextBefore`、`limit` は既定 50・最大 100。全件を system prompt や Task envelope に自動挿入しない
 - Event Bus から選んだ本文を会話 ID ごとの JSONL に保存し、Hub の再起動後も読めるようにする。既存の会話は保存済みの feed から読める範囲を初期値にする。MCP server は ConversationRuntime ごとに作るので、tool に会話 ID を指定させない
 

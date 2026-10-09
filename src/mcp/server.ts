@@ -6,7 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { AGENT_IDS, COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, ASK_USER_TOOL, READ_CONVERSATION_TOOL, type AgentId } from "../agents/agent-adapter.js";
-import type { ConversationPage, ReadConversationOptions } from "../project/conversation-transcript.js";
+import { toLocalIso, type ConversationPage, type ReadConversationOptions } from "../project/conversation-transcript.js";
 import { askUserShape, type AskUserResult } from "../protocol/questions.js";
 import { sendMessageShape, type CreateMessageResult } from "../protocol/messages.js";
 
@@ -61,7 +61,10 @@ const buildMcpServer = (from: AgentId, handler: McpHandlers): McpServer => {
   server.registerTool(READ_CONVERSATION_TOOL, {
     description: "Read message bodies from this conversation, including the human's exchanges with both agents and formal messages between agents. Returns the latest page in chronological order; pass nextBefore as before to read older messages. Intermediate work and tool activity are excluded.",
     inputSchema: { before: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(100).optional() },
-  }, async (args) => ({ content: [{ type: "text", text: JSON.stringify(handler.readConversation(from, args)) }] }));
+  }, async (args) => {
+    const page = handler.readConversation(from, args);
+    return { content: [{ type: "text", text: JSON.stringify({ ...page, entries: page.entries.map((entry) => ({ ...entry, at: toLocalIso(entry.at) })) }) }] };
+  });
   return server;
 };
 

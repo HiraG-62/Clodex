@@ -9,6 +9,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentId } from "../agents/agent-adapter.js";
 import type { CreateMessageResult } from "../protocol/messages.js";
+import { toLocalIso } from "../project/conversation-transcript.js";
 import { startMcpServer, type McpServerHandle } from "./server.js";
 
 let server: McpServerHandle | undefined;
@@ -159,6 +160,9 @@ it("read_conversation は同じ会話の本文を Agent ごとの URL から取�
     const result = await client.callTool({ name: "read_conversation", arguments: { before: 3, limit: 2 } });
     expect(result.isError).toBeFalsy();
     expect(JSON.stringify(result.content)).toContain("依頼本文");
+    const content = result.content as Array<{ type: string; text: string }>;
+    const page = JSON.parse(content[0]!.text) as { entries: Array<{ at: string }> };
+    expect(page.entries[0]?.at).toBe(toLocalIso("2026-10-08T00:00:00.000Z"));
     expect(calls).toEqual([{ from: "codex", before: 3, limit: 2 }]);
     expect((await client.callTool({ name: "read_conversation", arguments: { limit: 101 } })).isError).toBe(true);
     expect(calls).toHaveLength(1);

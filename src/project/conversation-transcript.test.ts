@@ -4,12 +4,18 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 import type { CoordinatorEvent, CoordinatorEventInput } from "../coordinator/event-bus.js";
 import type { HistoryItem } from "../web/web-feed.js";
-import { ConversationTranscript, transcriptPath } from "./conversation-transcript.js";
+import { ConversationTranscript, toLocalIso, transcriptPath } from "./conversation-transcript.js";
 import { CONTEXT_INSTRUCTION } from "../context/conversation-instruction.js";
 
 const at = "2026-10-08T00:00:00.000Z";
 const event = (item: CoordinatorEventInput): CoordinatorEvent => ({ ...item, at });
 const path = () => transcriptPath(join(mkdtempSync(join(tmpdir(), "clodex-transcript-")), "conversations.json"), "conversation-1");
+
+it("UTC の時刻を端末の時間帯のオフセット付き ISO 8601 にする", () => {
+  expect(toLocalIso("2026-10-09T00:30:12.874Z", -540)).toBe("2026-10-09T09:30:12+09:00");
+  expect(toLocalIso("2026-10-09T00:30:12.874Z", 300)).toBe("2026-10-08T19:30:12-05:00");
+  expect(toLocalIso("2026-10-09T00:30:12.874Z", 0)).toBe("2026-10-09T00:30:12+00:00");
+});
 
 it("会話の本文だけを時系列で保存し、別の Agent とユーザーのやり取りも返す", () => {
   const transcript = new ConversationTranscript(path());

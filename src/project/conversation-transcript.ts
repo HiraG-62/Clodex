@@ -8,6 +8,20 @@ import type { HistoryItem } from "../web/web-feed.js";
 const TRANSCRIPT_EXT = ".jsonl";
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
+const MS_PER_MINUTE = 60_000;
+const MINUTES_PER_HOUR = 60;
+const ISO_SECONDS_LENGTH = 19;
+
+export const toLocalIso = (iso: string, offsetMinutes?: number): string => {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const offset = offsetMinutes ?? date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * MS_PER_MINUTE).toISOString().slice(0, ISO_SECONDS_LENGTH);
+  const magnitude = Math.abs(offset);
+  const hours = String(Math.floor(magnitude / MINUTES_PER_HOUR)).padStart(2, "0");
+  const minutes = String(magnitude % MINUTES_PER_HOUR).padStart(2, "0");
+  return `${local}${offset <= 0 ? "+" : "-"}${hours}:${minutes}`;
+};
 
 export type ConversationParticipant = AgentId | "human";
 export interface ConversationEntry {
