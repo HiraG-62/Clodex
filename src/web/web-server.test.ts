@@ -55,6 +55,25 @@ const readEvents = async (response: Response, count: number): Promise<FeedItem[]
 };
 
 describe("startWebServer", () => {
+  it("同梱フォントだけを token なしで版付き URL から返す", async () => {
+    const { base } = await setup();
+    const fontUrl = PAGE.html.match(/url\((\/fonts\/geist-sans@[^/]+\/geist-sans-latin-400-normal\.woff2)\)/)?.[1];
+    expect(fontUrl).toBeDefined();
+    const response = await fetch(`${base}${fontUrl}`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("font/woff2");
+    expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(0);
+    const prefix = fontUrl!.slice(0, fontUrl!.lastIndexOf("/") + 1);
+    for (const path of [
+      fontUrl!.replace("geist-sans@", "unknown@"),
+      fontUrl!.replace("@5.3.0", "@0.0.0"),
+      `${prefix}%2e%2e%2fsecret.woff2`,
+      `${prefix}name%5csecret.woff2`,
+      `${prefix}%00.woff2`,
+      `${prefix}geist-sans-latin-400-normal.woff`,
+    ]) expect((await fetch(`${base}${path}`)).status).toBe(404);
+  });
   it("言語変更後の HTML と版を接続中と新規の画面に配信する", async () => {
     const { base } = await setup();
     const response = await fetch(`${base}/events`, { headers: { cookie: COOKIE } });

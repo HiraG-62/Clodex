@@ -2,12 +2,14 @@
 // 127.0.0.1 だけで待ち受け、外部からは tailscale serve 経由で使う
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { readFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import type { PreviewResult } from "../project/file-preview.js";
 import { GUI_ACTIONS, type FeedItem, type GuiAction, type GuiInfo, type GuiUpdate, type WebFeed } from "./web-feed.js";
 import { ICON_SVG, MANIFEST, type WebPage } from "./web-page.js";
 import { APPLE_TOUCH_ICON_PNG_BASE64 } from "./apple-touch-icon.js";
 import { SERVICE_WORKER } from "./service-worker.js";
+import { fontFilePath } from "./fonts.js";
 
 const HOST = "127.0.0.1";
 const COOKIE_NAME = "clodex_token";
@@ -246,6 +248,22 @@ export const startWebServer = async ({ port, token, feed, page, onInput, listFil
     }
     if (req.method === "GET" && url.pathname === "/apple-touch-icon.png") {
       return void res.writeHead(HTTP.ok, { "content-type": "image/png" }).end(APPLE_TOUCH_ICON_PNG);
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/fonts/")) {
+      const file = fontFilePath(url.pathname);
+      if (!file) return void res.writeHead(HTTP.notFound).end();
+      try {
+        const body = await readFile(file);
+        return void res.writeHead(HTTP.ok, {
+          "content-type": "font/woff2",
+          "cache-control": "public, max-age=31536000, immutable",
+        }).end(body);
+      } catch (error) {
+        if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+          return void res.writeHead(HTTP.notFound).end();
+        }
+        throw error;
+      }
     }
     if (!sameToken(cookieToken(req), token)) return void res.writeHead(HTTP.unauthorized).end();
 

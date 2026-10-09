@@ -7,6 +7,7 @@ import type { Language } from "../context/language.js";
 import { MESSAGES } from "../i18n/i18n.js";
 import type { MessageKey, Messages } from "../i18n/messages.js";
 import { loadClientAssets } from "./client-bundle.js";
+import { loadFontCss } from "./fonts.js";
 
 
 
@@ -151,8 +152,9 @@ export const buildWebPage = (language: Language): WebPage => {
   const messages = MESSAGES[language];
   const html = body(messages);
   const { script, style } = loadClientAssets();
+  const fontCss = loadFontCss();
   const config = { layout: WEB_LAYOUT, commands: slashCommands(), messages };
-  const version = createHash("sha256").update(style).update(layoutStyle).update(html).update(script).update(json(config))
+  const version = createHash("sha256").update(fontCss).update(style).update(layoutStyle).update(html).update(script).update(json(config))
     .digest("hex").slice(0, PAGE_VERSION_LENGTH);
   return {
     version,
@@ -168,9 +170,7 @@ export const buildWebPage = (language: Language): WebPage => {
 <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
 <meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
-<style>${style}\n${layoutStyle}</style>
+<style>${fontCss}\n${style}\n${layoutStyle}</style>
 </head>
 <body>
 ${html}

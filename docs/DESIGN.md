@@ -1294,6 +1294,7 @@ PC で動いている `clodex` を、スマホ等のブラウザから GUI で�
 - `pnpm build` で `dist/web/client.js` と `dist/web/style.css` を作る。GUI に同梱するのはこの成果物で、esbuild は同梱しない（devDependency）。ソースから動かすとき（`pnpm dev`・テスト）は、成果物が無ければ起動時に esbuild で bundle する
 - 画面に渡す値（文言のカタログ・コマンドの一覧・画面の配置・版）は、`<script type="application/json">` に JSON で置き、入口が読む。関数のソースを `toString()` で埋め込まない
 - 画面の版（再読み込みの判定。§17）は、bundle・CSS・HTML・渡す値から作る
+- フォント（Geist・Geist Mono・Zen Kaku Gothic New）は `@fontsource` のパッケージを依存に入れ、Hub が `/fonts/...` で配る。外部（Google Fonts）から読まない（オフラインでも同じ見た目にし、読み込み前の表示の揺れを無くす）。`@font-face` は `unicode-range` で分かれたファイルを使い、使う文字の分だけ読む。フォントは秘密を含まないので token なしで返し、長くキャッシュさせる（ファイル名に版を含むか、パッケージの版で URL を変える）
 
 ### 接続と認証
 

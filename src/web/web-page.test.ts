@@ -13,6 +13,14 @@ import { ja } from "../i18n/messages.js";
 const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1] ?? "");
 
 describe("buildWebPage", () => {
+  it("Google Fonts を読まず、同梱の @font-face を埋め込む", () => {
+    const html = buildWebPage("ja").html;
+    expect(html).not.toContain("fonts.googleapis.com");
+    expect(html).not.toContain("fonts.gstatic.com");
+    expect(html).toContain("@font-face");
+    expect(html).toMatch(/url\(\/fonts\/geist-sans@[^/]+\/geist-sans-latin-400-normal\.woff2\)/);
+    expect(html).toContain("unicode-range:");
+  });
   it("Agent のラベルと設定のスイッチを言語別に表示する", () => {
     const jaPage = buildWebPage("ja").html;
     expect(jaPage).toContain('id="agents" aria-label="Agent"');
