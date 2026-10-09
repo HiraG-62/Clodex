@@ -63,13 +63,17 @@ GUI を起動するか、project のディレクトリで `clodex` を実行す�
 | `/rename <title>` / `/delete <番号>` / `/pin <番号>` | 会話の名前・削除・ピン止め |
 | `/permission [agent] <level>` / `/model <agent> <model>` / `/effort [agent] <level>` | Agent の権限・model・reasoning effort を変更 |
 | `/compact [agent]` / `/status` / `/verbose` | コンテキストの圧縮・状態の表示・詳細表示の切り替え |
+| `/context <text>` | 今の会話の本文を参照させて依頼を送る |
+| `/solo [enable\|disable\|agent]` | 片方の Agent だけで作業する（Agent 同士のやり取りを止める） |
+| `/limits [<name> <n>\|reset\|unlimited]` | Agent 同士のやり取りの上限を表示・変更 |
+| `/sandbox [on\|off\|uninstall]` / `/language [ja\|en]` | sandbox の切り替え / 表示言語の変更 |
 | `/help` / `/exit` | 入力方法の表示 / 終了 |
 
 入力の詳細は [DESIGN.md §8](docs/DESIGN.md#8-input-ux)、background process は [§15](docs/DESIGN.md#15-process-manager)。
 
 ## 設定ファイル
 
-`~/.clodex/config.json` は全 project の既定値、project root の `.clodex.json` はその project の設定。project 側の値がトップレベルのキー単位で上書きする。設定できるキーは `roles`、`primary`、`permission`、`language`、`limits`、`web`、`usageAlert`、`worktree`。`worktree.setup`（例: `"pnpm install"`）は `/new worktree` で作った worktree で最初に実行する command。
+`~/.clodex/config.json` は全 project の既定値、project root の `.clodex.json` はその project の設定。project 側の値がトップレベルのキー単位で上書きする。設定できるキーは `roles`、`primary`、`permission`、`language`、`limits`、`web`、`usageAlert`、`worktree`、`sandbox`、`updateChannel`。`worktree.setup`（例: `"pnpm install"`）は `/new worktree` で作った worktree で最初に実行する command。
 
 ```json
 {
@@ -99,9 +103,10 @@ tailscale serve --bg 4319
 ## 開発
 
 ```powershell
-pnpm test
+pnpm test         # ユニットテスト
+pnpm test:spikes  # spikes/ の実測のテスト
 pnpm typecheck
 pnpm build
 ```
 
-実 CLI を使う E2E はサブスクリプションの利用枠を消費し、`CLODEX_E2E=1` を設定したときだけ実行する。テスト方針は [DESIGN.md §20](docs/DESIGN.md#20-v01-acceptance-criteria)。
+実 CLI を使う E2E はサブスクリプションの利用枠を消費し、`CLODEX_E2E=1` を設定したときだけ実行する。受入シナリオは [DESIGN.md §20](docs/DESIGN.md#20-v01-acceptance-criteria)。
