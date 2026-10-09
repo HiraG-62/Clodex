@@ -11,6 +11,11 @@ describe("chooseProjectPath", () => {
   it("ブラウザでは prompt を使い、キャンセルは送らない", async () => {
     expect(await chooseProjectPath(undefined, () => " ./app ")).toBe("./app");
     expect(await chooseProjectPath(undefined, () => null)).toBeUndefined();
-    expect(await chooseProjectPath(async () => null, () => "browser-path")).toBeUndefined();
+    expect(
+      await chooseProjectPath(
+        async () => null,
+        () => "browser-path",
+      ),
+    ).toBeUndefined();
   });
 });

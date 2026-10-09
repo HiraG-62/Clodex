@@ -22,7 +22,13 @@ describe("DeliveryNotes", () => {
 
   it("人の発言を 5 件まで保ち、solo 解除を配送後に消す", () => {
     let released = true;
-    const notes = new DeliveryNotes(() => released, () => { released = false; return true; });
+    const notes = new DeliveryNotes(
+      () => released,
+      () => {
+        released = false;
+        return true;
+      },
+    );
     for (let index = 0; index < 7; index++) notes.queueHumanContext("claude", String(index));
     const note = notes.take("codex");
     expect(note).toContain("(+2 more)");

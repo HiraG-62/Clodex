@@ -10,7 +10,8 @@ describe("saveProjectRole", () => {
     writeFileSync(join(root, ".clodex.json"), JSON.stringify({ language: "ja", roles: { codex: "review" } }));
     expect(saveProjectRole(root, "claude", " design\n and\r\nreview ")).toBe("design and review");
     expect(JSON.parse(readFileSync(join(root, ".clodex.json"), "utf8"))).toEqual({
-      language: "ja", roles: { codex: "review", claude: "design and review" },
+      language: "ja",
+      roles: { codex: "review", claude: "design and review" },
     });
   });
 

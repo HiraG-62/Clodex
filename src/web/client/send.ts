@@ -4,8 +4,6 @@ import { isNavigationCommand, resolvePendingSettings } from "./pending.js";
 import type { ClientContext } from "./store.js";
 
 export function createSend(ctx: ClientContext) {
-
-
   // ---- 送信 ----
   // 送れたら true。失敗したら理由をトーストで出す
   const setPending = (button: HTMLButtonElement, pending: boolean) => {
@@ -20,32 +18,42 @@ export function createSend(ctx: ClientContext) {
       const line = button.dataset.command ?? "";
       const agent = line.split(" ")[1] as AgentId;
       setPending(button, ctx.store.pendingRequests.has(line) || (line.startsWith("/interrupt ") && ctx.store.interrupting.has(agent)));
-      if (line.startsWith("/interrupt ") && ctx.store.state?.agents.find((entry) => entry.id === agent)?.status !== "busy") button.disabled = true;
+      if (line.startsWith("/interrupt ") && ctx.store.state?.agents.find(entry => entry.id === agent)?.status !== "busy") button.disabled = true;
     }
     ctx.$(".app").classList.toggle("navigation-pending", [...ctx.store.pendingRequests].some(isNavigationCommand));
   };
   const withPending = async <T>(button: HTMLButtonElement | undefined, operation: () => Promise<T>): Promise<T> => {
     if (button) setPending(button, true);
-    try { return await operation(); }
-    finally { if (button) setPending(button, false); }
+    try {
+      return await operation();
+    } finally {
+      if (button) setPending(button, false);
+    }
   };
   const send = async (line: string, button?: HTMLButtonElement): Promise<boolean> => {
     if (ctx.store.pendingRequests.has(line)) return false;
     ctx.store.pendingRequests.add(line);
     if (button) button.dataset.command = line;
-    const stoppedAgent = line.startsWith("/interrupt ") ? line.split(" ")[1] as AgentId : undefined;
+    const stoppedAgent = line.startsWith("/interrupt ") ? (line.split(" ")[1] as AgentId) : undefined;
     const interruptAttempt = Symbol();
-    if (stoppedAgent) { ctx.store.interrupting.add(stoppedAgent); ctx.store.interruptAttempts.set(stoppedAgent, interruptAttempt); }
+    if (stoppedAgent) {
+      ctx.store.interrupting.add(stoppedAgent);
+      ctx.store.interruptAttempts.set(stoppedAgent, interruptAttempt);
+    }
     syncPendingButtons();
     try {
       return await withPending(button, async () => {
         try {
           const response = await fetch("/api/input", {
-            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ line }),
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ line }),
           });
           if (response.ok) return true;
           ctx.showToast(ctx.t("web.send.failedStatus", { status: response.status }));
-        } catch { ctx.showToast(ctx.t("web.send.failed")); }
+        } catch {
+          ctx.showToast(ctx.t("web.send.failed"));
+        }
         if (stoppedAgent) ctx.store.interrupting.delete(stoppedAgent);
         return false;
       });
@@ -53,7 +61,12 @@ export function createSend(ctx: ClientContext) {
       if (stoppedAgent && ctx.store.interrupting.has(stoppedAgent)) {
         const generation = ctx.store.liveGeneration;
         window.setTimeout(() => {
-          if (generation !== ctx.store.liveGeneration || ctx.store.pendingRequests.has(line) || ctx.store.interruptAttempts.get(stoppedAgent) !== interruptAttempt) return;
+          if (
+            generation !== ctx.store.liveGeneration ||
+            ctx.store.pendingRequests.has(line) ||
+            ctx.store.interruptAttempts.get(stoppedAgent) !== interruptAttempt
+          )
+            return;
           ctx.store.interrupting.delete(stoppedAgent);
           syncPendingButtons();
         }, ctx.INTERRUPT_RETRY_MS);
@@ -89,7 +102,8 @@ export function createSend(ctx: ClientContext) {
     return sent;
   };
   const displayedAgent = (agent: AgentState): AgentState => ({
-    ...agent, ...ctx.store.pendingSettings[agent.id],
+    ...agent,
+    ...ctx.store.pendingSettings[agent.id],
     ...(ctx.store.pendingSettings[agent.id]?.model ? { modelLabel: ctx.store.pendingSettings[agent.id]!.model } : {}),
   });
   return { send, displayedAgent, syncPendingButtons, requestSetting, setPending, withPending };

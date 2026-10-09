@@ -4,14 +4,15 @@ import type { ClientContext } from "./store.js";
 export function createThemeToast(ctx: ClientContext) {
   type Theme = (typeof ctx.THEMES)[number];
 
-
   // ---- テーマ ----
   const applyTheme = (theme: Theme) => {
     if (theme === "system") document.documentElement.removeAttribute("data-theme");
     else document.documentElement.setAttribute("data-theme", theme);
   };
-  ctx.store.theme = (ctx.THEMES as readonly string[]).includes(ctx.storage.get(ctx.THEME_KEY) ?? "") ? ctx.storage.get(ctx.THEME_KEY) as Theme : "system";
-  ctx.store.sendKey = (ctx.SEND_KEYS as readonly string[]).includes(ctx.storage.get(ctx.SEND_KEY_KEY) ?? "") ? ctx.storage.get(ctx.SEND_KEY_KEY) as SendKey : "enter";
+  ctx.store.theme = (ctx.THEMES as readonly string[]).includes(ctx.storage.get(ctx.THEME_KEY) ?? "") ? (ctx.storage.get(ctx.THEME_KEY) as Theme) : "system";
+  ctx.store.sendKey = (ctx.SEND_KEYS as readonly string[]).includes(ctx.storage.get(ctx.SEND_KEY_KEY) ?? "")
+    ? (ctx.storage.get(ctx.SEND_KEY_KEY) as SendKey)
+    : "enter";
   applyTheme(ctx.store.theme);
   const THEME_ICON: Record<Theme, string> = { system: "monitor", light: "sun", dark: "moon" };
   const syncThemeButton = (button: HTMLButtonElement, text: boolean) => {
@@ -43,10 +44,16 @@ export function createThemeToast(ctx: ClientContext) {
     toast.append(ctx.icon(level === "warn" ? "alert" : "check-circle"), content, ctx.icon("x"));
     toast.setAttribute("aria-label", `${heading ? `${heading} ` : ""}${text} · ${ctx.t("web.sheet.close")}`);
     toast.title = ctx.t("web.sheet.close");
-    const dismiss = () => { toast.classList.add("leaving"); window.setTimeout(() => toast.remove(), ctx.TOAST_EXIT_MS); };
+    const dismiss = () => {
+      toast.classList.add("leaving");
+      window.setTimeout(() => toast.remove(), ctx.TOAST_EXIT_MS);
+    };
     container.append(toast);
     const timer = window.setTimeout(dismiss, ctx.TOAST_DURATION_MS);
-    toast.addEventListener("click", () => { window.clearTimeout(timer); dismiss(); });
+    toast.addEventListener("click", () => {
+      window.clearTimeout(timer);
+      dismiss();
+    });
     while (container.children.length > ctx.MAX_TOASTS) container.firstElementChild?.remove();
   };
   return { showToast, THEME_ICON, syncThemeButton, cycleTheme };

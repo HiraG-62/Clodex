@@ -2,10 +2,18 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 import {
-  COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, ASK_USER_TOOL, READ_CONVERSATION_TOOL, summarizeToolInput,
-  type AgentStartOptions, type PermissionLevel, type RateLimitWindow, type SubagentState, type TurnResult,
+  type AgentStartOptions,
+  ASK_USER_TOOL,
+  COORDINATOR_MCP_SERVER,
+  type PermissionLevel,
+  type RateLimitWindow,
+  READ_CONVERSATION_TOOL,
+  SEND_MESSAGE_TOOL,
+  type SubagentState,
+  summarizeToolInput,
+  type TurnResult,
 } from "./agent-adapter.js";
-import { agentEnv, agentStartError, spawnAgentProcess, type SpawnAgentProcess } from "./agent-process.js";
+import { agentEnv, agentStartError, type SpawnAgentProcess, spawnAgentProcess } from "./agent-process.js";
 import { BaseAgentAdapter } from "./base-agent-adapter.js";
 
 // claude -p の stream-json プロトコル（docs/spikes/claude-lifecycle.md）
@@ -18,12 +26,19 @@ const RATIO_TO_PERCENT = 100;
 const COMPACT_COMMAND = "/compact";
 // ファイルを変更する tool と、変更先のパスが入る入力のキー（DESIGN.md §28 v0.3 B）
 const EDIT_TOOL_PATH_KEYS: Record<string, string> = {
-  Edit: "file_path", Write: "file_path", MultiEdit: "file_path", NotebookEdit: "notebook_path",
+  Edit: "file_path",
+  Write: "file_path",
+  MultiEdit: "file_path",
+  NotebookEdit: "notebook_path",
 };
 
 // 画像は user message の image block（base64）で渡す（docs/spikes/steer-image-subagent.md）
 const IMAGE_MEDIA_TYPES: Record<string, string> = {
-  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
 };
 const imageBlock = (path: string) => ({
   type: "image",
@@ -87,9 +102,7 @@ interface ClaudeEvent {
 }
 
 const toRateLimitWindow = (w: UtilizationWindow | undefined): RateLimitWindow | undefined =>
-  w?.utilization === undefined || w.resetsAt === undefined
-    ? undefined
-    : { usedPercent: Math.round(w.utilization * RATIO_TO_PERCENT), resetsAt: w.resetsAt };
+  w?.utilization === undefined || w.resetsAt === undefined ? undefined : { usedPercent: Math.round(w.utilization * RATIO_TO_PERCENT), resetsAt: w.resetsAt };
 
 export class ClaudeAdapter extends BaseAgentAdapter {
   readonly id = "claude";
@@ -116,7 +129,8 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     this.launchPermission = this.permission;
     const args = [
       ...STREAM_ARGS,
-      "--permission-mode", PERMISSION_MODE[this.permission],
+      "--permission-mode",
+      PERMISSION_MODE[this.permission],
       // 後から full（bypassPermissions）へ切り替えられるようにする。付けるだけでは bypass にならない
       "--allow-dangerously-skip-permissions",
       ...(resumeSessionId ? ["-r", resumeSessionId] : ["--session-id", this.sessionId]),
@@ -143,12 +157,18 @@ export class ClaudeAdapter extends BaseAgentAdapter {
   }
 
   async setModel(model: string): Promise<TurnResult | void> {
-    if (this.status === "stopped") { this.model = model; return; }
+    if (this.status === "stopped") {
+      this.model = model;
+      return;
+    }
     return this.runSetting("model", model);
   }
 
   async setEffort(level: string): Promise<TurnResult | void> {
-    if (this.status === "stopped") { this.effort = level; return; }
+    if (this.status === "stopped") {
+      this.effort = level;
+      return;
+    }
     return this.runSetting("effort", level);
   }
 
@@ -181,16 +201,23 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     if (this.status !== "busy") return;
     this.startInterruptTimeout();
     this.interruptRequested = true;
-    this.proc?.write(JSON.stringify({
-      type: "control_request", request_id: this.createId(), request: { subtype: "interrupt" },
-    }));
+    this.proc?.write(
+      JSON.stringify({
+        type: "control_request",
+        request_id: this.createId(),
+        request: { subtype: "interrupt" },
+      }),
+    );
   }
 
   protected async applyPermission(level: PermissionLevel): Promise<void> {
-    this.proc?.write(JSON.stringify({
-      type: "control_request", request_id: this.createId(),
-      request: { subtype: "set_permission_mode", mode: PERMISSION_MODE[level] },
-    }));
+    this.proc?.write(
+      JSON.stringify({
+        type: "control_request",
+        request_id: this.createId(),
+        request: { subtype: "set_permission_mode", mode: PERMISSION_MODE[level] },
+      }),
+    );
   }
 
   protected writeTurn(text: string, images: readonly string[] = []): void {
@@ -240,8 +267,8 @@ export class ClaudeAdapter extends BaseAgentAdapter {
   private handleSystem(event: ClaudeEvent): void {
     if (event.subtype === "background_tasks_changed") {
       const running = (event.tasks ?? [])
-        .filter((task) => task.task_type === "local_agent" && task.task_id)
-        .map((task) => ({ id: task.task_id!, description: task.description ?? "" }));
+        .filter(task => task.task_type === "local_agent" && task.task_id)
+        .map(task => ({ id: task.task_id!, description: task.description ?? "" }));
       if (JSON.stringify(running) !== JSON.stringify(this.subagents)) {
         this.subagents = running;
         this.emit({ type: "subagents", running: [...running] });
@@ -271,9 +298,8 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     const usage = this.lastUsage;
     this.lastUsage = undefined;
     if (!usage) return;
-    const tokens = (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0)
-      + (usage.cache_read_input_tokens ?? 0) + (usage.output_tokens ?? 0);
-    const windows = Object.values(event.modelUsage ?? {}).map((m) => m.contextWindow ?? 0);
+    const tokens = (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.output_tokens ?? 0);
+    const windows = Object.values(event.modelUsage ?? {}).map(m => m.contextWindow ?? 0);
     const window = windows.length ? Math.max(...windows) : 0;
     this.emit({ type: "context", tokens, ...(window ? { window } : {}) });
   }
@@ -293,7 +319,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
   private resultStatus(event: ClaudeEvent, setting?: SettingKind) {
     const acknowledged = !setting || (event.result ?? "").startsWith(setting === "model" ? MODEL_SUCCESS : EFFORT_SUCCESS);
     if (event.subtype === "success" && !event.is_error && acknowledged) return "completed" as const;
-    return this.interruptRequested ? "interrupted" as const : "failed" as const;
+    return this.interruptRequested ? ("interrupted" as const) : ("failed" as const);
   }
 
   protected handleExit(code: number | null): void {
@@ -306,7 +332,10 @@ export class ClaudeAdapter extends BaseAgentAdapter {
 }
 
 const mcpArgs = (url: string): string[] => [
-  "--mcp-config", JSON.stringify({ mcpServers: { [COORDINATOR_MCP_SERVER]: { type: "http", url } } }),
-  "--allowedTools", [SEND_MESSAGE_TOOL, ASK_USER_TOOL, READ_CONVERSATION_TOOL].map((tool) => `mcp__${COORDINATOR_MCP_SERVER}__${tool}`).join(","),
-  "--disallowedTools", "AskUserQuestion",
+  "--mcp-config",
+  JSON.stringify({ mcpServers: { [COORDINATOR_MCP_SERVER]: { type: "http", url } } }),
+  "--allowedTools",
+  [SEND_MESSAGE_TOOL, ASK_USER_TOOL, READ_CONVERSATION_TOOL].map(tool => `mcp__${COORDINATOR_MCP_SERVER}__${tool}`).join(","),
+  "--disallowedTools",
+  "AskUserQuestion",
 ];

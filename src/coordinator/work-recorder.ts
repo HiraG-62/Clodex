@@ -1,6 +1,6 @@
 import type { AgentEvent, AgentId } from "../agents/agent-adapter.js";
-import type { PendingQuestion } from "../protocol/questions.js";
 import type { ConversationRecovery } from "../project/recovery-store.js";
+import type { PendingQuestion } from "../protocol/questions.js";
 
 const LAST_ACTIONS_LIMIT = 5;
 type TurnWork = { plan?: string; actions: string[]; files: Set<string> };
@@ -24,7 +24,9 @@ export class WorkRecorder {
     return event.files ?? [];
   }
 
-  lastWork(id: AgentId): TurnWork | undefined { return this.turnWork[id]; }
+  lastWork(id: AgentId): TurnWork | undefined {
+    return this.turnWork[id];
+  }
 
   recoveryState(questions: PendingQuestion[], interrupted: AgentId[], queue: ConversationRecovery["queue"]): ConversationRecovery {
     const lastWork: NonNullable<ConversationRecovery["lastWork"]> = {};
@@ -38,7 +40,7 @@ export class WorkRecorder {
   recoveryWorkNote(work: NonNullable<ConversationRecovery["lastWork"]>[AgentId]): string {
     if (!work) return "";
     const plan = work.plan ? `Before the restart you were: ${work.plan}.` : "";
-    const actions = work.actions.length ? `Last actions:\n${work.actions.map((action) => `- ${action}`).join("\n")}` : "";
+    const actions = work.actions.length ? `Last actions:\n${work.actions.map(action => `- ${action}`).join("\n")}` : "";
     return `\n${[plan, actions].filter(Boolean).join(" ")}`;
   }
 }

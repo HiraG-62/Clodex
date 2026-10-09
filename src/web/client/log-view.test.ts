@@ -11,8 +11,12 @@ class ElementStub {
   innerHTML = "";
   hidden = false;
   constructor(readonly className = "") {}
-  append(...nodes: ElementStub[]) { this.children.push(...nodes); }
-  setAttribute(name: string, value: string) { this.attributes.set(name, value); }
+  append(...nodes: ElementStub[]) {
+    this.children.push(...nodes);
+  }
+  setAttribute(name: string, value: string) {
+    this.attributes.set(name, value);
+  }
   addEventListener() {}
 }
 
@@ -26,10 +30,14 @@ describe("createLogView", () => {
     };
     const ctx = {
       $: () => element(),
-      el: (_tag: string, className = "", text = "") => { const node = element(className); node.textContent = text; return node; },
+      el: (_tag: string, className = "", text = "") => {
+        const node = element(className);
+        node.textContent = text;
+        return node;
+      },
       icon: (name: string) => element(`icon-${name}`),
       mark: () => element("mark"),
-      t: (key: string) => key === "web.steer.delivered" ? "配達済み" : key,
+      t: (key: string) => (key === "web.steer.delivered" ? "配達済み" : key),
       clock: () => "00:00",
       AGENTS: { claude: { name: "Claude", mark: "C" }, codex: { name: "Codex", mark: "X" } },
       appendImagePreviews: vi.fn(),

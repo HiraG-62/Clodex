@@ -1,8 +1,19 @@
 export type SettingsItem = "rolePreset" | "sandbox" | "limits" | "sendKey" | "push" | "language" | "guiUpdate";
 export type SettingsSectionId = "project" | "device" | "clodex";
-export interface SettingsSection { id: SettingsSectionId; items: SettingsItem[] }
+export interface SettingsSection {
+  id: SettingsSectionId;
+  items: SettingsItem[];
+}
 
-export function settingsSections({ mobile, pushSupported, guiConnected }: { mobile: boolean; pushSupported: boolean; guiConnected: boolean }): SettingsSection[] {
+export function settingsSections({
+  mobile,
+  pushSupported,
+  guiConnected,
+}: {
+  mobile: boolean;
+  pushSupported: boolean;
+  guiConnected: boolean;
+}): SettingsSection[] {
   const sections: SettingsSection[] = [{ id: "project", items: ["rolePreset", "sandbox", "limits"] }];
   const device: SettingsItem[] = [];
   if (!mobile) device.push("sendKey");

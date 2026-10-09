@@ -1,7 +1,13 @@
 import {
+  type AgentAdapter,
+  type AgentEvent,
+  type AgentEventHandler,
+  type AgentId,
+  type AgentStartOptions,
+  type AgentStatus,
   DEFAULT_PERMISSION,
-  type AgentAdapter, type AgentEvent, type AgentEventHandler, type AgentId, type AgentStartOptions, type AgentStatus,
-  type PermissionLevel, type TurnResult,
+  type PermissionLevel,
+  type TurnResult,
 } from "./agent-adapter.js";
 import type { AgentProcess } from "./agent-process.js";
 
@@ -77,7 +83,7 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
     this.status = "busy";
     this.quietTurn = quiet;
     if (!quiet) this.emit({ type: "turn_started" });
-    const turn = new Promise<TurnResult>((resolve) => (this.resolveTurn = resolve));
+    const turn = new Promise<TurnResult>(resolve => (this.resolveTurn = resolve));
     try {
       write();
     } catch (error) {
@@ -90,7 +96,7 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
     if (this.status !== "idle") return;
     this.status = "busy";
     this.quietTurn = false;
-    this.spontaneousTurn = new Promise<TurnResult>((resolve) => (this.resolveTurn = resolve));
+    this.spontaneousTurn = new Promise<TurnResult>(resolve => (this.resolveTurn = resolve));
     this.emit({ type: "turn_started" });
   }
 
@@ -101,7 +107,7 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   stop(): Promise<void> {
     if (!this.proc) return Promise.resolve();
     // 複数の呼び出し元が同じ終了を待てるよう、停止中の Promise を共有する
-    this.stopping ??= new Promise<void>((resolve) => {
+    this.stopping ??= new Promise<void>(resolve => {
       this.resolveStop = resolve;
       this.proc?.kill();
     });
@@ -114,8 +120,8 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
 
   protected attach(proc: AgentProcess): void {
     this.proc = proc;
-    proc.onLine((line) => this.handleLine(line));
-    proc.onExit((code) => this.handleExit(code));
+    proc.onLine(line => this.handleLine(line));
+    proc.onExit(code => this.handleExit(code));
   }
 
   protected finishTurn(result: TurnResult): void {

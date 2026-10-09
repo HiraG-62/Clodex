@@ -1,13 +1,29 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { WebFeed, type FeedItem, type WebState } from "./web-feed.js";
+import { type FeedItem, WebFeed, type WebState } from "./web-feed.js";
 import { buildWebPage } from "./web-page.js";
 
 const PAGE = buildWebPage("ja");
+
 import { startWebServer, type WebServerHandle } from "./web-server.js";
 
 const TOKEN = "a".repeat(64);
 const COOKIE = `clodex_token=${TOKEN}`;
-const STATE: WebState = { project: "C:\app", primary: "claude", roles: { codex: "実装" }, agents: [], tabs: [], conversations: [], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } };
+const STATE: WebState = {
+  project: "C:app",
+  primary: "claude",
+  roles: { codex: "実装" },
+  agents: [],
+  tabs: [],
+  conversations: [],
+  pendingInputs: [],
+  pendingMessages: [],
+  questions: [],
+  processes: [],
+  language: "ja",
+  sandbox: { enabled: false, ready: false },
+  limitsUnlimited: false,
+  limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } },
+};
 
 let server: WebServerHandle | undefined;
 afterEach(async () => {
@@ -20,21 +36,26 @@ const setup = async (onInput?: (line: string) => Promise<void>) => {
   const inputs: string[] = [];
   const errors: unknown[] = [];
   server = await startWebServer({
-    port: 0, token: TOKEN, feed, page: PAGE, onInput: onInput ?? (async (line) => void inputs.push(line)), onError: (e) => errors.push(e),
+    port: 0,
+    token: TOKEN,
+    feed,
+    page: PAGE,
+    onInput: onInput ?? (async line => void inputs.push(line)),
+    onError: e => errors.push(e),
     listFiles: async () => ["README.md", "src/a.ts"],
     preview: {
-      file: async (path) => (path === "a.png"
-        ? { ok: true as const, contentType: "image/png", body: Buffer.from([1, 2]) }
-        : { ok: false as const, status: 404, message: `not found: ${path}` }),
+      file: async path =>
+        path === "a.png"
+          ? { ok: true as const, contentType: "image/png", body: Buffer.from([1, 2]) }
+          : { ok: false as const, status: 404, message: `not found: ${path}` },
       diff: async () => ({ ok: true as const, contentType: "text/plain; charset=utf-8", body: Buffer.from("+x") }),
     },
-    upload: { maxBytes: 4, accepts: (type) => type === "image/png", save: async (type, body) => `C:/up/${body.length}.${type.slice(6)}` },
+    upload: { maxBytes: 4, accepts: type => type === "image/png", save: async (type, body) => `C:/up/${body.length}.${type.slice(6)}` },
   });
   return { feed, inputs, errors, base: server.url };
 };
 
-const postInput = (base: string, body: string | Blob) =>
-  fetch(`${base}/api/input`, { method: "POST", headers: { cookie: COOKIE }, body });
+const postInput = (base: string, body: string | Blob) => fetch(`${base}/api/input`, { method: "POST", headers: { cookie: COOKIE }, body });
 
 // SSE の本文を指定の件数ぶん読む
 const readEvents = async (response: Response, count: number): Promise<FeedItem[]> => {
@@ -72,7 +93,8 @@ describe("startWebServer", () => {
       `${prefix}name%5csecret.woff2`,
       `${prefix}%00.woff2`,
       `${prefix}geist-sans-latin-400-normal.woff`,
-    ]) expect((await fetch(`${base}${path}`)).status).toBe(404);
+    ])
+      expect((await fetch(`${base}${path}`)).status).toBe(404);
   });
   it("言語変更後の HTML と版を接続中と新規の画面に配信する", async () => {
     const { base } = await setup();
@@ -81,11 +103,11 @@ describe("startWebServer", () => {
     expect(next.version).not.toBe(PAGE.version);
     server!.updatePage(next);
     expect(await readEvents(response, 2)).toEqual([
-      { type: "version", version: PAGE.version }, { type: "version", version: next.version },
+      { type: "version", version: PAGE.version },
+      { type: "version", version: next.version },
     ]);
     expect(await (await fetch(`${base}/`, { headers: { cookie: COOKIE } })).text()).toBe(next.html);
-    expect(await readEvents(await fetch(`${base}/events`, { headers: { cookie: COOKIE } }), 1))
-      .toEqual([{ type: "version", version: next.version }]);
+    expect(await readEvents(await fetch(`${base}/events`, { headers: { cookie: COOKIE } }), 1)).toEqual([{ type: "version", version: next.version }]);
   });
   it("127.0.0.1 だけで待ち受ける", async () => {
     const { base } = await setup();
@@ -141,7 +163,9 @@ describe("startWebServer", () => {
   it("POST /api/input の行を onInput に渡す", async () => {
     const { base, inputs } = await setup();
     const response = await fetch(`${base}/api/input`, {
-      method: "POST", headers: { cookie: COOKIE, "content-type": "application/json" }, body: JSON.stringify({ line: "@codex hi" }),
+      method: "POST",
+      headers: { cookie: COOKIE, "content-type": "application/json" },
+      body: JSON.stringify({ line: "@codex hi" }),
     });
     expect(response.status).toBe(204);
     expect(inputs).toEqual(["@codex hi"]);
@@ -162,7 +186,9 @@ describe("startWebServer", () => {
   });
 
   it("onInput が失敗したら 500 を返し、サーバーは動き続ける", async () => {
-    const { base, errors } = await setup(async () => { throw new Error("interrupt failed"); });
+    const { base, errors } = await setup(async () => {
+      throw new Error("interrupt failed");
+    });
     expect((await postInput(base, JSON.stringify({ line: "/interrupt" }))).status).toBe(500);
     expect(errors).toHaveLength(1);
     expect((await fetch(`${base}/`, { headers: { cookie: COOKIE } })).status).toBe(200);
@@ -243,7 +269,13 @@ it("履歴を認証付きで分割取得し、不正な before は 400", async (
   for (let i = 1; i <= 5; i++) feed.publishOutput(String(i));
   const response = await fetch(`${base}/api/history?before=5&limit=2`, { headers: { cookie: COOKIE } });
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ items: [{ type: "output", seq: 3, text: "3" }, { type: "output", seq: 4, text: "4" }], hasMore: true });
+  expect(await response.json()).toEqual({
+    items: [
+      { type: "output", seq: 3, text: "3" },
+      { type: "output", seq: 4, text: "4" },
+    ],
+    hasMore: true,
+  });
   for (const query of ["", "?before=", "?before=invalid", "?before=Infinity"]) {
     expect((await fetch(`${base}/api/history${query}`, { headers: { cookie: COOKIE } })).status).toBe(400);
   }
@@ -255,16 +287,23 @@ describe("Web Push", () => {
     const calls: string[] = [];
     const feed = new WebFeed();
     server = await startWebServer({
-      port: 0, token: TOKEN, feed, page: PAGE, onInput: async () => {},
+      port: 0,
+      token: TOKEN,
+      feed,
+      page: PAGE,
+      onInput: async () => {},
       listFiles: async () => [],
       preview: { file: async () => ({ ok: false as const, status: 404, message: "" }), diff: async () => ({ ok: false as const, status: 404, message: "" }) },
       upload: { maxBytes: 4, accepts: () => false, save: async () => "" },
       push: {
         publicKey: () => "KEY",
-        subscribe: (input) => ((input as { endpoint?: string }).endpoint ? "id1" : undefined),
-        unsubscribe: (id) => void calls.push(`unsubscribe ${id}`),
+        subscribe: input => ((input as { endpoint?: string }).endpoint ? "id1" : undefined),
+        unsubscribe: id => void calls.push(`unsubscribe ${id}`),
         setVisible: (id, visible) => void calls.push(`visible ${id} ${visible}`),
-        connect: (id, visible) => { calls.push(`connect ${id} ${visible}`); return { close: () => void calls.push(`close ${id}`) }; },
+        connect: (id, visible) => {
+          calls.push(`connect ${id} ${visible}`);
+          return { close: () => void calls.push(`close ${id}`) };
+        },
       },
     });
     return { base: server.url, calls };
@@ -296,9 +335,9 @@ describe("Web Push", () => {
     const { base, calls } = await setupPush();
     const controller = new AbortController();
     await fetch(`${base}/events?push=id1&visible=1`, { headers: { cookie: COOKIE }, signal: controller.signal });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise(resolve => setTimeout(resolve, 20));
     controller.abort();
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise(resolve => setTimeout(resolve, 20));
     expect(calls).toEqual(["connect id1 true", "close id1"]);
   });
 });
@@ -312,7 +351,7 @@ describe("GUI の更新の中継", () => {
     const { base } = await setup();
     const phone = await events(base);
     const gui = await events(base, "?gui=0.1.2-dev.3");
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise(resolve => setTimeout(resolve, 20));
     expect((await post(base, "/api/gui/update", { action: "check" })).status).toBe(204);
     expect((await post(base, "/api/gui/status", { status: "available", version: "0.1.2-dev.4" })).status).toBe(204);
     expect((await readEvents(phone, 4)).slice(1)).toEqual([
@@ -337,7 +376,7 @@ describe("GUI の更新の中継", () => {
     const phone = await events(base);
     const controller = new AbortController();
     await fetch(`${base}/events?gui=0.1.2`, { headers: { cookie: COOKIE }, signal: controller.signal });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise(resolve => setTimeout(resolve, 20));
     controller.abort();
     expect((await readEvents(phone, 3)).slice(1)).toEqual([
       { type: "gui", gui: { version: "0.1.2" } },
@@ -349,7 +388,7 @@ describe("GUI の更新の中継", () => {
   it("不正な依頼・結果は 400、token が無ければ 401", async () => {
     const { base } = await setup();
     await events(base, "?gui=0.1.2");
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise(resolve => setTimeout(resolve, 20));
     expect((await post(base, "/api/gui/update", { action: "remove" })).status).toBe(400);
     expect((await post(base, "/api/gui/status", { status: "available" })).status).toBe(400);
     expect((await post(base, "/api/gui/status", { status: "error" })).status).toBe(400);

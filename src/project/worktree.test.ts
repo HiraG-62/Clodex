@@ -8,7 +8,8 @@ import { createWorktree, worktreePlace } from "./worktree.js";
 describe("worktreePlace", () => {
   it("project の隣に project 名と会話の短い ID で置き、clodex/ のブランチにする", () => {
     expect(worktreePlace(join("C:", "dev", "app"), "1a2b3c4d-5e6f-7a8b")).toEqual({
-      workDir: join("C:", "dev", "app-1a2b3c4d"), branch: "clodex/1a2b3c4d",
+      workDir: join("C:", "dev", "app-1a2b3c4d"),
+      branch: "clodex/1a2b3c4d",
     });
   });
 });

@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { EXIT_CODE_SUFFIX, UTF8_PREFIX, createCommandRunner, type CommandProcess } from "./command-runner.js";
+import { type CommandProcess, createCommandRunner, EXIT_CODE_SUFFIX, UTF8_PREFIX } from "./command-runner.js";
 
 class FakeProcess extends EventEmitter implements CommandProcess {
   readonly stdout = new PassThrough();
@@ -16,7 +16,7 @@ class FakeProcess extends EventEmitter implements CommandProcess {
   }
 }
 
-const flush = () => new Promise((resolve) => setImmediate(resolve));
+const flush = () => new Promise(resolve => setImmediate(resolve));
 
 const setup = (missing: string[] = []) => {
   const printed: string[] = [];
@@ -27,7 +27,10 @@ const setup = (missing: string[] = []) => {
   let time = 0;
   const runner = createCommandRunner({
     cwd: "C:\\app",
-    print: (line, command) => { printed.push(line); if (command) lifecycle.push(command); },
+    print: (line, command) => {
+      printed.push(line);
+      if (command) lifecycle.push(command);
+    },
     spawnShell: (file, args, cwd) => {
       spawned.push({ file, args, cwd });
       const child = new FakeProcess(100 + spawned.length);
@@ -42,10 +45,20 @@ const setup = (missing: string[] = []) => {
       }
       return child;
     },
-    killTree: (pid) => killed.push(pid),
+    killTree: pid => killed.push(pid),
     now: () => time,
   });
-  return { runner, printed, lifecycle, spawned, processes, killed, advance: (ms: number) => { time += ms; } };
+  return {
+    runner,
+    printed,
+    lifecycle,
+    spawned,
+    processes,
+    killed,
+    advance: (ms: number) => {
+      time += ms;
+    },
+  };
 };
 
 describe("createCommandRunner", () => {
@@ -54,12 +67,20 @@ describe("createCommandRunner", () => {
     const first = runner.run("first");
     const second = runner.run("second");
     processes[0]!.stdout.write("error: output\nexit 0 (1s)\n");
-    expect(lifecycle).toEqual([{ id: 1, phase: "start" }, { id: 2, phase: "start" }]);
+    expect(lifecycle).toEqual([
+      { id: 1, phase: "start" },
+      { id: 2, phase: "start" },
+    ]);
     processes[1]!.close(0);
     await second;
     processes[0]!.close(1);
     await first;
-    expect(lifecycle).toEqual([{ id: 1, phase: "start" }, { id: 2, phase: "start" }, { id: 2, phase: "exit" }, { id: 1, phase: "exit" }]);
+    expect(lifecycle).toEqual([
+      { id: 1, phase: "start" },
+      { id: 2, phase: "start" },
+      { id: 2, phase: "exit" },
+      { id: 1, phase: "exit" },
+    ]);
   });
 
   it("終了時に終了コード・停止の有無・出力の行を返す", async () => {
@@ -78,13 +99,19 @@ describe("createCommandRunner", () => {
   it("起動失敗・停止でも開始時と同じ ID で終了を通知する", async () => {
     const failed = setup(["pwsh", "powershell"]);
     await failed.runner.run("missing");
-    expect(failed.lifecycle).toEqual([{ id: 1, phase: "start" }, { id: 1, phase: "exit" }]);
+    expect(failed.lifecycle).toEqual([
+      { id: 1, phase: "start" },
+      { id: 1, phase: "exit" },
+    ]);
     const stopped = setup();
     const done = stopped.runner.run("long");
     stopped.runner.stopAll();
     stopped.processes[0]!.close(1);
     await done;
-    expect(stopped.lifecycle).toEqual([{ id: 1, phase: "start" }, { id: 1, phase: "exit" }]);
+    expect(stopped.lifecycle).toEqual([
+      { id: 1, phase: "start" },
+      { id: 1, phase: "exit" },
+    ]);
   });
   it("project root で pwsh を UTF-8 指定付きで起動し、出力を行ごとに表示して終了コードを出す", async () => {
     const { runner, printed, spawned, processes, advance } = setup();
@@ -115,7 +142,7 @@ describe("createCommandRunner", () => {
   it("実際の PowerShell で、構文エラーを化けずに出し、native command の終了コードを返す", async () => {
     const run = async (command: string) => {
       const printed: string[] = [];
-      const runner = createCommandRunner({ cwd: process.cwd(), print: (line) => printed.push(line) });
+      const runner = createCommandRunner({ cwd: process.cwd(), print: line => printed.push(line) });
       return { result: await runner.run(command), output: printed.join("\n") };
     };
     const parseError = await run("! git push");
@@ -134,17 +161,17 @@ describe("createCommandRunner", () => {
     const second = runner.run("dir");
     processes[1]!.close(0);
     await second;
-    expect(spawned.map((s) => s.file)).toEqual(["pwsh", "powershell", "powershell"]);
-    expect(printed.filter((line) => line.startsWith("exit"))).toHaveLength(2);
+    expect(spawned.map(s => s.file)).toEqual(["pwsh", "powershell", "powershell"]);
+    expect(printed.filter(line => line.startsWith("exit"))).toHaveLength(2);
   });
 
   it("同時に実行した command がどちらも pwsh で失敗しても、それぞれ powershell で実行する", async () => {
     const { runner, spawned, processes } = setup(["pwsh"]);
     const both = [runner.run("a"), runner.run("b")];
     await flush();
-    processes.forEach((child) => child.close(0));
+    processes.forEach(child => child.close(0));
     await Promise.all(both);
-    expect(spawned.map((s) => s.file)).toEqual(["pwsh", "pwsh", "powershell", "powershell"]);
+    expect(spawned.map(s => s.file)).toEqual(["pwsh", "pwsh", "powershell", "powershell"]);
   });
 
   it("シェルを起動できなければ error を表示する", async () => {
@@ -170,12 +197,16 @@ describe("createCommandRunner", () => {
     void runner.run("first");
     void runner.run("second");
     let idle = false;
-    void runner.idle().then(() => { idle = true; });
+    void runner.idle().then(() => {
+      idle = true;
+    });
     processes[0]!.close(0);
-    await flush(); await flush();
+    await flush();
+    await flush();
     expect(idle).toBe(false);
     processes[1]!.close(0);
-    await flush(); await flush();
+    await flush();
+    await flush();
     expect(idle).toBe(true);
   });
 });

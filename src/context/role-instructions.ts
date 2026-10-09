@@ -1,12 +1,12 @@
 // Agent の起動時に system prompt へ追加する定型文と役割（DESIGN.md §13 Roles）
-import { AGENT_IDS, COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, ASK_USER_TOOL, READ_CONVERSATION_TOOL, type AgentId } from "../agents/agent-adapter.js";
+import { AGENT_IDS, type AgentId, ASK_USER_TOOL, COORDINATOR_MCP_SERVER, READ_CONVERSATION_TOOL, SEND_MESSAGE_TOOL } from "../agents/agent-adapter.js";
 import type { RolesConfig } from "../config/config.js";
 import { BODY_FORMAT } from "./context-resolver.js";
-import { languageDirective, type Language } from "./language.js";
+import { type Language, languageDirective } from "./language.js";
 
 const NOT_SPECIFIED = "not specified";
 
-const peerOf = (agent: AgentId): AgentId => AGENT_IDS.find((id) => id !== agent)!;
+const peerOf = (agent: AgentId): AgentId => AGENT_IDS.find(id => id !== agent)!;
 
 const header = (agent: AgentId, peer: AgentId) =>
   `[Clodex] You are the "${agent}" agent in Clodex, working with a peer agent "${peer}" on the same repository.`;
@@ -14,13 +14,11 @@ const header = (agent: AgentId, peer: AgentId) =>
 const SEND_TOOL = `the ${SEND_MESSAGE_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server`;
 
 // -p / app-server では人がその場で承認できないので、/permission を案内させる（DESIGN.md §9 Permission）
-const PERMISSION_NOTE =
-  "The human cannot approve tool permissions interactively. If an action is denied, say so and suggest the Clodex /permission command.";
+const PERMISSION_NOTE = "The human cannot approve tool permissions interactively. If an action is denied, say so and suggest the Clodex /permission command.";
 
 // 指示してから完了するまで何も見えない状態を避ける（DESIGN.md §17 ログの「方針」）
 // 割り込みは手戻りを防ぐときだけ（DESIGN.md §28 v0.3 C）
-const INTERRUPT_NOTE =
-  "Set interrupt: true on send_message only for corrections to work the peer is doing for you that would otherwise be wasted.";
+const INTERRUPT_NOTE = "Set interrupt: true on send_message only for corrections to work the peer is doing for you that would otherwise be wasted.";
 // 公式の subagent でコンテキストを分ける・並列にする（DESIGN.md §28 v0.3 C）
 const SUBAGENT_NOTE =
   "Use your built-in sub-agents for work that can run in parallel independently, and for work that is better done " +
@@ -60,12 +58,19 @@ export interface RoleInstructionOptions {
   artifactsDir?: string;
 }
 
-export const buildRoleInstructions = (
-  agent: AgentId, roles: RolesConfig | undefined, { language, artifactsDir }: RoleInstructionOptions = {},
-): string => {
+export const buildRoleInstructions = (agent: AgentId, roles: RolesConfig | undefined, { language, artifactsDir }: RoleInstructionOptions = {}): string => {
   const peer = peerOf(agent);
   return [
-    header(agent, peer), ...roleLines(agent, peer, roles), PERMISSION_NOTE, PLAN_NOTE, ASK_USER_NOTE, READ_CONVERSATION_NOTE, SPEC_NOTE, BODY_FORMAT, INTERRUPT_NOTE, SUBAGENT_NOTE,
+    header(agent, peer),
+    ...roleLines(agent, peer, roles),
+    PERMISSION_NOTE,
+    PLAN_NOTE,
+    ASK_USER_NOTE,
+    READ_CONVERSATION_NOTE,
+    SPEC_NOTE,
+    BODY_FORMAT,
+    INTERRUPT_NOTE,
+    SUBAGENT_NOTE,
     ...(artifactsDir ? [artifactsNote(artifactsDir)] : []),
     ...(language ? [languageDirective(language)] : []),
   ].join("\n");

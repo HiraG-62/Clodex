@@ -1,23 +1,23 @@
 // 人間の入力を Coordinator の操作に変換する（DESIGN.md §8）。readline 等の I/O は index.ts が持つ
-import { DEFAULT_LIMITS, LIMIT_KEYS, LIMIT_NAMES, type BudgetLimits, type LimitName } from "../coordinator/budget-manager.js";
-import { getLanguage } from "../i18n/i18n.js";
-import { ROLE_PRESET_NAMES, ROLE_PRESETS, isRolePresetName, type RolePresetName } from "../config/role-presets.js";
-import type { MessageKey } from "../i18n/messages.js";
-import type { Language } from "../context/language.js";
-import type { PendingQuestion } from "../protocol/questions.js";
+
 import { AGENT_IDS, type AgentId, type AgentStatus, type PermissionLevel, type SubagentState, type TurnResult } from "../agents/agent-adapter.js";
-import type { SoloMode, PendingMessage } from "../coordinator/coordinator.js";
-import type { HubProjectEntry, ProjectRemoveError } from "../hub/hub.js";
+import type { ModelOption } from "../agents/startup-probe.js";
+import { isRolePresetName, ROLE_PRESET_NAMES, ROLE_PRESETS, type RolePresetName } from "../config/role-presets.js";
+import type { Language } from "../context/language.js";
+import { type BudgetLimits, DEFAULT_LIMITS, LIMIT_KEYS, LIMIT_NAMES, type LimitName } from "../coordinator/budget-manager.js";
+import type { PendingMessage, SoloMode } from "../coordinator/coordinator.js";
 import type { UsageSnapshot } from "../coordinator/usage-monitor.js";
+import type { HubProjectEntry, ProjectRemoveError } from "../hub/hub.js";
+import { getLanguage, t } from "../i18n/i18n.js";
+import type { MessageKey } from "../i18n/messages.js";
+import type { ProcessManager } from "../process/process-manager.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
-import { t } from "../i18n/i18n.js";
+import type { PendingQuestion } from "../protocol/questions.js";
+import { commandResultMessage } from "./command-result.js";
+import type { CommandResult } from "./command-runner.js";
 import { commandUsage, slashCommands } from "./commands.js";
 import { resolveReferences } from "./file-references.js";
 import { parseInput, type ShellCommand } from "./input.js";
-import { commandResultMessage } from "./command-result.js";
-import type { CommandResult } from "./command-runner.js";
-import type { ModelOption } from "../agents/startup-probe.js";
-import type { ProcessManager } from "../process/process-manager.js";
 
 export interface AgentState {
   id: AgentId;
@@ -145,7 +145,7 @@ const HELP_LINES = (primary: AgentId) => [
   helpLine("!<command>", t("help.run")),
   helpLine("!& <command>", t("help.background")),
   helpLine("!> <command>", t("help.runAndSend")),
-  ...slashCommands().map((command) => helpLine(commandUsage(command), command.description)),
+  ...slashCommands().map(command => helpLine(commandUsage(command), command.description)),
   helpLine("Ctrl+C", t("help.ctrlC")),
 ];
 
@@ -184,7 +184,6 @@ const formatContext = ({ contextTokens, contextWindow }: UsageSnapshot): string 
   return t("shell.context", { value: t("shell.contextWindow", { tokens: kTokens(contextTokens), window: kTokens(contextWindow), percent }) });
 };
 
-
 const agentsOf = (c: Conversation) => (Object.keys(c.sessions) as AgentId[]).sort().join(", ");
 const titleOf = (c: Conversation) => `"${c.title ?? t("shell.untitled")}"`;
 const ROLE_PRESET_LABELS: Record<RolePresetName, MessageKey> = {
@@ -194,20 +193,36 @@ const ROLE_PRESET_LABELS: Record<RolePresetName, MessageKey> = {
 };
 
 export const createShell = ({
-  coordinator, primary: initialPrimary, print, notify, toggleVerbose, history: historySource, runner, saveSettings = () => {}, resolveReference = async () => undefined,
-  busyElsewhere = () => false, processes,
+  coordinator,
+  primary: initialPrimary,
+  print,
+  notify,
+  toggleVerbose,
+  history: historySource,
+  runner,
+  saveSettings = () => {},
+  resolveReference = async () => undefined,
+  busyElsewhere = () => false,
+  processes,
   projects,
-  language, sandbox, limits: projectLimits, roles = () => ({}), worktreeSetup = () => undefined, saveRole = (_agent, text) => text,
+  language,
+  sandbox,
+  limits: projectLimits,
+  roles = () => ({}),
+  worktreeSetup = () => undefined,
+  saveRole = (_agent, text) => text,
 }: ShellOptions) => {
   let primary = initialPrimary;
   const history = typeof historySource === "function" ? historySource : () => historySource;
   const targets = (agent: AgentId | undefined): readonly AgentId[] => (agent ? [agent] : AGENT_IDS);
 
   const listConversations = () => {
-    history().list().forEach((c, i) => {
-      const current = c.id === history().currentId ? t("shell.current") : "";
-      print(`${i + 1}) ${shortTime(c.updatedAt)}  ${agentsOf(c)}  ${titleOf(c)}${current}`);
-    });
+    history()
+      .list()
+      .forEach((c, i) => {
+        const current = c.id === history().currentId ? t("shell.current") : "";
+        print(`${i + 1}) ${shortTime(c.updatedAt)}  ${agentsOf(c)}  ${titleOf(c)}${current}`);
+      });
     print(t("shell.resumeHint"));
   };
 
@@ -220,7 +235,10 @@ export const createShell = ({
     }
     const error = await history().startNew({ worktree });
     if (error) return notify(t("shell.worktreeFailed", { error }), "warn");
-    const { workDir, branch } = history().list().find((c) => c.id === history().currentId) ?? {};
+    const { workDir, branch } =
+      history()
+        .list()
+        .find(c => c.id === history().currentId) ?? {};
     notify(workDir && branch ? t("shell.newWorktree", { workDir, branch }) : t("shell.newConversation"));
     const setupCommand = worktree ? worktreeSetup() : undefined;
     // 終了を待たずに次の入力を受け付ける。出力は runner が表示する
@@ -244,9 +262,10 @@ export const createShell = ({
   const answerQuestion = (id: string, text: string): void => {
     const recipient = coordinator();
     let answers: unknown;
-    try { answers = JSON.parse(text); }
-    catch {
-      const question = recipient.pendingQuestions().find((item) => item.id === id);
+    try {
+      answers = JSON.parse(text);
+    } catch {
+      const question = recipient.pendingQuestions().find(item => item.id === id);
       if (!question) return notify(t("question.missing"), "warn");
       if (question.questions.length !== 1) return notify(t("question.invalid"), "warn");
       answers = [[text]];
@@ -258,7 +277,9 @@ export const createShell = ({
   // project を開く前は会話が無い（history() が例外になる）ので、solo も無い
   const currentSolo = (): SoloMode | undefined => {
     if (projects?.hasCurrent && !projects.hasCurrent()) return undefined;
-    return history().list().find((c) => c.id === history().currentId)?.solo;
+    return history()
+      .list()
+      .find(c => c.id === history().currentId)?.solo;
   };
   // solo で送り先が固定されていれば、その Agent 以外への送信を拒否する（DESIGN.md §11 Solo）
   const lockedAgent = (): AgentId | undefined => {
@@ -267,12 +288,11 @@ export const createShell = ({
   };
   const rejectLocked = (targets: readonly AgentId[]): boolean => {
     const locked = lockedAgent();
-    if (!locked || targets.every((agent) => agent === locked)) return false;
+    if (!locked || targets.every(agent => agent === locked)) return false;
     notify(t("reject.soloLocked", { agent: locked }), "warn");
     return true;
   };
-  const soloLabel = (mode: SoloMode | undefined) =>
-    !mode ? t("shell.soloOff") : mode === "free" ? t("shell.solo") : t("shell.soloAgent", { agent: mode });
+  const soloLabel = (mode: SoloMode | undefined) => (!mode ? t("shell.soloOff") : mode === "free" ? t("shell.solo") : t("shell.soloAgent", { agent: mode }));
 
   type CommandOf<K extends ShellCommand["kind"]> = Extract<ShellCommand, { kind: K }>;
   const handleAnswer = async (command: CommandOf<"answer">): Promise<ShellOutcome> => {
@@ -311,7 +331,7 @@ export const createShell = ({
     if (rejectLocked([agent])) return "continue";
     // 終わったときに会話が切り替わっていても、実行を始めた会話に送る
     const recipient = coordinator();
-    void runner.run(command.command).then((result) => {
+    void runner.run(command.command).then(result => {
       if (result.stopped) return;
       void recipient.sendToAgent(agent, commandResultMessage(command.command, result));
     });
@@ -345,23 +365,39 @@ export const createShell = ({
   const handleStatus = async (command: CommandOf<"status">): Promise<ShellOutcome> => {
     print(t("shell.primary", { agent: primary }));
     {
-      const { workDir, branch } = history().list().find((c) => c.id === history().currentId) ?? {};
+      const { workDir, branch } =
+        history()
+          .list()
+          .find(c => c.id === history().currentId) ?? {};
       if (workDir && branch) print(t("shell.worktree", { workDir, branch }));
       const solo = currentSolo();
       if (solo) print(soloLabel(solo));
     }
     for (const { id, status, sessionId, permission, model, modelLabel, effort, usage } of coordinator().status()) {
-      print(t("shell.status", {
-        id, status, permission, model: modelLabel ?? model ?? t("shell.default"), effort: effort ?? t("shell.default"),
-        session: sessionId ? t("shell.session", { id: sessionId }) : "",
-      }));
+      print(
+        t("shell.status", {
+          id,
+          status,
+          permission,
+          model: modelLabel ?? model ?? t("shell.default"),
+          effort: effort ?? t("shell.default"),
+          session: sessionId ? t("shell.session", { id: sessionId }) : "",
+        }),
+      );
       print(formatUsage(usage));
       print(formatContext(usage));
     }
     for (const input of coordinator().pendingInputs()) print(t("shell.queued", { id: input.id, agent: input.agent, text: input.text }));
-    for (const message of coordinator().pendingMessages()) print(t("shell.queuedMessage", {
-      id: message.id, from: message.from, agent: message.agent, type: message.type, text: message.text.split(/\r?\n/, 1)[0] ?? "",
-    }));
+    for (const message of coordinator().pendingMessages())
+      print(
+        t("shell.queuedMessage", {
+          id: message.id,
+          from: message.from,
+          agent: message.agent,
+          type: message.type,
+          text: message.text.split(/\r?\n/, 1)[0] ?? "",
+        }),
+      );
     return "continue";
   };
   const handleProject = async (command: CommandOf<"project">): Promise<ShellOutcome> => {
@@ -387,10 +423,11 @@ export const createShell = ({
       return "continue";
     }
     if (!projects?.list().length) print(t("shell.noProjects"));
-    else for (const project of projects.list()) {
-      const status = project.current ? t("shell.projectCurrent") : project.open ? "" : t("shell.projectSaved");
-      print(`${project.projectRoot}${status}${project.pinned ? t("shell.projectPinnedMark") : ""}`);
-    }
+    else
+      for (const project of projects.list()) {
+        const status = project.current ? t("shell.projectCurrent") : project.open ? "" : t("shell.projectSaved");
+        print(`${project.projectRoot}${status}${project.pinned ? t("shell.projectPinnedMark") : ""}`);
+      }
     return "continue";
   };
   const handleTab = async (command: CommandOf<"tab">): Promise<ShellOutcome> => {
@@ -444,9 +481,7 @@ export const createShell = ({
   };
   const handleCancel = async (command: CommandOf<"cancel">): Promise<ShellOutcome> => {
     const canceled = coordinator().cancelInput(command.id);
-    print(canceled
-      ? t("shell.canceled", { id: canceled.id, agent: canceled.agent })
-      : t("shell.nothingToCancel", { id: command.id ? `: ${command.id}` : "" }));
+    print(canceled ? t("shell.canceled", { id: canceled.id, agent: canceled.agent }) : t("shell.nothingToCancel", { id: command.id ? `: ${command.id}` : "" }));
     return "continue";
   };
   const handleNew = async (command: CommandOf<"new">): Promise<ShellOutcome> => {
@@ -500,14 +535,16 @@ export const createShell = ({
     return "continue";
   };
   const handleHelp = async (command: CommandOf<"help">): Promise<ShellOutcome> => {
-    HELP_LINES(primary).forEach((l) => print(l));
+    HELP_LINES(primary).forEach(l => print(l));
     return "continue";
   };
   const handleLanguage = async (command: CommandOf<"language">): Promise<ShellOutcome> => {
     try {
       if (command.value) await language?.set(command.value);
       print(t("shell.language", { language: language?.get() ?? getLanguage() }));
-    } catch (error) { print(t("shell.languageFailed", { message: error instanceof Error ? error.message : String(error) })); }
+    } catch (error) {
+      print(t("shell.languageFailed", { message: error instanceof Error ? error.message : String(error) }));
+    }
     return "continue";
   };
   const handleSandbox = async (command: CommandOf<"sandbox">): Promise<ShellOutcome> => {
@@ -515,8 +552,10 @@ export const createShell = ({
       if (!sandbox) throw new Error(t("sandbox.incomplete"));
       if (command.action === "uninstall") await sandbox.uninstall();
       else if (command.action) await sandbox.set(command.action === "on");
-      print(t("sandbox.status", { state: sandbox.enabled() ? "on" : "off", setup: t(await sandbox.ready() ? "sandbox.ready" : "sandbox.incomplete") }));
-    } catch (error) { print(t("sandbox.failed", {message:error instanceof Error ? error.message : String(error)})); }
+      print(t("sandbox.status", { state: sandbox.enabled() ? "on" : "off", setup: t((await sandbox.ready()) ? "sandbox.ready" : "sandbox.incomplete") }));
+    } catch (error) {
+      print(t("sandbox.failed", { message: error instanceof Error ? error.message : String(error) }));
+    }
     return "continue";
   };
   const handleLimits = async (command: CommandOf<"limits">): Promise<ShellOutcome> => {
@@ -541,7 +580,10 @@ export const createShell = ({
     return "continue";
   };
   const handlePermission = async (command: CommandOf<"permission">): Promise<ShellOutcome> => {
-    if (sandbox?.enabled()) { print(t("sandbox.permission")); return "continue"; }
+    if (sandbox?.enabled()) {
+      print(t("sandbox.permission"));
+      return "continue";
+    }
     await coordinator().setPermission(command.level, command.agent);
     saveSettings(targets(command.agent), { permission: command.level });
     print(t("shell.permission", { target: command.agent ?? t("shell.allAgents"), level: command.level }));
@@ -549,14 +591,20 @@ export const createShell = ({
   };
   const handleModel = async (command: CommandOf<"model">): Promise<ShellOutcome> => {
     const result = await coordinator().setModel(command.model, command.agent);
-    if (result?.status === "failed") { notify(result.text, "warn"); return "continue"; }
+    if (result?.status === "failed") {
+      notify(result.text, "warn");
+      return "continue";
+    }
     saveSettings([command.agent], { model: command.model });
     print(t("shell.model", { agent: command.agent, model: command.model }));
     return "continue";
   };
   const handleEffort = async (command: CommandOf<"effort">): Promise<ShellOutcome> => {
     const result = await coordinator().setEffort(command.level, command.agent);
-    if (result?.status === "failed") { notify(result.text, "warn"); return "continue"; }
+    if (result?.status === "failed") {
+      notify(result.text, "warn");
+      return "continue";
+    }
     saveSettings(targets(command.agent), { effort: command.level });
     print(t("shell.effort", { target: command.agent ?? t("shell.allAgents"), level: command.level }));
     return "continue";
@@ -619,7 +667,9 @@ export const createShell = ({
   };
 
   const handleSigint = async (): Promise<void> => {
-    const busy = coordinator().status().filter((s) => s.status === "busy");
+    const busy = coordinator()
+      .status()
+      .filter(s => s.status === "busy");
     const stoppedCommands = runner.stopAll();
     if (busy.length === 0 && stoppedCommands === 0) {
       print(t("shell.noTurn"));

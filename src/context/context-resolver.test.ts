@@ -21,21 +21,23 @@ describe("buildEnvelope", () => {
     expect(envelope).toContain("Status: done\nAuto: the recipient ended its turn without send_message; this is its final reply.\n");
   });
   it("依頼系は参照情報・本文・返信方法を含む", () => {
-    expect(buildEnvelope(base)).toBe([
-      "[Clodex] Message msg_1a2b3c4d from claude",
-      "Type: REVIEW_REQUEST",
-      "Task: AUTH-142",
-      "Repository: C:\\dev\\my-app",
-      "Commit: a82f39c",
-      "Files:",
-      "- src/auth/refresh.ts",
-      "",
-      "refresh token の race condition をレビュー",
-      "",
-      'Reply with the send_message tool of the "clodex" MCP server (not a shell command): to="claude", type="RESULT", taskId="AUTH-142", replyTo="msg_1a2b3c4d".',
-      "Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.",
-      "Write body in Markdown: a one-line summary first, then bullet points. Do not write one long paragraph.",
-    ].join("\n"));
+    expect(buildEnvelope(base)).toBe(
+      [
+        "[Clodex] Message msg_1a2b3c4d from claude",
+        "Type: REVIEW_REQUEST",
+        "Task: AUTH-142",
+        "Repository: C:\\dev\\my-app",
+        "Commit: a82f39c",
+        "Files:",
+        "- src/auth/refresh.ts",
+        "",
+        "refresh token の race condition をレビュー",
+        "",
+        'Reply with the send_message tool of the "clodex" MCP server (not a shell command): to="claude", type="RESULT", taskId="AUTH-142", replyTo="msg_1a2b3c4d".',
+        "Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.",
+        "Write body in Markdown: a one-line summary first, then bullet points. Do not write one long paragraph.",
+      ].join("\n"),
+    );
   });
 
   it("省略可能なフィールドが無ければその行を出さない", () => {
@@ -85,7 +87,8 @@ describe("buildEnvelope の言語", () => {
 });
 
 it("spec は Commit と Files の間、指示は本文と返信方法の間に入る", () => {
-  const instruction = "Read the spec before you start and follow it. If the spec conflicts with the code or is unclear, ask with a QUESTION instead of guessing.";
+  const instruction =
+    "Read the spec before you start and follow it. If the spec conflicts with the code or is unclear, ask with a QUESTION instead of guessing.";
   const text = buildEnvelope({ ...base, spec: "docs/specs/T.md" });
   expect(text).toContain("Commit: a82f39c\nSpec: docs/specs/T.md\nFiles:");
   expect(text).toContain(`${base.body}\n\n${instruction}\nReply with`);

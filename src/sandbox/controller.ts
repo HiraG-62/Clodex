@@ -27,24 +27,39 @@ export class SandboxController {
   private available = false;
   private changing = false;
   private setupComplete = false;
-  get setupReady(): boolean { return this.setupComplete; }
-  get enabled(): boolean { return this.active; }
-  get usable(): boolean { return !this.active || this.available; }
-  constructor(readonly platform: SandboxPlatform, private readonly lifecycle: SandboxLifecycle) {
+  get setupReady(): boolean {
+    return this.setupComplete;
+  }
+  get enabled(): boolean {
+    return this.active;
+  }
+  get usable(): boolean {
+    return !this.active || this.available;
+  }
+  constructor(
+    readonly platform: SandboxPlatform,
+    private readonly lifecycle: SandboxLifecycle,
+  ) {
     this.setupComplete = platform.setupRecorded?.() ?? false;
   }
 
-  invalidateSetup(): void { this.setupComplete = false; }
+  invalidateSetup(): void {
+    this.setupComplete = false;
+  }
 
   async prepare(): Promise<void> {
-    if (!await this.platform.inspect()) throw new Error(t("sandbox.incomplete"));
+    if (!(await this.platform.inspect())) throw new Error(t("sandbox.incomplete"));
     try {
       await this.platform.connect();
       const { projects, artifacts } = this.lifecycle.paths();
       for (const path of new Set(projects)) await this.platform.grant(path, true);
       await this.platform.grant(artifacts, false);
     } catch (error) {
-      try { await this.platform.release(); } finally { await this.platform.close(); }
+      try {
+        await this.platform.release();
+      } finally {
+        await this.platform.close();
+      }
       throw error;
     }
   }
@@ -52,10 +67,12 @@ export class SandboxController {
   async initialize(): Promise<void> {
     this.active = true;
     try {
-      if (!await this.ready()) throw new Error(t("sandbox.incomplete"));
+      if (!(await this.ready())) throw new Error(t("sandbox.incomplete"));
       await this.prepare();
       this.available = true;
-    } catch { this.lifecycle.notify?.(t("sandbox.incomplete")); }
+    } catch {
+      this.lifecycle.notify?.(t("sandbox.incomplete"));
+    }
   }
 
   async setEnabled(enabled: boolean): Promise<void> {
@@ -64,21 +81,37 @@ export class SandboxController {
     try {
       let stopped = false;
       if (this.active === enabled && this.usable) {
-        if (!enabled) { await this.platform.release(); await this.platform.close(); return; }
-        if (!this.platform.ready || await this.platform.ready()) return;
+        if (!enabled) {
+          await this.platform.release();
+          await this.platform.close();
+          return;
+        }
+        if (!this.platform.ready || (await this.platform.ready())) return;
         this.available = false;
         await this.lifecycle.stop();
         stopped = true;
       }
-      if (enabled) { await this.platform.setup?.(); await this.prepare(); }
-      try { if (!stopped) await this.lifecycle.stop(); }
-      catch (error) {
-        if (enabled) { try { await this.platform.release(); } finally { await this.platform.close(); } }
+      if (enabled) {
+        await this.platform.setup?.();
+        await this.prepare();
+      }
+      try {
+        if (!stopped) await this.lifecycle.stop();
+      } catch (error) {
+        if (enabled) {
+          try {
+            await this.platform.release();
+          } finally {
+            await this.platform.close();
+          }
+        }
         throw error;
       }
       if (!enabled) {
-        try { await this.platform.release(); await this.platform.close(); }
-        catch (error) {
+        try {
+          await this.platform.release();
+          await this.platform.close();
+        } catch (error) {
           this.lifecycle.notify?.(t("sandbox.releaseFailed"));
           if (this.active && this.available) {
             this.available = false;
@@ -93,7 +126,9 @@ export class SandboxController {
       this.available = enabled;
       this.lifecycle.save(enabled);
       await this.lifecycle.restart();
-    } finally { this.changing = false; }
+    } finally {
+      this.changing = false;
+    }
   }
 
   async ready(): Promise<boolean> {
@@ -114,7 +149,9 @@ export class SandboxController {
       this.active = false;
       this.lifecycle.save(false);
       await this.lifecycle.restart();
-    } finally { this.changing = false; }
+    } finally {
+      this.changing = false;
+    }
   }
 
   async allowWorktree(path: string): Promise<void> {

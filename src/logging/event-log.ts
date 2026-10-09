@@ -24,18 +24,30 @@ const usage = (label: string, w: RateLimitWindow | undefined) => (w ? [`${label}
 
 const describeAgentEvent = (event: AgentEvent): string => {
   switch (event.type) {
-    case "session": return `session ${event.sessionId}`;
-    case "text": return event.text;
-    case "tool": return `tool ${event.name} ${event.input}`;
-    case "turn_started": return "working...";
-    case "turn": return `turn ${event.result.status}`;
-    case "rate_limit": return `usage ${[...usage("5h", event.fiveHour), ...usage("7d", event.weekly)].join(" / ")}`;
-    case "compacted": return "compacted";
-    case "subagents": return `subagents ${event.running.length}`;
-    case "steer_delivered": return "steer delivered";
-    case "context": return `context ${event.tokens} tokens${event.window ? ` / ${event.window}` : ""}`;
-    case "exit": return `exited (code ${event.code})`;
-    case "error": return `ERROR ${event.message}`;
+    case "session":
+      return `session ${event.sessionId}`;
+    case "text":
+      return event.text;
+    case "tool":
+      return `tool ${event.name} ${event.input}`;
+    case "turn_started":
+      return "working...";
+    case "turn":
+      return `turn ${event.result.status}`;
+    case "rate_limit":
+      return `usage ${[...usage("5h", event.fiveHour), ...usage("7d", event.weekly)].join(" / ")}`;
+    case "compacted":
+      return "compacted";
+    case "subagents":
+      return `subagents ${event.running.length}`;
+    case "steer_delivered":
+      return "steer delivered";
+    case "context":
+      return `context ${event.tokens} tokens${event.window ? ` / ${event.window}` : ""}`;
+    case "exit":
+      return `exited (code ${event.code})`;
+    case "error":
+      return `ERROR ${event.message}`;
   }
 };
 
@@ -44,14 +56,17 @@ const indentContinuation = (text: string) => text.replace(/\r?\n/g, `\n${CONTINU
 // 既定表示: 誰が何をしていて、誰が誰に何を頼んだかだけを出す（DESIGN.md §17）
 const describeNormal = (event: AgentEvent): string | undefined => {
   switch (event.type) {
-    case "turn_started": return t("log.working");
-    case "error": return `ERROR ${event.message}`;
+    case "turn_started":
+      return t("log.working");
+    case "error":
+      return `ERROR ${event.message}`;
     case "turn": {
       const { status, text } = event.result;
       if (status === "completed") return text || t("log.done");
       return status === "interrupted" ? t("log.interrupted") : t("log.failed", { text });
     }
-    default: return undefined;
+    default:
+      return undefined;
   }
 };
 
@@ -129,7 +144,7 @@ export interface EventLogOptions {
 export const attachEventLog = (bus: EventBus, { path, print, mode }: EventLogOptions): (() => void) => {
   const write = createJsonlWriter(path);
   const format = createTerminalFormatter();
-  return bus.subscribe((event) => {
+  return bus.subscribe(event => {
     write(event);
     const line = format(event, mode());
     if (line !== undefined) print(line);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { commandUsage, completeCommand, SLASH_COMMAND_NAMES } from "./commands.js";
 import { parseInput } from "./input.js";
-import { SLASH_COMMAND_NAMES, commandUsage, completeCommand } from "./commands.js";
 
 describe("SLASH_COMMAND_NAMES", () => {
   it("一覧のコマンドはすべて parseInput が解釈できる", () => {

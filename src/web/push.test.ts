@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { PushService, type PushSend } from "./push.js";
+import { type PushSend, PushService } from "./push.js";
 
 const SUBSCRIPTION = { endpoint: "https://web.push.apple.com/abc", keys: { p256dh: "p", auth: "a" } };
 const setup = (send: PushSend = async () => {}) => {
@@ -47,12 +47,17 @@ describe("PushService", () => {
     push.setVisible(id, true);
     stream.close();
     await push.notify({ title: "完了", body: "2" });
-    expect(sent.map((entry) => JSON.parse(entry.payload))).toEqual([{ title: "完了", body: "1" }, { title: "完了", body: "2" }]);
+    expect(sent.map(entry => JSON.parse(entry.payload))).toEqual([
+      { title: "完了", body: "1" },
+      { title: "完了", body: "2" },
+    ]);
   });
 
   it("410 の購読は消し、ほかの失敗は残す", async () => {
     const failures = [Object.assign(new Error("gone"), { statusCode: 410 }), new Error("network")];
-    const { push } = setup(async () => { throw failures.shift(); });
+    const { push } = setup(async () => {
+      throw failures.shift();
+    });
     const gone = push.subscribe(SUBSCRIPTION)!;
     await push.notify({ title: "t", body: "b" });
     expect(push.has(gone)).toBe(false);

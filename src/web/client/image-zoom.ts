@@ -1,7 +1,14 @@
 // 画像のビューアの拡大縮小の計算（DESIGN.md §28 成果物）。
 // ブラウザ側にそのまま埋め込むため、外部のものを参照しない関数として書く
-export interface ZoomView { scale: number; x: number; y: number }
-export interface Size { width: number; height: number }
+export interface ZoomView {
+  scale: number;
+  x: number;
+  y: number;
+}
+export interface Size {
+  width: number;
+  height: number;
+}
 
 // 枠に収まる倍率（等倍より大きくはしない）で中央に置く
 export function fitView(image: Size, stage: Size): ZoomView {

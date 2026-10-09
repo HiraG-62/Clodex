@@ -39,10 +39,10 @@ export async function ensureSandboxSetup(actions: SandboxSetupActions, notify: (
       notify(t("sandbox.setupCli"));
       await actions.install(status);
     }
-    if (!await actions.authenticate()) {
+    if (!(await actions.authenticate())) {
       notify(t("sandbox.setupLogin"));
       await actions.login();
-      if (!await actions.authenticate()) throw new Error(t("sandbox.incomplete"));
+      if (!(await actions.authenticate())) throw new Error(t("sandbox.incomplete"));
     }
     await actions.saveComplete(true);
   } catch (error) {

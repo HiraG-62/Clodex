@@ -4,7 +4,6 @@ import { renderMarkdown } from "./markdown.js";
 import type { ClientContext } from "./store.js";
 
 export function createArtifactsLightbox(ctx: ClientContext) {
-
   // ---- 成果物（DESIGN.md §28 v0.3 B） ----
   // version: 同じパスの画像が書き換わっても、メッセージごとに別の URL にして古い画像を使い回させない
   const fileUrl = (api: "file" | "diff", path: string, version?: string) =>
@@ -13,11 +12,13 @@ export function createArtifactsLightbox(ctx: ClientContext) {
     ctx.store.sheetKind = "artifacts";
     ctx.store.sheetAgent = undefined;
     const artifacts = collectArtifacts(ctx.store.items);
-    const rows: HTMLElement[] = artifacts.map((artifact) => {
+    const rows: HTMLElement[] = artifacts.map(artifact => {
       const row = ctx.el("button", "artifact") as HTMLButtonElement;
       row.type = "button";
-      row.append(ctx.el("span", `kind ${artifact.kind}`, ctx.t(ctx.ARTIFACT_LABEL[artifact.kind])),
-        ctx.el("span", "path mono", displayPath(artifact.path, ctx.store.state?.project ?? "")));
+      row.append(
+        ctx.el("span", `kind ${artifact.kind}`, ctx.t(ctx.ARTIFACT_LABEL[artifact.kind])),
+        ctx.el("span", "path mono", displayPath(artifact.path, ctx.store.state?.project ?? "")),
+      );
       row.addEventListener("click", () => void openViewer(artifact.path));
       return row;
     });
@@ -63,7 +64,7 @@ export function createArtifactsLightbox(ctx: ClientContext) {
   const openImage = (path: string, version?: string) => {
     if (lightbox.hidden) lightboxReturnFocus = ctx.rememberFocus();
     const shown = displayPath(path, ctx.store.state?.project ?? "");
-    ctx.$("#lb-name").textContent = shown.split(/[\/]/).at(-1) ?? shown;
+    ctx.$("#lb-name").textContent = shown.split(/[/]/).at(-1) ?? shown;
     ctx.$("#lb-name").title = path;
     (ctx.$("#lb-open") as HTMLAnchorElement).href = fileUrl("file", path, version);
     lbImage.alt = shown;
@@ -84,13 +85,21 @@ export function createArtifactsLightbox(ctx: ClientContext) {
   ctx.$("#lb-zoom-out").addEventListener("click", () => zoomImage(1 / LB_STEP));
   ctx.$("#lb-fit").addEventListener("click", fitImage);
   ctx.$("#lb-scale").addEventListener("click", () => toggleActualSize());
-  lbStage.addEventListener("wheel", (event) => {
-    event.preventDefault();
-    zoomImage(Math.exp(-event.deltaY * LB_WHEEL_RATE), lbLocal(event));
-  }, { passive: false });
-  lbStage.addEventListener("pointerdown", (event) => {
+  lbStage.addEventListener(
+    "wheel",
+    event => {
+      event.preventDefault();
+      zoomImage(Math.exp(-event.deltaY * LB_WHEEL_RATE), lbLocal(event));
+    },
+    { passive: false },
+  );
+  lbStage.addEventListener("pointerdown", event => {
     // 画面の外へドラッグしても移動を続ける。捕まえられないポインターでも操作は続ける
-    try { lbStage.setPointerCapture(event.pointerId); } catch { /* 捕まえなくても動く */ }
+    try {
+      lbStage.setPointerCapture(event.pointerId);
+    } catch {
+      /* 捕まえなくても動く */
+    }
     lbPointers.set(event.pointerId, lbLocal(event));
     if (lbPointers.size === 1) lbMoved = false;
     if (lbPointers.size === 2) {
@@ -99,7 +108,7 @@ export function createArtifactsLightbox(ctx: ClientContext) {
     }
     lbStage.classList.add("dragging");
   });
-  lbStage.addEventListener("pointermove", (event) => {
+  lbStage.addEventListener("pointermove", event => {
     const previous = lbPointers.get(event.pointerId);
     if (!previous) return;
     const now = lbLocal(event);
@@ -129,19 +138,34 @@ export function createArtifactsLightbox(ctx: ClientContext) {
       return toggleActualSize(point);
     }
     lbLastTap = now;
-    if (event.target === lbStage) setTimeout(() => { if (lbLastTap === now) closeImage(); }, LB_DOUBLE_TAP_MS);
+    if (event.target === lbStage)
+      setTimeout(() => {
+        if (lbLastTap === now) closeImage();
+      }, LB_DOUBLE_TAP_MS);
   };
   lbStage.addEventListener("pointerup", releasePointer);
   lbStage.addEventListener("pointercancel", releasePointer);
-  window.addEventListener("resize", () => { if (!lightbox.hidden) fitImage(); });
-  document.addEventListener("keydown", (event) => {
-    if (lightbox.hidden) return;
-    if (event.key === "Escape") { event.stopImmediatePropagation(); return closeImage(); }
-    if (event.key === "Tab") { event.stopImmediatePropagation(); return ctx.trapTab(event, lightbox); }
-    if (event.key === "+" || event.key === "=") return zoomImage(LB_STEP);
-    if (event.key === "-") return zoomImage(1 / LB_STEP);
-    if (event.key === "0") return fitImage();
-  }, true);
+  window.addEventListener("resize", () => {
+    if (!lightbox.hidden) fitImage();
+  });
+  document.addEventListener(
+    "keydown",
+    event => {
+      if (lightbox.hidden) return;
+      if (event.key === "Escape") {
+        event.stopImmediatePropagation();
+        return closeImage();
+      }
+      if (event.key === "Tab") {
+        event.stopImmediatePropagation();
+        return ctx.trapTab(event, lightbox);
+      }
+      if (event.key === "+" || event.key === "=") return zoomImage(LB_STEP);
+      if (event.key === "-") return zoomImage(1 / LB_STEP);
+      if (event.key === "0") return fitImage();
+    },
+    true,
+  );
 
   const openViewer = async (path: string) => {
     if (/\.(png|jpe?g|gif|webp)$/i.test(path)) return openImage(path);
@@ -162,7 +186,16 @@ export function createArtifactsLightbox(ctx: ClientContext) {
         }
         const pre = ctx.el("pre", api === "diff" ? "code diff" : "code");
         for (const line of text.split("\n")) {
-          const cls = api !== "diff" ? "" : line.startsWith("+") && !line.startsWith("+++") ? "add" : line.startsWith("-") && !line.startsWith("---") ? "del" : line.startsWith("@@") ? "hunk" : "";
+          const cls =
+            api !== "diff"
+              ? ""
+              : line.startsWith("+") && !line.startsWith("+++")
+                ? "add"
+                : line.startsWith("-") && !line.startsWith("---")
+                  ? "del"
+                  : line.startsWith("@@")
+                    ? "hunk"
+                    : "";
           pre.append(ctx.el("span", cls, `${line}\n`));
         }
         view.replaceChildren(pre);
@@ -170,7 +203,14 @@ export function createArtifactsLightbox(ctx: ClientContext) {
         view.replaceChildren(ctx.el("p", "muted small", ctx.t("web.viewer.failed")));
       }
     };
-    const tabs = ctx.choice("view", ctx.t("web.viewer.view"), ["file", "diff"] as const, "file", (v) => ctx.t(v === "file" ? "web.viewer.content" : "web.viewer.diff"), (v) => void show(v));
+    const tabs = ctx.choice(
+      "view",
+      ctx.t("web.viewer.view"),
+      ["file", "diff"] as const,
+      "file",
+      v => ctx.t(v === "file" ? "web.viewer.content" : "web.viewer.diff"),
+      v => void show(v),
+    );
     ctx.openSheet(displayPath(path, ctx.store.state?.project ?? ""), [tabs, view]);
     await show("file");
   };

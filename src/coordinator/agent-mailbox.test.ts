@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { AgentMailbox } from "./agent-mailbox.js";
 
-const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 const START_OPTIONS = { cwd: "C:\\dev\\app", mcpUrl: "http://127.0.0.1:1/mcp/t/codex" };
 
 const setup = () => {
@@ -35,7 +35,7 @@ describe("AgentMailbox", () => {
     expect(mailbox.holding).toBe(true);
     expect(mailbox.holdUntil).toBe(new Date(resumeAt).toISOString());
     expect(agent.sent).toEqual([]);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 100));
     expect(agent.sent).toEqual(["continue"]);
     agent.completeTurn();
     await flush();
@@ -58,8 +58,15 @@ describe("AgentMailbox", () => {
   it("配送時だけ hook の文言を末尾に足し、送信待ちの本文には含めない", async () => {
     const agent = new FakeAgentAdapter("codex");
     let pending = true;
-    const mailbox = new AgentMailbox(agent, () => START_OPTIONS, vi.fn(), vi.fn(), () => {}, () => undefined,
-      () => pending ? (pending = false, "\n\n[Clodex] Solo mode is off.") : "");
+    const mailbox = new AgentMailbox(
+      agent,
+      () => START_OPTIONS,
+      vi.fn(),
+      vi.fn(),
+      () => {},
+      () => undefined,
+      () => (pending ? ((pending = false), "\n\n[Clodex] Solo mode is off.") : ""),
+    );
     mailbox.pause();
     const first = mailbox.enqueue("最初", { inputId: "in1", suffix: "\n言語" });
     expect(mailbox.pendingInputs).toEqual([{ id: "in1", text: "最初" }]);
@@ -77,8 +84,14 @@ describe("AgentMailbox", () => {
   it("上限待機中だけ再開時刻を返す", async () => {
     const agent = new FakeAgentAdapter("codex");
     const resumeAt = Date.now() + 60_000;
-    const mailbox = new AgentMailbox(agent, () => START_OPTIONS, vi.fn(), vi.fn(), () => {},
-      () => ({ resumeAt, text: "continue" }));
+    const mailbox = new AgentMailbox(
+      agent,
+      () => START_OPTIONS,
+      vi.fn(),
+      vi.fn(),
+      () => {},
+      () => ({ resumeAt, text: "continue" }),
+    );
     const first = mailbox.enqueue("first");
     await flush();
     agent.completeTurn({ status: "failed", text: "limit" });
@@ -90,8 +103,15 @@ describe("AgentMailbox", () => {
   });
   it("起動禁止でも session を参照でき、配送時には起動を拒否する", async () => {
     const agent = new FakeAgentAdapter("codex");
-    const mailbox = new AgentMailbox(agent, () => ({ ...START_OPTIONS, resumeSessionId: "saved" }), vi.fn(), undefined,
-      () => { throw new Error("セットアップ未完了"); });
+    const mailbox = new AgentMailbox(
+      agent,
+      () => ({ ...START_OPTIONS, resumeSessionId: "saved" }),
+      vi.fn(),
+      undefined,
+      () => {
+        throw new Error("セットアップ未完了");
+      },
+    );
     expect(mailbox.sessionId).toBe("saved");
     await expect(mailbox.enqueue("hello")).resolves.toMatchObject({ status: "failed", text: "セットアップ未完了" });
     expect(agent.starts).toEqual([]);
@@ -99,8 +119,16 @@ describe("AgentMailbox", () => {
   it("復旧用一覧には未配送の入力と message を元の順に含める", () => {
     const { mailbox } = setup();
     void mailbox.enqueue("busy");
-    const formal = { id: "msg_recover", from: "claude", to: "codex", type: "QUESTION", taskId: "T", body: "?",
-      repository: "C:\\dev\\app", createdAt: "2026-10-05T07:00:00.000Z" } as const;
+    const formal = {
+      id: "msg_recover",
+      from: "claude",
+      to: "codex",
+      type: "QUESTION",
+      taskId: "T",
+      body: "?",
+      repository: "C:\\dev\\app",
+      createdAt: "2026-10-05T07:00:00.000Z",
+    } as const;
     void mailbox.enqueue("envelope", { message: formal });
     void mailbox.enqueue("next", { inputId: "in1", images: ["shot.png"], suffix: "\nlang" });
     expect(mailbox.recoveryQueue).toEqual([
@@ -124,9 +152,11 @@ describe("AgentMailbox", () => {
   it("並行する起動を共有し、起動中に積んだ入力は完了後に送る", async () => {
     const { agent, mailbox } = setup();
     let release: () => void = () => {};
-    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const gate = new Promise<void>(resolve => {
+      release = resolve;
+    });
     const originalStart = agent.start.bind(agent);
-    const start = vi.spyOn(agent, "start").mockImplementation(async (options) => {
+    const start = vi.spyOn(agent, "start").mockImplementation(async options => {
       agent.status = "starting";
       await gate;
       await originalStart(options);
@@ -198,7 +228,7 @@ describe("AgentMailbox", () => {
     agent.startError = undefined;
     void mailbox.enqueue("b");
     await flush();
-    expect(agent.starts.map((s) => s.resumeSessionId)).toEqual(["picked", "picked"]);
+    expect(agent.starts.map(s => s.resumeSessionId)).toEqual(["picked", "picked"]);
   });
 
   it("起動中の Agent には start しない", async () => {
@@ -213,8 +243,14 @@ describe("AgentMailbox", () => {
   it("配送中は current に処理中の message を持ち、ターン完了で外す", async () => {
     const { agent, mailbox } = setup();
     const message = {
-      id: "msg_1", from: "claude", to: "codex", type: "QUESTION", taskId: "T-1", body: "?",
-      repository: "C:\\dev\\app", createdAt: "2026-10-05T07:00:00.000Z",
+      id: "msg_1",
+      from: "claude",
+      to: "codex",
+      type: "QUESTION",
+      taskId: "T-1",
+      body: "?",
+      repository: "C:\\dev\\app",
+      createdAt: "2026-10-05T07:00:00.000Z",
     } as const;
     const first = mailbox.enqueue("envelope", { message });
     const second = mailbox.enqueue("human");
@@ -351,8 +387,14 @@ describe("AgentMailbox", () => {
 
 describe("AgentMailbox の取り消しと破棄", () => {
   const message = (id: string) => ({
-    id, from: "claude" as const, to: "codex" as const, type: "DELEGATE" as const, taskId: "T", body: "b",
-    repository: "C:\dev\app", createdAt: "2026-10-06T00:00:00.000Z",
+    id,
+    from: "claude" as const,
+    to: "codex" as const,
+    type: "DELEGATE" as const,
+    taskId: "T",
+    body: "b",
+    repository: "C:devapp",
+    createdAt: "2026-10-06T00:00:00.000Z",
   });
 
   it("配送待ちの人間の入力を ID で取り消し、配送中のものは取り消せない", async () => {
@@ -377,7 +419,7 @@ describe("AgentMailbox の取り消しと破棄", () => {
     await flush();
     const delegated = mailbox.enqueue("envelope", { message: message("msg_1") });
     void mailbox.enqueue("human", { inputId: "in1" });
-    expect(mailbox.discardMessages().map((m) => m.id)).toEqual(["msg_1"]);
+    expect(mailbox.discardMessages().map(m => m.id)).toEqual(["msg_1"]);
     await expect(delegated).resolves.toMatchObject({ status: "interrupted" });
     expect(mailbox.pendingInputs).toEqual([{ id: "in1", text: "human" }]);
     agent.completeTurn();

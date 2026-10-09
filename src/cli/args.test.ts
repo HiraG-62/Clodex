@@ -7,9 +7,9 @@ describe("parseCliArgs", () => {
   });
 
   it("全 option を読む", () => {
-    expect(parseCliArgs([
-      "--project", "C:\\dev\\app", "--primary", "codex", "--claude-model", "haiku", "--codex-model", "gpt-5.5", "--resume", "--web",
-    ])).toEqual({ project: "C:\\dev\\app", primary: "codex", models: { claude: "haiku", codex: "gpt-5.5" }, resume: true, web: true, serve: false });
+    expect(
+      parseCliArgs(["--project", "C:\\dev\\app", "--primary", "codex", "--claude-model", "haiku", "--codex-model", "gpt-5.5", "--resume", "--web"]),
+    ).toEqual({ project: "C:\\dev\\app", primary: "codex", models: { claude: "haiku", codex: "gpt-5.5" }, resume: true, web: true, serve: false });
   });
 
   it("serve は project 省略可で Web を起動する", () => {

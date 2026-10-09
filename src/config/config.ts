@@ -26,18 +26,22 @@ const configSchema = z.strictObject({
   permission: z.enum(PERMISSION_LEVELS).optional(),
   updateChannel: z.enum(UPDATE_CHANNELS).optional(),
   roles: z.strictObject({ claude: role.optional(), codex: role.optional() }).optional(),
-  limits: z.strictObject({
-    maxMessagesPerChain: nonNegativeInt.optional(),
-    maxReviewRoundsPerChain: nonNegativeInt.optional(),
-    maxDelegationsPerChain: nonNegativeInt.optional(),
-    maxDelegationDepth: nonNegativeInt.optional(),
-  }).optional(),
+  limits: z
+    .strictObject({
+      maxMessagesPerChain: nonNegativeInt.optional(),
+      maxReviewRoundsPerChain: nonNegativeInt.optional(),
+      maxDelegationsPerChain: nonNegativeInt.optional(),
+      maxDelegationDepth: nonNegativeInt.optional(),
+    })
+    .optional(),
   worktree: z.strictObject({ setup: z.string().optional() }).optional(),
   web: z.strictObject({ port: z.number().int().min(1).max(65535).optional() }).optional(),
-  usageAlert: z.strictObject({
-    weeklyPaceThreshold: z.number().optional(),
-    fiveHourThreshold: z.number().min(0).max(100).optional(),
-  }).optional(),
+  usageAlert: z
+    .strictObject({
+      weeklyPaceThreshold: z.number().optional(),
+      fiveHourThreshold: z.number().min(0).max(100).optional(),
+    })
+    .optional(),
 });
 
 export type ClodexConfig = z.infer<typeof configSchema>;
@@ -53,7 +57,7 @@ const readConfigFile = (path: string): ClodexConfig => {
   }
   const parsed = configSchema.safeParse(json);
   if (!parsed.success) {
-    const detail = parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ");
+    const detail = parsed.error.issues.map(i => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ");
     throw new Error(`${path}: ${detail}`);
   }
   const { roles, ...config } = parsed.data;
@@ -91,9 +95,12 @@ export const saveUserLanguage = (homeDir: string, language: Language): void => {
     const config = existsSync(path) ? configSchema.parse(JSON.parse(readFileSync(path, "utf8").replace(/^\uFEFF/, ""))) : {};
     writeFileAtomic(path, `${JSON.stringify({ ...config, language: next }, null, 2)}\n`);
   } catch (error) {
-    const detail = error instanceof z.ZodError
-      ? error.issues.map(issue => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ")
-      : error instanceof Error ? error.message : String(error);
+    const detail =
+      error instanceof z.ZodError
+        ? error.issues.map(issue => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ")
+        : error instanceof Error
+          ? error.message
+          : String(error);
     throw new Error(`${path}: ${detail}`, { cause: error });
   }
 };

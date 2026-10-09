@@ -1,25 +1,26 @@
 // Web UI へ送る feed（DESIGN.md §17 Web UI）。event と output は直近を保持し、接続時に送り直す
-import type { PendingQuestion } from "../protocol/questions.js";
-import type { HubProjectEntry } from "../hub/hub.js";
-import type { ConversationTab } from "../hub/tabs.js";
+
 import type { AgentId } from "../agents/agent-adapter.js";
-import type { AgentState } from "../cli/shell.js";
 import type { CommandLifecycle } from "../cli/command-runner.js";
-import type { CoordinatorEvent } from "../coordinator/event-bus.js";
+import type { AgentState } from "../cli/shell.js";
 import type { PendingMessage } from "../coordinator/coordinator.js";
-import type { Conversation } from "../project/conversation-history.js";
+import type { CoordinatorEvent } from "../coordinator/event-bus.js";
+import type { HubProjectEntry } from "../hub/hub.js";
 import type { HubNotification } from "../hub/notify-format.js";
+import type { ConversationTab } from "../hub/tabs.js";
+import type { Conversation } from "../project/conversation-history.js";
+import type { PendingQuestion } from "../protocol/questions.js";
 
 export const DEFAULT_RECENT_ITEMS = 1000;
 export const INITIAL_HISTORY_ITEMS = 200;
 export const HISTORY_PAGE_ITEMS = 200;
 
 import type { PendingInput } from "../cli/shell.js";
-import type { ConversationActivity } from "../hub/workspace.js";
+import type { RolePresetName } from "../config/role-presets.js";
 
 import type { Language } from "../context/language.js";
-import type { RolePresetName } from "../config/role-presets.js";
-import { DEFAULT_LIMITS, LIMIT_KEYS, type BudgetLimits, type LimitName } from "../coordinator/budget-manager.js";
+import { type BudgetLimits, DEFAULT_LIMITS, LIMIT_KEYS, type LimitName } from "../coordinator/budget-manager.js";
+import type { ConversationActivity } from "../hub/workspace.js";
 
 export interface WebState {
   language: Language;
@@ -63,14 +64,17 @@ export type FeedItem =
 
 export const GUI_ACTIONS = ["check", "install"] as const;
 export type GuiAction = (typeof GUI_ACTIONS)[number];
-export type GuiUpdate =
-  | { status: "checking" | "latest" | "installing" }
-  | { status: "available"; version: string }
-  | { status: "error"; message: string };
-export interface GuiInfo { version: string; update?: GuiUpdate }
+export type GuiUpdate = { status: "checking" | "latest" | "installing" } | { status: "available"; version: string } | { status: "error"; message: string };
+export interface GuiInfo {
+  version: string;
+  update?: GuiUpdate;
+}
 
 export type HistoryItem = Extract<FeedItem, { type: "event" | "output" }>;
-export interface HistoryPage { items: HistoryItem[]; hasMore: boolean; }
+export interface HistoryPage {
+  items: HistoryItem[];
+  hasMore: boolean;
+}
 export type FeedHandler = (item: FeedItem) => void;
 
 export class WebFeed {
@@ -115,7 +119,7 @@ export class WebFeed {
   replace(items: readonly HistoryItem[]): void {
     this.items.splice(0);
     this.deliver({ type: "reset" });
-    this.items.push(...items.slice(-this.limit).map((item) => ({ ...item, seq: ++this.seq })));
+    this.items.push(...items.slice(-this.limit).map(item => ({ ...item, seq: ++this.seq })));
     for (const item of this.recent()) this.deliver(item);
   }
 
@@ -125,7 +129,7 @@ export class WebFeed {
 
   before(seq: number, limit = HISTORY_PAGE_ITEMS): HistoryPage {
     const size = Number.isNaN(limit) ? HISTORY_PAGE_ITEMS : Math.max(1, Math.min(HISTORY_PAGE_ITEMS, Math.floor(limit)));
-    const older = this.items.filter((item) => item.seq < seq);
+    const older = this.items.filter(item => item.seq < seq);
     return { items: older.slice(-size), hasMore: older.length > size };
   }
 

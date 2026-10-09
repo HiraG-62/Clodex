@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
@@ -18,7 +18,8 @@ it("/sandbox の引数を検証する", () => {
 it("ドライブ全体・home 全体・その祖先へ Modify を付けない", () => {
   for (const path of ["E:\\", "C:\\Users", "C:\\Users\\human", "relative"]) expect(() => validateSandboxPath(path, "C:\\Users\\human")).toThrow();
   expect(() => validateSandboxPath("E:\\dev\\project", "C:\\Users\\human")).not.toThrow();
-  for (const path of ["C:\\Users\\human\\.clodex", "C:\\Users\\human\\.clodex\\artifacts\\project", "C:\\Users\\human\\AppData\\Local\\project"]) expect(() => validateSandboxPath(path, "C:\\Users\\human")).toThrow();
+  for (const path of ["C:\\Users\\human\\.clodex", "C:\\Users\\human\\.clodex\\artifacts\\project", "C:\\Users\\human\\AppData\\Local\\project"])
+    expect(() => validateSandboxPath(path, "C:\\Users\\human")).toThrow();
   expect(() => validateSandboxPath("C:\\Users\\human\\.clodex\\artifacts\\project", "C:\\Users\\human", true)).not.toThrow();
   expect(() => validateSandboxPath("C:\\Users\\human\\.clodex\\state", "C:\\Users\\human", true)).toThrow();
 });
@@ -30,14 +31,28 @@ it("全会話を新規 session にし、履歴を残して permission と保存�
   writeFileSync(join(projectRoot, ".clodex.json"), JSON.stringify({ permission: "read-only" }));
   const adapters: FakeAgentAdapter[] = [];
   const platform: SandboxPlatform = {
-    inspect: vi.fn(async () => true), connect: vi.fn(async () => {}), grant: vi.fn(async () => {}),
-    release: vi.fn(async () => {}), close: vi.fn(async () => {}), spawn: vi.fn(),
+    inspect: vi.fn(async () => true),
+    connect: vi.fn(async () => {}),
+    grant: vi.fn(async () => {}),
+    release: vi.fn(async () => {}),
+    close: vi.fn(async () => {}),
+    spawn: vi.fn(),
   };
   const probe = vi.fn(async () => ({ models: EMPTY_MODEL_CATALOG(), usage: {} }));
   const context = await openProject({
-    projectRoot, homeDir, args: { models: {}, resume: false, web: false, serve: false }, language: "en",
-    printTerminal: () => {}, notify: () => {}, notifyAgent: () => {}, displayMode: () => "normal", isCurrent: () => true,
-    modelCatalog: EMPTY_MODEL_CATALOG, registerCoordinator: () => () => {}, sandboxPlatform: platform, startupProbe: probe,
+    projectRoot,
+    homeDir,
+    args: { models: {}, resume: false, web: false, serve: false },
+    language: "en",
+    printTerminal: () => {},
+    notify: () => {},
+    notifyAgent: () => {},
+    displayMode: () => "normal",
+    isCurrent: () => true,
+    modelCatalog: EMPTY_MODEL_CATALOG,
+    registerCoordinator: () => () => {},
+    sandboxPlatform: platform,
+    startupProbe: probe,
     createAgents: () => {
       const agents = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") };
       adapters.push(agents.claude, agents.codex);
@@ -53,41 +68,56 @@ it("全会話を新規 session にし、履歴を残して permission と保存�
     context.settingsStore.update(["codex"], { permission: "edit" });
     await context.sandbox.setEnabled(true);
     expect(context.settingsStore.load()).toMatchObject({ sandbox: true, codex: { permission: "edit" } });
-    expect(context.history.list().map((c) => c.title)).toEqual(expect.arrayContaining(["以前の会話", "今の会話"]));
-    expect(context.history.list().every((c) => Object.keys(c.sessions).length === 0)).toBe(true);
+    expect(context.history.list().map(c => c.title)).toEqual(expect.arrayContaining(["以前の会話", "今の会話"]));
+    expect(context.history.list().every(c => Object.keys(c.sessions).length === 0)).toBe(true);
     for (const runtime of context.workspace.allRuntimes()) {
-      expect(runtime.coordinator.status().map((agent) => agent.permission)).toEqual(["full", "full"]);
+      expect(runtime.coordinator.status().map(agent => agent.permission)).toEqual(["full", "full"]);
       await expect(runtime.coordinator.setPermission("edit")).rejects.toThrow();
     }
-    expect(adapters.slice(0, 4).every((agent) => agent.status === "stopped")).toBe(true);
-    expect(adapters.slice(4).every((agent) => agent.starts.length === 1 && !agent.starts[0]?.resumeSessionId)).toBe(true);
+    expect(adapters.slice(0, 4).every(agent => agent.status === "stopped")).toBe(true);
+    expect(adapters.slice(4).every(agent => agent.starts.length === 1 && !agent.starts[0]?.resumeSessionId)).toBe(true);
     await context.workspace.switchTo(firstId);
     expect(context.workspace.current.coordinator.status()[0]?.permission).toBe("full");
     await context.sandbox.setEnabled(false);
     expect(context.settingsStore.load().sandbox).toBe(false);
-    expect(context.workspace.current.coordinator.status().map((agent) => agent.permission)).toEqual(["read-only", "edit"]);
+    expect(context.workspace.current.coordinator.status().map(agent => agent.permission)).toEqual(["read-only", "edit"]);
     expect(probe).toHaveBeenCalledTimes(2);
     expect(platform.release).toHaveBeenCalledTimes(1);
-    context.history.startNew({workDir:join(homeDir,"deleted-worktree"),branch:"deleted"});
+    context.history.startNew({ workDir: join(homeDir, "deleted-worktree"), branch: "deleted" });
     await context.workspace.switchTo(context.history.currentId);
     await context.sandbox.setEnabled(true);
     await context.sandbox.setEnabled(false);
     expect(context.settingsStore.load().sandbox).toBe(false);
     expect(context.workspace.current.coordinator.status().every(agent => agent.status === "stopped")).toBe(true);
-  } finally { await context.close(); }
+  } finally {
+    await context.close();
+  }
 });
 
 it("保存済み on の初期化失敗でも project を開き、off に復帰できる", async () => {
-  const homeDir=mkdtempSync(join(tmpdir(),"clodex-sandbox-failed-"));
-  const projectRoot=join(homeDir,"project");mkdirSync(projectRoot);
-  writeFileSync(join(projectRoot,".clodex.json"),JSON.stringify({sandbox:true}));
-  const notify=vi.fn();
-  const platform:SandboxPlatform={inspect:async()=>false,connect:vi.fn(),grant:vi.fn(),release:vi.fn(),close:vi.fn(),spawn:vi.fn()};
-  const agents={claude:new FakeAgentAdapter("claude"),codex:new FakeAgentAdapter("codex")};
-  const context=await openProject({projectRoot,homeDir,args:{models:{},resume:false,web:false,serve:false},language:"en",
-    printTerminal:()=>{},notify,notifyAgent:()=>{},displayMode:()=>"normal",isCurrent:()=>true,modelCatalog:EMPTY_MODEL_CATALOG,
-    registerCoordinator:()=>()=>{},sandboxPlatform:platform,createAgents:()=>agents});
-  try{
+  const homeDir = mkdtempSync(join(tmpdir(), "clodex-sandbox-failed-"));
+  const projectRoot = join(homeDir, "project");
+  mkdirSync(projectRoot);
+  writeFileSync(join(projectRoot, ".clodex.json"), JSON.stringify({ sandbox: true }));
+  const notify = vi.fn();
+  const platform: SandboxPlatform = { inspect: async () => false, connect: vi.fn(), grant: vi.fn(), release: vi.fn(), close: vi.fn(), spawn: vi.fn() };
+  const agents = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") };
+  const context = await openProject({
+    projectRoot,
+    homeDir,
+    args: { models: {}, resume: false, web: false, serve: false },
+    language: "en",
+    printTerminal: () => {},
+    notify,
+    notifyAgent: () => {},
+    displayMode: () => "normal",
+    isCurrent: () => true,
+    modelCatalog: EMPTY_MODEL_CATALOG,
+    registerCoordinator: () => () => {},
+    sandboxPlatform: platform,
+    createAgents: () => agents,
+  });
+  try {
     expect(notify).toHaveBeenCalled();
     expect(context.workspace.current.coordinator.status()).toHaveLength(2);
     await expect(context.workspace.current.coordinator.start()).rejects.toThrow();
@@ -95,5 +125,7 @@ it("保存済み on の初期化失敗でも project を開き、off に復帰�
     await context.sandbox.setEnabled(false);
     expect(context.sandbox.enabled).toBe(false);
     expect(agents.claude.starts).toHaveLength(1);
-  }finally{await context.close();}
+  } finally {
+    await context.close();
+  }
 });

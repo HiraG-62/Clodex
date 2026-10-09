@@ -84,7 +84,8 @@ export interface CommandCompletion {
 }
 
 export const createCommandExecutor = ({
-  spawnShell = defaultSpawnShell, killTree = killProcessTree,
+  spawnShell = defaultSpawnShell,
+  killTree = killProcessTree,
 }: Pick<CommandRunnerOptions, "spawnShell" | "killTree">) => {
   let shellIndex = 0;
   return (command: string, cwd: string, print: (line: string) => void, complete: (result: CommandCompletion) => void) => {
@@ -120,7 +121,7 @@ export const createCommandExecutor = ({
       child.stdout.on("data", out.write);
       child.stderr.on("data", err.write);
       child.on("error", onError);
-      child.on("close", (code) => {
+      child.on("close", code => {
         if (failed) return;
         out.end();
         err.end();
@@ -129,7 +130,9 @@ export const createCommandExecutor = ({
     };
     start(shellIndex);
     return {
-      get running() { return !finished; },
+      get running() {
+        return !finished;
+      },
       stop: () => {
         if (finished || stopped) return false;
         stopped = true;
@@ -155,10 +158,13 @@ export const createCommandRunner = ({ cwd, print, now = Date.now, ...options }: 
     let droppedLines = 0;
     const record = (line: string) => {
       output.push(line);
-      if (output.length > KEPT_OUTPUT_LINES) { output.shift(); droppedLines++; }
+      if (output.length > KEPT_OUTPUT_LINES) {
+        output.shift();
+        droppedLines++;
+      }
       print(line);
     };
-    const result = new Promise<CommandResult>((resolve) => {
+    const result = new Promise<CommandResult>(resolve => {
       const handle = execute(command, typeof cwd === "function" ? cwd() : cwd, record, ({ code, stopped, error }) => {
         for (const entry of running) if (!entry.running) running.delete(entry);
         const elapsed = `${((now() - startedAt) / MS_PER_SECOND).toFixed(1)}s`;
@@ -181,7 +187,9 @@ export const createCommandRunner = ({ cwd, print, now = Date.now, ...options }: 
   return {
     run,
     stopAll,
-    idle: async (): Promise<void> => { await Promise.all(pending); },
+    idle: async (): Promise<void> => {
+      await Promise.all(pending);
+    },
     get running() {
       return running.size;
     },

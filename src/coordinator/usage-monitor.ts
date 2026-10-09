@@ -43,7 +43,7 @@ interface Windows {
   weekly?: RateLimitWindow;
 }
 
-const peerOf = (agent: AgentId): AgentId => AGENT_IDS.find((id) => id !== agent)!;
+const peerOf = (agent: AgentId): AgentId => AGENT_IDS.find(id => id !== agent)!;
 
 // 使用率が 100% 以上でリセット前の枠があれば、そのリセット時刻（epoch 秒。複数なら遅いほう）
 export const limitResetAt = (snapshot: UsageSnapshot): number | undefined => {
@@ -66,7 +66,7 @@ export class UsageMonitor {
     private readonly alert: UsageAlert = DEFAULT_USAGE_ALERT,
     private readonly now: () => Date = () => new Date(),
   ) {
-    bus.subscribe((event) => {
+    bus.subscribe(event => {
       if (event.kind !== "agent") return;
       const { agent, event: agentEvent } = event;
       // session が変わったら前のコンテキストの大きさは当てはまらない
@@ -115,8 +115,7 @@ export class UsageMonitor {
     if (weekly) {
       const pace = weeklyPace(weekly, this.nowSeconds());
       if (pace >= this.alert.weeklyPaceThreshold) {
-        this.notifyOnce(`${agent}:weekly:${weekly.resetsAt}`,
-          t("notice.weeklyPace", { agent, pace, peer: peerOf(agent) }));
+        this.notifyOnce(`${agent}:weekly:${weekly.resetsAt}`, t("notice.weeklyPace", { agent, pace, peer: peerOf(agent) }));
       }
     }
     if (fiveHour && fiveHour.usedPercent >= this.alert.fiveHourThreshold) {

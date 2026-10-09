@@ -23,20 +23,33 @@ export interface HubNotification {
 
 const AGENT_NAME: Record<AgentId, string> = { claude: "Claude", codex: "Codex" };
 const MESSAGE_KEY = {
-  work: "notify.work", reply: "notify.reply", failed: "notify.failed", interrupted: "notify.interrupted",
-  question: "notify.question", limitHold: "notify.limitHold", error: "notify.error",
+  work: "notify.work",
+  reply: "notify.reply",
+  failed: "notify.failed",
+  interrupted: "notify.interrupted",
+  question: "notify.question",
+  limitHold: "notify.limitHold",
+  error: "notify.error",
 } as const;
 
 export function formatNotification(input: NotificationInput, messages: Messages): HubNotification {
-  const project = input.projectRoot.replace(/[\\/]+$/, "").split(/[\\/]/).at(-1) ?? input.projectRoot;
+  const project =
+    input.projectRoot
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/]/)
+      .at(-1) ?? input.projectRoot;
   const conversation = input.conversationTitle || messages["web.conv.untitled"];
   const line = input.line?.split(/\r?\n/, 1)[0] ?? "";
   const template = input.kind === "notice" ? line : messages[MESSAGE_KEY[input.kind]];
   const content = template.replace("{time}", input.time ?? "").replace("{line}", line);
   const suffix = input.agent ? messages["notify.agent"].replace("{agent}", AGENT_NAME[input.agent]) : "";
   return {
-    kind: input.kind, project, conversation, ...(input.agent ? { agent: input.agent } : {}),
-    title: `Clodex【${project}】「${conversation}」`, body: `${content}${suffix}`,
+    kind: input.kind,
+    project,
+    conversation,
+    ...(input.agent ? { agent: input.agent } : {}),
+    title: `Clodex【${project}】「${conversation}」`,
+    body: `${content}${suffix}`,
   };
 }
 

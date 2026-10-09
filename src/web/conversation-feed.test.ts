@@ -8,8 +8,12 @@ describe("connectConversationFeed", () => {
     const history = {
       currentId: "current",
       list: () => [{ id: "old" }],
-      onSwitch: (listener: (id: string) => void) => { switchTo = listener; },
-      onRemove: (listener: (id: string) => void) => { removed = listener; },
+      onSwitch: (listener: (id: string) => void) => {
+        switchTo = listener;
+      },
+      onRemove: (listener: (id: string) => void) => {
+        removed = listener;
+      },
     };
     const store = {
       prune: vi.fn(),
@@ -17,7 +21,7 @@ describe("connectConversationFeed", () => {
     };
     const feed = { replace: vi.fn() };
     const working = new Set<"claude" | "codex">(["codex"]);
-    connectConversationFeed(history, store, feed, (id) => id === "old" ? working : new Set());
+    connectConversationFeed(history, store, feed, id => (id === "old" ? working : new Set()));
     expect(store.load).toHaveBeenCalledWith("current", new Set());
     expect(store.prune).toHaveBeenCalledWith(["current", "old"]);
     expect(feed.replace).toHaveBeenCalledWith([{ type: "output", seq: 1, text: "current" }]);

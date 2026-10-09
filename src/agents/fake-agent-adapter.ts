@@ -1,7 +1,5 @@
 // テスト用: AgentAdapter の偽物。start / send を記録し、ターン完了をテストから制御する
-import type {
-  AgentAdapter, AgentEvent, AgentEventHandler, AgentId, AgentStartOptions, AgentStatus, PermissionLevel, TurnResult,
-} from "./agent-adapter.js";
+import type { AgentAdapter, AgentEvent, AgentEventHandler, AgentId, AgentStartOptions, AgentStatus, PermissionLevel, TurnResult } from "./agent-adapter.js";
 
 export class FakeAgentAdapter implements AgentAdapter {
   status: AgentStatus = "stopped";
@@ -31,14 +29,14 @@ export class FakeAgentAdapter implements AgentAdapter {
     if (this.status !== "idle") return Promise.reject(new Error(`${this.id} is ${this.status}`));
     this.sent.push(text);
     this.status = "busy";
-    return new Promise((resolve) => (this.resolveTurn = resolve));
+    return new Promise(resolve => (this.resolveTurn = resolve));
   }
 
   compact(): Promise<TurnResult> {
     if (this.status !== "idle") return Promise.reject(new Error(`${this.id} is ${this.status}`));
     this.compacts++;
     this.status = "busy";
-    return new Promise((resolve) => (this.resolveTurn = resolve));
+    return new Promise(resolve => (this.resolveTurn = resolve));
   }
 
   completeTurn(result: TurnResult = { status: "completed", text: "ok" }): void {

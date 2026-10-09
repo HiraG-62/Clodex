@@ -1,12 +1,10 @@
-import { renderMarkdown } from "./markdown.js";
 import { discardMissingOpened, sameWorkingEntry } from "./log-diff.js";
+import { renderMarkdown } from "./markdown.js";
 import type { ClientContext } from "./store.js";
 import type { DisplayTimelineItem, TimelineItem } from "./timeline.js";
-import { withStartingTurns, withSubagentRows, withWorkingTurnsLast, workingFeed, type WorkingEntry } from "./timeline.js";
+import { type WorkingEntry, withStartingTurns, withSubagentRows, withWorkingTurnsLast, workingFeed } from "./timeline.js";
 
 export function createLogView(ctx: ClientContext) {
-
-
   const renderItem = (item: DisplayTimelineItem): HTMLElement => {
     switch (item.kind) {
       case "starting": {
@@ -26,8 +24,10 @@ export function createLogView(ctx: ClientContext) {
         const node = ctx.el("article", "entry subagent-turn");
         node.dataset.agent = item.agent;
         const head = ctx.el("div", "head");
-        head.append(ctx.el("b", `c-${item.agent}`, ctx.AGENTS[item.agent].name),
-          ctx.el("span", "state", `${ctx.t("web.agent.subagents")} ${item.running.length}`));
+        head.append(
+          ctx.el("b", `c-${item.agent}`, ctx.AGENTS[item.agent].name),
+          ctx.el("span", "state", `${ctx.t("web.agent.subagents")} ${item.running.length}`),
+        );
         const body = ctx.el("div", "body");
         for (const subagent of item.running) {
           const description = subagent.description || subagent.id;
@@ -41,7 +41,11 @@ export function createLogView(ctx: ClientContext) {
       case "human": {
         const node = ctx.el("article", "entry you");
         const head = ctx.el("div", "head");
-        head.append(ctx.el("b", "", ctx.t("web.you")), ctx.el("span", `c-${item.agent}`, `→ ${ctx.AGENTS[item.agent].name}`), ctx.el("time", "mono", ctx.clock(item.at)));
+        head.append(
+          ctx.el("b", "", ctx.t("web.you")),
+          ctx.el("span", `c-${item.agent}`, `→ ${ctx.AGENTS[item.agent].name}`),
+          ctx.el("time", "mono", ctx.clock(item.at)),
+        );
         if (item.steer) {
           head.append(ctx.el("span", "kind steer", ctx.t("web.steer")));
           if (item.delivered) {
@@ -58,12 +62,18 @@ export function createLogView(ctx: ClientContext) {
         ctx.appendImagePreviews(node, item.text, item.at);
         return node;
       }
-      case "question": return ctx.renderQuestion(item);
-      case "turn": return ctx.renderTurn(item);
-      case "message": return ctx.renderMessage(item);
-      case "notice": return ctx.el("div", "notice", item.compactAgent ? ctx.t("web.notice.compacted", { agent: ctx.AGENTS[item.compactAgent].name }) : item.text);
-      case "error": return ctx.el("div", "error-row", `${ctx.AGENTS[item.agent].name}: ${item.text}`);
-      case "output": return ctx.el("pre", "output", item.text);
+      case "question":
+        return ctx.renderQuestion(item);
+      case "turn":
+        return ctx.renderTurn(item);
+      case "message":
+        return ctx.renderMessage(item);
+      case "notice":
+        return ctx.el("div", "notice", item.compactAgent ? ctx.t("web.notice.compacted", { agent: ctx.AGENTS[item.compactAgent].name }) : item.text);
+      case "error":
+        return ctx.el("div", "error-row", `${ctx.AGENTS[item.agent].name}: ${item.text}`);
+      case "output":
+        return ctx.el("pre", "output", item.text);
     }
   };
 
@@ -87,7 +97,7 @@ export function createLogView(ctx: ClientContext) {
     const feed = workingFeed(ctx.store.items);
     const count = active.length ? String(active.length) : "";
     if (ctx.$("#working-count").textContent !== count) ctx.$("#working-count").textContent = count;
-    const agent = active.length > 1 ? ctx.store.state?.primary ?? "claude" : active[0]?.agent ?? "claude";
+    const agent = active.length > 1 ? (ctx.store.state?.primary ?? "claude") : (active[0]?.agent ?? "claude");
     if (workingToggle.dataset.agent !== agent) workingToggle.dataset.agent = agent;
     if (workingToggle.hidden !== (feed.length === 0)) workingToggle.hidden = feed.length === 0;
     if (!feed.length && !workingPanel.hidden) {
@@ -95,7 +105,8 @@ export function createLogView(ctx: ClientContext) {
       workingToggle.setAttribute("aria-expanded", "false");
     }
     const list = ctx.$("#working-list");
-    const feedChanged = feed.length !== previousFeed.length || feed.some((entry, index) => !previousFeed[index] || !sameWorkingEntry(previousFeed[index], entry));
+    const feedChanged =
+      feed.length !== previousFeed.length || feed.some((entry, index) => !previousFeed[index] || !sameWorkingEntry(previousFeed[index], entry));
     if (!feedChanged) return;
     const following = workingPanel.scrollHeight - workingPanel.scrollTop - workingPanel.clientHeight < ctx.NEAR_BOTTOM_PX;
     feed.forEach((entry, index) => {
@@ -124,7 +135,8 @@ export function createLogView(ctx: ClientContext) {
         node = button;
       }
       const old = list.children[index];
-      if (old) old.replaceWith(node); else list.append(node);
+      if (old) old.replaceWith(node);
+      else list.append(node);
     });
     while (list.children.length > feed.length) list.lastElementChild?.remove();
     previousFeed = feed;
@@ -149,8 +161,12 @@ export function createLogView(ctx: ClientContext) {
       const head = ctx.el("div", "code-head");
       const copy = ctx.iconButton("copy", ctx.t("web.code.copy"));
       copy.addEventListener("click", async () => {
-        try { await navigator.clipboard.writeText(text); ctx.showToast(ctx.t("web.code.copied")); }
-        catch { ctx.showToast(ctx.t("web.code.copyFailed")); }
+        try {
+          await navigator.clipboard.writeText(text);
+          ctx.showToast(ctx.t("web.code.copied"));
+        } catch {
+          ctx.showToast(ctx.t("web.code.copyFailed"));
+        }
       });
       head.append(copy);
       pre.before(block);
@@ -183,7 +199,8 @@ export function createLogView(ctx: ClientContext) {
   const renderLog = (force = false) => {
     const stick = nearBottom();
     const visibleItems = withSubagentRows(
-      withStartingTurns(withWorkingTurnsLast(ctx.store.items), ctx.store.state?.agents ?? [], new Date().toISOString(), ctx.store.state?.pendingInputs ?? []), ctx.store.state?.agents ?? [],
+      withStartingTurns(withWorkingTurnsLast(ctx.store.items), ctx.store.state?.agents ?? [], new Date().toISOString(), ctx.store.state?.pendingInputs ?? []),
+      ctx.store.state?.agents ?? [],
     );
     ctx.store.items = visibleItems.filter((item): item is TimelineItem => item.kind !== "starting" && item.kind !== "subagents");
     for (const item of visibleItems) {
@@ -191,8 +208,8 @@ export function createLogView(ctx: ClientContext) {
       if (!ctx.store.startingAt.has(item.agent)) ctx.store.startingAt.set(item.agent, item.at);
       item.at = ctx.store.startingAt.get(item.agent)!;
     }
-    for (const id of ctx.AGENT_IDS) if (!visibleItems.some((item) => item.kind === "starting" && item.agent === id)) ctx.store.startingAt.delete(id);
-    const keep = new Set(visibleItems.map((i) => i.id));
+    for (const id of ctx.AGENT_IDS) if (!visibleItems.some(item => item.kind === "starting" && item.agent === id)) ctx.store.startingAt.delete(id);
+    const keep = new Set(visibleItems.map(i => i.id));
     for (const [id, entry] of ctx.store.rendered) {
       if (!keep.has(id)) {
         entry.node.remove();
@@ -207,9 +224,18 @@ export function createLogView(ctx: ClientContext) {
       let node = current?.node;
       const sameStarting = current?.item.kind === "starting" && item.kind === "starting" && current.item.at === item.at;
       if (!current || (current.item !== item && !sameStarting) || force) {
-        const update = !force && current?.item.kind === "turn" && item.kind === "turn"
-          ? (ctx as ClientContext & { updateTurn: (node: HTMLElement, previous: Extract<TimelineItem, { kind: "turn" }>, next: Extract<TimelineItem, { kind: "turn" }>) => HTMLElement[] | undefined }).updateTurn(current.node, current.item, item)
-          : undefined;
+        const update =
+          !force && current?.item.kind === "turn" && item.kind === "turn"
+            ? (
+                ctx as ClientContext & {
+                  updateTurn: (
+                    node: HTMLElement,
+                    previous: Extract<TimelineItem, { kind: "turn" }>,
+                    next: Extract<TimelineItem, { kind: "turn" }>,
+                  ) => HTMLElement[] | undefined;
+                }
+              ).updateTurn(current.node, current.item, item)
+            : undefined;
         if (update) {
           updatedMarkdown.push(...update);
           ctx.store.rendered.set(item.id, { item, node: current!.node });
@@ -222,7 +248,8 @@ export function createLogView(ctx: ClientContext) {
       }
       // まだ DOM に無い要素、または位置がずれた要素を、直前の要素の後ろへ置く
       if (node && (node.parentNode !== ctx.log || node.previousElementSibling !== (previous ?? null))) {
-        if (previous) previous.after(node); else ctx.log.prepend(node);
+        if (previous) previous.after(node);
+        else ctx.log.prepend(node);
       }
       previous = node;
     }
@@ -241,7 +268,8 @@ export function createLogView(ctx: ClientContext) {
       ctx.store.rendered.get(commandStart.outputId)?.node.before(clockRow);
     }
     for (const node of updatedMarkdown) enhanceMarkdown(node);
-    if (stick) scrollToBottom(); else syncNewer();
+    if (stick) scrollToBottom();
+    else syncNewer();
     renderWorking();
   };
   return { renderLog, renderItem, nearBottom, scrollToBottom, syncNewer };

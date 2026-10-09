@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { isSendKey } from "./send-key.js";
 
-const key = (init: { key?: string; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean } = {}) =>
-  ({ key: "Enter", shiftKey: false, ctrlKey: false, metaKey: false, ...init });
+const key = (init: { key?: string; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean } = {}) => ({
+  key: "Enter",
+  shiftKey: false,
+  ctrlKey: false,
+  metaKey: false,
+  ...init,
+});
 
 describe("isSendKey", () => {
   it("既定は Enter で送信し、Shift+Enter は改行", () => {

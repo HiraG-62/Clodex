@@ -1,13 +1,20 @@
-import React from "react";
 import { PassThrough } from "node:stream";
 import { render as renderInk } from "ink";
-import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "ink-testing-library";
+import React from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { setLanguage, t } from "../i18n/i18n.js";
 import type { FeedItem } from "../web/web-feed.js";
 import type { FeedClient } from "./feed-client.js";
-import { DISABLE_MOUSE_TRACKING, ENABLE_MOUSE_TRACKING, MouseInputRelay, TUI_RENDER_OPTIONS, TuiApp,
-  enableVirtualTerminalInput, withMouseTracking } from "./tui.js";
+import {
+  DISABLE_MOUSE_TRACKING,
+  ENABLE_MOUSE_TRACKING,
+  enableVirtualTerminalInput,
+  MouseInputRelay,
+  TUI_RENDER_OPTIONS,
+  TuiApp,
+  withMouseTracking,
+} from "./tui.js";
 
 afterEach(cleanup);
 
@@ -15,10 +22,19 @@ const fakeClient = () => {
   let listener: (item: FeedItem) => void = () => {};
   let connectionListener: (connected: boolean) => void = () => {};
   let resolveConnected: () => void = () => {};
-  const connected = new Promise<void>((resolve) => { resolveConnected = resolve; });
+  const connected = new Promise<void>(resolve => {
+    resolveConnected = resolve;
+  });
   const client: FeedClient = {
-    connect: async (onItem, onConnectionChange) => { listener = onItem; connectionListener = onConnectionChange ?? (() => {}); resolveConnected(); return () => {}; },
-    send: async () => {}, files: async () => [], history: async () => ({ items: [], hasMore: false }),
+    connect: async (onItem, onConnectionChange) => {
+      listener = onItem;
+      connectionListener = onConnectionChange ?? (() => {});
+      resolveConnected();
+      return () => {};
+    },
+    send: async () => {},
+    files: async () => [],
+    history: async () => ({ items: [], hasMore: false }),
   };
   return { client, connected, emit: (item: FeedItem) => listener(item), connection: (value: boolean) => connectionListener(value) };
 };
@@ -40,11 +56,43 @@ describe("TuiApp", () => {
     const { client, emit, connected } = fakeClient();
     const app = render(React.createElement(TuiApp, { client }));
     await connected;
-    emit({ type: "state", state: { project: "app", primary: "claude", roles: {},
-      agents: [{ id: "claude", status: "idle", sessionId: "s", permission: "edit", models: [], usage: {}, subagents: [{ id: "a", description: "調査" }, { id: "b", description: "実装" }] }],
-      tabs: [], conversations: [], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "ja",
-      sandbox: { enabled: false, ready: false }, limitsUnlimited: false,
-      limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
+    emit({
+      type: "state",
+      state: {
+        project: "app",
+        primary: "claude",
+        roles: {},
+        agents: [
+          {
+            id: "claude",
+            status: "idle",
+            sessionId: "s",
+            permission: "edit",
+            models: [],
+            usage: {},
+            subagents: [
+              { id: "a", description: "調査" },
+              { id: "b", description: "実装" },
+            ],
+          },
+        ],
+        tabs: [],
+        conversations: [],
+        pendingInputs: [],
+        pendingMessages: [],
+        questions: [],
+        processes: [],
+        language: "ja",
+        sandbox: { enabled: false, ready: false },
+        limitsUnlimited: false,
+        limits: {
+          messages: { value: 8, default: 8 },
+          reviews: { value: 3, default: 3 },
+          delegations: { value: 4, default: 4 },
+          depth: { value: 2, default: 2 },
+        },
+      },
+    });
     await waitFor(() => expect(app.lastFrame()).toContain("待機中 · sub 2"));
   });
 
@@ -53,10 +101,30 @@ describe("TuiApp", () => {
     const { client, emit, connected } = fakeClient();
     const app = render(React.createElement(TuiApp, { client }));
     await connected;
-    emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], tabs: [], conversations: [],
-      pendingInputs: [], pendingMessages: [{ id: "msg_1", agent: "codex", from: "claude", type: "DELEGATE", taskId: "T", text: "作業" }],
-      questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false,
-      limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
+    emit({
+      type: "state",
+      state: {
+        project: "app",
+        primary: "claude",
+        roles: {},
+        agents: [],
+        tabs: [],
+        conversations: [],
+        pendingInputs: [],
+        pendingMessages: [{ id: "msg_1", agent: "codex", from: "claude", type: "DELEGATE", taskId: "T", text: "作業" }],
+        questions: [],
+        processes: [],
+        language: "ja",
+        sandbox: { enabled: false, ready: false },
+        limitsUnlimited: false,
+        limits: {
+          messages: { value: 8, default: 8 },
+          reviews: { value: 3, default: 3 },
+          delegations: { value: 4, default: 4 },
+          depth: { value: 2, default: 2 },
+        },
+      },
+    });
     await waitFor(() => expect(app.lastFrame()).toContain("送信待ち 1 件"));
   });
   it("先頭の ! の入力と削除でコマンドの枠ラベルを切り替える", async () => {
@@ -91,7 +159,11 @@ describe("TuiApp", () => {
     const app = render(React.createElement(TuiApp, { client }));
     await connected;
     emit({ type: "event", seq: 1, event: { kind: "agent", agent: "codex", at: new Date().toISOString(), event: { type: "turn_started" } } });
-    emit({ type: "event", seq: 2, event: { kind: "agent", agent: "codex", at: new Date().toISOString(), event: { type: "turn", result: { status: "completed", text: "# 完了しました" } } } });
+    emit({
+      type: "event",
+      seq: 2,
+      event: { kind: "agent", agent: "codex", at: new Date().toISOString(), event: { type: "turn", result: { status: "completed", text: "# 完了しました" } } },
+    });
     await waitFor(() => {
       expect(app.frames.join("\n")).toContain("完了しました");
       expect(app.frames.join("\n")).toContain("Codex · 完了");
@@ -105,8 +177,16 @@ describe("TuiApp", () => {
     await connected;
     app.stdin.write("\x0f");
     emit({ type: "event", seq: 1, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "turn_started" } } });
-    emit({ type: "event", seq: 2, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "tool", name: "Read", input: "src/a.ts" } } });
-    emit({ type: "event", seq: 3, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "turn", result: { status: "completed", text: "終了" } } } });
+    emit({
+      type: "event",
+      seq: 2,
+      event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "tool", name: "Read", input: "src/a.ts" } },
+    });
+    emit({
+      type: "event",
+      seq: 3,
+      event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "turn", result: { status: "completed", text: "終了" } } },
+    });
     await waitFor(() => expect(app.frames.join("\n")).toContain("Read: src/a.ts"));
   });
 
@@ -116,8 +196,16 @@ describe("TuiApp", () => {
     const app = render(React.createElement(TuiApp, { client }));
     await connected;
     emit({ type: "event", seq: 1, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "turn_started" } } });
-    emit({ type: "event", seq: 2, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "tool", name: "Read", input: "old.ts" } } });
-    emit({ type: "event", seq: 3, event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "turn", result: { status: "completed", text: "完了" } } } });
+    emit({
+      type: "event",
+      seq: 2,
+      event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "tool", name: "Read", input: "old.ts" } },
+    });
+    emit({
+      type: "event",
+      seq: 3,
+      event: { kind: "agent", agent: "claude", at: new Date().toISOString(), event: { type: "turn", result: { status: "completed", text: "完了" } } },
+    });
     await waitFor(() => expect(app.lastFrame()).toContain("完了"));
     expect(app.lastFrame()).not.toContain("Read: old.ts");
     app.stdin.write("\x0f");
@@ -149,7 +237,7 @@ describe("TuiApp", () => {
     await connected;
     await waitFor(() => expect(app.lastFrame()).toContain("メッセージ"));
     const lines = (app.lastFrame() ?? "").split("\n");
-    const inputLine = lines.findIndex((line) => line.includes("メッセージ"));
+    const inputLine = lines.findIndex(line => line.includes("メッセージ"));
     expect(lines[inputLine + 1]).toContain("╰");
     app.stdin.write("a");
     await waitFor(() => expect(app.lastFrame()).toContain("│ a"));
@@ -228,14 +316,24 @@ describe("Windows の VT 入力", () => {
   });
   it("Ink の raw mode が有効になってからマウスを開始する（VT 入力の設定を含む）", async () => {
     const events: string[] = [];
-    const stdin = Object.assign(new PassThrough(), { isTTY: true,
-      setRawMode: (enabled: boolean) => { events.push(enabled ? "raw" : "restore"); } });
+    const stdin = Object.assign(new PassThrough(), {
+      isTTY: true,
+      setRawMode: (enabled: boolean) => {
+        events.push(enabled ? "raw" : "restore");
+      },
+    });
     const stdout = Object.assign(new PassThrough(), { isTTY: true, columns: 80, rows: 24 });
     stdout.on("data", () => {});
     const { client } = fakeClient();
-    const instance = renderInk(React.createElement(TuiApp, { client,
-      startMouse: async () => { events.push("vt"); } }),
-      { stdin, stdout, stderr: new PassThrough(), interactive: true, patchConsole: false, exitOnCtrlC: false });
+    const instance = renderInk(
+      React.createElement(TuiApp, {
+        client,
+        startMouse: async () => {
+          events.push("vt");
+        },
+      }),
+      { stdin, stdout, stderr: new PassThrough(), interactive: true, patchConsole: false, exitOnCtrlC: false },
+    );
     await waitFor(() => {
       expect(events.indexOf("raw")).toBeGreaterThanOrEqual(0);
       expect(events.indexOf("vt")).toBeGreaterThan(events.indexOf("raw"));
@@ -256,23 +354,46 @@ describe("代替画面とマウス", () => {
   it("Ink に代替画面を使わせ、マウスの開始と終了を逆順の対として出す", async () => {
     const writes: string[] = [];
     expect(TUI_RENDER_OPTIONS.alternateScreen).toBe(true);
-    await withMouseTracking((value) => writes.push(value), async (mouse) => { mouse.start(); });
+    await withMouseTracking(
+      value => writes.push(value),
+      async mouse => {
+        mouse.start();
+      },
+    );
     expect(writes).toEqual(["\x1b[?1000h\x1b[?1006h", "\x1b[?1006l\x1b[?1000l"]);
     expect(writes).toEqual([ENABLE_MOUSE_TRACKING, DISABLE_MOUSE_TRACKING]);
   });
   it("start するまでマウスを有効にしない（ConPTY は VT 入力の後でないとマウスの設定を端末へ渡さない）", async () => {
     const writes: string[] = [];
-    await withMouseTracking((value) => writes.push(value), async () => {});
+    await withMouseTracking(
+      value => writes.push(value),
+      async () => {},
+    );
     expect(writes).toEqual([]);
   });
   it("実行中の例外でも終了シーケンスを出す", async () => {
     const writes: string[] = [];
-    await expect(withMouseTracking((value) => writes.push(value), async (mouse) => { mouse.start(); throw new Error("失敗"); })).rejects.toThrow("失敗");
+    await expect(
+      withMouseTracking(
+        value => writes.push(value),
+        async mouse => {
+          mouse.start();
+          throw new Error("失敗");
+        },
+      ),
+    ).rejects.toThrow("失敗");
     expect(writes.at(-1)).toBe(DISABLE_MOUSE_TRACKING);
   });
   it("シグナルと通常終了の両方が来てもマウスを一度だけ解除し、解除後の start は無視する", async () => {
     const writes: string[] = [];
-    await withMouseTracking((value) => writes.push(value), async (mouse) => { mouse.start(); mouse.stop(); mouse.start(); });
+    await withMouseTracking(
+      value => writes.push(value),
+      async mouse => {
+        mouse.start();
+        mouse.stop();
+        mouse.start();
+      },
+    );
     expect(writes).toEqual([ENABLE_MOUSE_TRACKING, DISABLE_MOUSE_TRACKING]);
   });
 });
@@ -300,7 +421,25 @@ it("接続中の言語変更ではログを保持し、以後のラベルと候�
   emit({ type: "output", seq: 1, text: "保持するログ" });
   await waitFor(() => expect(app.lastFrame()).toContain("保持するログ"));
   emit({ type: "version", version: "en" });
-  emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], tabs: [], conversations: [], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "en", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
+  emit({
+    type: "state",
+    state: {
+      project: "app",
+      primary: "claude",
+      roles: {},
+      agents: [],
+      tabs: [],
+      conversations: [],
+      pendingInputs: [],
+      pendingMessages: [],
+      questions: [],
+      processes: [],
+      language: "en",
+      sandbox: { enabled: false, ready: false },
+      limitsUnlimited: false,
+      limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } },
+    },
+  });
   app.stdin.write("/language");
   await waitFor(() => {
     expect(app.lastFrame()).toContain("保持するログ");
@@ -312,7 +451,12 @@ it("接続中の言語変更ではログを保持し、以後のラベルと候�
 it("上端で履歴を読み、reset 後に届いた前の会話の履歴を捨てる", async () => {
   const { client, emit, connected } = fakeClient();
   let finish: ((page: Awaited<ReturnType<FeedClient["history"]>>) => void) | undefined;
-  const history = vi.fn(() => new Promise<Awaited<ReturnType<FeedClient["history"]>>>((resolve) => { finish = resolve; }));
+  const history = vi.fn(
+    () =>
+      new Promise<Awaited<ReturnType<FeedClient["history"]>>>(resolve => {
+        finish = resolve;
+      }),
+  );
   client.history = history;
   const app = render(React.createElement(TuiApp, { client }));
   await connected;
@@ -321,7 +465,7 @@ it("上端で履歴を読み、reset 後に届いた前の会話の履歴を捨�
   app.stdin.write("\x1b[5~");
   await waitFor(() => expect(history).toHaveBeenCalledWith(201));
   app.stdin.write("\x1b[5~");
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await new Promise(resolve => setTimeout(resolve, 20));
   expect(history).toHaveBeenCalledTimes(1);
   const frameCount = app.frames.length;
   emit({ type: "reset" });
@@ -355,6 +499,24 @@ it("今の会話が solo なら下の行に出す", async () => {
   const app = render(React.createElement(TuiApp, { client }));
   await connected;
   const conversation = { id: "c1", startedAt: "2026-10-08T00:00:00Z", updatedAt: "2026-10-08T00:00:00Z", sessions: {}, current: true, solo: "codex" as const };
-  emit({ type: "state", state: { project: "app", primary: "claude", roles: {}, agents: [], tabs: [], conversations: [conversation], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
+  emit({
+    type: "state",
+    state: {
+      project: "app",
+      primary: "claude",
+      roles: {},
+      agents: [],
+      tabs: [],
+      conversations: [conversation],
+      pendingInputs: [],
+      pendingMessages: [],
+      questions: [],
+      processes: [],
+      language: "ja",
+      sandbox: { enabled: false, ready: false },
+      limitsUnlimited: false,
+      limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } },
+    },
+  });
   await waitFor(() => expect(app.lastFrame()).toContain("app · solo · Codex"));
 });

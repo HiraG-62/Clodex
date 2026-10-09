@@ -6,10 +6,12 @@ import { createProcessManager } from "./process-manager.js";
 class FakeProcess extends EventEmitter {
   readonly stdout = new PassThrough();
   readonly stderr = new PassThrough();
-  constructor(readonly pid: number) { super(); }
+  constructor(readonly pid: number) {
+    super();
+  }
 }
 
-const flush = () => new Promise((resolve) => setImmediate(resolve));
+const flush = () => new Promise(resolve => setImmediate(resolve));
 
 const setup = () => {
   const children: FakeProcess[] = [];
@@ -19,16 +21,28 @@ const setup = () => {
   let time = 0;
   let cwd = "C:/one";
   const manager = createProcessManager({
-    cwd: () => cwd, print: (line) => printed.push(line), now: () => time,
+    cwd: () => cwd,
+    print: line => printed.push(line),
+    now: () => time,
     spawnShell: (_file, _args, path) => {
       paths.push(path);
       const child = new FakeProcess(children.length + 10);
       children.push(child);
       return child;
     },
-    killTree: (pid) => killed.push(pid),
+    killTree: pid => killed.push(pid),
   });
-  return { manager, children, printed, killed, paths, advance: () => { time = 1500; cwd = "C:/two"; } };
+  return {
+    manager,
+    children,
+    printed,
+    killed,
+    paths,
+    advance: () => {
+      time = 1500;
+      cwd = "C:/two";
+    },
+  };
 };
 
 describe("background process", () => {
@@ -37,7 +51,8 @@ describe("background process", () => {
     const children: FakeProcess[] = [];
     let cwd = "C:/one";
     const manager = createProcessManager({
-      cwd: () => cwd, print: () => {},
+      cwd: () => cwd,
+      print: () => {},
       spawnShell: (_file, _args, path) => {
         paths.push(path);
         const child = new FakeProcess(children.length + 10);
@@ -91,7 +106,7 @@ describe("background process", () => {
     manager.stopAll();
     expect(killed).toEqual([10, 11]);
     advance();
-    children.forEach((child) => child.emit("close", 1));
+    children.forEach(child => child.emit("close", 1));
     expect(manager.list().map(({ status }) => status)).toEqual(["stopped", "stopped"]);
     expect(printed.slice(-2)).toEqual(["#1 stopped (1.5s): first", "#2 stopped (1.5s): second"]);
   });
@@ -102,7 +117,9 @@ describe("background process", () => {
     manager.start("second");
     children[0]!.emit("close", 0);
     let stopped = false;
-    void manager.stopAll().then(() => { stopped = true; });
+    void manager.stopAll().then(() => {
+      stopped = true;
+    });
     await flush();
     expect(stopped).toBe(false);
     children[1]!.emit("close", 1);

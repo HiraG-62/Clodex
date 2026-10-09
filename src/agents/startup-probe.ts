@@ -1,12 +1,16 @@
 import type { AgentEvent, AgentId, RateLimitWindow } from "./agent-adapter.js";
-import { agentEnv, spawnAgentProcess, type AgentProcess, type SpawnAgentProcess } from "./agent-process.js";
-import { codexRateLimitEvent, type CodexRateLimits } from "./rate-limits.js";
+import { type AgentProcess, agentEnv, type SpawnAgentProcess, spawnAgentProcess } from "./agent-process.js";
 import type { ModelCatalog, ModelOption } from "./model-catalog.js";
-export { EMPTY_MODEL_CATALOG } from "./model-catalog.js";
+import { type CodexRateLimits, codexRateLimitEvent } from "./rate-limits.js";
+
 export type { ModelCatalog, ModelOption } from "./model-catalog.js";
+export { EMPTY_MODEL_CATALOG } from "./model-catalog.js";
 
 export type RateLimitEvent = Extract<AgentEvent, { type: "rate_limit" }>;
-export interface StartupProbe { models: ModelCatalog; usage: Partial<Record<AgentId, RateLimitEvent>> }
+export interface StartupProbe {
+  models: ModelCatalog;
+  usage: Partial<Record<AgentId, RateLimitEvent>>;
+}
 
 const MODEL_LIST_TIMEOUT_MS = 15_000;
 const CLAUDE_REQUEST_ID = "model-catalog";
@@ -17,7 +21,7 @@ const CODEX_FIRST_LIST_ID = 3;
 const CLAUDE_ARGS = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"];
 const CODEX_ARGS = ["app-server"];
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+  typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 const nonempty = (value: unknown): value is string => typeof value === "string" && value.length > 0;
 
 export const parseClaudeModels = (message: unknown): ModelOption[] => {
@@ -37,8 +41,7 @@ export const parseCodexModels = (result: unknown): { models: ModelOption[]; next
   const data = Array.isArray(response?.data) ? response.data : [];
   const models = data.flatMap((raw: unknown) => {
     const item = asRecord(raw);
-    return item && item.hidden !== true && nonempty(item.model) && nonempty(item.displayName)
-      ? [{ value: item.model, label: item.displayName }] : [];
+    return item && item.hidden !== true && nonempty(item.model) && nonempty(item.displayName) ? [{ value: item.model, label: item.displayName }] : [];
   });
   return { models, ...(nonempty(response?.nextCursor) ? { nextCursor: response.nextCursor } : {}) };
 };
@@ -62,12 +65,17 @@ export const parseCodexUsage = (result: unknown): RateLimitEvent => {
   return codexRateLimitEvent(rateLimits as CodexRateLimits | undefined);
 };
 
-interface ProbeOne { models: ModelOption[]; usage?: RateLimitEvent }
+interface ProbeOne {
+  models: ModelOption[];
+  usage?: RateLimitEvent;
+}
 const fetchOne = async (agent: AgentId, cwd: string, spawn: SpawnAgentProcess, timeoutMs: number): Promise<ProbeOne> => {
   let proc: AgentProcess;
   try {
     proc = spawn(agent, agent === "claude" ? CLAUDE_ARGS : CODEX_ARGS, { cwd, env: agentEnv(process.env, agent) });
-  } catch { return { models: [] }; }
+  } catch {
+    return { models: [] };
+  }
   try {
     return await new Promise<ProbeOne>((resolve, reject) => {
       let done = false;
@@ -77,16 +85,27 @@ const fetchOne = async (agent: AgentId, cwd: string, spawn: SpawnAgentProcess, t
       let usage: RateLimitEvent | undefined;
       const finish = () => {
         if (done || !models || !usage) return;
-        done = true; clearTimeout(timer); resolve({ models, usage });
+        done = true;
+        clearTimeout(timer);
+        resolve({ models, usage });
       };
-      const fail = () => { if (done) return; done = true; clearTimeout(timer); reject(new Error("model catalog unavailable")); };
+      const fail = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        reject(new Error("model catalog unavailable"));
+      };
       const timer = setTimeout(fail, timeoutMs);
       const write = (message: unknown) => proc.write(JSON.stringify(message));
       proc.onExit(fail);
-      proc.onLine((line) => {
+      proc.onLine(line => {
         if (done) return;
         let message: Record<string, unknown>;
-        try { message = JSON.parse(line) as Record<string, unknown>; } catch { return; }
+        try {
+          message = JSON.parse(line) as Record<string, unknown>;
+        } catch {
+          return;
+        }
         if (agent === "claude") {
           if (message.type !== "control_response") return;
           // request_id は response の内側にある（docs/spikes/model-list.md）
@@ -100,7 +119,10 @@ const fetchOne = async (agent: AgentId, cwd: string, spawn: SpawnAgentProcess, t
           return;
         }
         if (message.id === CODEX_INITIALIZE_ID) {
-          if (message.error) { fail(); return; }
+          if (message.error) {
+            fail();
+            return;
+          }
           write({ method: "initialized" });
           write({ id: CODEX_USAGE_ID, method: "account/rateLimits/read" });
           write({ id: requestId, method: "model/list", params: {} });
@@ -112,30 +134,51 @@ const fetchOne = async (agent: AgentId, cwd: string, spawn: SpawnAgentProcess, t
           return;
         }
         if (message.id !== requestId) return;
-        if (message.error) { fail(); return; }
+        if (message.error) {
+          fail();
+          return;
+        }
         const page = parseCodexModels(message.result);
         collected.push(...page.models);
-        if (!page.nextCursor) { models = collected; finish(); return; }
+        if (!page.nextCursor) {
+          models = collected;
+          finish();
+          return;
+        }
         requestId++;
         write({ id: requestId, method: "model/list", params: { cursor: page.nextCursor } });
       });
-      proc.spawned.then(() => {
-        if (done) return;
-        if (agent === "claude") write({ type: "control_request", request_id: CLAUDE_REQUEST_ID, request: { subtype: "initialize" } });
-        else write({ id: CODEX_INITIALIZE_ID, method: "initialize", params: { clientInfo: { name: "clodex", title: "Clodex", version: "0.0.0" }, capabilities: null } });
-      }).catch(fail);
+      proc.spawned
+        .then(() => {
+          if (done) return;
+          if (agent === "claude") write({ type: "control_request", request_id: CLAUDE_REQUEST_ID, request: { subtype: "initialize" } });
+          else
+            write({
+              id: CODEX_INITIALIZE_ID,
+              method: "initialize",
+              params: { clientInfo: { name: "clodex", title: "Clodex", version: "0.0.0" }, capabilities: null },
+            });
+        })
+        .catch(fail);
     });
-  } catch { return { models: [] }; }
-  finally { proc.kill(); }
+  } catch {
+    return { models: [] };
+  } finally {
+    proc.kill();
+  }
 };
 
 export const fetchStartupProbe = async (
-  cwd: string, spawn: SpawnAgentProcess = spawnAgentProcess, timeoutMs = MODEL_LIST_TIMEOUT_MS,
+  cwd: string,
+  spawn: SpawnAgentProcess = spawnAgentProcess,
+  timeoutMs = MODEL_LIST_TIMEOUT_MS,
 ): Promise<StartupProbe> => {
-  const [claude, codex] = await Promise.all([
-    fetchOne("claude", cwd, spawn, timeoutMs), fetchOne("codex", cwd, spawn, timeoutMs),
-  ]);
-  return { models: { claude: claude.models, codex: codex.models }, usage: {
-    ...(claude.usage && { claude: claude.usage }), ...(codex.usage && { codex: codex.usage }),
-  } };
+  const [claude, codex] = await Promise.all([fetchOne("claude", cwd, spawn, timeoutMs), fetchOne("codex", cwd, spawn, timeoutMs)]);
+  return {
+    models: { claude: claude.models, codex: codex.models },
+    usage: {
+      ...(claude.usage && { claude: claude.usage }),
+      ...(codex.usage && { codex: codex.usage }),
+    },
+  };
 };

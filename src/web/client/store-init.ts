@@ -4,8 +4,6 @@ import type { ClientContext } from "./store.js";
 import type { DisplayTimelineItem } from "./timeline.js";
 
 export function createStoreInit(ctx: ClientContext) {
-
-
   // ---- 状態 ----
   ctx.store.items = [];
   ctx.store.history = [];
@@ -13,7 +11,6 @@ export function createStoreInit(ctx: ClientContext) {
   ctx.store.historyLoading = false;
   ctx.store.historyGeneration = 0;
   ctx.store.questionDrafts = new Map<string, { selected: Set<number>[]; other: string[]; step: number }>();
-
 
   ctx.store.pendingSettings = {};
   ctx.store.pendingDeadlines = {};
@@ -30,7 +27,7 @@ export function createStoreInit(ctx: ClientContext) {
   ctx.store.replayScheduled = false;
   ctx.store.liveGeneration = 0;
   ctx.store.detail = ctx.storage.get(ctx.DETAIL_KEY) === "1";
-   // undefined なら primary に送る
+  // undefined なら primary に送る
   ctx.store.opened = new Map<string, boolean>(); // 人が開閉した details の状態（項目 ID ごと）
   ctx.store.rendered = new Map<string, { item: DisplayTimelineItem; node: HTMLElement }>();
   ctx.store.controlUpdaters = new WeakMap<HTMLElement, (agent: AgentState) => void>();

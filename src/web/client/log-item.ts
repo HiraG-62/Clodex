@@ -1,14 +1,12 @@
 import type { MessageKey } from "../../i18n/messages.js";
 import type { AgentMessage, Issue } from "../../protocol/messages.js";
 import { displayPath, findImagePaths, splitImagePaths } from "./artifacts.js";
-import { renderMarkdown } from "./markdown.js";
 import { diffTurn } from "./log-diff.js";
+import { renderMarkdown } from "./markdown.js";
 import type { ClientContext } from "./store.js";
 import type { TimelineItem } from "./timeline.js";
 
 export function createLogItem(ctx: ClientContext) {
-
-
   // ---- ログの描画 ----
   const details = (id: string, summary: string, body: HTMLElement, cls: string) => {
     const node = ctx.el("details", cls) as HTMLDetailsElement;
@@ -51,18 +49,20 @@ export function createLogItem(ctx: ClientContext) {
     for (const text of texts) {
       if (text.parentElement?.closest("a, .image-link")) continue;
       const parts = splitImagePaths(text.data);
-      if (!parts.some((part) => part.path)) continue;
-      text.replaceWith(...parts.map((part) => {
-        if (!part.path) return document.createTextNode(part.text);
-        // 本文にはファイル名だけを出し、フルパスは title とクリックで開くときに使う
-        const link = ctx.el("span", "image-link", part.text.split(/[\\/]/).at(-1) ?? part.text);
-        link.title = part.path;
-        link.dataset.path = part.path;
-        link.dataset.version = version;
-        link.setAttribute("role", "button");
-        link.tabIndex = 0;
-        return link;
-      }));
+      if (!parts.some(part => part.path)) continue;
+      text.replaceWith(
+        ...parts.map(part => {
+          if (!part.path) return document.createTextNode(part.text);
+          // 本文にはファイル名だけを出し、フルパスは title とクリックで開くときに使う
+          const link = ctx.el("span", "image-link", part.text.split(/[\\/]/).at(-1) ?? part.text);
+          link.title = part.path;
+          link.dataset.path = part.path;
+          link.dataset.version = version;
+          link.setAttribute("role", "button");
+          link.tabIndex = 0;
+          return link;
+        }),
+      );
     }
   };
   // 読めなかった画像のパスは普通の文字に戻す
@@ -71,11 +71,11 @@ export function createLogItem(ctx: ClientContext) {
       if (imageKey(link.dataset.path ?? "") === imageKey(path)) link.replaceWith(link.textContent ?? "");
     }
   };
-  document.addEventListener("click", (event) => {
+  document.addEventListener("click", event => {
     const link = (event.target as Element | null)?.closest?.<HTMLElement>(".image-link");
     if (link?.dataset.path) ctx.openImage(link.dataset.path, link.dataset.version);
   });
-  document.addEventListener("keydown", (event) => {
+  document.addEventListener("keydown", event => {
     if (event.key !== "Enter") return;
     const link = (event.target as Element | null)?.closest?.<HTMLElement>(".image-link");
     if (!link?.dataset.path) return;
@@ -101,7 +101,10 @@ export function createLogItem(ctx: ClientContext) {
     const image = document.createElement("img");
     image.alt = displayPath(path, ctx.store.state?.project ?? "");
     image.loading = "lazy";
-    image.addEventListener("error", () => { button.remove(); unlinkImagePath(node, path); });
+    image.addEventListener("error", () => {
+      button.remove();
+      unlinkImagePath(node, path);
+    });
     image.src = ctx.fileUrl("file", path, version);
     button.addEventListener("click", () => ctx.openImage(path, version));
     button.append(image);
@@ -115,7 +118,11 @@ export function createLogItem(ctx: ClientContext) {
     return li;
   };
 
-  const updateTurn = (node: HTMLElement, previous: Extract<TimelineItem, { kind: "turn" }>, next: Extract<TimelineItem, { kind: "turn" }>): HTMLElement[] | undefined => {
+  const updateTurn = (
+    node: HTMLElement,
+    previous: Extract<TimelineItem, { kind: "turn" }>,
+    next: Extract<TimelineItem, { kind: "turn" }>,
+  ): HTMLElement[] | undefined => {
     const change = diffTurn(previous, next);
     if (change.replace) return undefined;
     const updated: HTMLElement[] = [];
@@ -141,7 +148,8 @@ export function createLogItem(ctx: ClientContext) {
       for (const index of change.steps) {
         const li = stepNode(next.steps[index]!);
         const old = list.children[index];
-        if (old) old.replaceWith(li); else list.append(li);
+        if (old) old.replaceWith(li);
+        else list.append(li);
       }
       steps.querySelector("summary")!.textContent = ctx.t("web.turn.steps", { count: next.steps.length });
       node.querySelector(":scope > .now")?.replaceWith(nowLine(next));
@@ -171,8 +179,9 @@ export function createLogItem(ctx: ClientContext) {
       }
       const added = new Set(change.images.add.map(imageKey));
       for (const path of change.images.paths) {
-        const button = [...(previews?.querySelectorAll<HTMLButtonElement>(".image-preview") ?? [])]
-          .find((entry) => imageKey(entry.dataset.path ?? "") === imageKey(path));
+        const button = [...(previews?.querySelectorAll<HTMLButtonElement>(".image-preview") ?? [])].find(
+          entry => imageKey(entry.dataset.path ?? "") === imageKey(path),
+        );
         if (button) previews!.append(button);
         else if (added.has(imageKey(path))) previews!.append(imagePreview(node, path, next.at));
       }
@@ -227,8 +236,10 @@ export function createLogItem(ctx: ClientContext) {
     const route = ctx.el("div", "route");
     route.append(ctx.mark(message.from), ctx.el("span", "arrow", "→"), ctx.mark(message.to), ctx.el("span", "kind", message.type));
     const statusKeys: Record<NonNullable<AgentMessage["status"]>, MessageKey> = {
-      approved: "web.message.status.approved", changes_requested: "web.message.status.changesRequested",
-      done: "web.message.status.done", failed: "web.message.status.failed",
+      approved: "web.message.status.approved",
+      changes_requested: "web.message.status.changesRequested",
+      done: "web.message.status.done",
+      failed: "web.message.status.failed",
     };
     if (message.status) route.append(ctx.el("span", "kind", ctx.t(statusKeys[message.status])));
     if (message.auto) route.append(ctx.el("span", "kind", ctx.t("web.message.auto")));
@@ -256,24 +267,35 @@ export function createLogItem(ctx: ClientContext) {
       node.append(refs);
     }
     const severityKeys: Record<Issue["severity"], MessageKey> = {
-      low: "web.issue.low", medium: "web.issue.medium", high: "web.issue.high", critical: "web.issue.critical",
+      low: "web.issue.low",
+      medium: "web.issue.medium",
+      high: "web.issue.high",
+      critical: "web.issue.critical",
     };
     for (const issue of message.issues ?? []) {
       const finding = ctx.el("div", `finding ${issue.severity}`);
-      finding.append(ctx.el("span", "sev", ctx.t(severityKeys[issue.severity])), ctx.el("span", "loc", issue.line ? `${issue.file}:${issue.line}` : issue.file), ctx.el("span", "desc", issue.summary));
+      finding.append(
+        ctx.el("span", "sev", ctx.t(severityKeys[issue.severity])),
+        ctx.el("span", "loc", issue.line ? `${issue.file}:${issue.line}` : issue.file),
+        ctx.el("span", "desc", issue.summary),
+      );
       node.append(finding);
     }
-    if (item.envelope) node.append(details(item.id, ctx.t("web.message.envelope", { agent: ctx.AGENTS[message.to].name }), ctx.el("pre", "", item.envelope), "envelope"));
+    if (item.envelope)
+      node.append(details(item.id, ctx.t("web.message.envelope", { agent: ctx.AGENTS[message.to].name }), ctx.el("pre", "", item.envelope), "envelope"));
     return node;
   };
 
   const renderQuestion = (item: Extract<TimelineItem, { kind: "question" }>): HTMLElement => {
     const node = ctx.el("article", `entry question ${item.agent}`);
     const head = ctx.el("div", "head");
-    head.append(ctx.el("b", `c-${item.agent}`, ctx.AGENTS[item.agent].name), ctx.el("time", "mono", ctx.clock(item.at)),
-      ctx.el("span", "kind", ctx.t(item.answers ? "web.question.answered" : "web.question.waiting")));
+    head.append(
+      ctx.el("b", `c-${item.agent}`, ctx.AGENTS[item.agent].name),
+      ctx.el("time", "mono", ctx.clock(item.at)),
+      ctx.el("span", "kind", ctx.t(item.answers ? "web.question.answered" : "web.question.waiting")),
+    );
     node.append(ctx.mark(item.agent), head);
-    const previewText = item.questions.flatMap((question) => [question.question, ...question.options.map((option) => option.description ?? "")]).join("\n");
+    const previewText = item.questions.flatMap(question => [question.question, ...question.options.map(option => option.description ?? "")]).join("\n");
     if (!item.answers) {
       appendImagePreviews(node, previewText, item.at);
       return node;

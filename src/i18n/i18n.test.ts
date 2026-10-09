@@ -7,7 +7,7 @@ afterEach(() => setLanguage("en"));
 describe("i18n", () => {
   it("ja と en は同じキーを持ち、置き換える名前も同じ", () => {
     expect(Object.keys(ja).sort()).toEqual(Object.keys(en).sort());
-    const names = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+    const names = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map(m => m[1]).sort();
     for (const key of Object.keys(en) as Array<keyof typeof en>) expect([key, names(ja[key])]).toEqual([key, names(en[key])]);
   });
 

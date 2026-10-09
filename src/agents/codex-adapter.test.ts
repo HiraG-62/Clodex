@@ -8,35 +8,55 @@ const TURN_ID = "turn-1";
 const REQUEST_TIMEOUT_MS = 120_000;
 const INTERRUPT_TIMEOUT_MS = 30_000;
 
-const defaultResponder = (accountType = "chatgpt") => (m: JsonObject): unknown => {
-  const params = m.params as JsonObject | undefined;
-  switch (m.method) {
-    case "initialize": return { userAgent: "codex" };
-    case "account/read": return { account: { type: accountType } };
-    case "thread/start": return { thread: { id: THREAD_ID } };
-    case "thread/resume": return { thread: { id: params?.threadId } };
-    case "turn/start": return { turn: { id: TURN_ID, status: "inProgress" } };
-    case "turn/interrupt": return {};
-    case "account/rateLimits/read": return { rateLimits: { primary: { usedPercent: 4, windowDurationMins: 300, resetsAt: 100 }, secondary: null } };
-    default: return undefined;
-  }
-};
+const defaultResponder =
+  (accountType = "chatgpt") =>
+  (m: JsonObject): unknown => {
+    const params = m.params as JsonObject | undefined;
+    switch (m.method) {
+      case "initialize":
+        return { userAgent: "codex" };
+      case "account/read":
+        return { account: { type: accountType } };
+      case "thread/start":
+        return { thread: { id: THREAD_ID } };
+      case "thread/resume":
+        return { thread: { id: params?.threadId } };
+      case "turn/start":
+        return { turn: { id: TURN_ID, status: "inProgress" } };
+      case "turn/interrupt":
+        return {};
+      case "account/rateLimits/read":
+        return { rateLimits: { primary: { usedPercent: 4, windowDurationMins: 300, resetsAt: 100 }, secondary: null } };
+      default:
+        return undefined;
+    }
+  };
 
 const setup = async (options: { resumeSessionId?: string; mcpUrl?: string; accountType?: string } = {}) => {
   const spawner = createFakeSpawner(defaultResponder(options.accountType));
   const adapter = new CodexAdapter(spawner.spawn);
   const events: AgentEvent[] = [];
-  adapter.onEvent((e) => events.push(e));
+  adapter.onEvent(e => events.push(e));
   const { accountType: _, ...startOptions } = options;
   const started = adapter.start({ cwd: "C:\\dev\\app", ...startOptions });
-  return { adapter, spawner, events, started, get proc() { return spawner.last; } };
+  return {
+    adapter,
+    spawner,
+    events,
+    started,
+    get proc() {
+      return spawner.last;
+    },
+  };
 };
 
 const turnCompleted = (status: string) => ({
-  method: "turn/completed", params: { threadId: THREAD_ID, turn: { id: TURN_ID, status } },
+  method: "turn/completed",
+  params: { threadId: THREAD_ID, turn: { id: TURN_ID, status } },
 });
 const agentMessage = (text: string) => ({
-  method: "item/completed", params: { threadId: THREAD_ID, item: { type: "agentMessage", id: "m1", text } },
+  method: "item/completed",
+  params: { threadId: THREAD_ID, item: { type: "agentMessage", id: "m1", text } },
 });
 
 describe("CodexAdapter", () => {
@@ -45,22 +65,23 @@ describe("CodexAdapter", () => {
     const spawner = createFakeSpawner(undefined, { spawnError: missing });
     const adapter = new CodexAdapter(spawner.spawn);
     const events: AgentEvent[] = [];
-    adapter.onEvent((event) => events.push(event));
+    adapter.onEvent(event => events.push(event));
     await expect(adapter.start({ cwd: "C:\\dev\\app" })).rejects.toThrow("codex not found (codex.exe must be on PATH)");
     expect(events).toContainEqual({ type: "error", message: "codex not found (codex.exe must be on PATH)" });
   });
-  it.each(["account/read", "thread/start", "thread/resume"])("%s の形が違えば method を含むエラーで起動を止める", async (method) => {
+  it.each(["account/read", "thread/start", "thread/resume"])("%s の形が違えば method を含むエラーで起動を止める", async method => {
     const responder = defaultResponder();
-    const spawner = createFakeSpawner((message) => message.method === method ? { account: 42, thread: 42 } : responder(message));
+    const spawner = createFakeSpawner(message => (message.method === method ? { account: 42, thread: 42 } : responder(message)));
     const adapter = new CodexAdapter(spawner.spawn);
-    await expect(adapter.start({ cwd: "C:\\dev\\app", ...(method === "thread/resume" ? { resumeSessionId: THREAD_ID } : {}) }))
-      .rejects.toThrow(`codex: unexpected response to ${method}`);
+    await expect(adapter.start({ cwd: "C:\\dev\\app", ...(method === "thread/resume" ? { resumeSessionId: THREAD_ID } : {}) })).rejects.toThrow(
+      `codex: unexpected response to ${method}`,
+    );
     expect(spawner.last.killed).toBe(true);
   });
 
   it("turn/start の形が違えば method を含む failed を返す", async () => {
     const responder = defaultResponder();
-    const spawner = createFakeSpawner((message) => message.method === "turn/start" ? { invalid: true } : responder(message));
+    const spawner = createFakeSpawner(message => (message.method === "turn/start" ? { invalid: true } : responder(message)));
     const adapter = new CodexAdapter(spawner.spawn);
     await adapter.start({ cwd: "C:\\dev\\app" });
     await expect(adapter.send("x")).resolves.toMatchObject({ status: "failed", text: expect.stringContaining("unexpected response to turn/start") });
@@ -99,7 +120,7 @@ describe("CodexAdapter", () => {
 
   it("turn ID が未確定でも interrupt の期限を開始し、完了済みのターンでは abort しない", async () => {
     const responder = defaultResponder();
-    const spawner = createFakeSpawner((message) => message.method === "turn/start" ? undefined : responder(message));
+    const spawner = createFakeSpawner(message => (message.method === "turn/start" ? undefined : responder(message)));
     const adapter = new CodexAdapter(spawner.spawn);
     await adapter.start({ cwd: "C:\\dev\\app" });
     vi.useFakeTimers();
@@ -117,7 +138,7 @@ describe("CodexAdapter", () => {
 
   it("turn ID が未確定のままなら interrupt の期限後に abort する", async () => {
     const responder = defaultResponder();
-    const spawner = createFakeSpawner((message) => message.method === "turn/start" ? undefined : responder(message));
+    const spawner = createFakeSpawner(message => (message.method === "turn/start" ? undefined : responder(message)));
     const adapter = new CodexAdapter(spawner.spawn);
     await adapter.start({ cwd: "C:\\dev\\app" });
     vi.useFakeTimers();
@@ -157,12 +178,14 @@ describe("CodexAdapter", () => {
     expect(call.options.env.OPENAI_API_KEY).toBeUndefined();
     expect(call.options.env.CLODEX_AGENT).toBe("codex");
 
-    const methods = spawner.last.written.map((m) => m.method);
+    const methods = spawner.last.written.map(m => m.method);
     expect(methods).toEqual(["initialize", "initialized", "account/read", "thread/start", "account/rateLimits/read"]);
     await flush();
     expect(events).toContainEqual({ type: "rate_limit", fiveHour: { usedPercent: 4, resetsAt: 100 } });
     expect(spawner.last.writtenWith("method", "thread/start")[0]!.params).toMatchObject({
-      cwd: "C:\\dev\\app", approvalPolicy: "never", sandbox: "workspace-write",
+      cwd: "C:\\dev\\app",
+      approvalPolicy: "never",
+      sandbox: "workspace-write",
     });
     expect(adapter.status).toBe("idle");
     expect(adapter.sessionId).toBe(THREAD_ID);
@@ -221,7 +244,7 @@ describe("CodexAdapter", () => {
 
   it("起動処理中の model / effort 変更は最初の turn/start に反映する", async () => {
     const responder = defaultResponder();
-    const spawner = createFakeSpawner((message) => message.method === "thread/start" ? undefined : responder(message));
+    const spawner = createFakeSpawner(message => (message.method === "thread/start" ? undefined : responder(message)));
     const adapter = new CodexAdapter(spawner.spawn);
     const started = adapter.start({ cwd: "C:\\dev\\app" });
     await flush();
@@ -238,7 +261,7 @@ describe("CodexAdapter", () => {
 
   it("thread/start を送った後の起動中に変更された権限は、最初の turn/start で反映する", async () => {
     const responder = defaultResponder();
-    const spawner = createFakeSpawner((m) => (m.method === "thread/start" ? undefined : responder(m)));
+    const spawner = createFakeSpawner(m => (m.method === "thread/start" ? undefined : responder(m)));
     const adapter = new CodexAdapter(spawner.spawn);
     const started = adapter.start({ cwd: "C:\\dev\\app" });
     await flush();
@@ -256,10 +279,9 @@ describe("CodexAdapter", () => {
   it("AGENTS.md が無い project 用に CLAUDE.md を読ませ、workspace-write のネットワークを許して起動する", async () => {
     const { spawner, started } = await setup();
     await started;
-    expect(spawner.calls[0]!.args).toEqual(expect.arrayContaining([
-      "-c", 'project_doc_fallback_filenames=["CLAUDE.md"]',
-      "-c", "sandbox_workspace_write.network_access=true",
-    ]));
+    expect(spawner.calls[0]!.args).toEqual(
+      expect.arrayContaining(["-c", 'project_doc_fallback_filenames=["CLAUDE.md"]', "-c", "sandbox_workspace_write.network_access=true"]),
+    );
   });
 
   it("edit への setPermission はネットワークを許す sandboxPolicy を送る", async () => {
@@ -291,7 +313,7 @@ describe("CodexAdapter", () => {
     await expect(started).rejects.toThrow(/apiKey/);
     expect(proc.killed).toBe(true);
     expect(adapter.status).toBe("stopped");
-    expect(events.some((e) => e.type === "error")).toBe(true);
+    expect(events.some(e => e.type === "error")).toBe(true);
   });
 
   it("resumeSessionId 指定時は thread/resume を使う", async () => {
@@ -306,10 +328,14 @@ describe("CodexAdapter", () => {
     const { spawner, started } = await setup({ mcpUrl: "http://127.0.0.1:5000/mcp/codex" });
     await started;
     const args = spawner.calls[0]!.args;
-    expect(args).toEqual(expect.arrayContaining([
-      "-c", 'mcp_servers.clodex.url="http://127.0.0.1:5000/mcp/codex"',
-      "-c", 'mcp_servers.clodex.default_tools_approval_mode="approve"',
-    ]));
+    expect(args).toEqual(
+      expect.arrayContaining([
+        "-c",
+        'mcp_servers.clodex.url="http://127.0.0.1:5000/mcp/codex"',
+        "-c",
+        'mcp_servers.clodex.default_tools_approval_mode="approve"',
+      ]),
+    );
   });
 
   it("send は turn/start を送り、turn/completed で最後の agentMessage を結果にする", async () => {
@@ -319,7 +345,8 @@ describe("CodexAdapter", () => {
     expect(adapter.status).toBe("busy");
     await flush();
     expect(proc.writtenWith("method", "turn/start")[0]!.params).toEqual({
-      threadId: THREAD_ID, input: [{ type: "text", text: "hello", text_elements: [] }],
+      threadId: THREAD_ID,
+      input: [{ type: "text", text: "hello", text_elements: [] }],
     });
 
     proc.emit({ method: "item/completed", params: { item: { type: "mcpToolCall", server: "clodex", tool: "send_message", arguments: { to: "claude" } } } });
@@ -338,16 +365,24 @@ describe("CodexAdapter", () => {
   it("fileChange item の変更ファイルを tool event にする", async () => {
     const { started, proc, events } = await setup();
     await started;
-    proc.emit({ method: "item/completed", params: { item: { type: "fileChange", changes: [
-      { path: "src/a.ts", kind: { type: "update" }, diff: "..." },
-      { path: "src/b.ts", kind: { type: "add" }, diff: "..." },
-    ] } } });
+    proc.emit({
+      method: "item/completed",
+      params: {
+        item: {
+          type: "fileChange",
+          changes: [
+            { path: "src/a.ts", kind: { type: "update" }, diff: "..." },
+            { path: "src/b.ts", kind: { type: "add" }, diff: "..." },
+          ],
+        },
+      },
+    });
     expect(events).toContainEqual({ type: "tool", name: "fileChange", input: "src/a.ts, src/b.ts", files: ["src/a.ts", "src/b.ts"] });
   });
 
   it("turn/start の error 応答はターンを failed にする", async () => {
     const responder = defaultResponder();
-    const spawner = createFakeSpawner((m) => (m.method === "turn/start" ? undefined : responder(m)));
+    const spawner = createFakeSpawner(m => (m.method === "turn/start" ? undefined : responder(m)));
     const adapter = new CodexAdapter(spawner.spawn);
     await adapter.start({ cwd: "C:\\dev\\app" });
     const turn = adapter.send("x");
@@ -438,25 +473,39 @@ describe("CodexAdapter", () => {
     await started;
     proc.emit({ id: 99, method: "item/commandExecution/requestApproval", params: {} });
     expect(proc.written).toContainEqual(expect.objectContaining({ id: 99, error: expect.objectContaining({ code: expect.any(Number) }) }));
-    expect(events.some((e) => e.type === "error" && /requestApproval/.test(e.message))).toBe(true);
+    expect(events.some(e => e.type === "error" && /requestApproval/.test(e.message))).toBe(true);
   });
 
   it("thread/tokenUsage/updated の last.totalTokens をコンテキストの大きさとして流す", async () => {
     const { started, proc, events } = await setup();
     await started;
-    proc.emit({ method: "thread/tokenUsage/updated", params: { threadId: THREAD_ID, turnId: TURN_ID, tokenUsage: {
-      total: { totalTokens: 90000 }, last: { totalTokens: 30000 }, modelContextWindow: 258000,
-    } } });
+    proc.emit({
+      method: "thread/tokenUsage/updated",
+      params: {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        tokenUsage: {
+          total: { totalTokens: 90000 },
+          last: { totalTokens: 30000 },
+          modelContextWindow: 258000,
+        },
+      },
+    });
     expect(events).toContainEqual({ type: "context", tokens: 30000, window: 258000 });
   });
 
   it("account/rateLimits/updated を正規化して流す", async () => {
     const { started, proc, events } = await setup();
     await started;
-    proc.emit({ method: "account/rateLimits/updated", params: { rateLimits: {
-      primary: { usedPercent: 3, windowDurationMins: 300, resetsAt: 1791199508 },
-      secondary: { usedPercent: 29, windowDurationMins: 10080, resetsAt: 1791655240 },
-    } } });
+    proc.emit({
+      method: "account/rateLimits/updated",
+      params: {
+        rateLimits: {
+          primary: { usedPercent: 3, windowDurationMins: 300, resetsAt: 1791199508 },
+          secondary: { usedPercent: 29, windowDurationMins: 10080, resetsAt: 1791655240 },
+        },
+      },
+    });
     expect(events).toContainEqual({
       type: "rate_limit",
       fiveHour: { usedPercent: 3, resetsAt: 1791199508 },
@@ -467,20 +516,30 @@ describe("CodexAdapter", () => {
   it("5 時間枠がないプランでは primary の週の枠を weekly として流す", async () => {
     const { started, proc, events } = await setup();
     await started;
-    proc.emit({ method: "account/rateLimits/updated", params: { rateLimits: {
-      primary: { usedPercent: 1, windowDurationMins: 10080, resetsAt: 1791846154 },
-      secondary: null,
-    } } });
+    proc.emit({
+      method: "account/rateLimits/updated",
+      params: {
+        rateLimits: {
+          primary: { usedPercent: 1, windowDurationMins: 10080, resetsAt: 1791846154 },
+          secondary: null,
+        },
+      },
+    });
     expect(events).toContainEqual({ type: "rate_limit", weekly: { usedPercent: 1, resetsAt: 1791846154 } });
   });
 
   it("5 時間でも週でもない長さの枠は無視する", async () => {
     const { started, proc, events } = await setup();
     await started;
-    proc.emit({ method: "account/rateLimits/updated", params: { rateLimits: {
-      primary: { usedPercent: 7, windowDurationMins: 60, resetsAt: 1791846154 },
-      secondary: { usedPercent: 29, resetsAt: 1791655240 },
-    } } });
+    proc.emit({
+      method: "account/rateLimits/updated",
+      params: {
+        rateLimits: {
+          primary: { usedPercent: 7, windowDurationMins: 60, resetsAt: 1791846154 },
+          secondary: { usedPercent: 29, resetsAt: 1791655240 },
+        },
+      },
+    });
     expect(events.at(-1)).toEqual({ type: "rate_limit" });
   });
 
@@ -498,7 +557,7 @@ describe("CodexAdapter", () => {
   it("thread/start が失敗したら start を reject してプロセスを止める", async () => {
     // thread/start だけ自動応答せず、テストからエラー応答を返す
     const responder = defaultResponder();
-    const spawner = createFakeSpawner((m) => (m.method === "thread/start" ? undefined : responder(m)));
+    const spawner = createFakeSpawner(m => (m.method === "thread/start" ? undefined : responder(m)));
     const adapter = new CodexAdapter(spawner.spawn);
     const started = adapter.start({ cwd: "C:\\dev\\app" });
     await flush();
@@ -530,13 +589,19 @@ describe("CodexAdapter の subagent（docs/spikes/steer-image-subagent.md）", (
     activity("started", "sub-2", "/root/reply");
     proc.emit({ method: "item/completed", params: { threadId: "sub-1", item: { type: "subAgentActivity", kind: "completed", agentThreadId: "sub-2" } } });
     activity("completed", "sub-1", "/root/research");
-    expect(events.filter((event) => event.type === "subagents")).toEqual([
+    expect(events.filter(event => event.type === "subagents")).toEqual([
       { type: "subagents", running: [{ id: "sub-1", description: "/root/research" }] },
-      { type: "subagents", running: [{ id: "sub-1", description: "/root/research" }, { id: "sub-2", description: "/root/reply" }] },
+      {
+        type: "subagents",
+        running: [
+          { id: "sub-1", description: "/root/research" },
+          { id: "sub-2", description: "/root/reply" },
+        ],
+      },
       { type: "subagents", running: [{ id: "sub-2", description: "/root/reply" }] },
     ]);
     proc.exit(0);
-    expect(events.filter((event) => event.type === "subagents").at(-1)).toEqual({ type: "subagents", running: [] });
+    expect(events.filter(event => event.type === "subagents").at(-1)).toEqual({ type: "subagents", running: [] });
   });
 
   it("別 thread（subagent）の通知では親のターンを終えず、親の subAgentActivity を tool として出す", async () => {
@@ -545,7 +610,10 @@ describe("CodexAdapter の subagent（docs/spikes/steer-image-subagent.md）", (
     const turn = adapter.send("spawn");
     await flush();
     const SUB = "thr-sub";
-    proc.emit({ method: "item/completed", params: { threadId: THREAD_ID, item: { type: "subAgentActivity", kind: "started", agentThreadId: SUB, agentPath: "/root/reply" } } });
+    proc.emit({
+      method: "item/completed",
+      params: { threadId: THREAD_ID, item: { type: "subAgentActivity", kind: "started", agentThreadId: SUB, agentPath: "/root/reply" } },
+    });
     proc.emit({ method: "turn/started", params: { threadId: SUB, turn: { id: "turn-sub" } } });
     proc.emit({ method: "item/completed", params: { threadId: SUB, item: { type: "agentMessage", text: "SUB-DONE" } } });
     proc.emit({ method: "thread/tokenUsage/updated", params: { threadId: SUB, tokenUsage: { last: { totalTokens: 5 } } } });
@@ -557,7 +625,7 @@ describe("CodexAdapter の subagent（docs/spikes/steer-image-subagent.md）", (
     await expect(turn).resolves.toEqual({ status: "completed", text: "PARENT-DONE" });
     expect(events).toContainEqual({ type: "tool", name: "subagent", input: "started /root/reply" });
     expect(events).not.toContainEqual({ type: "text", text: "SUB-DONE" });
-    expect(events.some((e) => e.type === "context")).toBe(false);
+    expect(events.some(e => e.type === "context")).toBe(false);
   });
 });
 
@@ -598,11 +666,12 @@ describe("CodexAdapter の steer", () => {
     await steer("二つ目", "s-2");
     const userMessage = (id: string) => ({ method: "item/completed", params: { threadId: THREAD_ID, item: { type: "userMessage", id } } });
     proc.emit(userMessage("input"));
-    expect(events.filter((e) => e.type === "steer_delivered")).toEqual([]);
+    expect(events.filter(e => e.type === "steer_delivered")).toEqual([]);
     proc.emit(userMessage("u1"));
     proc.emit(userMessage("u2"));
-    expect(events.filter((e) => e.type === "steer_delivered")).toEqual([
-      { type: "steer_delivered", steerId: "s-1" }, { type: "steer_delivered", steerId: "s-2" },
+    expect(events.filter(e => e.type === "steer_delivered")).toEqual([
+      { type: "steer_delivered", steerId: "s-1" },
+      { type: "steer_delivered", steerId: "s-2" },
     ]);
   });
 });
@@ -614,7 +683,10 @@ describe("CodexAdapter の画像", () => {
     void adapter.send("見て", ["C:\\up\\a.png"]);
     await flush();
     expect(proc.writtenWith("method", "turn/start")[0]!.params).toMatchObject({
-      input: [{ type: "text", text: "見て", text_elements: [] }, { type: "localImage", path: "C:\\up\\a.png" }],
+      input: [
+        { type: "text", text: "見て", text_elements: [] },
+        { type: "localImage", path: "C:\\up\\a.png" },
+      ],
     });
   });
 });

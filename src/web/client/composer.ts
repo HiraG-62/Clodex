@@ -9,8 +9,6 @@ import type { ClientContext } from "./store.js";
 import { applyFeedItem, rebuildTimeline } from "./timeline.js";
 
 export function createComposer(ctx: ClientContext) {
-
-
   // ---- 入力 ----
   const coarse = ctx.mobile.matches;
   const resize = () => {
@@ -40,15 +38,21 @@ export function createComposer(ctx: ClientContext) {
     onInputChanged();
     ctx.scrollToBottom();
   };
-  ctx.$("#composer").addEventListener("submit", (e) => {
+  ctx.$("#composer").addEventListener("submit", e => {
     e.preventDefault();
     void submit();
   });
   // ---- 入力の補助（候補と強調表示。DESIGN.md §28 v0.3 A） ----
   const assist = createInputAssist(ctx.commands, ctx.AGENT_IDS, {
-    agent: ctx.t("web.assist.agent"), file: ctx.t("web.assist.file"), permission: ctx.t("web.assist.permission"),
-    effort: ctx.t("web.assist.effort"), model: ctx.t("web.assist.model"), conversation: ctx.t("web.assist.conversation"),
-    project: ctx.t("web.assist.project"), worktree: ctx.t("web.assist.worktree"), queued: ctx.t("web.assist.queued"),
+    agent: ctx.t("web.assist.agent"),
+    file: ctx.t("web.assist.file"),
+    permission: ctx.t("web.assist.permission"),
+    effort: ctx.t("web.assist.effort"),
+    model: ctx.t("web.assist.model"),
+    conversation: ctx.t("web.assist.conversation"),
+    project: ctx.t("web.assist.project"),
+    worktree: ctx.t("web.assist.worktree"),
+    queued: ctx.t("web.assist.queued"),
   });
   const highlightLayer = ctx.$("#input-highlight");
   const suggestList = ctx.$("#suggest");
@@ -61,7 +65,7 @@ export function createComposer(ctx: ClientContext) {
   let selected = 0;
 
   const renderHighlight = () => {
-    const nodes: Node[] = assist.highlight(ctx.input.value, ctx.store.fileSet).map((segment) => {
+    const nodes: Node[] = assist.highlight(ctx.input.value, ctx.store.fileSet).map(segment => {
       if (!segment.kind) return document.createTextNode(segment.text);
       return ctx.el("mark", segment.kind === "agent" ? `hl-${segment.text.slice(1).replace(/!$/, "")}` : `hl-${segment.kind}`, segment.text);
     });
@@ -87,25 +91,33 @@ export function createComposer(ctx: ClientContext) {
   const renderSuggest = () => {
     const loading = ctx.store.filesLoading && /(?:^|\s)@[^\s]*$/.test(ctx.input.value.slice(0, ctx.input.selectionStart));
     if (!suggestion && !loading) return closeSuggest();
-    suggestList.replaceChildren(...(suggestion?.items ?? []).map((item, index) => {
-      const option = ctx.el("li");
-      option.setAttribute("role", "option");
-      option.setAttribute("aria-selected", String(index === selected));
-      option.append(ctx.el("span", "l", item.label), ctx.el("span", "d", item.detail));
-      // 入力欄のフォーカスを外さずに選ぶ
-      option.addEventListener("pointerdown", (e) => e.preventDefault());
-      option.addEventListener("click", () => accept(index));
-      // タッチでは click の前に入力欄の blur で一覧が閉じるので、指を離した時点で選ぶ。スクロールした指は選ばない
-      let touchY: number | undefined;
-      option.addEventListener("touchstart", (e) => { touchY = e.touches[0]?.clientY; }, { passive: true });
-      option.addEventListener("touchend", (e) => {
-        const endY = e.changedTouches[0]?.clientY;
-        if (touchY === undefined || endY === undefined || Math.abs(endY - touchY) > ctx.SUGGEST_TAP_SLOP_PX) return;
-        e.preventDefault();
-        accept(index);
-      });
-      return option;
-    }));
+    suggestList.replaceChildren(
+      ...(suggestion?.items ?? []).map((item, index) => {
+        const option = ctx.el("li");
+        option.setAttribute("role", "option");
+        option.setAttribute("aria-selected", String(index === selected));
+        option.append(ctx.el("span", "l", item.label), ctx.el("span", "d", item.detail));
+        // 入力欄のフォーカスを外さずに選ぶ
+        option.addEventListener("pointerdown", e => e.preventDefault());
+        option.addEventListener("click", () => accept(index));
+        // タッチでは click の前に入力欄の blur で一覧が閉じるので、指を離した時点で選ぶ。スクロールした指は選ばない
+        let touchY: number | undefined;
+        option.addEventListener(
+          "touchstart",
+          e => {
+            touchY = e.touches[0]?.clientY;
+          },
+          { passive: true },
+        );
+        option.addEventListener("touchend", e => {
+          const endY = e.changedTouches[0]?.clientY;
+          if (touchY === undefined || endY === undefined || Math.abs(endY - touchY) > ctx.SUGGEST_TAP_SLOP_PX) return;
+          e.preventDefault();
+          accept(index);
+        });
+        return option;
+      }),
+    );
     if (loading) {
       const row = ctx.el("li", "muted", ctx.t("web.files.loading"));
       row.prepend(ctx.el("span", "spin"));
@@ -131,13 +143,14 @@ export function createComposer(ctx: ClientContext) {
     try {
       const response = await fetch("/api/files");
       if (!response.ok || generation !== ctx.store.filesGeneration) return;
-      const loaded = await response.json() as string[];
+      const loaded = (await response.json()) as string[];
       if (generation !== ctx.store.filesGeneration) return;
       ctx.store.files = loaded;
       ctx.store.fileSet = new Set(ctx.store.files);
       renderHighlight();
-    } catch { /* 候補が出ないだけで入力はできる */ }
-    finally {
+    } catch {
+      /* 候補が出ないだけで入力はできる */
+    } finally {
       if (generation === ctx.store.filesGeneration) {
         ctx.store.filesLoading = false;
         ctx.store.filesLoadedAt = Date.now();
@@ -148,11 +161,16 @@ export function createComposer(ctx: ClientContext) {
   // コマンド入力中と、solo で送り先が固定されているときは送り先を変えられない
   function syncTargetButtons() {
     const shell = isShellInput(ctx.input.value);
-    const solo = ctx.store.state?.conversations.find((conversation) => conversation.current)?.solo;
+    const solo = ctx.store.state?.conversations.find(conversation => conversation.current)?.solo;
     const disabled = shell || Boolean(solo && solo !== "free");
     for (const button of document.querySelectorAll<HTMLButtonElement>(".to button, #target-toggle")) button.disabled = disabled;
     ctx.$("#target-toggle").replaceChildren(shell ? ctx.icon("terminal") : ctx.mark(ctx.store.target ?? ctx.store.state?.primary ?? "claude"));
-    ctx.$("#target-toggle").setAttribute("aria-label", shell ? ctx.t("web.shellInput") : `${ctx.t("web.to.label")}: ${ctx.AGENTS[ctx.store.target ?? ctx.store.state?.primary ?? "claude"].name}`);
+    ctx
+      .$("#target-toggle")
+      .setAttribute(
+        "aria-label",
+        shell ? ctx.t("web.shellInput") : `${ctx.t("web.to.label")}: ${ctx.AGENTS[ctx.store.target ?? ctx.store.state?.primary ?? "claude"].name}`,
+      );
     ctx.$("#target-toggle").title = ctx.$("#target-toggle").getAttribute("aria-label")!;
   }
   function onInputChanged() {
@@ -203,8 +221,8 @@ export function createComposer(ctx: ClientContext) {
     for (const file of fileInput.files ?? []) void attach(file);
     fileInput.value = "";
   });
-  ctx.input.addEventListener("paste", (e) => {
-    const images = [...(e.clipboardData?.files ?? [])].filter((file) => file.type.startsWith("image/"));
+  ctx.input.addEventListener("paste", e => {
+    const images = [...(e.clipboardData?.files ?? [])].filter(file => file.type.startsWith("image/"));
     if (!images.length) return;
     e.preventDefault();
     for (const image of images) void attach(image);
@@ -213,13 +231,15 @@ export function createComposer(ctx: ClientContext) {
   ctx.input.addEventListener("input", onInputChanged);
   ctx.input.addEventListener("focus", () => void loadFiles());
   ctx.input.addEventListener("blur", closeSuggest);
-  ctx.input.addEventListener("scroll", () => { highlightLayer.scrollTop = ctx.input.scrollTop; });
+  ctx.input.addEventListener("scroll", () => {
+    highlightLayer.scrollTop = ctx.input.scrollTop;
+  });
   ctx.input.addEventListener("click", updateSuggest);
-  ctx.input.addEventListener("keyup", (e) => {
+  ctx.input.addEventListener("keyup", e => {
     if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) updateSuggest();
   });
   // PC は送信キーの設定で送信。スマホは Enter で改行し、送信はボタン（日本語入力の誤送信を防ぐ）
-  ctx.input.addEventListener("keydown", (e) => {
+  ctx.input.addEventListener("keydown", e => {
     if (e.isComposing) return;
     if (suggestion) {
       const count = suggestion.items.length;
@@ -254,7 +274,8 @@ export function createComposer(ctx: ClientContext) {
   ctx.newer.addEventListener("click", ctx.scrollToBottom);
   setInterval(() => {
     for (const node of ctx.log.querySelectorAll<HTMLElement>(".elapsed[data-start]")) node.textContent = ctx.elapsedText(node.dataset.start ?? "");
-    for (const node of document.querySelectorAll<HTMLElement>("#working-panel .elapsed[data-start], #agents .elapsed[data-start]")) node.textContent = ctx.elapsedText(node.dataset.start ?? "");
+    for (const node of document.querySelectorAll<HTMLElement>("#working-panel .elapsed[data-start], #agents .elapsed[data-start]"))
+      node.textContent = ctx.elapsedText(node.dataset.start ?? "");
   }, ctx.MS_PER_SECOND);
   const loadHistory = async () => {
     const oldest = ctx.store.history[0];
@@ -265,22 +286,27 @@ export function createComposer(ctx: ClientContext) {
     try {
       const response = await fetch(`/api/history?before=${oldest.seq}`);
       if (!response.ok) throw new Error(String(response.status));
-      const page = await response.json() as HistoryPage;
+      const page = (await response.json()) as HistoryPage;
       if (generation !== ctx.store.historyGeneration) return;
       ctx.store.historyHasMore = page.hasMore;
       const previousHeight = ctx.log.scrollHeight;
       const previousTop = ctx.log.scrollTop;
       ctx.store.history = [...page.items, ...ctx.store.history];
       ctx.store.historyLoading = false;
-      const queued = new Set(ctx.store.items.filter((item) => item.kind === "human" && item.queued).map((item) => item.id));
-      ctx.store.items = rebuildTimeline(ctx.store.history, applyFeedItem).map((item) => item.kind === "human" && queued.has(item.id) ? { ...item, queued: true } : item);
+      const queued = new Set(ctx.store.items.filter(item => item.kind === "human" && item.queued).map(item => item.id));
+      ctx.store.items = rebuildTimeline(ctx.store.history, applyFeedItem).map(item =>
+        item.kind === "human" && queued.has(item.id) ? { ...item, queued: true } : item,
+      );
       ctx.renderLog();
       ctx.log.scrollTop = previousTop + ctx.log.scrollHeight - previousHeight;
       ctx.syncNewer();
     } catch {
       if (generation === ctx.store.historyGeneration) ctx.showToast(ctx.t("web.history.failed"), "warn");
     } finally {
-      if (generation === ctx.store.historyGeneration) { ctx.store.historyLoading = false; ctx.$("#history-loading").hidden = true; }
+      if (generation === ctx.store.historyGeneration) {
+        ctx.store.historyLoading = false;
+        ctx.$("#history-loading").hidden = true;
+      }
     }
   };
   ctx.log.addEventListener("scroll", () => {

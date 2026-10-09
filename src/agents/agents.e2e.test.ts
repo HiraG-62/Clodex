@@ -26,7 +26,7 @@ const scenario = (create: () => AgentAdapter, model?: string) => async () => {
   expect(await agent.send("Reply with exactly: PONG")).toEqual({ status: "completed", text: expect.stringContaining("PONG") });
 
   const long = agent.send("Write the numbers 1 to 500, one per line. Do not use tools.");
-  await new Promise((r) => setTimeout(r, INTERRUPT_DELAY_MS));
+  await new Promise(r => setTimeout(r, INTERRUPT_DELAY_MS));
   await agent.interrupt();
   expect((await long).status).toBe("interrupted");
 
@@ -43,6 +43,14 @@ const scenario = (create: () => AgentAdapter, model?: string) => async () => {
 };
 
 describe.runIf(process.env.CLODEX_E2E === "1")("Agent adapters (real CLI)", () => {
-  it("Claude: 送信・interrupt・停止後の resume", scenario(() => new ClaudeAdapter(), CLAUDE_E2E_MODEL), E2E_TIMEOUT_MS);
-  it("Codex: 送信・interrupt・停止後の resume", scenario(() => new CodexAdapter()), E2E_TIMEOUT_MS);
+  it(
+    "Claude: 送信・interrupt・停止後の resume",
+    scenario(() => new ClaudeAdapter(), CLAUDE_E2E_MODEL),
+    E2E_TIMEOUT_MS,
+  );
+  it(
+    "Codex: 送信・interrupt・停止後の resume",
+    scenario(() => new CodexAdapter()),
+    E2E_TIMEOUT_MS,
+  );
 });

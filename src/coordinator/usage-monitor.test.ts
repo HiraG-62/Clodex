@@ -13,7 +13,7 @@ const weeklyResetsAt = (elapsed: number) => NOW_SECONDS + Math.round((1 - elapse
 const setup = (alert = DEFAULT_USAGE_ALERT) => {
   const bus = new EventBus(now);
   const notices: string[] = [];
-  bus.subscribe((e) => {
+  bus.subscribe(e => {
     if (e.kind === "notice") notices.push(e.text);
   });
   const monitor = new UsageMonitor(bus, alert, now);
@@ -40,7 +40,11 @@ describe("UsageMonitor", () => {
     expect(monitor.snapshot("claude")).toEqual({});
     report("claude", { usedPercent: 50, resetsAt: weeklyResetsAt(0.7) }, { usedPercent: 12, resetsAt: NOW_SECONDS + 3600 });
     expect(monitor.snapshot("claude")).toEqual({
-      fiveHourPercent: 12, fiveHourResetsAt: NOW_SECONDS + 3600, weeklyPercent: 50, weeklyPace: -20, weeklyResetsAt: weeklyResetsAt(0.7),
+      fiveHourPercent: 12,
+      fiveHourResetsAt: NOW_SECONDS + 3600,
+      weeklyPercent: 50,
+      weeklyPace: -20,
+      weeklyResetsAt: weeklyResetsAt(0.7),
     });
     expect(monitor.snapshot("codex")).toEqual({});
   });

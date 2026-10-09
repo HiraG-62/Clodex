@@ -27,21 +27,27 @@ export const sendMessageShape = {
   to: z.enum(AGENT_IDS).describe("Recipient agent"),
   type: z.enum(MESSAGE_TYPES).describe("Message type. RESULT and ACK require replyTo"),
   taskId: z.string().min(1).describe("Task ID"),
-  body: z.string().min(1).max(MAX_BODY_LENGTH)
-    .describe("Request, question, or result summary. Reference commit/files instead of pasting large content"),
+  body: z.string().min(1).max(MAX_BODY_LENGTH).describe("Request, question, or result summary. Reference commit/files instead of pasting large content"),
   replyTo: z.string().min(1).optional().describe("ID of the message this replies to"),
   commit: z.string().min(1).optional().describe("Commit hash to look at"),
-  spec: z.string().min(1).optional().describe(
-    "Path (relative to the project root) of the design document for this request. Write the design there first; keep body short. " +
-    "On a RESULT, the design document you updated to answer a QUESTION",
-  ),
+  spec: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Path (relative to the project root) of the design document for this request. Write the design there first; keep body short. " +
+        "On a RESULT, the design document you updated to answer a QUESTION",
+    ),
   files: z.array(z.string().min(1)).optional().describe("File paths relative to the project root"),
   status: z.enum(RESULT_STATUSES).optional().describe("RESULT only"),
   issues: z.array(issueSchema).optional().describe("RESULT or ISSUE only"),
-  interrupt: z.boolean().optional().describe(
-    "Deliver into the recipient's running turn when it is working on your request. " +
-    "Use only for corrections that would otherwise waste the recipient's work",
-  ),
+  interrupt: z
+    .boolean()
+    .optional()
+    .describe(
+      "Deliver into the recipient's running turn when it is working on your request. " +
+        "Use only for corrections that would otherwise waste the recipient's work",
+    ),
 };
 
 const TYPES_ALLOWING_SPEC = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST", "RESULT"]);
@@ -84,8 +90,7 @@ const ruleViolation = (input: SendMessageInput, from: AgentId): string | undefin
   return undefined;
 };
 
-const formatZodError = (error: z.ZodError): string =>
-  error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ");
+const formatZodError = (error: z.ZodError): string => error.issues.map(issue => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ");
 
 // Agent の入力を検証し、Coordinator が決めるフィールドを付けて message にする
 export const createMessage = (

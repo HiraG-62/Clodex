@@ -12,7 +12,10 @@ export class FakeAgentProcess implements AgentProcess {
   private exitHandlers: Array<(code: number | null) => void> = [];
 
   // JSON-RPC request（id + method）に対する result を返す。undefined なら応答しない
-  constructor(private readonly responder?: Responder, private readonly exitOnKill = true) {}
+  constructor(
+    private readonly responder?: Responder,
+    private readonly exitOnKill = true,
+  ) {}
 
   write(line: string): void {
     const message = JSON.parse(line) as JsonObject;
@@ -48,7 +51,7 @@ export class FakeAgentProcess implements AgentProcess {
   }
 
   writtenWith(key: string, value: unknown): JsonObject[] {
-    return this.written.filter((m) => m[key] === value);
+    return this.written.filter(m => m[key] === value);
   }
 }
 
@@ -59,8 +62,8 @@ export interface SpawnCall {
 }
 
 export interface FakeSpawnerOptions {
-  spawnError?: Error;     // 実行ファイルが無い等の起動失敗を再現する
-  exitOnKill?: boolean;   // false なら kill しても exit しない（終了待ちの再現用）
+  spawnError?: Error; // 実行ファイルが無い等の起動失敗を再現する
+  exitOnKill?: boolean; // false なら kill しても exit しない（終了待ちの再現用）
 }
 
 export const createFakeSpawner = (responder?: Responder, { spawnError, exitOnKill = true }: FakeSpawnerOptions = {}) => {
@@ -76,7 +79,14 @@ export const createFakeSpawner = (responder?: Responder, { spawnError, exitOnKil
     }
     return proc;
   };
-  return { spawn, calls, processes, get last(): FakeAgentProcess { return processes.at(-1)!; } };
+  return {
+    spawn,
+    calls,
+    processes,
+    get last(): FakeAgentProcess {
+      return processes.at(-1)!;
+    },
+  };
 };
 
-export const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+export const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));

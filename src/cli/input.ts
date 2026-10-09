@@ -1,10 +1,18 @@
 // 1 行の人間の入力を Shell command に変換する（DESIGN.md §8）
-import { LIMIT_NAMES, isLimitValue, type LimitName } from "../coordinator/budget-manager.js";
-import { t } from "../i18n/i18n.js";
-import { AGENT_IDS, CLAUDE_EFFORT_LEVELS, COMMON_EFFORT_LEVELS, PERMISSION_LEVELS, isAgentId, type AgentId, type PermissionLevel } from "../agents/agent-adapter.js";
-import type { SoloMode } from "../coordinator/coordinator.js";
 
+import {
+  AGENT_IDS,
+  type AgentId,
+  CLAUDE_EFFORT_LEVELS,
+  COMMON_EFFORT_LEVELS,
+  isAgentId,
+  PERMISSION_LEVELS,
+  type PermissionLevel,
+} from "../agents/agent-adapter.js";
 import { LANGUAGES, type Language } from "../context/language.js";
+import { isLimitValue, LIMIT_NAMES, type LimitName } from "../coordinator/budget-manager.js";
+import type { SoloMode } from "../coordinator/coordinator.js";
+import { t } from "../i18n/i18n.js";
 
 export type ShellCommand =
   | { kind: "language"; value?: Language }
@@ -44,8 +52,7 @@ export type ShellCommand =
 const MENTION_PATTERN = /^@(\S+)\s*([\s\S]*)$/;
 const COMMAND_PATTERN = /^\/(\S+)\s*(.*)$/;
 
-const isPermissionLevel = (value: string): value is PermissionLevel =>
-  (PERMISSION_LEVELS as readonly string[]).includes(value);
+const isPermissionLevel = (value: string): value is PermissionLevel => (PERMISSION_LEVELS as readonly string[]).includes(value);
 
 // /project pin|remove <path>: 一覧の整理（DESIGN.md §28 D2a）
 export type ProjectAction = "pin" | "remove";
@@ -61,8 +68,7 @@ const LIMITS_USAGE = "/limits [<name> <n> ...|reset|unlimited]";
 const parsePermission = (arg: string): ShellCommand => {
   const [first, second, ...extra] = arg.split(/\s+/).filter(Boolean);
   if (!first || extra.length) return usage(PERMISSION_USAGE);
-  if (!second) return isPermissionLevel(first)
-    ? { kind: "permission", level: first } : usage(PERMISSION_USAGE);
+  if (!second) return isPermissionLevel(first) ? { kind: "permission", level: first } : usage(PERMISSION_USAGE);
   if (!isPermissionLevel(second)) return usage(PERMISSION_USAGE);
   return isAgentId(first) ? { kind: "permission", agent: first, level: second } : unknownAgent(first);
 };
@@ -77,8 +83,7 @@ const parseEffort = (arg: string): ShellCommand => {
   const [first, second, ...extra] = arg.split(/\s+/).filter(Boolean);
   if (!first || extra.length) return usage(EFFORT_USAGE);
   if (!second) {
-    return (COMMON_EFFORT_LEVELS as readonly string[]).includes(first)
-      ? { kind: "effort", level: first } : usage(EFFORT_USAGE);
+    return (COMMON_EFFORT_LEVELS as readonly string[]).includes(first) ? { kind: "effort", level: first } : usage(EFFORT_USAGE);
   }
   if (!isAgentId(first)) return unknownAgent(first);
   if (first === "claude" && !(CLAUDE_EFFORT_LEVELS as readonly string[]).includes(second)) {
@@ -148,7 +153,8 @@ const parseCommand = (name: string, arg: string, primary: AgentId): ShellCommand
         const name = parts[index];
         const raw = parts[index + 1];
         const value = Number(raw);
-        if (!name || !raw || !LIMIT_NAMES.includes(name as LimitName) || seen.has(name as LimitName) || !/^\d+$/.test(raw) || !isLimitValue(value)) return usage(LIMITS_USAGE);
+        if (!name || !raw || !LIMIT_NAMES.includes(name as LimitName) || seen.has(name as LimitName) || !/^\d+$/.test(raw) || !isLimitValue(value))
+          return usage(LIMITS_USAGE);
         seen.add(name as LimitName);
         values.push({ name: name as LimitName, value });
       }
@@ -215,9 +221,7 @@ const parseCommand = (name: string, arg: string, primary: AgentId): ShellCommand
       if (!arg) return usage(renameUsage);
       if (!arg.startsWith("#")) return { kind: "rename", title: arg };
       const match = arg.match(/^#([1-9]\d*)\s+(.+)$/);
-      return match?.[1] && match[2]
-        ? { kind: "rename", index: Number(match[1]), title: match[2] }
-        : usage(renameUsage);
+      return match?.[1] && match[2] ? { kind: "rename", index: Number(match[1]), title: match[2] } : usage(renameUsage);
     }
     case "solo":
       if (!arg || arg === "enable") return { kind: "solo", mode: "free" };

@@ -2,8 +2,6 @@ import type { WebState } from "../web-feed.js";
 import type { ClientContext } from "./store.js";
 
 export function createSettingsRefresh(ctx: ClientContext) {
-
-
   const refreshOpenSheet = () => {
     if (ctx.sheet.hidden) return;
     if (ctx.store.sheetKind === "projects") {
@@ -11,12 +9,12 @@ export function createSettingsRefresh(ctx: ClientContext) {
       if (list && list.dataset.key !== JSON.stringify(ctx.store.state?.projects ?? [])) list.replaceWith(ctx.projectEditorList());
     }
     if (ctx.store.sheetKind === "agent" && ctx.store.sheetAgent) {
-      const agent = ctx.store.state?.agents.find((candidate) => candidate.id === ctx.store.sheetAgent);
+      const agent = ctx.store.state?.agents.find(candidate => candidate.id === ctx.store.sheetAgent);
       const controls = ctx.$("#sheet-body").querySelector<HTMLElement>(".controls");
       if (agent && controls) ctx.store.controlUpdaters.get(controls)?.(agent);
     }
     if (ctx.store.sheetKind === "agentSettings" && ctx.store.sheetAgent) {
-      const incoming = ctx.store.state?.agents.find((candidate) => candidate.id === ctx.store.sheetAgent);
+      const incoming = ctx.store.state?.agents.find(candidate => candidate.id === ctx.store.sheetAgent);
       if (!incoming) return;
       const agent = ctx.displayedAgent(incoming);
       const waiting = ctx.store.pendingSettings[ctx.store.sheetAgent];
@@ -35,8 +33,8 @@ export function createSettingsRefresh(ctx: ClientContext) {
       const select = body.querySelector<HTMLSelectElement>('select[name="model-choice"]');
       const field = body.querySelector<HTMLInputElement>('input[name="model"]');
       if (select) {
-        const listed = [...select.options].filter((option) => option.value !== "__other__").map((option) => option.value);
-        const incoming = agent.models.map((item) => item.value);
+        const listed = [...select.options].filter(option => option.value !== "__other__").map(option => option.value);
+        const incoming = agent.models.map(item => item.value);
         if (listed.join("\u0000") !== incoming.join("\u0000")) {
           const previous = select.value;
           select.replaceChildren();
@@ -48,16 +46,20 @@ export function createSettingsRefresh(ctx: ClientContext) {
           const other = ctx.el("option", "", ctx.t("web.model.other")) as HTMLOptionElement;
           other.value = "__other__";
           select.append(other);
-          const resolved = agent.models.find((item) => item.value === agent.model)
-            ?? agent.models.find((item) => item.resolved === agent.model && item.value !== "default")
-            ?? agent.models.find((item) => item.resolved === agent.model);
-          select.value = previous === "__other__" && field?.value ? "__other__" : resolved?.value ?? "__other__";
+          const resolved =
+            agent.models.find(item => item.value === agent.model) ??
+            agent.models.find(item => item.resolved === agent.model && item.value !== "default") ??
+            agent.models.find(item => item.resolved === agent.model);
+          select.value = previous === "__other__" && field?.value ? "__other__" : (resolved?.value ?? "__other__");
           if (field) field.hidden = select.value !== "__other__";
         }
       }
       if (field) field.placeholder = agent.modelLabel ?? ctx.displayDefault(agent.model);
       const apply = body.querySelector<HTMLButtonElement>(".model-form button");
-      if (apply) { ctx.setPending(apply, waiting?.model !== undefined); apply.disabled = waiting?.model !== undefined; }
+      if (apply) {
+        ctx.setPending(apply, waiting?.model !== undefined);
+        apply.disabled = waiting?.model !== undefined;
+      }
       if (select) select.disabled = waiting?.model !== undefined;
       if (field) field.disabled = waiting?.model !== undefined;
       const pendingLabel = body.querySelector<HTMLElement>(".setting-pending");

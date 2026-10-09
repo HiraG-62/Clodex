@@ -8,8 +8,7 @@ const makePath = () => join(mkdtempSync(join(tmpdir(), "clodex-settings-")), "ne
 
 describe("agentSettingsPath", () => {
   it("会話の履歴と同じ名前の .settings.json にする", () => {
-    expect(agentSettingsPath("C:\\home\\.clodex\\state\\E--dev-Clodex-1a2b3c4d.json"))
-      .toBe("C:\\home\\.clodex\\state\\E--dev-Clodex-1a2b3c4d.settings.json");
+    expect(agentSettingsPath("C:\\home\\.clodex\\state\\E--dev-Clodex-1a2b3c4d.json")).toBe("C:\\home\\.clodex\\state\\E--dev-Clodex-1a2b3c4d.settings.json");
   });
 });
 
@@ -54,11 +53,13 @@ describe("AgentSettingsStore", () => {
 
 describe("resolveStartSettings", () => {
   it("起動オプション > 保存した値 > 設定ファイルの順に決める", () => {
-    expect(resolveStartSettings({
-      saved: { claude: { permission: "full", model: "opus", effort: "high" }, codex: { model: "gpt-x" } },
-      configPermission: "read-only",
-      models: { codex: "gpt-cli" },
-    })).toEqual({
+    expect(
+      resolveStartSettings({
+        saved: { claude: { permission: "full", model: "opus", effort: "high" }, codex: { model: "gpt-x" } },
+        configPermission: "read-only",
+        models: { codex: "gpt-cli" },
+      }),
+    ).toEqual({
       claude: { permission: "full", model: "opus", effort: "high" },
       codex: { permission: "read-only", model: "gpt-cli" },
     });
@@ -73,7 +74,10 @@ it("上限の有効な保存値だけを読み、Agent の設定と併存する"
   const path = makePath();
   const store = new AgentSettingsStore(path);
   store.update(["claude"], { model: "haiku" });
-  writeFileSync(path, JSON.stringify({ claude: { model: "haiku" }, limits: { maxMessagesPerChain: 16, maxDelegationDepth: 101, unknown: 2, maxDelegationsPerChain: 1.5 } }));
+  writeFileSync(
+    path,
+    JSON.stringify({ claude: { model: "haiku" }, limits: { maxMessagesPerChain: 16, maxDelegationDepth: 101, unknown: 2, maxDelegationsPerChain: 1.5 } }),
+  );
   expect(store.load()).toEqual({ claude: { model: "haiku" }, limits: { maxMessagesPerChain: 16 } });
   store.setLimits({ maxDelegationDepth: 4 });
   expect(store.load()).toEqual({ claude: { model: "haiku" }, limits: { maxDelegationDepth: 4 } });

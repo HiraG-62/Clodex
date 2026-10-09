@@ -2,13 +2,14 @@
 import { marked } from "marked";
 
 export function renderMarkdown(source: string): string {
-  const escape = (text: string) => text.replace(/[&<>"']/g, (char) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] ?? char);
+  const escape = (text: string) => text.replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] ?? char);
   const safeUrl = (href: string) => {
     try {
       const url = new URL(href);
       return url.protocol === "http:" || url.protocol === "https:";
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   };
   const renderer = new marked.Renderer();
   renderer.html = ({ text }) => escape(text);

@@ -86,10 +86,12 @@ it("send_message の body の書式を伝える", () => {
   expect(buildRoleInstructions("codex", undefined)).toContain("Write body in Markdown");
 });
 
-it.each(["claude", "codex"] as const)("%s に人への質問は ask_user を使いターンを終えるよう指示する", (agent) => {
-  expect(buildRoleInstructions(agent, undefined)).toContain('When you need a decision from the human, ask with the ask_user tool of the "clodex" MCP server instead of writing the question in your reply, then end your turn.');
+it.each(["claude", "codex"] as const)("%s に人への質問は ask_user を使いターンを終えるよう指示する", agent => {
+  expect(buildRoleInstructions(agent, undefined)).toContain(
+    'When you need a decision from the human, ask with the ask_user tool of the "clodex" MCP server instead of writing the question in your reply, then end your turn.',
+  );
 });
 
-it.each(["claude", "codex"] as const)("%s に同じ会話の本文を読む方法を伝える", (agent) => {
+it.each(["claude", "codex"] as const)("%s に同じ会話の本文を読む方法を伝える", agent => {
   expect(buildRoleInstructions(agent, undefined)).toContain('Use the read_conversation tool of the "clodex" MCP server');
 });

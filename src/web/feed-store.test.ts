@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FeedStore, feedDirPath } from "./feed-store.js";
 import { CONTEXT_INSTRUCTION } from "../context/conversation-instruction.js";
+import { FeedStore, feedDirPath } from "./feed-store.js";
 import type { HistoryItem } from "./web-feed.js";
 
 const makeDir = () => join(mkdtempSync(join(tmpdir(), "clodex-feed-")), "nested.feed");
@@ -18,9 +18,16 @@ describe("feedDirPath", () => {
 describe("FeedStore", () => {
   it("以前に保存した /context の内部指示を表示から除く", () => {
     const store = new FeedStore(makeDir());
-    store.append("a", { type: "event", seq: 1, event: {
-      kind: "human", agent: "codex", at: "2026-10-08T00:00:00Z", text: `依頼\n\n${CONTEXT_INSTRUCTION}`,
-    } });
+    store.append("a", {
+      type: "event",
+      seq: 1,
+      event: {
+        kind: "human",
+        agent: "codex",
+        at: "2026-10-08T00:00:00Z",
+        text: `依頼\n\n${CONTEXT_INSTRUCTION}`,
+      },
+    });
     expect(store.load("a")).toMatchObject([{ event: { text: "依頼" } }]);
   });
   it("command の識別情報とフィールドなしの旧 output をそのまま保存する", () => {
@@ -58,15 +65,21 @@ describe("FeedStore", () => {
     const dir = makeDir();
     const store = new FeedStore(dir);
     store.append("a", output(1));
-    writeFileSync(join(dir, "a.jsonl"), `${readFileSync(join(dir, "a.jsonl"), "utf8")}{broken\n{"type":"unknown"}\n{"type":"event","event":null}\n{"type":"event","event":{}}\n{"type":"event","event":{"kind":"agent"}}\n`);
+    writeFileSync(
+      join(dir, "a.jsonl"),
+      `${readFileSync(join(dir, "a.jsonl"), "utf8")}{broken\n{"type":"unknown"}\n{"type":"event","event":null}\n{"type":"event","event":{}}\n{"type":"event","event":{"kind":"agent"}}\n`,
+    );
     store.append("a", output(2));
     expect(store.load("a")).toEqual([output(1), output(2)]);
   });
 
   it("closeUnfinished は全会話の終わっていないターンを中断としてファイルに書き足す", () => {
     const store = new FeedStore(makeDir());
-    const agentEvent = (seq: number, agent: "claude" | "codex", event: { type: "turn_started" } | { type: "turn"; result: { status: "completed"; text: string } }): HistoryItem =>
-      ({ type: "event", seq, event: { kind: "agent", agent, at: "2026-10-05T12:00:00Z", event } });
+    const agentEvent = (
+      seq: number,
+      agent: "claude" | "codex",
+      event: { type: "turn_started" } | { type: "turn"; result: { status: "completed"; text: string } },
+    ): HistoryItem => ({ type: "event", seq, event: { kind: "agent", agent, at: "2026-10-05T12:00:00Z", event } });
     store.append("a", agentEvent(1, "claude", { type: "turn_started" }));
     store.append("a", agentEvent(2, "codex", { type: "turn_started" }));
     store.append("a", agentEvent(3, "codex", { type: "turn", result: { status: "completed", text: "done" } }));
@@ -75,7 +88,11 @@ describe("FeedStore", () => {
     // 復旧で同じ Agent が作業中でも、前の Hub のターンは中断のまま
     store.append("a", agentEvent(4, "claude", { type: "turn_started" }));
     const loaded = store.load("a", new Set(["claude"]));
-    const turns = loaded.flatMap((item) => item.type === "event" && item.event.kind === "agent" ? [`${item.event.agent}:${item.event.event.type}${item.event.event.type === "turn" ? `:${item.event.event.result.status}` : ""}`] : []);
+    const turns = loaded.flatMap(item =>
+      item.type === "event" && item.event.kind === "agent"
+        ? [`${item.event.agent}:${item.event.event.type}${item.event.event.type === "turn" ? `:${item.event.event.result.status}` : ""}`]
+        : [],
+    );
     expect(turns).toEqual(["claude:turn_started", "codex:turn_started", "codex:turn:completed", "claude:turn:interrupted", "claude:turn_started"]);
     expect(store.load("b").at(-1)).toMatchObject({ event: { agent: "codex", event: { type: "turn", result: { status: "interrupted" } } } });
     store.closeUnfinished();
@@ -87,7 +104,10 @@ describe("FeedStore", () => {
     store.append("a", { type: "event", seq: 1, event: { kind: "agent", agent: "claude", at: "2026-10-05T12:00:00Z", event: { type: "turn_started" } } });
     store.append("a", { type: "event", seq: 2, event: { kind: "agent", agent: "claude", at: "2026-10-05T12:00:01Z", event: { type: "text", text: "途中" } } });
     const loaded = store.load("a");
-    expect(loaded.at(-1)).toMatchObject({ type: "event", event: { kind: "agent", agent: "claude", event: { type: "turn", result: { status: "interrupted" } } } });
+    expect(loaded.at(-1)).toMatchObject({
+      type: "event",
+      event: { kind: "agent", agent: "claude", event: { type: "turn", result: { status: "interrupted" } } },
+    });
     expect(store.load("a")).toHaveLength(3);
   });
 
@@ -115,9 +135,12 @@ describe("FeedStore", () => {
 
 it("作業中の Agent の未完了ターンは中断にしない", () => {
   const store = new FeedStore(makeDir());
-  for (const agent of ["claude", "codex"] as const) store.append("a", {
-    type: "event", seq: 1, event: { kind: "agent", agent, at: "2026-10-05T12:00:00Z", event: { type: "turn_started" } },
-  });
+  for (const agent of ["claude", "codex"] as const)
+    store.append("a", {
+      type: "event",
+      seq: 1,
+      event: { kind: "agent", agent, at: "2026-10-05T12:00:00Z", event: { type: "turn_started" } },
+    });
   const loaded = store.load("a", new Set(["claude"]));
   expect(loaded).toHaveLength(3);
   expect(loaded.at(-1)).toMatchObject({ event: { agent: "codex", event: { type: "turn", result: { status: "interrupted" } } } });
@@ -127,7 +150,11 @@ it("作業中の Agent の未完了ターンは中断にしない", () => {
 it("質問と回答の event を保存して読み直す", () => {
   const store = new FeedStore(makeDir());
   const items: HistoryItem[] = [
-    { type: "event", seq: 1, event: { kind: "question", id: "q1", agent: "claude", at: "now", questions: [{ question: "方針は", options: [{ label: "A" }, { label: "B" }] }] } },
+    {
+      type: "event",
+      seq: 1,
+      event: { kind: "question", id: "q1", agent: "claude", at: "now", questions: [{ question: "方針は", options: [{ label: "A" }, { label: "B" }] }] },
+    },
     { type: "event", seq: 2, event: { kind: "answer", id: "q1", agent: "claude", at: "now", answers: [["B"]] } },
   ];
   for (const item of items) store.append("c1", item);

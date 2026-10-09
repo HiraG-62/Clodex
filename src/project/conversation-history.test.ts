@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EventBus } from "../coordinator/event-bus.js";
-import { ConversationHistory, MAX_CONVERSATIONS, conversationStatePath } from "./conversation-history.js";
+import { ConversationHistory, conversationStatePath, MAX_CONVERSATIONS } from "./conversation-history.js";
 
 const HOME = "C:\\home";
 const makePath = () => join(mkdtempSync(join(tmpdir(), "clodex-history-")), "nested", "state.json");
@@ -19,8 +19,7 @@ const setup = (path = makePath(), resumeLatest = false, startMinute = 0) => {
   });
   const bus = new EventBus();
   history.attach(bus);
-  const session = (agent: "claude" | "codex", sessionId: string) =>
-    bus.publish({ kind: "agent", agent, event: { type: "session", sessionId } });
+  const session = (agent: "claude" | "codex", sessionId: string) => bus.publish({ kind: "agent", agent, event: { type: "session", sessionId } });
   const human = (text: string) => bus.publish({ kind: "human", agent: "claude", text });
   return { history, path, session, human };
 };
@@ -37,8 +36,7 @@ describe("conversationStatePath", () => {
   });
 
   it("大文字小文字だけが違うパスはハッシュ部分が一致する", () => {
-    expect(basename(conversationStatePath(HOME, "E:\\dev\\Clodex")).slice(-13))
-      .toBe(basename(conversationStatePath(HOME, "e:\\dev\\clodex")).slice(-13));
+    expect(basename(conversationStatePath(HOME, "E:\\dev\\Clodex")).slice(-13)).toBe(basename(conversationStatePath(HOME, "e:\\dev\\clodex")).slice(-13));
   });
 });
 
@@ -51,9 +49,9 @@ describe("ConversationHistory", () => {
     second.session("codex", "x-second");
     first.human("first title");
     const saved = new ConversationHistory(path, { resumeLatest: false }).list();
-    expect(saved.map((conversation) => conversation.id)).toContain(first.history.currentId);
-    expect(saved.map((conversation) => conversation.id)).toContain(second.history.currentId);
-    expect(saved.find((conversation) => conversation.id === first.history.currentId)?.title).toBe("first title");
+    expect(saved.map(conversation => conversation.id)).toContain(first.history.currentId);
+    expect(saved.map(conversation => conversation.id)).toContain(second.history.currentId);
+    expect(saved.find(conversation => conversation.id === first.history.currentId)?.title).toBe("first title");
   });
   it("session と最初の人間の入力（60 文字まで）を今の会話として保存する", () => {
     const { history, path, session, human } = setup();
@@ -81,7 +79,7 @@ describe("ConversationHistory", () => {
     second.session("claude", "c-new");
 
     const list = second.history.list();
-    expect(list.map((c) => c.sessions.claude)).toEqual(["c-new", "c-old"]);
+    expect(list.map(c => c.sessions.claude)).toEqual(["c-new", "c-old"]);
   });
 
   it("resumeLatest なら最新の会話を今の会話として続ける", () => {
@@ -124,8 +122,8 @@ describe("ConversationHistory", () => {
     second.session("codex", "x-1");
 
     const list = second.history.list();
-    expect(list.find((c) => c.id === old.id)!.sessions).toEqual({ claude: "c-old", codex: "x-1" });
-    expect(list.find((c) => c.sessions.claude === "c-new")).toBeDefined();
+    expect(list.find(c => c.id === old.id)!.sessions).toEqual({ claude: "c-old", codex: "x-1" });
+    expect(list.find(c => c.sessions.claude === "c-new")).toBeDefined();
   });
 
   it("startNew で新しい会話を始め、前の会話は履歴に残る", () => {
@@ -136,7 +134,7 @@ describe("ConversationHistory", () => {
     expect(history.currentId).not.toBe(before);
     expect(history.currentSessions).toEqual({});
     session("claude", "c-2");
-    expect(history.list().map((c) => c.sessions.claude)).toEqual(["c-2", "c-1"]);
+    expect(history.list().map(c => c.sessions.claude)).toEqual(["c-2", "c-1"]);
   });
 
   it("startNew と switchTo は今の会話が変わったことを通知する", () => {
@@ -144,7 +142,7 @@ describe("ConversationHistory", () => {
     session("claude", "c-1");
     const first = history.currentId;
     const switched: string[] = [];
-    history.onSwitch((id) => switched.push(id));
+    history.onSwitch(id => switched.push(id));
     history.startNew();
     history.switchTo(first);
     history.switchTo("missing");
@@ -235,11 +233,11 @@ describe("ConversationHistory のリネーム・削除・ピン止め", () => {
     history.renameConversation(currentId, "選択中の会話");
     human("次の入力");
     const saved = new ConversationHistory(path, { resumeLatest: false }).list();
-    expect(saved.find((conversation) => conversation.id === oldId)?.title).toBe("別の会話");
-    expect(saved.find((conversation) => conversation.id === currentId)?.title).toBe("選択中の会話");
+    expect(saved.find(conversation => conversation.id === oldId)?.title).toBe("別の会話");
+    expect(saved.find(conversation => conversation.id === currentId)?.title).toBe("選択中の会話");
     expect(history.current.title).toBe("選択中の会話");
     history.renameConversation(oldId, "長".repeat(100));
-    expect(history.list().find((conversation) => conversation.id === oldId)?.title).toBe("長".repeat(60));
+    expect(history.list().find(conversation => conversation.id === oldId)?.title).toBe("長".repeat(60));
   });
 
   it("今の会話以外を削除し、削除を通知する。今の会話・無い会話は理由を返す", () => {
@@ -248,13 +246,13 @@ describe("ConversationHistory のリネーム・削除・ピン止め", () => {
     history.startNew();
     human("new");
     const removed: string[] = [];
-    history.onRemove((id) => removed.push(id));
-    const old = history.list().find((c) => c.title === "old")!;
+    history.onRemove(id => removed.push(id));
+    const old = history.list().find(c => c.title === "old")!;
     expect(history.remove(history.currentId)).toMatch(/current/);
     expect(history.remove("missing")).toMatch(/not found/);
     expect(history.remove(old.id)).toBeUndefined();
     expect(removed).toEqual([old.id]);
-    expect(new ConversationHistory(path, { resumeLatest: false }).list().map((c) => c.title)).toEqual(["new"]);
+    expect(new ConversationHistory(path, { resumeLatest: false }).list().map(c => c.title)).toEqual(["new"]);
   });
 
   it("ピン止めした会話は先頭に並び、最大件数の枠から外れる。もう一度で解除する", () => {
@@ -269,7 +267,7 @@ describe("ConversationHistory のリネーム・削除・ピン止め", () => {
     }
     const list = new ConversationHistory(path, { resumeLatest: false }).list();
     expect(list[0]).toMatchObject({ id: pinnedId, pinned: true });
-    expect(list.filter((c) => !c.pinned)).toHaveLength(MAX_CONVERSATIONS);
+    expect(list.filter(c => !c.pinned)).toHaveLength(MAX_CONVERSATIONS);
     expect(history.togglePin(pinnedId)).toBe(false);
     expect(history.togglePin("missing")).toBeUndefined();
   });
@@ -294,14 +292,14 @@ describe("ConversationHistory の複数の会話（DESIGN.md §28 D1）", () => 
     bus.publish({ kind: "human", agent: "claude", text: "最初の会話" });
     history.startNew();
     bus.publish({ kind: "agent", agent: "codex", event: { type: "session", sessionId: "x-1" } });
-    const saved = new ConversationHistory(path, { resumeLatest: false }).list().find((c) => c.id === firstId);
+    const saved = new ConversationHistory(path, { resumeLatest: false }).list().find(c => c.id === firstId);
     expect(saved).toMatchObject({ title: "最初の会話", sessions: { codex: "x-1" } });
   });
 
   it("作業場所（worktree）付きの新しい会話は、入力の前でも保存する", () => {
     const { history, path } = setup();
-    history.startNew({ workDir: "C:\dev\app-1a2b", branch: "clodex/1a2b" });
-    expect(history.current).toMatchObject({ workDir: "C:\dev\app-1a2b", branch: "clodex/1a2b" });
-    expect(new ConversationHistory(path, { resumeLatest: true }).current).toMatchObject({ workDir: "C:\dev\app-1a2b" });
+    history.startNew({ workDir: "C:devapp-1a2b", branch: "clodex/1a2b" });
+    expect(history.current).toMatchObject({ workDir: "C:devapp-1a2b", branch: "clodex/1a2b" });
+    expect(new ConversationHistory(path, { resumeLatest: true }).current).toMatchObject({ workDir: "C:devapp-1a2b" });
   });
 });

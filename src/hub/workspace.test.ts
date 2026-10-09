@@ -4,12 +4,12 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { Coordinator } from "../coordinator/coordinator.js";
-import { EventBus, type CoordinatorEvent } from "../coordinator/event-bus.js";
-import { ConversationHistory, type Conversation } from "../project/conversation-history.js";
+import { type CoordinatorEvent, EventBus } from "../coordinator/event-bus.js";
+import { type Conversation, ConversationHistory } from "../project/conversation-history.js";
 import type { WorktreeResult } from "../project/worktree.js";
-import { Workspace, type ConversationRuntime } from "./workspace.js";
+import { type ConversationRuntime, Workspace } from "./workspace.js";
 
-const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 const ROOT = "C:\\dev\\app";
 
 interface FakeRuntime extends ConversationRuntime {
@@ -32,24 +32,50 @@ const setup = (worktree: WorktreeResult = { ok: true, worktree: { workDir: "C:\\
     const workDir = conversation.workDir ?? ROOT;
     const coordinator = new Coordinator({ projectRoot: workDir, agents: { claude, codex }, bus, mcpUrlFor: () => "http://x" });
     const runtime: FakeRuntime = {
-      conversationId: conversation.id, workDir, bus, coordinator, claude, codex, closed: false,
-      close: async () => { runtime.closed = true; },
+      conversationId: conversation.id,
+      workDir,
+      bus,
+      coordinator,
+      claude,
+      codex,
+      closed: false,
+      close: async () => {
+        runtime.closed = true;
+      },
     };
     created.push(runtime);
     return runtime;
   };
   const notify = vi.fn();
-  const workspace = new Workspace({ notifyAgent: notify, history, projectRoot: ROOT, isCurrentProject: () => currentProject,
-    createRuntime, createWorktree: async () => worktree });
+  const workspace = new Workspace({
+    notifyAgent: notify,
+    history,
+    projectRoot: ROOT,
+    isCurrentProject: () => currentProject,
+    createRuntime,
+    createWorktree: async () => worktree,
+  });
   const seen: Array<{ conversationId: string; event: CoordinatorEvent; current: boolean }> = [];
   workspace.onEvent((runtime, event, current) => seen.push({ conversationId: runtime.conversationId, event, current }));
-  return { history, workspace, created, createRuntimeCalls, seen, notify, setCurrentProject: (value: boolean) => { currentProject = value; } };
+  return {
+    history,
+    workspace,
+    created,
+    createRuntimeCalls,
+    seen,
+    notify,
+    setCurrentProject: (value: boolean) => {
+      currentProject = value;
+    },
+  };
 };
 
 describe("Workspace", () => {
   it("同じ会話の並行 init で runtime と listener を一度だけ作る", async () => {
     let release: (() => void) | undefined;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const gate = new Promise<void>(resolve => {
+      release = resolve;
+    });
     const { workspace, created, createRuntimeCalls } = setup(undefined, () => gate);
     const listener = vi.fn();
     workspace.onRuntime(listener);
@@ -146,13 +172,13 @@ describe("Workspace", () => {
     await flush();
     await workspace.startNew();
     created[0]!.bus.publish({ kind: "agent", agent: "codex", event: { type: "turn", result: { status: "completed", text: "ok" } } });
-    expect(seen.some((s) => s.event.kind === "notice")).toBe(false);
+    expect(seen.some(s => s.event.kind === "notice")).toBe(false);
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({ conversationTitle: "裏で進める作業", kind: "reply", agent: "codex" }));
     created[0]!.bus.publish({ kind: "agent", agent: "codex", event: { type: "turn", result: { status: "failed", text: "" } } });
     await flush();
     expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "failed", agent: "codex" }));
     // 裏の会話の event も current: false として届く
-    expect(seen.some((s) => s.conversationId === created[0]!.conversationId && !s.current)).toBe(true);
+    expect(seen.some(s => s.conversationId === created[0]!.conversationId && !s.current)).toBe(true);
   });
 
   it("利用枠の上限の notice は失敗の通知を置き換える", async () => {
@@ -196,7 +222,7 @@ describe("Workspace", () => {
     await workspace.init();
     await workspace.startNew();
     await workspace.closeAll();
-    expect(created.map((r) => r.closed)).toEqual([true, true]);
+    expect(created.map(r => r.closed)).toEqual([true, true]);
   });
 
   it("runtime を作り直している間、currentIfReady は例外を出さず undefined を返す", async () => {

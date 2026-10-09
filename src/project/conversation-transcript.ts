@@ -1,8 +1,8 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import type { AgentId } from "../agents/agent-adapter.js";
-import type { CoordinatorEvent } from "../coordinator/event-bus.js";
 import { withoutContextInstruction } from "../context/conversation-instruction.js";
+import type { CoordinatorEvent } from "../coordinator/event-bus.js";
 import type { HistoryItem } from "../web/web-feed.js";
 
 const TRANSCRIPT_EXT = ".jsonl";
@@ -53,15 +53,13 @@ const entryOf = (event: CoordinatorEvent): ConversationEntry | undefined => {
         ? { at, kind: "reply", from: event.agent, body: event.event.result.text }
         : undefined;
     case "message":
-      return event.message.body.trim()
-        ? { at, kind: "message", from: event.message.from, to: event.message.to, body: event.message.body }
-        : undefined;
+      return event.message.body.trim() ? { at, kind: "message", from: event.message.from, to: event.message.to, body: event.message.body } : undefined;
     case "question": {
       const body = event.questions.map(({ question }) => question).join("\n");
       return body.trim() ? { at, kind: "question", from: event.agent, to: "human", body } : undefined;
     }
     case "answer": {
-      const body = event.answers.map((answers) => answers.join(", ")).join("\n");
+      const body = event.answers.map(answers => answers.join(", ")).join("\n");
       return body.trim() ? { at, kind: "answer", from: "human", to: event.agent, body } : undefined;
     }
     case "notice":
@@ -69,14 +67,14 @@ const entryOf = (event: CoordinatorEvent): ConversationEntry | undefined => {
   }
 };
 
-const linesOf = (entries: readonly ConversationEntry[]): string => entries.map((entry) => `${JSON.stringify(entry)}\n`).join("");
+const linesOf = (entries: readonly ConversationEntry[]): string => entries.map(entry => `${JSON.stringify(entry)}\n`).join("");
 
 export class ConversationTranscript {
   constructor(readonly filePath: string) {}
 
   seed(history: readonly HistoryItem[]): void {
     if (existsSync(this.filePath)) return;
-    const entries = history.flatMap((item) => {
+    const entries = history.flatMap(item => {
       if (item.type !== "event") return [];
       const entry = entryOf(item.event);
       return entry ? [entry] : [];
@@ -94,16 +92,18 @@ export class ConversationTranscript {
 
   page({ before, limit = DEFAULT_PAGE_SIZE }: ReadConversationOptions = {}): ConversationPage {
     if (!existsSync(this.filePath)) return { entries: [] };
-    const entries = readFileSync(this.filePath, "utf8").split("\n").flatMap((line) => {
-      if (!line.trim()) return [];
-      try {
-        const entry = JSON.parse(line) as ConversationEntry;
-        if (typeof entry.body !== "string") return [];
-        return [{ ...entry, body: entry.kind === "input" ? withoutContextInstruction(entry.body) : entry.body }];
-      } catch {
-        return [];
-      }
-    });
+    const entries = readFileSync(this.filePath, "utf8")
+      .split("\n")
+      .flatMap(line => {
+        if (!line.trim()) return [];
+        try {
+          const entry = JSON.parse(line) as ConversationEntry;
+          if (typeof entry.body !== "string") return [];
+          return [{ ...entry, body: entry.kind === "input" ? withoutContextInstruction(entry.body) : entry.body }];
+        } catch {
+          return [];
+        }
+      });
     const end = before === undefined ? entries.length : Math.max(0, Math.min(entries.length, Math.floor(before)));
     const size = Number.isFinite(limit) ? Math.max(1, Math.min(MAX_PAGE_SIZE, Math.floor(limit))) : DEFAULT_PAGE_SIZE;
     const start = Math.max(0, end - size);

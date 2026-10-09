@@ -1,8 +1,8 @@
 // 人が切り替えた Agent の設定（権限・model・effort）を project ごとに保存する（DESIGN.md §9 Agent の設定の保存）
 import { existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
-import { PERMISSION_LEVELS, type AgentId, type PermissionLevel } from "../agents/agent-adapter.js";
-import { LIMIT_KEYS, isLimitValue, type BudgetLimits } from "../coordinator/budget-manager.js";
+import { type AgentId, PERMISSION_LEVELS, type PermissionLevel } from "../agents/agent-adapter.js";
+import { type BudgetLimits, isLimitValue, LIMIT_KEYS } from "../coordinator/budget-manager.js";
 import { writeFileAtomic } from "./atomic-write.js";
 
 const settingsSchema = z.strictObject({
@@ -20,15 +20,17 @@ const savedLimits = z.unknown().transform((value): Partial<BudgetLimits> => {
   return limits;
 });
 const savedSchema = z.strictObject({
-  sandbox: z.boolean().optional(), claude: settingsSchema.optional(), codex: settingsSchema.optional(), limits: savedLimits.optional(),
+  sandbox: z.boolean().optional(),
+  claude: settingsSchema.optional(),
+  codex: settingsSchema.optional(),
+  limits: savedLimits.optional(),
   limitsUnlimited: z.literal(true).optional(),
 });
 
 export type AgentSettings = z.infer<typeof settingsSchema>;
 export type SavedAgentSettings = z.infer<typeof savedSchema>;
 
-export const agentSettingsPath = (conversationStatePath: string): string =>
-  conversationStatePath.replace(/\.json$/, ".settings.json");
+export const agentSettingsPath = (conversationStatePath: string): string => conversationStatePath.replace(/\.json$/, ".settings.json");
 
 export class AgentSettingsStore {
   constructor(private readonly path: string) {}

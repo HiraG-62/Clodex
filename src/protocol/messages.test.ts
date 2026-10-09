@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_BODY_LENGTH, createMessage } from "./messages.js";
+import { createMessage, MAX_BODY_LENGTH } from "./messages.js";
 
 const context = {
   from: "claude" as const,
@@ -42,11 +42,18 @@ describe("createMessage", () => {
   });
 
   it("RESULT は status と issues を持てる", () => {
-    const result = createMessage({
-      to: "codex", type: "RESULT", taskId: "AUTH-142", body: "修正が必要", replyTo: "msg_01",
-      status: "changes_requested",
-      issues: [{ file: "src/auth/refresh.ts", line: 142, severity: "high", summary: "競合する" }],
-    }, context);
+    const result = createMessage(
+      {
+        to: "codex",
+        type: "RESULT",
+        taskId: "AUTH-142",
+        body: "修正が必要",
+        replyTo: "msg_01",
+        status: "changes_requested",
+        issues: [{ file: "src/auth/refresh.ts", line: 142, severity: "high", summary: "競合する" }],
+      },
+      context,
+    );
     expect(result.ok).toBe(true);
   });
 
@@ -61,10 +68,17 @@ describe("createMessage", () => {
     ["replyTo のない ACK", { to: "codex", type: "ACK", taskId: "T-1", body: "ok" }, /replyTo/],
     ["RESULT 以外の status", { ...reviewRequest, status: "approved" }, /status/],
     ["RESULT / ISSUE 以外の issues", { ...reviewRequest, issues: [] }, /issues/],
-    ["不正な severity", {
-      to: "codex", type: "ISSUE", taskId: "T-1", body: "x",
-      issues: [{ file: "a.ts", severity: "urgent", summary: "x" }],
-    }, /severity/],
+    [
+      "不正な severity",
+      {
+        to: "codex",
+        type: "ISSUE",
+        taskId: "T-1",
+        body: "x",
+        issues: [{ file: "a.ts", severity: "urgent", summary: "x" }],
+      },
+      /severity/,
+    ],
   ])("%s は拒否し、Agent が直せるエラー文を返す", (_, input, pattern) => {
     const result = createMessage(input, context);
     expect(result.ok).toBe(false);
@@ -81,13 +95,17 @@ describe("createMessage", () => {
 });
 
 describe("spec の schema", () => {
-  it.each(["DELEGATE", "REVIEW_REQUEST", "RESULT"])("%s で spec を保持する", (type) => {
-    expect(createMessage({ ...reviewRequest, type, replyTo: "msg_x", spec: "docs/specs/T.md" }, context))
-      .toMatchObject({ ok: true, message: { spec: "docs/specs/T.md" } });
+  it.each(["DELEGATE", "REVIEW_REQUEST", "RESULT"])("%s で spec を保持する", type => {
+    expect(createMessage({ ...reviewRequest, type, replyTo: "msg_x", spec: "docs/specs/T.md" }, context)).toMatchObject({
+      ok: true,
+      message: { spec: "docs/specs/T.md" },
+    });
   });
-  it.each(["QUESTION", "ISSUE", "ACK"])("%s の spec を拒否する", (type) => {
-    expect(createMessage({ ...reviewRequest, type, replyTo: "msg_x", spec: "docs/specs/T.md" }, context))
-      .toMatchObject({ ok: false, error: expect.stringContaining("spec") });
+  it.each(["QUESTION", "ISSUE", "ACK"])("%s の spec を拒否する", type => {
+    expect(createMessage({ ...reviewRequest, type, replyTo: "msg_x", spec: "docs/specs/T.md" }, context)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("spec"),
+    });
   });
   it("空の spec を拒否する", () => {
     expect(createMessage({ ...reviewRequest, spec: "" }, context)).toMatchObject({ ok: false });

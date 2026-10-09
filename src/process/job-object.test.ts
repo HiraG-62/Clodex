@@ -28,9 +28,12 @@ describe("registerHubJob", () => {
   it("時間切れで helper を中断する", async () => {
     vi.useFakeTimers();
     try {
-      const run = vi.fn((_script: string, signal: AbortSignal) => new Promise<{ code: number; stderr: string }>((_resolve, reject) => {
-        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-      }));
+      const run = vi.fn(
+        (_script: string, signal: AbortSignal) =>
+          new Promise<{ code: number; stderr: string }>((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          }),
+      );
       const result = registerHubJob({ platform: "win32", run, timeoutMs: 10 });
       await vi.advanceTimersByTimeAsync(10);
       expect(await result).toEqual({ ok: false, message: "timeout" });

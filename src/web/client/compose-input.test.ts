@@ -25,11 +25,13 @@ describe("composeInputLine", () => {
   });
 
   it("ファイル参照で始まる入力にも選択中の Agent を前置きする", () => {
-    expect(composeInputLine("@20261008T144301.png 画像を見て", "codex"))
-      .toBe("@codex @20261008T144301.png 画像を見て");
+    expect(composeInputLine("@20261008T144301.png 画像を見て", "codex")).toBe("@codex @20261008T144301.png 画像を見て");
     expect(composeInputLine("@src/a.ts を直して", "codex")).toBe("@codex @src/a.ts を直して");
     expect(composeInputLine("@all 同時に見て", "codex")).toBe("@all 同時に見て");
-    expect(parseInput(composeInputLine("@20261008T144301.png 画像を見て", "codex"), "claude"))
-      .toEqual({ kind: "send", agent: "codex", text: "@20261008T144301.png 画像を見て" });
+    expect(parseInput(composeInputLine("@20261008T144301.png 画像を見て", "codex"), "claude")).toEqual({
+      kind: "send",
+      agent: "codex",
+      text: "@20261008T144301.png 画像を見て",
+    });
   });
 });

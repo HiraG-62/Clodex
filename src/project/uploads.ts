@@ -6,7 +6,10 @@ import { join } from "node:path";
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const NAME_RANDOM_BYTES = 4;
 const EXTENSIONS: Record<string, string> = {
-  "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp",
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/gif": ".gif",
+  "image/webp": ".webp",
 };
 
 export const isUploadType = (contentType: string): boolean => contentType in EXTENSIONS;

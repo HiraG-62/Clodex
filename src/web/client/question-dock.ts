@@ -3,8 +3,6 @@ import { nextUnanswered, questionAnswers } from "./question-flow.js";
 import type { ClientContext } from "./store.js";
 
 export function createQuestionDock(ctx: ClientContext) {
-
-
   // ---- 質問欄（入力欄の上。未回答の質問を 1 問ずつ出す）----
   const questionDock = ctx.$("#question-dock");
   let dockId: string | undefined;
@@ -19,7 +17,7 @@ export function createQuestionDock(ctx: ClientContext) {
   };
   const renderQuestionDock = (force = false) => {
     const pending = ctx.store.state?.questions ?? [];
-    for (const id of ctx.store.questionDrafts.keys()) if (!pending.some((entry) => entry.id === id)) ctx.store.questionDrafts.delete(id);
+    for (const id of ctx.store.questionDrafts.keys()) if (!pending.some(entry => entry.id === id)) ctx.store.questionDrafts.delete(id);
     const current = pending[0];
     questionDock.hidden = !current;
     if (!current) {
@@ -30,7 +28,10 @@ export function createQuestionDock(ctx: ClientContext) {
     const more = pending.length - 1;
     if (!force && dockId === current.id) {
       const moreLabel = questionDock.querySelector<HTMLElement>(".question-more");
-      if (moreLabel) { moreLabel.hidden = more === 0; moreLabel.textContent = ctx.t("web.question.more", { count: more }); }
+      if (moreLabel) {
+        moreLabel.hidden = more === 0;
+        moreLabel.textContent = ctx.t("web.question.more", { count: more });
+      }
       return;
     }
     if (dockId !== current.id) dockSubmitting = false;
@@ -41,16 +42,28 @@ export function createQuestionDock(ctx: ClientContext) {
     const question = current.questions[index]!;
     questionDock.className = `question-dock ${current.agent}`;
     questionDock.classList.toggle("collapsed", dockCollapsed);
-    const go = (step: number) => { draft.step = step; renderQuestionDock(true); };
+    const go = (step: number) => {
+      draft.step = step;
+      renderQuestionDock(true);
+    };
 
     const header = ctx.el("button", "question-dock-head") as HTMLButtonElement;
     header.type = "button";
     header.setAttribute("aria-expanded", String(!dockCollapsed));
     const moreLabel = ctx.el("span", "muted small question-more", ctx.t("web.question.more", { count: more }));
     moreLabel.hidden = more === 0;
-    header.append(ctx.icon("question"), ctx.el("b", `c-${current.agent}`, ctx.AGENTS[current.agent].name), ctx.el("span", "", ctx.t("web.question.title")),
-      ctx.el("span", "mono muted question-step", `${index + 1}/${total}`), moreLabel, ctx.icon("chevron-down"));
-    header.addEventListener("click", () => { dockCollapsed = !dockCollapsed; renderQuestionDock(true); });
+    header.append(
+      ctx.icon("question"),
+      ctx.el("b", `c-${current.agent}`, ctx.AGENTS[current.agent].name),
+      ctx.el("span", "", ctx.t("web.question.title")),
+      ctx.el("span", "mono muted question-step", `${index + 1}/${total}`),
+      moreLabel,
+      ctx.icon("chevron-down"),
+    );
+    header.addEventListener("click", () => {
+      dockCollapsed = !dockCollapsed;
+      renderQuestionDock(true);
+    });
     if (dockCollapsed) return void questionDock.replaceChildren(header);
 
     const body = ctx.el("div", "question-dock-body");
@@ -116,8 +129,13 @@ export function createQuestionDock(ctx: ClientContext) {
       button.addEventListener("click", () => {
         const selected = draft.selected[index]!;
         const wasSelected = selected.has(optionIndex);
-        if (!question.multiSelect) { selected.clear(); draft.other[index] = ""; other.value = ""; }
-        if (wasSelected) selected.delete(optionIndex); else selected.add(optionIndex);
+        if (!question.multiSelect) {
+          selected.clear();
+          draft.other[index] = "";
+          other.value = "";
+        }
+        if (wasSelected) selected.delete(optionIndex);
+        else selected.add(optionIndex);
         if (!question.multiSelect && !wasSelected) return advance();
         refresh();
       });
@@ -129,7 +147,7 @@ export function createQuestionDock(ctx: ClientContext) {
       if (!question.multiSelect && other.value.trim()) draft.selected[index]!.clear();
       refresh();
     });
-    other.addEventListener("keydown", (event) => {
+    other.addEventListener("keydown", event => {
       if (event.key !== "Enter" || event.isComposing || !other.value.trim()) return;
       event.preventDefault();
       advance();
@@ -145,7 +163,7 @@ export function createQuestionDock(ctx: ClientContext) {
     const nav = ctx.el("div", "question-nav");
     nav.append(prev, next, submit);
     field.append(options, other);
-    ctx.appendImagePreviews(field, [question.question, ...question.options.map((option) => option.description ?? "")].join("\n"), current.id);
+    ctx.appendImagePreviews(field, [question.question, ...question.options.map(option => option.description ?? "")].join("\n"), current.id);
     body.append(...(total > 1 ? [dots] : []), field, nav);
     questionDock.replaceChildren(header, body);
     refresh();

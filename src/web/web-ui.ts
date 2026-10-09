@@ -1,7 +1,8 @@
 // Event Bus と Web UI の feed をつなぐ（DESIGN.md §17 Web UI）
+
+import type { AgentEvent } from "../agents/agent-adapter.js";
 import { buildEnvelope } from "../context/context-resolver.js";
 import type { Language } from "../context/language.js";
-import type { AgentEvent } from "../agents/agent-adapter.js";
 import type { CoordinatorEvent } from "../coordinator/event-bus.js";
 import type { HistoryItem, WebFeed, WebState } from "./web-feed.js";
 
@@ -17,8 +18,7 @@ export interface EventSource {
 }
 
 const isFeedEvent = (event: CoordinatorEvent) => event.kind !== "agent" || FEED_AGENT_EVENTS.has(event.event.type);
-const envelopeOf = (event: CoordinatorEvent, language?: Language) =>
-  (event.kind === "message" ? buildEnvelope(event.message, language) : undefined);
+const envelopeOf = (event: CoordinatorEvent, language?: Language) => (event.kind === "message" ? buildEnvelope(event.message, language) : undefined);
 
 // 今の会話でない会話の event を、その会話の feed に保存する形にする（DESIGN.md §28 D1）。流さない event なら undefined
 export const historyItemOf = (event: CoordinatorEvent, language?: Language): HistoryItem | undefined => {
@@ -38,7 +38,7 @@ export const connectWebFeed = (source: EventSource, feed: WebFeed, buildState: (
     timer.unref?.();
   };
 
-  source.subscribe((event) => {
+  source.subscribe(event => {
     if (isFeedEvent(event)) feed.publishEvent(event, envelopeOf(event, typeof language === "function" ? language() : language));
     refreshState();
   });

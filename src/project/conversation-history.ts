@@ -56,7 +56,7 @@ const byNewest = (a: Conversation, b: Conversation) => b.updatedAt.localeCompare
 // ピン止めした会話は先頭に並べ、最大件数の枠に数えない
 const arrange = (conversations: Conversation[]): Conversation[] => {
   const saved = conversations.sort(byNewest);
-  return [...saved.filter((c) => c.pinned), ...saved.filter((c) => !c.pinned).slice(0, MAX_CONVERSATIONS)];
+  return [...saved.filter(c => c.pinned), ...saved.filter(c => !c.pinned).slice(0, MAX_CONVERSATIONS)];
 };
 
 export interface ConversationHistoryOptions {
@@ -74,20 +74,26 @@ export class ConversationHistory {
   private readonly switchListeners: Array<(id: string) => void> = [];
   private readonly removeListeners: Array<(id: string) => void> = [];
 
-  constructor(private readonly path: string, { resumeLatest, resumeId, now = () => new Date(), createId = randomUUID }: ConversationHistoryOptions) {
+  constructor(
+    private readonly path: string,
+    { resumeLatest, resumeId, now = () => new Date(), createId = randomUUID }: ConversationHistoryOptions,
+  ) {
     this.now = now;
     this.createId = createId;
     this.conversations = arrange(loadConversations(path));
     const latest = this.conversations[0];
-    this.currentConversation = resumeId !== undefined
-      ? this.conversations.find((c) => c.id === resumeId) ?? this.emptyConversation()
-      : resumeLatest && latest ? latest : this.emptyConversation();
+    this.currentConversation =
+      resumeId !== undefined
+        ? (this.conversations.find(c => c.id === resumeId) ?? this.emptyConversation())
+        : resumeLatest && latest
+          ? latest
+          : this.emptyConversation();
   }
 
   // /new: 新しい会話を始める。前の会話は履歴に残る（session も入力も作業場所も無いうちは保存しない）
   startNew(place: Pick<Conversation, "workDir" | "branch"> = {}): void {
     this.currentConversation = { ...this.emptyConversation(), ...place };
-    if (place.workDir) this.save((list) => list);
+    if (place.workDir) this.save(list => list);
     this.notifySwitch();
   }
 
@@ -117,12 +123,12 @@ export class ConversationHistory {
     if (!mode && !previous) return;
     const { solo: _old, soloReleased: _released, ...rest } = this.currentConversation;
     this.currentConversation = mode ? { ...rest, solo: mode } : { ...rest, soloReleased: [...AGENT_IDS] };
-    this.save((list) => list);
+    this.save(list => list);
   }
 
   soloOf(id: string): Conversation["solo"] {
     if (id === this.currentConversation.id) return this.currentConversation.solo;
-    return this.conversations.find((c) => c.id === id)?.solo;
+    return this.conversations.find(c => c.id === id)?.solo;
   }
 
   soloReleasedOf(id: string, agent: AgentId): boolean {
@@ -132,28 +138,28 @@ export class ConversationHistory {
   consumeSoloReleased(id: string, agent: AgentId): boolean {
     const conversation = this.find(id);
     if (!conversation?.soloReleased?.includes(agent)) return false;
-    const remaining = conversation.soloReleased.filter((entry) => entry !== agent);
+    const remaining = conversation.soloReleased.filter(entry => entry !== agent);
     this.updateConversation(id, { soloReleased: remaining.length ? remaining : undefined });
     return true;
   }
 
   // /pin: ピン止めを切り替え、切り替え後の状態を返す。無い会話なら undefined
   togglePin(id: string): boolean | undefined {
-    const found = id === this.currentConversation.id ? this.currentConversation : this.conversations.find((c) => c.id === id);
+    const found = id === this.currentConversation.id ? this.currentConversation : this.conversations.find(c => c.id === id);
     if (!found) return undefined;
     const pinned = !found.pinned;
     const { pinned: _old, ...rest } = found;
     const changed: Conversation = pinned ? { ...rest, pinned } : rest;
     if (id === this.currentConversation.id) this.currentConversation = changed;
-    this.save((list) => list.map((c) => (c.id === id ? changed : c)));
+    this.save(list => list.map(c => (c.id === id ? changed : c)));
     return pinned;
   }
 
   // /delete: 今の会話以外を削除する。削除できなければ理由を返す
   remove(id: string): string | undefined {
     if (id === this.currentConversation.id) return t("reject.deleteCurrent");
-    if (!this.conversations.some((c) => c.id === id)) return t("reject.notFound");
-    this.save((list) => list.filter((c) => c.id !== id));
+    if (!this.conversations.some(c => c.id === id)) return t("reject.notFound");
+    this.save(list => list.filter(c => c.id !== id));
     for (const listener of this.removeListeners) listener(id);
     return undefined;
   }
@@ -170,7 +176,7 @@ export class ConversationHistory {
 
   clearAllSessions(): void {
     this.currentConversation = { ...this.currentConversation, sessions: {} };
-    this.save((list) => list.map((conversation) => ({ ...conversation, sessions: {} })));
+    this.save(list => list.map(conversation => ({ ...conversation, sessions: {} })));
   }
 
   private emptyConversation(): Conversation {
@@ -197,7 +203,7 @@ export class ConversationHistory {
 
   // 選んだ会話を今の会話にする。以後の session と入力はそちらに記録する
   switchTo(id: string): Conversation | undefined {
-    const found = this.conversations.find((c) => c.id === id);
+    const found = this.conversations.find(c => c.id === id);
     if (!found) return undefined;
     this.currentConversation = found;
     this.notifySwitch();
@@ -207,7 +213,7 @@ export class ConversationHistory {
   // conversationId を渡すと、その会話の Event Bus として記録する（会話ごとに Coordinator を持つ。DESIGN.md §28 D1）。
   // 省略すると、その時点の今の会話に記録する
   attach(bus: EventBus, conversationId?: string): () => void {
-    return bus.subscribe((event) => {
+    return bus.subscribe(event => {
       const id = conversationId ?? this.currentConversation.id;
       const target = this.find(id);
       if (!target) return;
@@ -221,25 +227,25 @@ export class ConversationHistory {
   }
 
   private find(id: string): Conversation | undefined {
-    return id === this.currentConversation.id ? this.currentConversation : this.conversations.find((c) => c.id === id);
+    return id === this.currentConversation.id ? this.currentConversation : this.conversations.find(c => c.id === id);
   }
 
   private updateConversation(id: string, change: Partial<Conversation>): void {
     if (id === this.currentConversation.id) return this.update(change);
     const updatedAt = this.now().toISOString();
-    this.save((list) => list.map((c) => (c.id === id ? { ...c, ...change, updatedAt } : c)));
+    this.save(list => list.map(c => (c.id === id ? { ...c, ...change, updatedAt } : c)));
   }
 
   private update(change: Partial<Conversation>): void {
     this.currentConversation = { ...this.currentConversation, ...change, updatedAt: this.now().toISOString() };
-    this.save((list) => list);
+    this.save(list => list);
   }
 
   // 他のプロセスの会話を消さないよう、書く直前に読み直して今の会話を重ねる
   private save(edit: (conversations: Conversation[]) => Conversation[]): void {
     const saved = loadConversations(this.path);
-    const others = saved.filter((c) => c.id !== this.currentConversation.id);
-    const current = isWorthSaving(this.currentConversation) || saved.some((c) => c.id === this.currentConversation.id) ? [this.currentConversation] : [];
+    const others = saved.filter(c => c.id !== this.currentConversation.id);
+    const current = isWorthSaving(this.currentConversation) || saved.some(c => c.id === this.currentConversation.id) ? [this.currentConversation] : [];
     this.conversations = arrange(edit([...current, ...others]));
     writeFileAtomic(this.path, `${JSON.stringify({ conversations: this.conversations }, null, 2)}\n`);
   }

@@ -1,15 +1,15 @@
 // スマホ等から clodex を操作・観測する Web サーバー（DESIGN.md §17 Web UI）
 // 127.0.0.1 だけで待ち受け、外部からは tailscale serve 経由で使う
 import { timingSafeEqual } from "node:crypto";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { PreviewResult } from "../project/file-preview.js";
-import { GUI_ACTIONS, type FeedItem, type GuiAction, type GuiInfo, type GuiUpdate, type WebFeed } from "./web-feed.js";
-import { ICON_SVG, MANIFEST, type WebPage } from "./web-page.js";
 import { APPLE_TOUCH_ICON_PNG_BASE64 } from "./apple-touch-icon.js";
-import { SERVICE_WORKER } from "./service-worker.js";
 import { fontFilePath } from "./fonts.js";
+import { SERVICE_WORKER } from "./service-worker.js";
+import { type FeedItem, GUI_ACTIONS, type GuiAction, type GuiInfo, type GuiUpdate, type WebFeed } from "./web-feed.js";
+import { ICON_SVG, MANIFEST, type WebPage } from "./web-page.js";
 
 const HOST = "127.0.0.1";
 const COOKIE_NAME = "clodex_token";
@@ -18,7 +18,16 @@ const KEEPALIVE_MS = 25_000;
 const MAX_BODY_BYTES = 64 * 1024;
 const APPLE_TOUCH_ICON_PNG = Buffer.from(APPLE_TOUCH_ICON_PNG_BASE64, "base64");
 const HTTP = {
-  ok: 200, noContent: 204, found: 302, badRequest: 400, unauthorized: 401, notFound: 404, conflict: 409, tooLarge: 413, unsupported: 415, serverError: 500,
+  ok: 200,
+  noContent: 204,
+  found: 302,
+  badRequest: 400,
+  unauthorized: 401,
+  notFound: 404,
+  conflict: 409,
+  tooLarge: 413,
+  unsupported: 415,
+  serverError: 500,
 } as const;
 
 export interface WebServerOptions {
@@ -64,7 +73,10 @@ const sameToken = (candidate: string | undefined, token: string) => {
 };
 
 const cookieToken = (req: IncomingMessage) =>
-  req.headers.cookie?.split(";").map((c) => c.trim().split("=")).find(([name]) => name === COOKIE_NAME)?.[1];
+  req.headers.cookie
+    ?.split(";")
+    .map(c => c.trim().split("="))
+    .find(([name]) => name === COOKIE_NAME)?.[1];
 
 // 上限を超えたら読み捨てて最後まで受け取る（413 を返せるよう接続は切らない）。
 // UTF-8 がチャンクの境目で分かれても化けないよう、バイト列をつなげてからデコードする
@@ -80,8 +92,7 @@ const readBytes = (req: IncomingMessage, maxBytes: number): Promise<Buffer | und
     req.on("error", reject);
   });
 
-const readBody = async (req: IncomingMessage): Promise<string | undefined> =>
-  (await readBytes(req, MAX_BODY_BYTES))?.toString("utf8");
+const readBody = async (req: IncomingMessage): Promise<string | undefined> => (await readBytes(req, MAX_BODY_BYTES))?.toString("utf8");
 
 const parseLine = (body: string): string | undefined => {
   try {
@@ -95,7 +106,7 @@ const parseLine = (body: string): string | undefined => {
 const parseJson = (body: string): Record<string, unknown> | undefined => {
   try {
     const parsed: unknown = JSON.parse(body);
-    return typeof parsed === "object" && parsed !== null ? parsed as Record<string, unknown> : undefined;
+    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : undefined;
   } catch {
     return undefined;
   }
@@ -103,7 +114,7 @@ const parseJson = (body: string): Record<string, unknown> | undefined => {
 
 const parseGuiAction = (body: string): GuiAction | undefined => {
   const action = parseJson(body)?.action;
-  return GUI_ACTIONS.find((candidate) => candidate === action);
+  return GUI_ACTIONS.find(candidate => candidate === action);
 };
 
 const parseGuiUpdate = (body: string): GuiUpdate | undefined => {
@@ -128,7 +139,18 @@ const sendPreview = (res: ServerResponse, result: PreviewResult) => {
   res.end(result.body);
 };
 
-export const startWebServer = async ({ port, token, feed, page, onInput, listFiles, preview, upload, onError, push }: WebServerOptions): Promise<WebServerHandle> => {
+export const startWebServer = async ({
+  port,
+  token,
+  feed,
+  page,
+  onInput,
+  listFiles,
+  preview,
+  upload,
+  onError,
+  push,
+}: WebServerOptions): Promise<WebServerHandle> => {
   const streams = new Set<ServerResponse>();
   // GUI の中の画面の接続（DESIGN.md §28 Web UI の設定からの更新）
   let guiStream: ServerResponse | undefined;
@@ -149,7 +171,7 @@ export const startWebServer = async ({ port, token, feed, page, onInput, listFil
     const state = feed.latestState();
     if (state) sendItem(res, { type: "state", state });
     if (gui) sendItem(res, { type: "gui", gui });
-    const unsubscribe = feed.subscribe((item) => sendItem(res, item));
+    const unsubscribe = feed.subscribe(item => sendItem(res, item));
     // プロキシ等に切られないよう、定期的に comment を送る
     const keepalive = setInterval(() => res.write(": keepalive\n\n"), KEEPALIVE_MS);
     keepalive.unref();
@@ -254,10 +276,12 @@ export const startWebServer = async ({ port, token, feed, page, onInput, listFil
       if (!file) return void res.writeHead(HTTP.notFound).end();
       try {
         const body = await readFile(file);
-        return void res.writeHead(HTTP.ok, {
-          "content-type": "font/woff2",
-          "cache-control": "public, max-age=31536000, immutable",
-        }).end(body);
+        return void res
+          .writeHead(HTTP.ok, {
+            "content-type": "font/woff2",
+            "cache-control": "public, max-age=31536000, immutable",
+          })
+          .end(body);
       } catch (error) {
         if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
           return void res.writeHead(HTTP.notFound).end();
@@ -308,15 +332,16 @@ export const startWebServer = async ({ port, token, feed, page, onInput, listFil
   });
 
   return {
-    updatePage: (next) => {
+    updatePage: next => {
       page = next;
       for (const res of streams) sendItem(res, { type: "version", version: page.version });
     },
     url: `http://${HOST}:${(http.address() as AddressInfo).port}`,
-    close: () => new Promise<void>((resolve) => {
-      for (const res of streams) res.end();
-      http.closeAllConnections();
-      http.close(() => resolve());
-    }),
+    close: () =>
+      new Promise<void>(resolve => {
+        for (const res of streams) res.end();
+        http.closeAllConnections();
+        http.close(() => resolve());
+      }),
   };
 };

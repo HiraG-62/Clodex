@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { resolvePendingSettings, isNavigationCommand, nextCommandStarts } from "./pending.js";
 import type { AgentState } from "../../cli/shell.js";
+import { isNavigationCommand, nextCommandStarts, resolvePendingSettings } from "./pending.js";
 
-const agent: AgentState = { id: "codex", status: "busy", sessionId: "x", permission: "edit", model: "old", effort: "medium", models: [{ value: "default", label: "Default", resolved: "new" }], usage: {}, subagents: [] };
+const agent: AgentState = {
+  id: "codex",
+  status: "busy",
+  sessionId: "x",
+  permission: "edit",
+  model: "old",
+  effort: "medium",
+  models: [{ value: "default", label: "Default", resolved: "new" }],
+  usage: {},
+  subagents: [],
+};
 
 describe("resolvePendingSettings", () => {
   it("HTTP 応答前は長時間待っても保持し、応答後の猶予が過ぎてから解除する", () => {

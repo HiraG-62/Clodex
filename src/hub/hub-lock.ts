@@ -50,5 +50,9 @@ export const writeHubLock = (homeDir: string, lock: HubLock): void => {
 
 export const clearHubLock = (homeDir: string, pid: number): void => {
   if (readHubLock(homeDir)?.pid !== pid) return;
-  try { unlinkSync(hubLockPath(homeDir)); } catch { /* 既に消えた場合 */ }
+  try {
+    unlinkSync(hubLockPath(homeDir));
+  } catch {
+    /* 既に消えた場合 */
+  }
 };

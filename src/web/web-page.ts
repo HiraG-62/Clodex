@@ -1,5 +1,3 @@
-import { WEB_LAYOUT } from "./layout.js";
-import { UI_ICONS } from "./web-icons.js";
 // Web UI の画面（DESIGN.md §17 Web UI）。HTML 1 枚に CSS と JS を inline で持つ。
 import { createHash } from "node:crypto";
 import { slashCommands } from "../cli/commands.js";
@@ -8,11 +6,10 @@ import { MESSAGES } from "../i18n/i18n.js";
 import type { MessageKey, Messages } from "../i18n/messages.js";
 import { loadClientAssets } from "./client-bundle.js";
 import { loadFontCss } from "./fonts.js";
+import { WEB_LAYOUT } from "./layout.js";
+import { UI_ICONS } from "./web-icons.js";
 
-
-
-const escapeHtml = (text: string) =>
-  text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
+const escapeHtml = (text: string) => text.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
 
 const body = (messages: Messages) => {
   const m = (key: MessageKey) => escapeHtml(messages[key]);
@@ -136,8 +133,12 @@ const json = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
 // ホーム画面に置けるようにする（DESIGN.md §28 D: PWA）
 export const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="100" fill="#000000"/><g fill="#DEA161"><path d="M118 144 199 225Q207 233 207 245V267Q207 279 199 287L118 368Q105 381 92 368L73 349Q60 336 73 323L132 264Q140 256 132 248L73 189Q60 176 73 163L92 144Q105 131 118 144Z"/><rect x="226" y="227" width="60" height="60" rx="12"/></g><path d="M118 144 199 225Q207 233 207 245V267Q207 279 199 287L118 368Q105 381 92 368L73 349Q60 336 73 323L132 264Q140 256 132 248L73 189Q60 176 73 163L92 144Q105 131 118 144Z" transform="translate(512 0) scale(-1 1)" fill="#7CA2DD"/></svg>`;
 export const MANIFEST = JSON.stringify({
-  name: "Clodex", short_name: "Clodex", start_url: "/", display: "standalone",
-  background_color: "#000000", theme_color: "#000000",
+  name: "Clodex",
+  short_name: "Clodex",
+  start_url: "/",
+  display: "standalone",
+  background_color: "#000000",
+  theme_color: "#000000",
   icons: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" }],
 });
 
@@ -154,8 +155,15 @@ export const buildWebPage = (language: Language): WebPage => {
   const { script, style } = loadClientAssets();
   const fontCss = loadFontCss();
   const config = { layout: WEB_LAYOUT, commands: slashCommands(), messages };
-  const version = createHash("sha256").update(fontCss).update(style).update(layoutStyle).update(html).update(script).update(json(config))
-    .digest("hex").slice(0, PAGE_VERSION_LENGTH);
+  const version = createHash("sha256")
+    .update(fontCss)
+    .update(style)
+    .update(layoutStyle)
+    .update(html)
+    .update(script)
+    .update(json(config))
+    .digest("hex")
+    .slice(0, PAGE_VERSION_LENGTH);
   return {
     version,
     html: `<!doctype html>

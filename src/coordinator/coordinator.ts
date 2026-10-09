@@ -1,27 +1,33 @@
 // Agent 間の routing と lifecycle を決定論的に行う（DESIGN.md §3.9, §12）
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import type { AskUserResult, PendingQuestion } from "../protocol/questions.js";
 import {
-  AGENT_IDS, type AgentAdapter, type AgentId, type AgentStatus, type PermissionLevel, type SubagentState, type TurnResult,
+  AGENT_IDS,
+  type AgentAdapter,
+  type AgentId,
+  type AgentStatus,
+  type PermissionLevel,
+  type SubagentState,
+  type TurnResult,
 } from "../agents/agent-adapter.js";
-import { resolveSpecFile } from "../project/spec-file.js";
-import { changedSections } from "../context/spec-sections.js";
+import { type ModelCatalog, modelLabel } from "../agents/model-catalog.js";
+import type { StartupProbe } from "../agents/startup-probe.js";
 import { buildEnvelope } from "../context/context-resolver.js";
 import { CONTEXT_INSTRUCTION } from "../context/conversation-instruction.js";
+import { type Language, languageReminder } from "../context/language.js";
+import { changedSections } from "../context/spec-sections.js";
 import { t } from "../i18n/i18n.js";
-import { languageReminder, type Language } from "../context/language.js";
-import { createMessage, MAX_BODY_LENGTH, type AgentMessage, type CreateMessageResult } from "../protocol/messages.js";
-import { AgentMailbox } from "./agent-mailbox.js";
-import { DeliveryNotes, OTHER_AGENT } from "./delivery-notes.js";
-import { QuestionStore } from "./question-store.js";
-import { WorkRecorder } from "./work-recorder.js";
-import { BudgetManager, humanBudgetError, type BudgetLimits } from "./budget-manager.js";
-import { DEFAULT_USAGE_ALERT, UsageMonitor, limitResetAt, type UsageAlert, type UsageSnapshot } from "./usage-monitor.js";
-import type { EventBus } from "./event-bus.js";
-import { modelLabel, type ModelCatalog } from "../agents/model-catalog.js";
-import type { StartupProbe } from "../agents/startup-probe.js";
 import type { ConversationRecovery } from "../project/recovery-store.js";
+import { resolveSpecFile } from "../project/spec-file.js";
+import { type AgentMessage, type CreateMessageResult, createMessage, MAX_BODY_LENGTH } from "../protocol/messages.js";
+import type { AskUserResult, PendingQuestion } from "../protocol/questions.js";
+import { AgentMailbox } from "./agent-mailbox.js";
+import { type BudgetLimits, BudgetManager, humanBudgetError } from "./budget-manager.js";
+import { DeliveryNotes, OTHER_AGENT } from "./delivery-notes.js";
+import type { EventBus } from "./event-bus.js";
+import { QuestionStore } from "./question-store.js";
+import { DEFAULT_USAGE_ALERT, limitResetAt, type UsageAlert, UsageMonitor, type UsageSnapshot } from "./usage-monitor.js";
+import { WorkRecorder } from "./work-recorder.js";
 
 // 起動時の Agent の設定（DESIGN.md §9 Agent の設定の保存）
 export interface AgentStartSettings {
@@ -60,7 +66,8 @@ const DEFAULT_LIMIT_RESUME_MARGIN_MS = 60_000;
 const MS_PER_SECOND = 1000;
 const LIMIT_CONTINUE = "[Clodex] Your usage limit has reset. Continue the task you were working on.";
 const MAX_DELIVERY_ATTEMPTS = 2;
-const RETRY_NOTE = "[Clodex] Retry: your previous attempt at this message failed partway. Check the current state of the files before continuing; do not redo finished work.";
+const RETRY_NOTE =
+  "[Clodex] Retry: your previous attempt at this message failed partway. Check the current state of the files before continuing; do not redo finished work.";
 const ERROR_LINE_LENGTH = 200;
 const HANDOFF_ACTION: Partial<Record<AgentMessage["type"], string>> = {
   DELEGATE: "Implement it yourself",
@@ -136,24 +143,35 @@ export class Coordinator {
 
   recoveryState(): ConversationRecovery {
     if (this.stoppingRecovery) return this.stoppingRecovery;
-    const interrupted = AGENT_IDS.filter((id) => this.mailboxes[id].activeSending || this.mailboxes[id].holding || this.options.agents[id].status === "busy");
-    return this.workRecorder.recoveryState(this.pendingQuestions(), interrupted,
-      { claude: this.mailboxes.claude.recoveryQueue, codex: this.mailboxes.codex.recoveryQueue });
+    const interrupted = AGENT_IDS.filter(id => this.mailboxes[id].activeSending || this.mailboxes[id].holding || this.options.agents[id].status === "busy");
+    return this.workRecorder.recoveryState(this.pendingQuestions(), interrupted, {
+      claude: this.mailboxes.claude.recoveryQueue,
+      codex: this.mailboxes.codex.recoveryQueue,
+    });
   }
 
   restore(state: ConversationRecovery): void {
     this.questions.restore(state.questions ?? []);
     for (const id of AGENT_IDS) this.mailboxes[id].pause();
     for (const id of state.interrupted) {
-      if (this.mailboxes[id].sessionId) this.detach(this.mailboxes[id].enqueue(`${RECOVERY_CONTINUE}${this.workRecorder.recoveryWorkNote(state.lastWork?.[id])}`, { suffix: this.reminder }), id);
+      if (this.mailboxes[id].sessionId)
+        this.detach(
+          this.mailboxes[id].enqueue(`${RECOVERY_CONTINUE}${this.workRecorder.recoveryWorkNote(state.lastWork?.[id])}`, { suffix: this.reminder }),
+          id,
+        );
     }
     for (const id of AGENT_IDS) {
       for (const item of state.queue[id]) {
         if (item.kind === "input") {
-          this.detach(this.mailboxes[id].enqueue(item.text, {
-            inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, images: item.images,
-            suffix: this.inputSuffix(item.context), ...(item.context ? { context: true } : {}),
-          }), id);
+          this.detach(
+            this.mailboxes[id].enqueue(item.text, {
+              inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`,
+              images: item.images,
+              suffix: this.inputSuffix(item.context),
+              ...(item.context ? { context: true } : {}),
+            }),
+            id,
+          );
         } else {
           this.budget.restore(item.message);
           this.detach(this.deliver(item.message), item.message.to);
@@ -171,7 +189,7 @@ export class Coordinator {
     this.budget = new BudgetManager(limits);
     this.usage = new UsageMonitor(bus, { ...DEFAULT_USAGE_ALERT, ...options.usageAlert });
     for (const id of AGENT_IDS) {
-      agents[id].onEvent((event) => {
+      agents[id].onEvent(event => {
         if (event.type === "rate_limit") this.liveUsage.add(id);
         if (event.type === "subagents") this.subagents[id] = [...event.running];
         const files = this.workRecorder.record(id, event);
@@ -182,7 +200,10 @@ export class Coordinator {
         const mailbox = this.mailboxes?.[id];
         if (!mailbox || mailbox.activeSending || mailbox.holding || mailbox.isClosed) return;
         const hold = this.limitHold(id);
-        if (hold) { this.enterLimitHold(id, hold); mailbox.holdForLimit(hold); }
+        if (hold) {
+          this.enterLimitHold(id, hold);
+          mailbox.holdForLimit(hold);
+        }
       });
       // 起動前なので値を保持するだけ（次の起動時に使われる）
       const { permission, model, effort } = settings?.[id] ?? {};
@@ -198,15 +219,22 @@ export class Coordinator {
         () => {
           const instruction = instructions?.(id);
           return {
-            cwd: projectRoot, mcpUrl,
+            cwd: projectRoot,
+            mcpUrl,
             ...(instruction ? { instructions: instruction } : {}),
             ...(resumeSessionId ? { resumeSessionId } : {}),
           };
         },
-        (message) => bus.publish({ kind: "agent", agent: id, event: { type: "error", message } }),
+        message => bus.publish({ kind: "agent", agent: id, event: { type: "error", message } }),
         () => this.notifyRecoveryChange(),
-        () => { if (this.options.canStart?.() === false) throw new Error(t("sandbox.incomplete")); },
-        () => { const hold = this.limitHold(id); if (hold) this.enterLimitHold(id, hold); return hold; },
+        () => {
+          if (this.options.canStart?.() === false) throw new Error(t("sandbox.incomplete"));
+        },
+        () => {
+          const hold = this.limitHold(id);
+          if (hold) this.enterLimitHold(id, hold);
+          return hold;
+        },
         () => this.deliveryNotes.take(id),
       );
     };
@@ -238,9 +266,17 @@ export class Coordinator {
       this.deliveryNotes.queueNotice(peer, notice);
       return;
     }
-    this.detach(this.steerWithNotice(peer, notice, randomUUID()).then((sent) => {
-      if (!sent) this.deliveryNotes.queueNotice(peer, notice);
-    }).catch((error: unknown) => { this.deliveryNotes.queueNotice(peer, notice); throw error; }), peer);
+    this.detach(
+      this.steerWithNotice(peer, notice, randomUUID())
+        .then(sent => {
+          if (!sent) this.deliveryNotes.queueNotice(peer, notice);
+        })
+        .catch((error: unknown) => {
+          this.deliveryNotes.queueNotice(peer, notice);
+          throw error;
+        }),
+      peer,
+    );
   }
 
   setLimits(limits: BudgetLimits): void {
@@ -256,14 +292,19 @@ export class Coordinator {
     return result;
   }
 
-  pendingQuestions(): PendingQuestion[] { return this.questions.pending(); }
+  pendingQuestions(): PendingQuestion[] {
+    return this.questions.pending();
+  }
 
   answer(id: string, input: unknown): string | undefined {
     const answer = this.questions.answer(id, input);
     if (!answer.ok) return answer.error;
     this.options.bus.publish({ kind: "answer", id, agent: answer.question.agent, answers: answer.answers });
     for (const line of answer.context) this.deliveryNotes.queueHumanContext(answer.question.agent, line);
-    this.detach(this.mailboxes[answer.question.agent].enqueue(answer.text, { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, suffix: this.reminder }), answer.question.agent);
+    this.detach(
+      this.mailboxes[answer.question.agent].enqueue(answer.text, { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, suffix: this.reminder }),
+      answer.question.agent,
+    );
     this.notifyRecoveryChange();
     return undefined;
   }
@@ -273,7 +314,9 @@ export class Coordinator {
     const { projectRoot, bus, createMessageId } = this.options;
     if (this.options.solo?.()) return { ok: false, error: SOLO_REJECTED };
     const result = createMessage(input, {
-      from, repository: projectRoot, ...(createMessageId ? { createId: createMessageId } : {}),
+      from,
+      repository: projectRoot,
+      ...(createMessageId ? { createId: createMessageId } : {}),
     });
     if (!result.ok) return result;
     const { message } = result;
@@ -307,15 +350,15 @@ export class Coordinator {
     const envelope = `${attempt > 1 ? `${RETRY_NOTE}\n` : ""}${buildEnvelope(message, this.language)}`;
     const mailbox = this.mailboxes[message.to];
     const steerable = message.interrupt && mailbox.current?.from === message.from;
-    if (steerable && await this.steerWithNotice(message.to, envelope, message.id)) return;
+    if (steerable && (await this.steerWithNotice(message.to, envelope, message.id))) return;
     const result = await mailbox.enqueue(envelope, { message });
     const replied = this.repliedRequests.delete(message.id);
-    if (RETRIED_TYPES.has(message.type) && result.status === "completed" && result.text.trim() && !replied
-      && !mailbox.isClosed && !mailbox.holding) this.autoResult(message, result.text);
+    if (RETRIED_TYPES.has(message.type) && result.status === "completed" && result.text.trim() && !replied && !mailbox.isClosed && !mailbox.holding)
+      this.autoResult(message, result.text);
     // 上限で待っている宛先は、リセット後に続きを送るので送り直さない
     if (result.status !== "failed" || !RETRIED_TYPES.has(message.type) || mailbox.isClosed || mailbox.holding) return;
     if (attempt < MAX_DELIVERY_ATTEMPTS) {
-      await new Promise((resolve) => setTimeout(resolve, this.options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS).unref?.());
+      await new Promise(resolve => setTimeout(resolve, this.options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS).unref?.());
       if (!mailbox.isClosed) await this.deliver(message, attempt + 1);
       return;
     }
@@ -328,9 +371,10 @@ export class Coordinator {
 
   private autoResult(request: AgentMessage, text: string): void {
     const body = text.length > MAX_BODY_LENGTH ? `${text.slice(0, MAX_BODY_LENGTH - 1)}…` : text;
-    const created = createMessage({ to: request.from, type: "RESULT", taskId: request.taskId, replyTo: request.id,
-      status: "done", body }, { from: request.to, repository: this.options.projectRoot,
-      ...(this.options.createMessageId ? { createId: this.options.createMessageId } : {}) });
+    const created = createMessage(
+      { to: request.from, type: "RESULT", taskId: request.taskId, replyTo: request.id, status: "done", body },
+      { from: request.to, repository: this.options.projectRoot, ...(this.options.createMessageId ? { createId: this.options.createMessageId } : {}) },
+    );
     if (!created.ok) return;
     const message: AgentMessage = { ...created.message, auto: true };
     const budgetError = this.budget.admit(message, request);
@@ -356,7 +400,7 @@ export class Coordinator {
 
   private async steerWithNotice(id: AgentId, text: string, steerId: string): Promise<boolean> {
     const note = this.deliveryNotes.peek(id);
-    if (!await this.options.agents[id].steer(`${text}${note}`, steerId)) return false;
+    if (!(await this.options.agents[id].steer(`${text}${note}`, steerId))) return false;
     this.deliveryNotes.consume(id);
     return true;
   }
@@ -365,8 +409,10 @@ export class Coordinator {
     this.options.bus.publish({ kind: "human", agent: id, text });
     if (!shared) this.deliveryNotes.queueHumanContext(id, text);
     return this.mailboxes[id].enqueue(text, {
-      inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, images,
-      suffix: this.inputSuffix(context), ...(context ? { context: true } : {}),
+      inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`,
+      images,
+      suffix: this.inputSuffix(context),
+      ...(context ? { context: true } : {}),
     });
   }
 
@@ -388,26 +434,32 @@ export class Coordinator {
 
   // 作業中のターンも配送待ちの入力・message も無い（solo の切り替えの条件。DESIGN.md §11 Solo）
   idle(): boolean {
-    return AGENT_IDS.every((id) => this.options.agents[id].status !== "busy" && this.mailboxes[id].isIdle);
+    return AGENT_IDS.every(id => this.options.agents[id].status !== "busy" && this.mailboxes[id].isIdle);
   }
 
   // 送った順（ID の連番順）に並べる
   pendingInputs(): PendingInput[] {
     const seq = (id: string) => Number(id.slice(INPUT_ID_PREFIX.length));
-    return AGENT_IDS.flatMap((agent) => this.mailboxes[agent].pendingInputs.map((input) => ({ ...input, agent })))
-      .sort((a, b) => seq(a.id) - seq(b.id));
+    return AGENT_IDS.flatMap(agent => this.mailboxes[agent].pendingInputs.map(input => ({ ...input, agent }))).sort((a, b) => seq(a.id) - seq(b.id));
   }
 
   pendingMessages(): PendingMessage[] {
-    return AGENT_IDS.flatMap((agent) => this.mailboxes[agent].pendingMessages.map((message) => ({
-      id: message.id, agent, from: message.from, type: message.type, taskId: message.taskId, text: message.body,
-    })));
+    return AGENT_IDS.flatMap(agent =>
+      this.mailboxes[agent].pendingMessages.map(message => ({
+        id: message.id,
+        agent,
+        from: message.from,
+        type: message.type,
+        taskId: message.taskId,
+        text: message.body,
+      })),
+    );
   }
 
   // ID 省略時は最後に送った配送待ちの入力。取り消せなければ undefined
   cancelInput(id?: string): PendingInput | PendingMessage | undefined {
     const target = id
-      ? this.pendingInputs().find((input) => input.id === id) ?? this.pendingMessages().find((message) => message.id === id)
+      ? (this.pendingInputs().find(input => input.id === id) ?? this.pendingMessages().find(message => message.id === id))
       : this.pendingInputs().at(-1);
     if (!target || this.mailboxes[target.agent].cancel(target.id) === undefined) return undefined;
     this.options.bus.publish({ kind: "notice", text: t("notice.canceled", { agent: target.agent, text: preview(target.text) }) });
@@ -416,21 +468,19 @@ export class Coordinator {
 
   // 全 Agent の配送が終わるまで待つ。配送中のターンが相手へ message を送ることがあるので、全員が同時に空になるまで繰り返す
   async whenIdle(): Promise<void> {
-    while (!AGENT_IDS.every((id) => this.mailboxes[id].isIdle)) {
-      await Promise.all(AGENT_IDS.map((id) => this.mailboxes[id].whenIdle()));
+    while (!AGENT_IDS.every(id => this.mailboxes[id].isIdle)) {
+      await Promise.all(AGENT_IDS.map(id => this.mailboxes[id].whenIdle()));
     }
   }
 
   // /resume・/new: targets の Agent を止め、次回はそれぞれ指定の session（無ければ新規）で起動する。拒否したら理由を返す
-  async switchSessions(
-    sessions: Partial<Record<AgentId, string>>, targets: readonly AgentId[] = AGENT_IDS,
-  ): Promise<string | undefined> {
+  async switchSessions(sessions: Partial<Record<AgentId, string>>, targets: readonly AgentId[] = AGENT_IDS): Promise<string | undefined> {
     // 起動中や配送待ちも含めて、受け付けた作業がある Agent は止めない
-    const busy = targets.filter((id) => this.options.agents[id].status === "busy" || !this.mailboxes[id].isIdle);
+    const busy = targets.filter(id => this.options.agents[id].status === "busy" || !this.mailboxes[id].isIdle);
     if (busy.length) return t("reject.busy", { agents: busy.join(", ") });
     for (const id of targets) this.mailboxes[id].pause();
     try {
-      await Promise.all(targets.map((id) => this.options.agents[id].stop()));
+      await Promise.all(targets.map(id => this.options.agents[id].stop()));
       for (const id of targets) {
         this.mailboxes[id].switchSession(sessions[id]);
         this.usage.clearContext(id);
@@ -443,8 +493,8 @@ export class Coordinator {
 
   // 省略時は起動中の Agent だけ（停止中の Agent は compact するものが無い）
   compact(id?: AgentId): Promise<TurnResult[]> {
-    const targets = id ? [id] : AGENT_IDS.filter((agent) => this.options.agents[agent].status !== "stopped");
-    return Promise.all(targets.map((target) => this.mailboxes[target].enqueueCompact()));
+    const targets = id ? [id] : AGENT_IDS.filter(agent => this.options.agents[agent].status !== "stopped");
+    return Promise.all(targets.map(target => this.mailboxes[target].enqueueCompact()));
   }
 
   // Agent 指定なしは、Agent 間のやり取りも止める: 配送待ちの formal message を破棄し、chain を閉じる
@@ -455,12 +505,12 @@ export class Coordinator {
       this.mailboxes[target].releaseHold();
       this.deliveryNotes.clearHold(target);
     }
-    await Promise.all(targets.map((target) => this.options.agents[target].interrupt()));
+    await Promise.all(targets.map(target => this.options.agents[target].interrupt()));
   }
 
   private stopExchanges(): void {
-    const discarded = AGENT_IDS.flatMap((agent) => this.mailboxes[agent].discardMessages());
-    const processing = AGENT_IDS.flatMap((agent) => this.mailboxes[agent].current ?? []);
+    const discarded = AGENT_IDS.flatMap(agent => this.mailboxes[agent].discardMessages());
+    const processing = AGENT_IDS.flatMap(agent => this.mailboxes[agent].current ?? []);
     this.budget.closeChains([...discarded, ...processing]);
     if (discarded.length) {
       this.options.bus.publish({ kind: "notice", text: t("notice.discarded", { count: discarded.length }) });
@@ -470,7 +520,7 @@ export class Coordinator {
   async setPermission(level: PermissionLevel, id?: AgentId): Promise<void> {
     if (this.options.permissionLocked?.()) throw new Error(t("sandbox.permission"));
     const targets = id ? [id] : AGENT_IDS;
-    await Promise.all(targets.map((target) => this.options.agents[target].setPermission(level)));
+    await Promise.all(targets.map(target => this.options.agents[target].setPermission(level)));
   }
 
   async setModel(model: string, id: AgentId): Promise<TurnResult | void> {
@@ -479,19 +529,40 @@ export class Coordinator {
 
   async setEffort(level: string, id?: AgentId): Promise<TurnResult | void> {
     if (id) return this.mailboxes[id].enqueueEffort(level);
-    const results = await Promise.all(AGENT_IDS.map((agent) => this.mailboxes[agent].enqueueEffort(level)));
-    return results.find((result) => result.status === "failed") ?? results[0];
+    const results = await Promise.all(AGENT_IDS.map(agent => this.mailboxes[agent].enqueueEffort(level)));
+    return results.find(result => result.status === "failed") ?? results[0];
   }
 
   status(): Array<{
-    id: AgentId; status: AgentStatus; sessionId: string | undefined; permission: PermissionLevel;
-    model: string | undefined; modelLabel: string; effort: string | undefined; models: ModelCatalog[AgentId]; usage: UsageSnapshot; subagents: SubagentState[]; holdUntil?: string;
+    id: AgentId;
+    status: AgentStatus;
+    sessionId: string | undefined;
+    permission: PermissionLevel;
+    model: string | undefined;
+    modelLabel: string;
+    effort: string | undefined;
+    models: ModelCatalog[AgentId];
+    usage: UsageSnapshot;
+    subagents: SubagentState[];
+    holdUntil?: string;
   }> {
-    return AGENT_IDS.map((id) => {
+    return AGENT_IDS.map(id => {
       const { status, permission, model, effort } = this.options.agents[id];
       const models = this.options.modelCatalog?.()[id] ?? [];
       const holdUntil = this.mailboxes[id].holdUntil;
-      return { id, status, sessionId: this.mailboxes[id].sessionId, permission, model, modelLabel: modelLabel(model, models), effort, models, usage: this.usage.snapshot(id), subagents: [...this.subagents[id]], ...(holdUntil ? { holdUntil } : {}) };
+      return {
+        id,
+        status,
+        sessionId: this.mailboxes[id].sessionId,
+        permission,
+        model,
+        modelLabel: modelLabel(model, models),
+        effort,
+        models,
+        usage: this.usage.snapshot(id),
+        subagents: [...this.subagents[id]],
+        ...(holdUntil ? { holdUntil } : {}),
+      };
     });
   }
 
@@ -503,12 +574,12 @@ export class Coordinator {
   }
 
   async start(): Promise<void> {
-    await Promise.all(AGENT_IDS.map((id) => this.mailboxes[id].ensureRunning()));
+    await Promise.all(AGENT_IDS.map(id => this.mailboxes[id].ensureRunning()));
   }
 
   async stop(): Promise<void> {
     this.stoppingRecovery = this.recoveryState();
     for (const id of AGENT_IDS) this.mailboxes[id].close();
-    await Promise.all(AGENT_IDS.map((id) => this.options.agents[id].stop()));
+    await Promise.all(AGENT_IDS.map(id => this.options.agents[id].stop()));
   }
 }

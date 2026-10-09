@@ -5,5 +5,13 @@
   "windows": ["main"],
   "local": false,
   "remote": { "urls": ["http://127.0.0.1:*/*"] },
-  "permissions": ["dialog:allow-open", "notification:allow-is-permission-granted", "notification:allow-request-permission", "notification:allow-notify", "core:app:allow-version", "allow-check-update", "allow-install-update"]
+  "permissions": [
+    "dialog:allow-open",
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission",
+    "notification:allow-notify",
+    "core:app:allow-version",
+    "allow-check-update",
+    "allow-install-update"
+  ]
 }

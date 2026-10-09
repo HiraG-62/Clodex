@@ -31,7 +31,10 @@ describe("BudgetManager", () => {
   });
   it("既定値は §14（v0.2）のとおり", () => {
     expect(DEFAULT_LIMITS).toEqual({
-      maxMessagesPerChain: 8, maxReviewRoundsPerChain: 3, maxDelegationsPerChain: 4, maxDelegationDepth: 2,
+      maxMessagesPerChain: 8,
+      maxReviewRoundsPerChain: 3,
+      maxDelegationsPerChain: 4,
+      maxDelegationDepth: 2,
     });
   });
 

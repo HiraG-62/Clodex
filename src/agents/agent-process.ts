@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import type { AgentId } from "./agent-adapter.js";
-import { killProcessTree } from "../process/kill-tree.js";
 import { t } from "../i18n/i18n.js";
+import { killProcessTree } from "../process/kill-tree.js";
+import type { AgentId } from "./agent-adapter.js";
 
 // 1 行 1 JSON の stdio でやり取りする常駐プロセス。テストで差し替えられるよう抽象化する
 export interface AgentProcess {
@@ -38,8 +38,7 @@ export const subscriptionEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv =>
 // hook や skill が Clodex 配下の Agent かを判定するための環境変数（DESIGN.md §9）
 export const CLODEX_AGENT_ENV = "CLODEX_AGENT";
 
-export const agentEnv = (env: NodeJS.ProcessEnv, agent: AgentId): NodeJS.ProcessEnv =>
-  ({ ...subscriptionEnv(env), [CLODEX_AGENT_ENV]: agent });
+export const agentEnv = (env: NodeJS.ProcessEnv, agent: AgentId): NodeJS.ProcessEnv => ({ ...subscriptionEnv(env), [CLODEX_AGENT_ENV]: agent });
 
 export const spawnAgentProcess: SpawnAgentProcess = (command, args, { cwd, env }) => {
   const child = spawn(command, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
@@ -57,9 +56,9 @@ export const spawnAgentProcess: SpawnAgentProcess = (command, args, { cwd, env }
 
   return {
     spawned,
-    write: (line) => void child.stdin.write(`${line}\n`),
-    onLine: (handler) => void lines.on("line", handler),
-    onExit: (handler) => {
+    write: line => void child.stdin.write(`${line}\n`),
+    onLine: handler => void lines.on("line", handler),
+    onExit: handler => {
       let exited = false;
       const once = (code: number | null) => {
         if (exited) return;

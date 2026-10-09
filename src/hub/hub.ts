@@ -3,9 +3,9 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { writeFileAtomic } from "../project/atomic-write.js";
+import { type Conversation, ConversationHistory, conversationStatePath, loadConversations } from "../project/conversation-history.js";
 import { resolveProjectRoot } from "../project/project-root.js";
 import { hasRecoveryWork, loadRecovery } from "../project/recovery-store.js";
-import { ConversationHistory, conversationStatePath, loadConversations, type Conversation } from "../project/conversation-history.js";
 import { buildTabs, type ConversationTab, type TabConversation } from "./tabs.js";
 
 const HUB_PATH = join(".clodex", "hub.json");
@@ -51,7 +51,7 @@ export class Hub<T extends HubProject> {
       // 壊れた保存先は空の一覧として扱う
     }
     this.saved = [...new Set(parsed.projects)];
-    this.pinned = (parsed.pinned ?? []).filter((projectRoot) => this.saved.includes(projectRoot));
+    this.pinned = (parsed.pinned ?? []).filter(projectRoot => this.saved.includes(projectRoot));
     this.latestProject = parsed.lastProject;
   }
 
@@ -60,7 +60,7 @@ export class Hub<T extends HubProject> {
   }
 
   recoveryProjects(): string[] {
-    return this.saved.filter((projectRoot) => {
+    return this.saved.filter(projectRoot => {
       const state = loadRecovery(this.options.homeDir, projectRoot);
       return state && Object.values(state.conversations).some(hasRecoveryWork);
     });
@@ -70,13 +70,18 @@ export class Hub<T extends HubProject> {
     return this.selected ? this.contexts.get(this.selected) : undefined;
   }
 
-  allProjects(): T[] { return [...this.contexts.values()]; }
+  allProjects(): T[] {
+    return [...this.contexts.values()];
+  }
 
   list(): HubProjectEntry[] {
-    const entries = this.saved.map((projectRoot) => ({
-      projectRoot, open: this.contexts.has(projectRoot), current: projectRoot === this.selected, pinned: this.pinned.includes(projectRoot),
+    const entries = this.saved.map(projectRoot => ({
+      projectRoot,
+      open: this.contexts.has(projectRoot),
+      current: projectRoot === this.selected,
+      pinned: this.pinned.includes(projectRoot),
     }));
-    return [...entries.filter((entry) => entry.pinned), ...entries.filter((entry) => !entry.pinned)];
+    return [...entries.filter(entry => entry.pinned), ...entries.filter(entry => !entry.pinned)];
   }
 
   private savedConversations(projectRoot: string): Conversation[] {
@@ -104,14 +109,14 @@ export class Hub<T extends HubProject> {
   conversation(projectRoot: string, id: string, source: (project: T) => { list(): Conversation[] }): Conversation | undefined {
     if (!this.saved.includes(projectRoot)) return undefined;
     const context = this.contexts.get(projectRoot);
-    return (context ? source(context).list() : this.savedConversations(projectRoot)).find((conversation) => conversation.id === id);
+    return (context ? source(context).list() : this.savedConversations(projectRoot)).find(conversation => conversation.id === id);
   }
 
   unpinConversation(projectRoot: string, id: string, source: (project: T) => Pick<ConversationHistory, "list" | "togglePin">): boolean | undefined {
     if (!this.saved.includes(projectRoot)) return undefined;
     const context = this.contexts.get(projectRoot);
     const history = context ? source(context) : new ConversationHistory(conversationStatePath(this.options.homeDir, projectRoot), { resumeLatest: false });
-    const conversation = history.list().find((entry) => entry.id === id);
+    const conversation = history.list().find(entry => entry.id === id);
     if (!conversation) return undefined;
     if (!conversation.pinned) return false;
     const pinned = history.togglePin(id);
@@ -123,7 +128,7 @@ export class Hub<T extends HubProject> {
   togglePin(projectRoot: string): boolean | undefined {
     if (!this.saved.includes(projectRoot)) return undefined;
     const pinned = !this.pinned.includes(projectRoot);
-    this.pinned = pinned ? [...this.pinned, projectRoot] : this.pinned.filter((entry) => entry !== projectRoot);
+    this.pinned = pinned ? [...this.pinned, projectRoot] : this.pinned.filter(entry => entry !== projectRoot);
     this.save();
     return pinned;
   }
@@ -132,8 +137,8 @@ export class Hub<T extends HubProject> {
   remove(projectRoot: string): ProjectRemoveError | undefined {
     if (!this.saved.includes(projectRoot)) return "missing";
     if (this.contexts.has(projectRoot)) return "open";
-    this.saved = this.saved.filter((entry) => entry !== projectRoot);
-    this.pinned = this.pinned.filter((entry) => entry !== projectRoot);
+    this.saved = this.saved.filter(entry => entry !== projectRoot);
+    this.pinned = this.pinned.filter(entry => entry !== projectRoot);
     this.save();
     return undefined;
   }
@@ -144,7 +149,7 @@ export class Hub<T extends HubProject> {
     if (!context) {
       let opening = this.opening.get(projectRoot);
       if (!opening) {
-        opening = this.options.openProject(projectRoot).then((created) => {
+        opening = this.options.openProject(projectRoot).then(created => {
           this.contexts.set(projectRoot, created);
           return created;
         });
@@ -169,6 +174,6 @@ export class Hub<T extends HubProject> {
   }
 
   async closeAll(): Promise<void> {
-    await Promise.all([...this.contexts.values()].map((context) => context.close()));
+    await Promise.all([...this.contexts.values()].map(context => context.close()));
   }
 }

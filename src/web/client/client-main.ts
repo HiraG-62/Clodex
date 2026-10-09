@@ -15,8 +15,8 @@ import { createSettingsRefresh } from "./settings-refresh.js";
 import { createSettingsSheet } from "./settings-sheet.js";
 import { createSheets } from "./sheets.js";
 import { createStateView } from "./state-view.js";
+import { type ClientDeps, createStore } from "./store.js";
 import { createStoreInit } from "./store-init.js";
-import { createStore,type ClientDeps } from "./store.js";
 import { createThemeToast } from "./theme-toast.js";
 import { createViewport } from "./viewport.js";
 

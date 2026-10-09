@@ -1,11 +1,33 @@
 import { describe, expect, it, vi } from "vitest";
 import { EventBus } from "../coordinator/event-bus.js";
-import { WebFeed, type FeedItem, type WebState } from "./web-feed.js";
+import { type FeedItem, WebFeed, type WebState } from "./web-feed.js";
 import { connectWebFeed, historyItemOf } from "./web-ui.js";
 
-const STATE: WebState = { project: "C:\\app", primary: "claude", roles: {}, agents: [], tabs: [], conversations: [], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } };
+const STATE: WebState = {
+  project: "C:\\app",
+  primary: "claude",
+  roles: {},
+  agents: [],
+  tabs: [],
+  conversations: [],
+  pendingInputs: [],
+  pendingMessages: [],
+  questions: [],
+  processes: [],
+  language: "ja",
+  sandbox: { enabled: false, ready: false },
+  limitsUnlimited: false,
+  limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } },
+};
 const message = {
-  id: "msg_1", from: "claude", to: "codex", type: "QUESTION", taskId: "T", body: "?", repository: "C:\\app", createdAt: "x",
+  id: "msg_1",
+  from: "claude",
+  to: "codex",
+  type: "QUESTION",
+  taskId: "T",
+  body: "?",
+  repository: "C:\\app",
+  createdAt: "x",
 } as const;
 
 describe("connectWebFeed", () => {
@@ -13,7 +35,12 @@ describe("connectWebFeed", () => {
     const bus = new EventBus();
     const feed = new WebFeed();
     let language: "ja" | "en" = "ja";
-    connectWebFeed(bus, feed, () => ({ ...STATE, language }), () => language);
+    connectWebFeed(
+      bus,
+      feed,
+      () => ({ ...STATE, language }),
+      () => language,
+    );
     bus.publish({ kind: "message", message });
     language = "en";
     bus.publish({ kind: "message", message });
@@ -41,7 +68,9 @@ describe("connectWebFeed", () => {
       let primary: WebState["primary"] = "claude";
       const { refreshState } = connectWebFeed(bus, feed, () => ({ ...STATE, primary }));
       const states: FeedItem[] = [];
-      feed.subscribe((i) => { if (i.type === "state") states.push(i); });
+      feed.subscribe(i => {
+        if (i.type === "state") states.push(i);
+      });
 
       bus.publish({ kind: "notice", text: "a" });
       primary = "codex";
@@ -62,13 +91,16 @@ describe("connectWebFeed", () => {
       const feed = new WebFeed();
       const states: FeedItem[] = [];
       connectWebFeed(bus, feed, () => STATE);
-      feed.subscribe((item) => { if (item.type === "state") states.push(item); });
+      feed.subscribe(item => {
+        if (item.type === "state") states.push(item);
+      });
       for (const event of [
         { type: "session", sessionId: "s" } as const,
         { type: "context", tokens: 12 } as const,
         { type: "rate_limit", weekly: { usedPercent: 10, resetsAt: 1 } } as const,
         { type: "exit", code: 0 } as const,
-      ]) bus.publish({ kind: "agent", agent: "claude", event });
+      ])
+        bus.publish({ kind: "agent", agent: "claude", event });
       expect(feed.recent()).toEqual([]);
       vi.runAllTimers();
       expect(states).toHaveLength(1);
@@ -92,7 +124,13 @@ describe("historyItemOf", () => {
 });
 
 it("question と answer を feed の履歴項目にする", () => {
-  const question = { kind: "question" as const, id: "q1", agent: "claude" as const, at: "now", questions: [{ question: "方針は", options: [{ label: "A" }, { label: "B" }] }] };
+  const question = {
+    kind: "question" as const,
+    id: "q1",
+    agent: "claude" as const,
+    at: "now",
+    questions: [{ question: "方針は", options: [{ label: "A" }, { label: "B" }] }],
+  };
   const answer = { kind: "answer" as const, id: "q1", agent: "claude" as const, at: "now", answers: [["A"]] };
   expect(historyItemOf(question)).toMatchObject({ type: "event", event: question });
   expect(historyItemOf(answer)).toMatchObject({ type: "event", event: answer });

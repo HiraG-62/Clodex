@@ -1,16 +1,17 @@
-import { DEFAULT_LIMITS, LIMIT_KEYS } from "../coordinator/budget-manager.js";
 import { describe, expect, it } from "vitest";
 import type { AgentId, AgentStatus, PermissionLevel, TurnResult } from "../agents/agent-adapter.js";
+import { DEFAULT_LIMITS, LIMIT_KEYS } from "../coordinator/budget-manager.js";
+import type { PendingMessage, SoloMode } from "../coordinator/coordinator.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
-import type { SoloMode, PendingMessage } from "../coordinator/coordinator.js";
-import { createShell, type AgentState, type ConversationList, type PendingInput, type ShellCoordinator } from "./shell.js";
 import type { CommandResult } from "./command-runner.js";
+import { type AgentState, type ConversationList, createShell, type PendingInput, type ShellCoordinator } from "./shell.js";
 
-const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+const flush = () => new Promise<void>(resolve => setImmediate(resolve));
+
 import type { ManagedProcess } from "../process/process-manager.js";
-import { startWebServer } from "../web/web-server.js";
 import { WebFeed } from "../web/web-feed.js";
 import { buildWebPage } from "../web/web-page.js";
+import { startWebServer } from "../web/web-server.js";
 
 // ローカル時刻 10/05 20:26 の ISO 文字列（タイムゾーンに依存しないテストにする）
 const at = (minute: number) => new Date(2026, 9, 5, 20, minute).toISOString();
@@ -24,12 +25,15 @@ class FakeHistory implements ConversationList {
   ];
   started: Array<{ worktree?: boolean } | undefined> = [];
   worktreeError: string | undefined;
-  list() { return this.conversations; }
+  list() {
+    return this.conversations;
+  }
   async startNew(options?: { worktree?: boolean }) {
     if (options?.worktree && this.worktreeError) return this.worktreeError;
     this.started.push(options);
     this.currentId = "conv-fresh";
-    if (options?.worktree) this.conversations.push({ id: "conv-fresh", startedAt: at(40), updatedAt: at(40), sessions: {}, workDir: "C:\\dev\\app-1a2b", branch: "clodex/1a2b" });
+    if (options?.worktree)
+      this.conversations.push({ id: "conv-fresh", startedAt: at(40), updatedAt: at(40), sessions: {}, workDir: "C:\\dev\\app-1a2b", branch: "clodex/1a2b" });
     return undefined;
   }
   readonly cleared: AgentId[] = [];
@@ -37,11 +41,15 @@ class FakeHistory implements ConversationList {
     this.cleared.push(agent);
   }
   readonly renamed: string[] = [];
-  rename(title: string) { this.renamed.push(title); }
+  rename(title: string) {
+    this.renamed.push(title);
+  }
   readonly renamedById: Array<{ id: string; title: string }> = [];
-  renameConversation(id: string, title: string) { this.renamedById.push({ id, title }); }
+  renameConversation(id: string, title: string) {
+    this.renamedById.push({ id, title });
+  }
   setSolo(mode: SoloMode | undefined) {
-    const current = this.conversations.find((c) => c.id === this.currentId);
+    const current = this.conversations.find(c => c.id === this.currentId);
     if (!current) return;
     if (mode) current.solo = mode;
     else delete current.solo;
@@ -53,14 +61,14 @@ class FakeHistory implements ConversationList {
     return undefined;
   }
   togglePin(id: string) {
-    const found = this.conversations.find((c) => c.id === id);
+    const found = this.conversations.find(c => c.id === id);
     if (!found) return undefined;
     found.pinned = !found.pinned;
     return found.pinned;
   }
   async switchTo(id: string) {
     this.currentId = id;
-    return this.conversations.find((c) => c.id === id);
+    return this.conversations.find(c => c.id === id);
   }
 }
 
@@ -68,11 +76,18 @@ class FakeCoordinator implements ShellCoordinator {
   questions = [{ id: "q1", agent: "claude" as const, questions: [{ question: "方針", options: [{ label: "A" }, { label: "B" }] }] }];
   answers: Array<{ id: string; value: unknown }> = [];
   answerError: string | undefined;
-  pendingQuestions() { return this.questions; }
-  answer(id: string, value: unknown) { this.answers.push({ id, value }); return this.answerError; }
+  pendingQuestions() {
+    return this.questions;
+  }
+  answer(id: string, value: unknown) {
+    this.answers.push({ id, value });
+    return this.answerError;
+  }
   readonly sent: Array<{ agent: AgentId; text: string }> = [];
   isIdle = true;
-  idle() { return this.isIdle; }
+  idle() {
+    return this.isIdle;
+  }
   readonly interrupted: Array<AgentId | undefined> = [];
   readonly permissions: Array<{ level: PermissionLevel; agent: AgentId | undefined }> = [];
   readonly models: Array<{ model: string; agent: AgentId }> = [];
@@ -80,11 +95,22 @@ class FakeCoordinator implements ShellCoordinator {
   settingResult: TurnResult | undefined;
   states: AgentState[] = [
     {
-      id: "claude", status: "idle", sessionId: "s-claude", permission: "edit", model: "haiku", effort: "high", models: ["default", "opus", "sonnet", "haiku"].map((value) => ({ value, label: value })), subagents: [],
+      id: "claude",
+      status: "idle",
+      sessionId: "s-claude",
+      permission: "edit",
+      model: "haiku",
+      effort: "high",
+      models: ["default", "opus", "sonnet", "haiku"].map(value => ({ value, label: value })),
+      subagents: [],
       usage: {
-        fiveHourPercent: 12, fiveHourResetsAt: new Date(2026, 9, 5, 22, 30).getTime() / 1000,
-        weeklyPercent: 50, weeklyPace: -20, weeklyResetsAt: new Date(2026, 9, 9, 10, 0).getTime() / 1000,
-        contextTokens: 85400, contextWindow: 200000,
+        fiveHourPercent: 12,
+        fiveHourResetsAt: new Date(2026, 9, 5, 22, 30).getTime() / 1000,
+        weeklyPercent: 50,
+        weeklyPace: -20,
+        weeklyResetsAt: new Date(2026, 9, 9, 10, 0).getTime() / 1000,
+        contextTokens: 85400,
+        contextWindow: 200000,
       },
     },
     { id: "codex", status: "stopped", sessionId: undefined, permission: "full", models: [], usage: {}, subagents: [] },
@@ -105,11 +131,15 @@ class FakeCoordinator implements ShellCoordinator {
   pending: PendingInput[] = [{ id: "in2", agent: "codex", text: "queued" }];
   messages: PendingMessage[] = [];
   readonly canceled: Array<string | undefined> = [];
-  pendingInputs() { return this.pending; }
-  pendingMessages() { return this.messages; }
+  pendingInputs() {
+    return this.pending;
+  }
+  pendingMessages() {
+    return this.messages;
+  }
   cancelInput(id?: string) {
     this.canceled.push(id);
-    return this.pending.find((p) => p.id === (id ?? "in2")) ?? this.messages.find((message) => message.id === id);
+    return this.pending.find(p => p.id === (id ?? "in2")) ?? this.messages.find(message => message.id === id);
   }
 
   readonly switched: SavedSessions[] = [];
@@ -164,7 +194,7 @@ class FakeRunner {
   run(command: string): Promise<CommandResult> {
     this.commands.push(command);
     // 終了を待たずに次の入力を受け付けることを確認する。終了はテストが finish で起こす
-    return new Promise((resolve) => this.finish.push(resolve));
+    return new Promise(resolve => this.finish.push(resolve));
   }
   stopAll(): number {
     this.stops++;
@@ -178,13 +208,27 @@ const setup = ({ withoutProject = false } = {}) => {
   const coordinator = new FakeCoordinator();
   const runner = new FakeRunner();
   const background = {
-    starts: [] as string[], stops: 0, killed: [] as number[],
+    starts: [] as string[],
+    stops: 0,
+    killed: [] as number[],
     entries: [] as ManagedProcess[],
-    start(command: string) { this.starts.push(command); return this.starts.length; },
-    async stopAll() { this.stops++; },
-    kill(id: number) { this.killed.push(id); return id === 1; },
-    list() { return this.entries; },
-    output(id: number) { return id === 1 ? ["line one", "line two"] : undefined; },
+    start(command: string) {
+      this.starts.push(command);
+      return this.starts.length;
+    },
+    async stopAll() {
+      this.stops++;
+    },
+    kill(id: number) {
+      this.killed.push(id);
+      return id === 1;
+    },
+    list() {
+      return this.entries;
+    },
+    output(id: number) {
+      return id === 1 ? ["line one", "line two"] : undefined;
+    },
   };
   const printed: string[] = [];
   const notified: string[] = [];
@@ -199,44 +243,113 @@ const setup = ({ withoutProject = false } = {}) => {
   let hasProject = !withoutProject;
   const tabUnpinned: Array<{ projectRoot: string; id: string }> = [];
   const projects = {
-    list: () => [{ projectRoot: "C:\\dev\\one", open: true, current: true, pinned: true }, { projectRoot: "C:\\dev\\two", open: false, current: false, pinned: false }],
-    open: async (path: string) => { hasProject = true; return { projectRoot: path, primary: "codex" as AgentId }; },
+    list: () => [
+      { projectRoot: "C:\\dev\\one", open: true, current: true, pinned: true },
+      { projectRoot: "C:\\dev\\two", open: false, current: false, pinned: false },
+    ],
+    open: async (path: string) => {
+      hasProject = true;
+      return { projectRoot: path, primary: "codex" as AgentId };
+    },
     togglePin: (path: string) => (path === "C:\\dev\\two" ? true : undefined),
-    remove: (path: string) => (path === "C:\\dev\\two" ? undefined : path === "C:\\dev\\one" ? "open" as const : "missing" as const),
-    findConversation: (projectRoot: string, id: string) => projectRoot === "C:\\dev\\two" && id === "conv-old" ? history.conversations[1] : undefined,
-    unpinConversation: (projectRoot: string, id: string) => { tabUnpinned.push({ projectRoot, id }); return false; },
+    remove: (path: string) => (path === "C:\\dev\\two" ? undefined : path === "C:\\dev\\one" ? ("open" as const) : ("missing" as const)),
+    findConversation: (projectRoot: string, id: string) => (projectRoot === "C:\\dev\\two" && id === "conv-old" ? history.conversations[1] : undefined),
+    unpinConversation: (projectRoot: string, id: string) => {
+      tabUnpinned.push({ projectRoot, id });
+      return false;
+    },
     hasCurrent: () => hasProject,
   };
   // 本物と同じく、project を開く前に会話を求めると例外にする
-  const historyOf = () => { if (!hasProject) throw new Error("no project"); return history; };
+  const historyOf = () => {
+    if (!hasProject) throw new Error("no project");
+    return history;
+  };
   let limits = { ...DEFAULT_LIMITS };
   let unlimited = false;
   let language: "ja" | "en" = "ja";
   const languages: string[] = [];
   let sandboxEnabled = false;
-  const sandbox = { enabled: () => sandboxEnabled, ready: async () => true, set: async (enabled: boolean) => { sandboxEnabled = enabled; }, uninstall: async () => { sandboxEnabled = false; } };
-  const languageSettings = { get: () => language, set: (value: "ja" | "en") => { language = value; languages.push(value); } };
+  const sandbox = {
+    enabled: () => sandboxEnabled,
+    ready: async () => true,
+    set: async (enabled: boolean) => {
+      sandboxEnabled = enabled;
+    },
+    uninstall: async () => {
+      sandboxEnabled = false;
+    },
+  };
+  const languageSettings = {
+    get: () => language,
+    set: (value: "ja" | "en") => {
+      language = value;
+      languages.push(value);
+    },
+  };
   const shell = createShell({
     sandbox,
     language: languageSettings,
-    coordinator: () => coordinator, primary: "claude", notify: (text, level) => { notified.push(text); levels.push(level); }, busyElsewhere: () => busy.value, print: (line) => printed.push(line), toggleVerbose: () => (verbose = !verbose), history: historyOf, runner,
+    coordinator: () => coordinator,
+    primary: "claude",
+    notify: (text, level) => {
+      notified.push(text);
+      levels.push(level);
+    },
+    busyElsewhere: () => busy.value,
+    print: line => printed.push(line),
+    toggleVerbose: () => (verbose = !verbose),
+    history: historyOf,
+    runner,
     limits: {
-      get: () => limits, unlimited: () => unlimited,
-      set: (name, value) => { limits[LIMIT_KEYS[name]] = value; unlimited = false; },
-      reset: () => { limits = { ...DEFAULT_LIMITS }; unlimited = false; },
-      setUnlimited: () => { unlimited = true; },
+      get: () => limits,
+      unlimited: () => unlimited,
+      set: (name, value) => {
+        limits[LIMIT_KEYS[name]] = value;
+        unlimited = false;
+      },
+      reset: () => {
+        limits = { ...DEFAULT_LIMITS };
+        unlimited = false;
+      },
+      setUnlimited: () => {
+        unlimited = true;
+      },
     },
     saveSettings: (agents, change) => saved.push({ agents, change }),
-    resolveReference: async (path) => {
+    resolveReference: async path => {
       references.push(path);
       return ({ "src/a.ts": "C:/p/src/a.ts", "shot.png": "C:/up/shot.png" } as Record<string, string>)[path];
     },
-    projects, processes: background,
+    projects,
+    processes: background,
     roles: () => roles,
     worktreeSetup: () => worktreeSetup.value,
-    saveRole: (agent, value) => { roles[agent] = value; return value; },
+    saveRole: (agent, value) => {
+      roles[agent] = value;
+      return value;
+    },
   });
-  return { languageSettings, languages, coordinator, printed, notified, levels, shell, history, runner, saved, busy, worktreeSetup, projects, roles, background, references, sandbox, tabUnpinned };
+  return {
+    languageSettings,
+    languages,
+    coordinator,
+    printed,
+    notified,
+    levels,
+    shell,
+    history,
+    runner,
+    saved,
+    busy,
+    worktreeSetup,
+    projects,
+    roles,
+    background,
+    references,
+    sandbox,
+    tabUnpinned,
+  };
 };
 
 it("/language は現在値を表示し、正しい値だけ保存する", async () => {
@@ -257,7 +370,10 @@ describe("createShell", () => {
     const { shell, history, projects, notified, levels } = setup({ withoutProject: true });
     const opened: string[] = [];
     const originalOpen = projects.open;
-    projects.open = async (path) => { opened.push(path); return originalOpen(path); };
+    projects.open = async path => {
+      opened.push(path);
+      return originalOpen(path);
+    };
     await shell.handleLine("/tab missing C:\\dev\\two");
     expect(opened).toEqual([]);
     expect(notified.at(-1)).toBe("conversation not found");
@@ -272,27 +388,52 @@ describe("createShell", () => {
     const { shell, projects, tabUnpinned, notified } = setup();
     const opened: string[] = [];
     const originalOpen = projects.open;
-    projects.open = async (path) => { opened.push(path); return originalOpen(path); };
+    projects.open = async path => {
+      opened.push(path);
+      return originalOpen(path);
+    };
     await shell.handleLine("/tab unpin conv-old C:\\dev\\two");
     expect(tabUnpinned).toEqual([{ projectRoot: "C:\\dev\\two", id: "conv-old" }]);
     expect(opened).toEqual([]);
     expect(notified.at(-1)).toBe('unpinned: "Remember BANANA"');
   });
-  it("Web の /sandbox on 失敗は表示し、入力 API は 204 を返す", async()=>{
-    const {shell,sandbox,printed}=setup();sandbox.set=async()=>{throw new Error("Invalid runtime ACL");};
-    const server=await startWebServer({port:0,token:"test-token",feed:new WebFeed(),page:buildWebPage("en"),
-      onInput:async line=>{await shell.handleLine(line);},listFiles:async()=>[],
-      preview:{file:async()=>({ok:false,status:404,message:""}),diff:async()=>({ok:false,status:404,message:""})},
-      upload:{maxBytes:0,accepts:()=>false,save:async()=>""}});
-    try{
-      const response=await fetch(`${server.url}/api/input`,{method:"POST",headers:{cookie:"clodex_token=test-token"},body:JSON.stringify({line:"/sandbox on"})});
-      expect(response.status).toBe(204);expect(printed.at(-1)).toContain("Invalid runtime ACL");
-    }finally{await server.close();}
+  it("Web の /sandbox on 失敗は表示し、入力 API は 204 を返す", async () => {
+    const { shell, sandbox, printed } = setup();
+    sandbox.set = async () => {
+      throw new Error("Invalid runtime ACL");
+    };
+    const server = await startWebServer({
+      port: 0,
+      token: "test-token",
+      feed: new WebFeed(),
+      page: buildWebPage("en"),
+      onInput: async line => {
+        await shell.handleLine(line);
+      },
+      listFiles: async () => [],
+      preview: { file: async () => ({ ok: false, status: 404, message: "" }), diff: async () => ({ ok: false, status: 404, message: "" }) },
+      upload: { maxBytes: 0, accepts: () => false, save: async () => "" },
+    });
+    try {
+      const response = await fetch(`${server.url}/api/input`, {
+        method: "POST",
+        headers: { cookie: "clodex_token=test-token" },
+        body: JSON.stringify({ line: "/sandbox on" }),
+      });
+      expect(response.status).toBe(204);
+      expect(printed.at(-1)).toContain("Invalid runtime ACL");
+    } finally {
+      await server.close();
+    }
   });
   it.each(["/sandbox", "/sandbox on", "/sandbox off", "/sandbox uninstall"])("%s の失敗は表示し、入力処理を reject しない", async command => {
-    const {shell,printed,sandbox}=setup();
-    const failure=async()=>{throw new Error("sandbox failed");};
-    sandbox.ready=failure;sandbox.set=failure;sandbox.uninstall=failure;
+    const { shell, printed, sandbox } = setup();
+    const failure = async () => {
+      throw new Error("sandbox failed");
+    };
+    sandbox.ready = failure;
+    sandbox.set = failure;
+    sandbox.uninstall = failure;
     await expect(shell.handleLine(command)).resolves.toBe("continue");
     expect(printed.at(-1)).toContain("sandbox failed");
   });
@@ -344,7 +485,7 @@ describe("createShell", () => {
   it("@all! は両 Agent に割り込む", async () => {
     const { shell, coordinator } = setup();
     await shell.handleLine("@all! hello");
-    expect(coordinator.steeredInputs).toEqual(["claude", "codex"].map((agent) => ({ agent, text: "[Sent to both claude and codex]\nhello" })));
+    expect(coordinator.steeredInputs).toEqual(["claude", "codex"].map(agent => ({ agent, text: "[Sent to both claude and codex]\nhello" })));
     expect(coordinator.sharedFlags).toEqual([true, true]);
   });
   it("/role で役割を表示し、編集後に次の session の案内を出す", async () => {
@@ -382,13 +523,22 @@ describe("createShell", () => {
   it("/project pin と /project remove で一覧を整理し、結果を通知する", async () => {
     const { shell, printed, notified, levels } = setup();
     await shell.handleLine("/project");
-    expect(printed.find((line) => line.startsWith("C:\\dev\\one"))).toContain("(pinned)");
-    for (const line of ["/project pin C:\\dev\\two", "/project pin C:\\dev\\x", "/project remove C:\\dev\\two", "/project remove C:\\dev\\one", "/project remove C:\\dev\\x"]) {
+    expect(printed.find(line => line.startsWith("C:\\dev\\one"))).toContain("(pinned)");
+    for (const line of [
+      "/project pin C:\\dev\\two",
+      "/project pin C:\\dev\\x",
+      "/project remove C:\\dev\\two",
+      "/project remove C:\\dev\\one",
+      "/project remove C:\\dev\\x",
+    ]) {
       await shell.handleLine(line);
     }
     expect(notified).toEqual([
-      "Pinned: C:\\dev\\two", "Not in the list: C:\\dev\\x", "Removed from list: C:\\dev\\two",
-      "Open projects can't be removed: C:\\dev\\one", "Not in the list: C:\\dev\\x",
+      "Pinned: C:\\dev\\two",
+      "Not in the list: C:\\dev\\x",
+      "Removed from list: C:\\dev\\two",
+      "Open projects can't be removed: C:\\dev\\one",
+      "Not in the list: C:\\dev\\x",
     ]);
     expect(levels.slice(-5)).toEqual([undefined, "warn", undefined, "warn", "warn"]);
   });
@@ -396,7 +546,10 @@ describe("createShell", () => {
     const { coordinator, shell } = setup();
     await expect(shell.handleLine("hello")).resolves.toBe("continue");
     await expect(shell.handleLine("@codex review")).resolves.toBe("continue");
-    expect(coordinator.sent).toEqual([{ agent: "claude", text: "hello" }, { agent: "codex", text: "review" }]);
+    expect(coordinator.sent).toEqual([
+      { agent: "claude", text: "hello" },
+      { agent: "codex", text: "review" },
+    ]);
   });
 
   it("/context は会話本文の参照を依頼に添えて送る", async () => {
@@ -491,7 +644,7 @@ describe("createShell", () => {
 
   it("/solo は作業中でなければ今の会話に保存し、作業中なら拒否する", async () => {
     const { coordinator, history, notified, shell } = setup();
-    const solo = () => history.conversations.find((c) => c.id === history.currentId)?.solo;
+    const solo = () => history.conversations.find(c => c.id === history.currentId)?.solo;
     await shell.handleLine("/solo");
     expect(solo()).toBe("free");
     await shell.handleLine("/solo codex");
@@ -514,7 +667,7 @@ describe("createShell", () => {
     expect(coordinator.sent).toEqual([]);
     await shell.handleLine("@codex 作業");
     await shell.handleLine("作業");
-    expect(coordinator.sent.map((s) => s.agent)).toEqual(["codex", "codex"]);
+    expect(coordinator.sent.map(s => s.agent)).toEqual(["codex", "codex"]);
   });
 
   it("/status は各 Agent の状態を表示する", async () => {
@@ -562,7 +715,10 @@ describe("createShell", () => {
     const { coordinator, printed, shell } = setup();
     await shell.handleLine("/permission codex read-only");
     await shell.handleLine("/permission full");
-    expect(coordinator.permissions).toEqual([{ level: "read-only", agent: "codex" }, { level: "full", agent: undefined }]);
+    expect(coordinator.permissions).toEqual([
+      { level: "read-only", agent: "codex" },
+      { level: "full", agent: undefined },
+    ]);
     expect(printed).toEqual(["permission: codex -> read-only", "permission: all agents -> full"]);
   });
 
@@ -572,7 +728,10 @@ describe("createShell", () => {
     await shell.handleLine("/effort codex low");
     await shell.handleLine("/effort high");
     expect(coordinator.models).toEqual([{ agent: "claude", model: "haiku" }]);
-    expect(coordinator.efforts).toEqual([{ agent: "codex", level: "low" }, { agent: undefined, level: "high" }]);
+    expect(coordinator.efforts).toEqual([
+      { agent: "codex", level: "low" },
+      { agent: undefined, level: "high" },
+    ]);
     expect(printed).toEqual(["Saved model: claude → haiku", "Saved effort: codex → low", "Saved effort: all agents → high"]);
   });
 
@@ -605,7 +764,7 @@ describe("createShell", () => {
     const { history, printed, notified, shell } = setup();
     await shell.handleLine("/rename 設計の相談 その2");
     expect(history.renamed).toEqual(["設計の相談 その2"]);
-    expect(notified).toEqual(["renamed: \"設計の相談 その2\""]);
+    expect(notified).toEqual(['renamed: "設計の相談 その2"']);
     expect(printed).toEqual([]);
   });
 
@@ -625,12 +784,7 @@ describe("createShell", () => {
     await shell.handleLine("/pin 3");
     await shell.handleLine("/pin 9");
     expect(history.removed).toEqual(["conv-old"]);
-    expect(notified).toEqual([
-      "cannot delete the current conversation",
-      "deleted: \"Remember BANANA\"",
-      "pinned: \"(no input)\"",
-      "unpinned: \"(no input)\"",
-    ]);
+    expect(notified).toEqual(["cannot delete the current conversation", 'deleted: "Remember BANANA"', 'pinned: "(no input)"', 'unpinned: "(no input)"']);
     expect(printed).toEqual(["no conversation #9"]);
   });
 
@@ -780,18 +934,24 @@ describe("createShell", () => {
   });
 });
 
-it.each(["/new", "/new worktree", "/resume 2", "/rename 名前", "/delete 1", "/delete 2", "/pin 2", "/project C:/dev/two"])("%s の操作結果はログに入れない", async (command) => {
-  const { shell, printed, notified } = setup();
-  await shell.handleLine(command);
-  expect(notified).toHaveLength(1);
-  expect(printed).toEqual([]);
-});
+it.each(["/new", "/new worktree", "/resume 2", "/rename 名前", "/delete 1", "/delete 2", "/pin 2", "/project C:/dev/two"])(
+  "%s の操作結果はログに入れない",
+  async command => {
+    const { shell, printed, notified } = setup();
+    await shell.handleLine(command);
+    expect(notified).toHaveLength(1);
+    expect(printed).toEqual([]);
+  },
+);
 
 it("/answer は JSON の回答と 1 問への自由記述を渡す", async () => {
   const { shell, coordinator, notified } = setup();
   await shell.handleLine('/answer q1 [["A"]]');
   await shell.handleLine("/answer q1 自由な回答");
-  expect(coordinator.answers).toEqual([{ id: "q1", value: [["A"]] }, { id: "q1", value: [["自由な回答"]] }]);
+  expect(coordinator.answers).toEqual([
+    { id: "q1", value: [["A"]] },
+    { id: "q1", value: [["自由な回答"]] },
+  ]);
   expect(notified).toEqual([]);
 });
 
@@ -842,16 +1002,32 @@ it("/limits unlimited で無制限にし、/limits で無制限と表示する",
 it("/language の保存失敗は表示し、Web は 204 を返して言語を保持する", async () => {
   const { shell, languageSettings, printed } = setup();
   const path = "C:/home/.clodex/config.json";
-  languageSettings.set = () => { throw new Error(`${path}: EACCES`); };
-  const server = await startWebServer({ port: 0, token: "test-token", feed: new WebFeed(), page: buildWebPage("en"),
-    onInput: async line => { await shell.handleLine(line); }, listFiles: async () => [],
+  languageSettings.set = () => {
+    throw new Error(`${path}: EACCES`);
+  };
+  const server = await startWebServer({
+    port: 0,
+    token: "test-token",
+    feed: new WebFeed(),
+    page: buildWebPage("en"),
+    onInput: async line => {
+      await shell.handleLine(line);
+    },
+    listFiles: async () => [],
     preview: { file: async () => ({ ok: false, status: 404, message: "" }), diff: async () => ({ ok: false, status: 404, message: "" }) },
-    upload: { maxBytes: 0, accepts: () => false, save: async () => "" } });
+    upload: { maxBytes: 0, accepts: () => false, save: async () => "" },
+  });
   try {
-    const response = await fetch(`${server.url}/api/input`, { method: "POST", headers: { cookie: "clodex_token=test-token" }, body: JSON.stringify({ line: "/language en" }) });
+    const response = await fetch(`${server.url}/api/input`, {
+      method: "POST",
+      headers: { cookie: "clodex_token=test-token" },
+      body: JSON.stringify({ line: "/language en" }),
+    });
     expect(response.status).toBe(204);
     expect(printed.at(-1)).toContain(path);
     expect(printed.at(-1)).toContain("EACCES");
     expect(languageSettings.get()).toBe("ja");
-  } finally { await server.close(); }
+  } finally {
+    await server.close();
+  }
 });

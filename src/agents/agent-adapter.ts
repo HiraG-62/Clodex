@@ -36,7 +36,10 @@ export interface RateLimitWindow {
   resetsAt: number; // epoch seconds
 }
 
-export interface SubagentState { id: string; description: string }
+export interface SubagentState {
+  id: string;
+  description: string;
+}
 
 export type AgentEvent =
   | { type: "session"; sessionId: string }
@@ -81,4 +84,4 @@ export interface AgentAdapter {
 export const TOOL_INPUT_SUMMARY_LENGTH = 200;
 
 export const summarizeToolInput = (input: unknown): string =>
-  (typeof input === "string" ? input : JSON.stringify(input) ?? "").slice(0, TOOL_INPUT_SUMMARY_LENGTH);
+  (typeof input === "string" ? input : (JSON.stringify(input) ?? "")).slice(0, TOOL_INPUT_SUMMARY_LENGTH);

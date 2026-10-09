@@ -3,10 +3,18 @@ import type { AgentState } from "../../cli/shell.js";
 import type { ClientContext } from "./store.js";
 
 export function createAgentStrip(ctx: ClientContext) {
-
-
   // ---- 状態の描画 ----
-  const gauge = (label: string, shortLabel: string, labelId: string, value: string, percent: number | undefined, agent: AgentId, over = false, tick?: number, reset = "") => {
+  const gauge = (
+    label: string,
+    shortLabel: string,
+    labelId: string,
+    value: string,
+    percent: number | undefined,
+    agent: AgentId,
+    over = false,
+    tick?: number,
+    reset = "",
+  ) => {
     const node = ctx.el("div", "gauge");
     node.append(ctx.el("span", "k", label), ctx.el("span", `v mono${over ? " over" : ""}`, value));
     node.querySelector<HTMLElement>(".v")!.prepend(ctx.el("span", "gauge-reset", reset));
@@ -29,7 +37,17 @@ export function createAgentStrip(ctx: ClientContext) {
     return node;
   };
 
-  const syncGauge = (node: HTMLElement, label: string, shortLabel: string, labelId: string, value: string, percent: number | undefined, over = false, tick?: number, reset = "") => {
+  const syncGauge = (
+    node: HTMLElement,
+    label: string,
+    shortLabel: string,
+    labelId: string,
+    value: string,
+    percent: number | undefined,
+    over = false,
+    tick?: number,
+    reset = "",
+  ) => {
     node.title = `${label}: ${value}`;
     node.dataset.label = labelId;
     node.dataset.shortLabel = shortLabel;
@@ -42,7 +60,10 @@ export function createAgentStrip(ctx: ClientContext) {
     val.classList.toggle("over", over);
     track.querySelector<HTMLElement>("i")!.style.width = `${Math.max(0, Math.min(100, percent ?? 0))}%`;
     let marker = track.querySelector<HTMLElement>(".tick");
-    if (tick === undefined) { marker?.remove(); return; }
+    if (tick === undefined) {
+      marker?.remove();
+      return;
+    }
     if (!marker) {
       marker = ctx.el("span", "tick");
       marker.title = ctx.t("web.gauge.tick");
@@ -60,27 +81,38 @@ export function createAgentStrip(ctx: ClientContext) {
   // 利用枠とコンテキストのゲージの表示内容。作るときと更新するときで共有する
   const gaugeValues = (usage: AgentState["usage"]) => {
     const pace = usage.weeklyPace;
-    const contextValue = usage.contextTokens === undefined
-      ? "—" : `${ctx.kTokens(usage.contextTokens)}${usage.contextWindow ? ` / ${ctx.kTokens(usage.contextWindow)}` : ""}`;
+    const contextValue =
+      usage.contextTokens === undefined ? "—" : `${ctx.kTokens(usage.contextTokens)}${usage.contextWindow ? ` / ${ctx.kTokens(usage.contextWindow)}` : ""}`;
     return [
       {
-        shortLabel: ctx.t("web.gauge.fiveHour"), labelId: "fiveHour",
+        shortLabel: ctx.t("web.gauge.fiveHour"),
+        labelId: "fiveHour",
         label: `${ctx.t("web.gauge.fiveHour")}${resetLabel(usage.fiveHourResetsAt, false)}`,
         value: usage.fiveHourPercent === undefined ? "—" : `${usage.fiveHourPercent}%`,
-        percent: usage.fiveHourPercent, over: false, tick: undefined, reset: usage.fiveHourResetsAt === undefined ? "" : ctx.clock(new Date(usage.fiveHourResetsAt * ctx.MS_PER_SECOND).toISOString()),
+        percent: usage.fiveHourPercent,
+        over: false,
+        tick: undefined,
+        reset: usage.fiveHourResetsAt === undefined ? "" : ctx.clock(new Date(usage.fiveHourResetsAt * ctx.MS_PER_SECOND).toISOString()),
       },
       {
-        shortLabel: ctx.t("web.gauge.weekly"), labelId: "weekly",
+        shortLabel: ctx.t("web.gauge.weekly"),
+        labelId: "weekly",
         label: `${ctx.t("web.gauge.weekly")}${pace === undefined ? "" : ctx.t("web.gauge.pace", { pace: `${pace > 0 ? "+" : ""}${pace}` })}${resetLabel(usage.weeklyResetsAt, true)}`,
         value: usage.weeklyPercent === undefined ? "—" : `${usage.weeklyPercent}%`,
-        percent: usage.weeklyPercent, over: (pace ?? 0) > 0, reset: usage.weeklyResetsAt === undefined ? "" : ctx.shortDate(new Date(usage.weeklyResetsAt * ctx.MS_PER_SECOND).toISOString()),
+        percent: usage.weeklyPercent,
+        over: (pace ?? 0) > 0,
+        reset: usage.weeklyResetsAt === undefined ? "" : ctx.shortDate(new Date(usage.weeklyResetsAt * ctx.MS_PER_SECOND).toISOString()),
         tick: pace === undefined || usage.weeklyPercent === undefined ? undefined : usage.weeklyPercent - pace,
       },
       {
-        shortLabel: ctx.t("web.gauge.context"), labelId: "ctx",
-        label: ctx.t("web.gauge.context"), value: contextValue,
+        shortLabel: ctx.t("web.gauge.context"),
+        labelId: "ctx",
+        label: ctx.t("web.gauge.context"),
+        value: contextValue,
         percent: usage.contextTokens && usage.contextWindow ? (usage.contextTokens / usage.contextWindow) * ctx.PERCENT : 0,
-        over: false, tick: undefined, reset: "",
+        over: false,
+        tick: undefined,
+        reset: "",
       },
     ];
   };
@@ -98,7 +130,7 @@ export function createAgentStrip(ctx: ClientContext) {
       if (!current.subagents?.length) return;
       subagentDetails.append(ctx.el("b", "", `${ctx.t("web.agent.subagents")} ${current.subagents.length}`));
       const list = ctx.el("ul");
-      list.append(...current.subagents.map((subagent) => ctx.el("li", "", subagent.description || subagent.id)));
+      list.append(...current.subagents.map(subagent => ctx.el("li", "", subagent.description || subagent.id)));
       subagentDetails.append(list);
     };
     updateSubagentDetails(agent);
@@ -116,7 +148,10 @@ export function createAgentStrip(ctx: ClientContext) {
       const current = ctx.displayedAgent(incoming);
       modelChip.textContent = current.modelLabel ?? ctx.displayDefault(current.model);
       effortChip.textContent = ctx.displayDefault(current.effort);
-      permissionChip.replaceChildren(ctx.icon(current.permission === "full" ? "shield-alert" : "shield"), document.createTextNode(current.permission === "full" ? "" : current.permission));
+      permissionChip.replaceChildren(
+        ctx.icon(current.permission === "full" ? "shield-alert" : "shield"),
+        document.createTextNode(current.permission === "full" ? "" : current.permission),
+      );
       modelChip.prepend(ctx.icon("cpu"));
       effortChip.prepend(ctx.icon("gauge"));
       for (const button of [modelChip, effortChip, permissionChip]) {
@@ -125,13 +160,17 @@ export function createAgentStrip(ctx: ClientContext) {
       }
       permissionChip.classList.toggle("warning", current.permission === "full");
       const pending = ctx.store.pendingSettings[agent.id];
-      for (const [button, key] of [[modelChip, "model"], [effortChip, "effort"], [permissionChip, "permission"]] as const) {
+      for (const [button, key] of [
+        [modelChip, "model"],
+        [effortChip, "effort"],
+        [permissionChip, "permission"],
+      ] as const) {
         button.classList.toggle("pending", pending?.[key] !== undefined);
         if (pending?.[key] !== undefined) button.title += ` · ${ctx.t("web.setting.pending")}`;
       }
     };
     updateChips(agent);
-    const gauges = gaugeValues(agent.usage).map((g) => gauge(g.label, g.shortLabel, g.labelId, g.value, g.percent, agent.id, g.over, g.tick, g.reset));
+    const gauges = gaugeValues(agent.usage).map(g => gauge(g.label, g.shortLabel, g.labelId, g.value, g.percent, agent.id, g.over, g.tick, g.reset));
     const minis = ctx.el("div", "mini-gauges");
     minis.append(...gauges);
     wrap.append(chips, minis);
@@ -145,7 +184,13 @@ export function createAgentStrip(ctx: ClientContext) {
       links.append(button);
       return button;
     };
-    const interrupt = action("square", ctx.t("web.agent.interrupt"), () => void ctx.send(`/interrupt ${agent.id}`, interrupt), "danger", agent.status !== "busy");
+    const interrupt = action(
+      "square",
+      ctx.t("web.agent.interrupt"),
+      () => void ctx.send(`/interrupt ${agent.id}`, interrupt),
+      "danger",
+      agent.status !== "busy",
+    );
     const compact = action("fold", ctx.t("web.agent.compact"), () => void ctx.send(`/compact ${agent.id}`, compact), "", agent.status === "stopped");
     interrupt.dataset.command = `/interrupt ${agent.id}`;
     compact.dataset.command = `/compact ${agent.id}`;
@@ -153,7 +198,7 @@ export function createAgentStrip(ctx: ClientContext) {
     settingsButton.append(ctx.el("span", "mobile-action-label", ctx.t("web.top.settings")));
     links.append(settingsButton);
     wrap.append(links);
-    ctx.store.controlUpdaters.set(wrap, (current) => {
+    ctx.store.controlUpdaters.set(wrap, current => {
       updateChips(current);
       updateSubagentDetails(current);
       currentStatus.className = `state mobile-only ${current.status === "busy" ? "working" : current.status}`;
@@ -175,7 +220,7 @@ export function createAgentStrip(ctx: ClientContext) {
   const subagentBadge = (agent: AgentState) => {
     if (!agent.subagents?.length) return undefined;
     const badge = ctx.el("span", "subagent-badge");
-    const label = `${ctx.t("web.agent.subagents")} ${agent.subagents.length}\n${agent.subagents.map((subagent) => subagent.description || subagent.id).join("\n")}`;
+    const label = `${ctx.t("web.agent.subagents")} ${agent.subagents.length}\n${agent.subagents.map(subagent => subagent.description || subagent.id).join("\n")}`;
     badge.title = label;
     badge.setAttribute("aria-label", label);
     badge.append(ctx.icon("list-tree"), ctx.el("span", "", String(agent.subagents.length)));
@@ -189,7 +234,6 @@ export function createAgentStrip(ctx: ClientContext) {
     button.addEventListener("click", () => ctx.openAgentSettings(id));
     return button;
   };
-
 
   const usagePopover = ctx.$("#usage-popover");
   const closeUsage = () => {
@@ -208,13 +252,15 @@ export function createAgentStrip(ctx: ClientContext) {
   };
   const syncUsageDetails = (container: HTMLElement, agent: AgentState) => {
     if (container.dataset.agent !== agent.id) {
-      container.replaceChildren(...gaugeValues(agent.usage).map((g) => gauge(g.label, g.shortLabel, g.labelId, g.value, g.percent, agent.id, g.over, g.tick, g.reset)));
+      container.replaceChildren(
+        ...gaugeValues(agent.usage).map(g => gauge(g.label, g.shortLabel, g.labelId, g.value, g.percent, agent.id, g.over, g.tick, g.reset)),
+      );
       container.dataset.agent = agent.id;
     }
     gaugeValues(agent.usage).forEach((g, index) => {
       const node = container.children[index] as HTMLElement;
-      const value = g.labelId === "ctx" && agent.usage.contextWindow && agent.usage.contextTokens !== undefined
-        ? `${g.value} · ${Math.round(g.percent ?? 0)}%` : g.value;
+      const value =
+        g.labelId === "ctx" && agent.usage.contextWindow && agent.usage.contextTokens !== undefined ? `${g.value} · ${Math.round(g.percent ?? 0)}%` : g.value;
       syncGauge(node, g.label, g.shortLabel, g.labelId, value, g.percent, g.over, g.tick, g.reset);
       node.querySelector<HTMLElement>(".k")!.textContent = g.shortLabel;
       node.querySelector<HTMLElement>(".track")!.hidden = g.value === "—";
@@ -225,9 +271,12 @@ export function createAgentStrip(ctx: ClientContext) {
     const side = ctx.$("#usage-side");
     if (!ctx.wideUsage.matches) return;
     for (const id of ctx.AGENT_IDS) {
-      const agent = ctx.store.state?.agents.find((entry) => entry.id === id);
+      const agent = ctx.store.state?.agents.find(entry => entry.id === id);
       let section = side.querySelector<HTMLElement>(`section[data-agent="${id}"]`);
-      if (!agent) { section?.remove(); continue; }
+      if (!agent) {
+        section?.remove();
+        continue;
+      }
       if (!section) {
         section = ctx.el("section");
         section.dataset.agent = id;
@@ -243,18 +292,21 @@ export function createAgentStrip(ctx: ClientContext) {
     refreshUsageSide();
     if (ctx.wideUsage.matches) return closeUsage();
     if (!ctx.store.usageAgent) return;
-    const agent = ctx.store.state?.agents.find((entry) => entry.id === ctx.store.usageAgent);
+    const agent = ctx.store.state?.agents.find(entry => entry.id === ctx.store.usageAgent);
     if (!agent || ctx.mobile.matches) return closeUsage();
     syncUsageDetails(usagePopover, agent);
     usagePopover.hidden = false;
-    for (const button of document.querySelectorAll("#agents button.mini-gauges")) button.setAttribute("aria-expanded", String(button.closest<HTMLElement>(".agent")?.dataset.agent === agent.id));
+    for (const button of document.querySelectorAll("#agents button.mini-gauges"))
+      button.setAttribute("aria-expanded", String(button.closest<HTMLElement>(".agent")?.dataset.agent === agent.id));
     positionUsage();
   };
-  document.addEventListener("click", (event) => {
+  document.addEventListener("click", event => {
     const target = event.target;
     if (target instanceof Element && !target.closest("#usage-popover, #agents button.mini-gauges")) closeUsage();
   });
-  document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeUsage(); });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") closeUsage();
+  });
   window.addEventListener("resize", positionUsage);
   ctx.mobile.addEventListener("change", positionUsage);
 

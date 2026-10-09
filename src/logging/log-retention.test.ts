@@ -23,8 +23,12 @@ const setup = (files: Record<string, number>) => {
 describe("pruneLogs", () => {
   it("更新日時が 14 日より前の .jsonl と .log だけを消す", () => {
     const { homeDir, logs } = setup({
-      "Clodex-old.jsonl": 15, "hub-old.log": 30, "hub-errors-old.log": 20,
-      "Clodex-new.jsonl": 13, "hub-new.log": 1, "notes.txt": 100,
+      "Clodex-old.jsonl": 15,
+      "hub-old.log": 30,
+      "hub-errors-old.log": 20,
+      "Clodex-new.jsonl": 13,
+      "hub-new.log": 1,
+      "notes.txt": 100,
     });
     pruneLogs(homeDir, NOW);
     expect(readdirSync(logs).sort()).toEqual(["Clodex-new.jsonl", "hub-new.log", "notes.txt"]);

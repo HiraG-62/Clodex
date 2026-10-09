@@ -1,13 +1,16 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { AGENT_IDS } from "../agents/agent-adapter.js";
-import { pendingQuestionSchema } from "../protocol/questions.js";
 import { sendMessageShape } from "../protocol/messages.js";
+import { pendingQuestionSchema } from "../protocol/questions.js";
 import { writeFileAtomic } from "./atomic-write.js";
 import { conversationStatePath } from "./conversation-history.js";
 
 const messageSchema = z.object(sendMessageShape).extend({
-  id: z.string().min(1), from: z.enum(AGENT_IDS), repository: z.string().min(1), createdAt: z.string(),
+  id: z.string().min(1),
+  from: z.enum(AGENT_IDS),
+  repository: z.string().min(1),
+  createdAt: z.string(),
 });
 const itemSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("input"), text: z.string(), images: z.array(z.string()).optional(), context: z.literal(true).optional() }),
@@ -15,7 +18,8 @@ const itemSchema = z.discriminatedUnion("kind", [
 ]);
 const workSchema = z.strictObject({ plan: z.string().optional(), actions: z.array(z.string()).max(5) });
 const lastWorkSchema = z.strictObject({
-  claude: workSchema.optional().catch(undefined), codex: workSchema.optional().catch(undefined),
+  claude: workSchema.optional().catch(undefined),
+  codex: workSchema.optional().catch(undefined),
 });
 const conversationSchema = z.strictObject({
   questions: z.array(pendingQuestionSchema).optional(),
@@ -24,7 +28,8 @@ const conversationSchema = z.strictObject({
   lastWork: lastWorkSchema.optional().catch(undefined),
 });
 const recoverySchema = z.strictObject({
-  current: z.string().min(1), conversations: z.record(z.string(), conversationSchema),
+  current: z.string().min(1),
+  conversations: z.record(z.string(), conversationSchema),
 });
 
 export type RecoveryItem = z.infer<typeof itemSchema>;
@@ -32,10 +37,9 @@ export type ConversationRecovery = z.infer<typeof conversationSchema>;
 export type RecoveryState = z.infer<typeof recoverySchema>;
 
 export const hasRecoveryWork = ({ interrupted, queue, questions }: ConversationRecovery): boolean =>
-  (questions?.length ?? 0) > 0 || interrupted.length > 0 || AGENT_IDS.some((agent) => queue[agent].length > 0);
+  (questions?.length ?? 0) > 0 || interrupted.length > 0 || AGENT_IDS.some(agent => queue[agent].length > 0);
 
-export const recoveryPath = (homeDir: string, projectRoot: string): string =>
-  conversationStatePath(homeDir, projectRoot).replace(/\.json$/, ".recovery.json");
+export const recoveryPath = (homeDir: string, projectRoot: string): string => conversationStatePath(homeDir, projectRoot).replace(/\.json$/, ".recovery.json");
 
 export const loadRecovery = (homeDir: string, projectRoot: string): RecoveryState | undefined => {
   try {

@@ -26,10 +26,10 @@ export interface SharedStore {
   pendingDeadlines: PendingDeadlines;
   opened: Map<string, boolean>;
   detail: boolean;
-  questionDrafts: Map<string, { selected: Set<number>[]; other: string[]; step: number; }>;
+  questionDrafts: Map<string, { selected: Set<number>[]; other: string[]; step: number }>;
   unreadWhileReading: boolean;
   items: TimelineItem[];
-  rendered: Map<string, { item: DisplayTimelineItem; node: HTMLElement; }>;
+  rendered: Map<string, { item: DisplayTimelineItem; node: HTMLElement }>;
   startingAt: Map<"claude" | "codex", string>;
   historyLoading: boolean;
   commandStarts: CommandStarts;
@@ -67,7 +67,7 @@ type ProjectEntry = NonNullable<WebState["projects"]>[number];
 
 export interface ClientContext extends ClientDeps {
   store: SharedStore;
-  storage: { get: (key: string) => string | null; set: (key: string, value: string) => void; remove: (key: string) => void; keys: () => string[]; };
+  storage: { get: (key: string) => string | null; set: (key: string, value: string) => void; remove: (key: string) => void; keys: () => string[] };
   DETAIL_KEY: "clodex-detail";
   $: <T extends HTMLElement>(selector: string) => T;
   showToast: (text: string, level?: "info" | "warn", heading?: string) => void;
@@ -98,9 +98,9 @@ export interface ClientContext extends ClientDeps {
   send: (line: string, button?: HTMLButtonElement) => Promise<boolean>;
   appendImagePreviews: (node: HTMLElement, text: string, version: string) => void;
   elapsedText: (startIso: string) => string;
-  renderQuestion: (item: Extract<TimelineItem, { kind: "question"; }>) => HTMLElement;
-  renderTurn: (item: Extract<TimelineItem, { kind: "turn"; }>) => HTMLElement;
-  renderMessage: (item: Pick<Extract<TimelineItem, { kind: "message"; }>, "id" | "at" | "message" | "envelope">) => HTMLElement;
+  renderQuestion: (item: Extract<TimelineItem, { kind: "question" }>) => HTMLElement;
+  renderTurn: (item: Extract<TimelineItem, { kind: "turn" }>) => HTMLElement;
+  renderMessage: (item: Pick<Extract<TimelineItem, { kind: "message" }>, "id" | "at" | "message" | "envelope">) => HTMLElement;
   log: HTMLElement;
   NEAR_BOTTOM_PX: 120;
   newer: HTMLElement;
@@ -143,7 +143,14 @@ export interface ClientContext extends ClientDeps {
   rememberFocus: () => HTMLElement | undefined;
   restoreFocus: (previous: HTMLElement | undefined) => void;
   trapTab: (event: KeyboardEvent, container: HTMLElement) => void;
-  choice: <T extends string>(key: string, label: string, options: readonly T[], current: T, name: (v: T) => string, pick: (v: T, button: HTMLButtonElement) => void) => HTMLElement;
+  choice: <T extends string>(
+    key: string,
+    label: string,
+    options: readonly T[],
+    current: T,
+    name: (v: T) => string,
+    pick: (v: T, button: HTMLButtonElement) => void,
+  ) => HTMLElement;
   sheetButton: (label: string, cls: string, run: (button: HTMLButtonElement) => void) => HTMLButtonElement;
   PERMISSIONS: readonly ["read-only", "edit", "full"];
   requestSetting: (id: AgentId, key: "model" | "effort" | "permission", value: string, button?: HTMLButtonElement) => Promise<boolean>;
@@ -177,7 +184,7 @@ export interface ClientContext extends ClientDeps {
   loadFiles: () => Promise<void>;
   runGuiCommand: (action: GuiAction) => Promise<undefined>;
   announcements: HTMLElement;
-  tauriApi: { app?: { getVersion(): Promise<string>; }; core?: { invoke<T>(command: string): Promise<T>; }; } | undefined;
+  tauriApi: { app?: { getVersion(): Promise<string> }; core?: { invoke<T>(command: string): Promise<T> } } | undefined;
 }
 
 export function createStore(deps: ClientDeps): ClientContext {

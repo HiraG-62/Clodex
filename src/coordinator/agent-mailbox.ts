@@ -1,7 +1,7 @@
 // Agent ごとの FIFO キュー。人間の入力と formal message を直列に送る（DESIGN.md §12 配送ルール）
 import type { AgentAdapter, AgentStartOptions, TurnResult } from "../agents/agent-adapter.js";
-import type { AgentMessage } from "../protocol/messages.js";
 import type { RecoveryItem } from "../project/recovery-store.js";
+import type { AgentMessage } from "../protocol/messages.js";
 
 const CLOSED_RESULT: TurnResult = { status: "failed", text: "mailbox is closed" };
 const CANCELED_RESULT: TurnResult = { status: "interrupted", text: "canceled before delivery" };
@@ -26,7 +26,10 @@ export interface EnqueueOptions {
 }
 
 // 上限で止まったときに配送を止めて待つ（DESIGN.md 上限での停止と自動再開）
-export interface LimitHold { resumeAt: number; text: string }
+export interface LimitHold {
+  resumeAt: number;
+  text: string;
+}
 
 export class AgentMailbox {
   private readonly queue: QueueItem[] = [];
@@ -59,17 +62,23 @@ export class AgentMailbox {
   enqueue(text: string, { message, inputId, images, suffix, context }: EnqueueOptions = {}): Promise<TurnResult> {
     if (this.closed) return Promise.resolve(CLOSED_RESULT);
     return this.push({
-      kind: "send", text, message, ...(inputId ? { inputId } : {}), ...(images?.length ? { images } : {}), ...(suffix ? { suffix } : {}), ...(context ? { context } : {}),
+      kind: "send",
+      text,
+      message,
+      ...(inputId ? { inputId } : {}),
+      ...(images?.length ? { images } : {}),
+      ...(suffix ? { suffix } : {}),
+      ...(context ? { context } : {}),
     });
   }
 
   // 配送待ちの人間の入力（配送中のものは含まない）
   get pendingInputs(): Array<{ id: string; text: string }> {
-    return this.queue.flatMap((item) => (item.inputId ? [{ id: item.inputId, text: item.text }] : []));
+    return this.queue.flatMap(item => (item.inputId ? [{ id: item.inputId, text: item.text }] : []));
   }
 
   get pendingMessages(): AgentMessage[] {
-    return this.queue.flatMap((item) => item.message ? [item.message] : []);
+    return this.queue.flatMap(item => (item.message ? [item.message] : []));
   }
 
   get holdUntil(): string | undefined {
@@ -79,16 +88,23 @@ export class AgentMailbox {
   get recoveryQueue(): RecoveryItem[] {
     return this.queue.flatMap((item): RecoveryItem[] => {
       if (item.message) return [{ kind: "message", message: item.message }];
-      if (item.inputId) return [{ kind: "input", text: item.text, ...(item.images ? { images: [...item.images] } : {}), ...(item.context ? { context: true } : {}) }];
+      if (item.inputId)
+        return [{ kind: "input", text: item.text, ...(item.images ? { images: [...item.images] } : {}), ...(item.context ? { context: true } : {}) }];
       return [];
     });
   }
 
-  get activeSending(): boolean { return this.activeSend; }
+  get activeSending(): boolean {
+    return this.activeSend;
+  }
 
-  get isClosed(): boolean { return this.closed; }
+  get isClosed(): boolean {
+    return this.closed;
+  }
 
-  get holding(): boolean { return this.holdTimer !== undefined; }
+  get holding(): boolean {
+    return this.holdTimer !== undefined;
+  }
 
   holdForLimit(hold: LimitHold): void {
     if (this.closed || this.holding) return;
@@ -109,19 +125,22 @@ export class AgentMailbox {
     if (this.holdTimer) return;
     this.paused = true;
     this.resumeAt = resumeAt;
-    this.holdTimer = setTimeout(() => {
-      this.holdTimer = undefined;
-      this.resumeAt = undefined;
-      if (this.closed) return;
-      this.queue.unshift({ kind: "send", text, message: undefined, resolve: () => {} });
-      this.resume();
-    }, Math.max(0, resumeAt - Date.now()));
+    this.holdTimer = setTimeout(
+      () => {
+        this.holdTimer = undefined;
+        this.resumeAt = undefined;
+        if (this.closed) return;
+        this.queue.unshift({ kind: "send", text, message: undefined, resolve: () => {} });
+        this.resume();
+      },
+      Math.max(0, resumeAt - Date.now()),
+    );
     this.holdTimer.unref?.();
   }
 
   // 配送待ちの人間の入力を取り消し、本文を返す。配送済み・無いなら undefined
   cancel(id: string): string | AgentMessage | undefined {
-    const index = this.queue.findIndex((item) => item.inputId === id || item.message?.id === id);
+    const index = this.queue.findIndex(item => item.inputId === id || item.message?.id === id);
     const [item] = index < 0 ? [] : this.queue.splice(index, 1);
     if (!item) return undefined;
     item.resolve(CANCELED_RESULT);
@@ -132,12 +151,12 @@ export class AgentMailbox {
 
   // 配送待ちの formal message を破棄して返す（/interrupt。人間の入力は残す）
   discardMessages(): AgentMessage[] {
-    const discarded = this.queue.filter((item) => item.message);
-    this.queue.splice(0, this.queue.length, ...this.queue.filter((item) => !item.message));
+    const discarded = this.queue.filter(item => item.message);
+    this.queue.splice(0, this.queue.length, ...this.queue.filter(item => !item.message));
     for (const item of discarded) item.resolve(CANCELED_RESULT);
     if (discarded.length) this.onChange();
     this.resolveIdleIfDone();
-    return discarded.flatMap((item) => (item.message ? [item.message] : []));
+    return discarded.flatMap(item => (item.message ? [item.message] : []));
   }
 
   private resolveIdleIfDone(): void {
@@ -161,7 +180,7 @@ export class AgentMailbox {
   }
 
   private push(item: Omit<QueueItem, "resolve">): Promise<TurnResult> {
-    const result = new Promise<TurnResult>((resolve) => this.queue.push({ ...item, resolve }));
+    const result = new Promise<TurnResult>(resolve => this.queue.push({ ...item, resolve }));
     this.onChange();
     void this.drain();
     return result;
@@ -174,7 +193,7 @@ export class AgentMailbox {
   // キューが空になり配送中のターンも終わったら resolve する
   whenIdle(): Promise<void> {
     if (this.isIdle) return Promise.resolve();
-    return new Promise((resolve) => this.idleWaiters.push(resolve));
+    return new Promise(resolve => this.idleWaiters.push(resolve));
   }
 
   switchSession(sessionId: string | undefined): void {
@@ -209,9 +228,12 @@ export class AgentMailbox {
         this.current = item.message;
         this.onChange();
         try {
-          const result = item.kind === "compact" ? await this.compact()
-            : item.kind === "model" || item.kind === "effort" ? await this.setting(item.kind, item.text)
-              : await this.deliver(`${item.text}${item.suffix ?? ""}`, item.images);
+          const result =
+            item.kind === "compact"
+              ? await this.compact()
+              : item.kind === "model" || item.kind === "effort"
+                ? await this.setting(item.kind, item.text)
+                : await this.deliver(`${item.text}${item.suffix ?? ""}`, item.images);
           item.resolve(result);
           const hold = item.kind === "send" && result.status === "failed" ? this.limitHold() : undefined;
           if (hold) this.hold(hold);
@@ -267,9 +289,7 @@ export class AgentMailbox {
   // 起動中は今の session、停止中は次の起動で使う session（undefined なら新規）
   get sessionId(): string | undefined {
     if (this.agent.status !== "stopped") return this.agent.sessionId;
-    return this.nextSession
-      ? this.nextSession.sessionId
-      : (this.agent.sessionId ?? this.startOptions().resumeSessionId);
+    return this.nextSession ? this.nextSession.sessionId : (this.agent.sessionId ?? this.startOptions().resumeSessionId);
   }
 
   async ensureRunning(): Promise<void> {

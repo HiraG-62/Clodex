@@ -2,8 +2,6 @@ import type { WebState } from "../web-feed.js";
 import type { ClientContext } from "./store.js";
 
 export function createConversationSheets(ctx: ClientContext) {
-
-
   const projectEditorList = () => {
     const projects = ctx.store.state?.projects ?? [];
     const list = ctx.el("div", "project-list");
@@ -37,19 +35,33 @@ export function createConversationSheets(ctx: ClientContext) {
     ctx.store.sheetAgent = undefined;
     const title = conversation.title ?? ctx.t("web.conv.untitled");
     const actions: HTMLElement[] = [];
-    actions.push(ctx.sheetButton(ctx.t("web.conv.rename"), "secondary-action", (button) => {
-      const name = window.prompt(ctx.t("web.conv.renamePrompt"), conversation.title ?? "")?.trim();
-      if (name) void ctx.send(`/rename #${number} ${name}`, button).then((ok) => { if (ok) ctx.closeSheet(); });
-      else ctx.closeSheet();
-    }));
-    actions.push(ctx.sheetButton(ctx.t(conversation.pinned ? "web.conv.unpin" : "web.conv.pin"), "secondary-action", (button) => {
-      void ctx.send(`/pin ${number}`, button).then((ok) => { if (ok) ctx.closeSheet(); });
-    }));
-    if (!conversation.current) {
-      actions.push(ctx.sheetButton(ctx.t("web.conv.delete"), "secondary-action danger", (button) => {
-        if (window.confirm(ctx.t("web.conv.deleteConfirm", { title }))) void ctx.send(`/delete ${number}`, button).then((ok) => { if (ok) ctx.closeSheet(); });
+    actions.push(
+      ctx.sheetButton(ctx.t("web.conv.rename"), "secondary-action", button => {
+        const name = window.prompt(ctx.t("web.conv.renamePrompt"), conversation.title ?? "")?.trim();
+        if (name)
+          void ctx.send(`/rename #${number} ${name}`, button).then(ok => {
+            if (ok) ctx.closeSheet();
+          });
         else ctx.closeSheet();
-      }));
+      }),
+    );
+    actions.push(
+      ctx.sheetButton(ctx.t(conversation.pinned ? "web.conv.unpin" : "web.conv.pin"), "secondary-action", button => {
+        void ctx.send(`/pin ${number}`, button).then(ok => {
+          if (ok) ctx.closeSheet();
+        });
+      }),
+    );
+    if (!conversation.current) {
+      actions.push(
+        ctx.sheetButton(ctx.t("web.conv.delete"), "secondary-action danger", button => {
+          if (window.confirm(ctx.t("web.conv.deleteConfirm", { title })))
+            void ctx.send(`/delete ${number}`, button).then(ok => {
+              if (ok) ctx.closeSheet();
+            });
+          else ctx.closeSheet();
+        }),
+      );
     }
     ctx.openSheet(title, actions);
   };

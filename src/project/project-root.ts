@@ -1,6 +1,6 @@
-import { safeGitArgs } from "./safe-git.js";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { safeGitArgs } from "./safe-git.js";
 
 export interface ProjectRootOptions {
   explicitProject?: string;

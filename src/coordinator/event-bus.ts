@@ -1,7 +1,7 @@
 // Coordinator 内の observable event を集約する in-memory bus（DESIGN.md §17）
 import type { AgentEvent, AgentId } from "../agents/agent-adapter.js";
-import type { UserQuestion } from "../protocol/questions.js";
 import type { AgentMessage } from "../protocol/messages.js";
+import type { UserQuestion } from "../protocol/questions.js";
 
 export type CoordinatorEventInput =
   | { kind: "agent"; agent: AgentId; event: AgentEvent }

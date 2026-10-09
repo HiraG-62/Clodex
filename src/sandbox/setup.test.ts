@@ -5,12 +5,24 @@ function fixture(initial: Partial<SetupStatus> = {}) {
   const state: SetupStatus = { managed: false, user: false, credential: false, claude: false, codex: false, pnpm: false, authenticated: false, ...initial };
   const actions: SandboxSetupActions = {
     status: vi.fn(async () => ({ ...state })),
-    createUser: vi.fn(async () => { state.user = true; state.credential = true; state.managed = true; }),
+    createUser: vi.fn(async () => {
+      state.user = true;
+      state.credential = true;
+      state.managed = true;
+    }),
     connect: vi.fn(async () => {}),
-    install: vi.fn(async () => { state.claude = true; state.codex = true; state.pnpm = true; }),
-    login: vi.fn(async () => { state.authenticated = true; }),
+    install: vi.fn(async () => {
+      state.claude = true;
+      state.codex = true;
+      state.pnpm = true;
+    }),
+    login: vi.fn(async () => {
+      state.authenticated = true;
+    }),
     authenticate: vi.fn(async () => state.authenticated),
-    saveComplete: vi.fn(async (complete) => { state.authenticated = complete; }),
+    saveComplete: vi.fn(async complete => {
+      state.authenticated = complete;
+    }),
     close: vi.fn(async () => {}),
   };
   return { state, actions };
@@ -28,7 +40,10 @@ it("初回はユーザー・CLI・ログインの順に進め、2 回目は再�
 
 it("CLI の途中失敗後はユーザーを再作成せず残りの段階を再開する", async () => {
   const { actions, state } = fixture();
-  vi.mocked(actions.install).mockImplementationOnce(async () => { state.claude = true; throw new Error("ネットワーク"); });
+  vi.mocked(actions.install).mockImplementationOnce(async () => {
+    state.claude = true;
+    throw new Error("ネットワーク");
+  });
   await expect(ensureSandboxSetup(actions, () => {})).rejects.toThrow("ネットワーク");
   expect(actions.saveComplete).toHaveBeenLastCalledWith(false);
   await ensureSandboxSetup(actions, () => {});

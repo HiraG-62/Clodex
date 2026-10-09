@@ -1,5 +1,5 @@
-import type { LimitName } from "../../coordinator/budget-manager.js";
 import { ROLE_PRESET_NAMES, type RolePresetName } from "../../config/role-presets.js";
+import type { LimitName } from "../../coordinator/budget-manager.js";
 import type { MessageKey } from "../../i18n/messages.js";
 import type { WebState } from "../web-feed.js";
 import { limitChanges } from "./limit-changes.js";
@@ -8,7 +8,6 @@ import { settingsSections } from "./settings-sections.js";
 import type { ClientContext } from "./store.js";
 
 export function createSettingsSheet(ctx: ClientContext) {
-
   const settingsSwitch = (key: string, label: string, checked: boolean, pick: (checked: boolean, button: HTMLButtonElement) => void) => {
     const wrap = ctx.el("div", "setting");
     const button = ctx.el("button", "settings-switch") as HTMLButtonElement;
@@ -22,7 +21,10 @@ export function createSettingsSheet(ctx: ClientContext) {
     return wrap;
   };
   const LIMIT_LABEL: Record<keyof WebState["limits"], MessageKey> = {
-    messages: "web.settings.messages", reviews: "web.settings.reviews", delegations: "web.settings.delegations", depth: "web.settings.depth",
+    messages: "web.settings.messages",
+    reviews: "web.settings.reviews",
+    delegations: "web.settings.delegations",
+    depth: "web.settings.depth",
   };
   const LIMIT_MIN = 1;
   const LIMIT_MAX = 100;
@@ -38,11 +40,12 @@ export function createSettingsSheet(ctx: ClientContext) {
     delegations: form.querySelector<HTMLInputElement>("#limit-delegations")!.value,
     depth: form.querySelector<HTMLInputElement>("#limit-depth")!.value,
   });
-  const draftLimitChanges = (form: HTMLElement, limits: WebState["limits"]) => limitChanges(
-    { messages: limits.messages.value, reviews: limits.reviews.value, delegations: limits.delegations.value, depth: limits.depth.value },
-    limitDraft(form),
-    { messages: limits.messages.default, reviews: limits.reviews.default, delegations: limits.delegations.default, depth: limits.depth.default },
-  );
+  const draftLimitChanges = (form: HTMLElement, limits: WebState["limits"]) =>
+    limitChanges(
+      { messages: limits.messages.value, reviews: limits.reviews.value, delegations: limits.delegations.value, depth: limits.depth.value },
+      limitDraft(form),
+      { messages: limits.messages.default, reviews: limits.reviews.default, delegations: limits.delegations.default, depth: limits.depth.default },
+    );
   const syncLimitActions = (form: HTMLElement) => {
     if (!ctx.store.state) return;
     const { changes, valid } = draftLimitChanges(form, ctx.store.state.limits);
@@ -55,7 +58,10 @@ export function createSettingsSheet(ctx: ClientContext) {
       for (const control of segment.querySelectorAll<HTMLButtonElement>("button")) control.disabled = true;
       void ctx.send(`/${key} ${value}`, button).then(() => {
         ctx.store.settingsRequests.delete(key);
-        for (const control of document.querySelectorAll<HTMLButtonElement>(`[data-choice="${key}"] button`)) { ctx.setPending(control, false); control.disabled = false; }
+        for (const control of document.querySelectorAll<HTMLButtonElement>(`[data-choice="${key}"] button`)) {
+          ctx.setPending(control, false);
+          control.disabled = false;
+        }
         ctx.refreshOpenSheet();
       });
     });
@@ -75,7 +81,8 @@ export function createSettingsSheet(ctx: ClientContext) {
     const limits = ctx.el("form", "setting limits-settings") as HTMLFormElement;
     limits.append(ctx.el("div", "eyebrow", ctx.t("web.settings.limits")));
     const unlimited = settingsSwitch("unlimited", ctx.t("web.settings.unlimited"), ctx.store.state.limitsUnlimited, (checked, button) =>
-      sendLimits(`/limits ${checked ? "unlimited" : "reset"}`, button));
+      sendLimits(`/limits ${checked ? "unlimited" : "reset"}`, button),
+    );
     unlimited.classList.add("limits-unlimited");
     limits.append(unlimited);
     for (const name of Object.keys(LIMIT_LABEL) as Array<keyof WebState["limits"]>) {
@@ -123,7 +130,9 @@ export function createSettingsSheet(ctx: ClientContext) {
     const actions = ctx.el("div", "limits-actions");
     actions.append(reset, apply);
     limits.append(actions);
-    const language = settingsChoice("language", ctx.t("web.settings.language"), ["ja", "en"] as const, ctx.store.state.language, value => value === "ja" ? "日本語" : "English");
+    const language = settingsChoice("language", ctx.t("web.settings.language"), ["ja", "en"] as const, ctx.store.state.language, value =>
+      value === "ja" ? "日本語" : "English",
+    );
     const rolePreset = ctx.el("div", "setting");
     const presetLabel = ctx.el("label", "eyebrow", ctx.t("web.settings.rolePreset")) as HTMLLabelElement;
     const presetSelect = ctx.el("select", "setting-select") as HTMLSelectElement;
@@ -151,10 +160,26 @@ export function createSettingsSheet(ctx: ClientContext) {
     });
     rolePreset.append(presetLabel, presetSelect);
     // 端末ごとの設定なので Hub には送らない。スマホは常に Enter で改行するので出さない
-    const sendKeyChoice = ctx.choice("sendKey", ctx.t("web.settings.sendKey"), ctx.SEND_KEYS, ctx.store.sendKey,
+    const sendKeyChoice = ctx.choice(
+      "sendKey",
+      ctx.t("web.settings.sendKey"),
+      ctx.SEND_KEYS,
+      ctx.store.sendKey,
       value => ctx.t(value === "enter" ? "web.settings.sendEnter" : "web.settings.sendCtrlEnter"),
-      value => { ctx.store.sendKey = value; ctx.storage.set(ctx.SEND_KEY_KEY, value); });
-    const items: Record<SettingsItem, HTMLElement> = { rolePreset, sandbox, limits, sendKey: sendKeyChoice, push: ctx.pushSection(), language, guiUpdate: ctx.guiUpdateSection() };
+      value => {
+        ctx.store.sendKey = value;
+        ctx.storage.set(ctx.SEND_KEY_KEY, value);
+      },
+    );
+    const items: Record<SettingsItem, HTMLElement> = {
+      rolePreset,
+      sandbox,
+      limits,
+      sendKey: sendKeyChoice,
+      push: ctx.pushSection(),
+      language,
+      guiUpdate: ctx.guiUpdateSection(),
+    };
     const headings: Record<SettingsSectionId, string> = { project: ctx.t("web.settings.project"), device: ctx.t("web.settings.device"), clodex: "Clodex" };
     const groups = settingsSections({ mobile: ctx.mobile.matches, pushSupported: ctx.pushSupported, guiConnected: Boolean(ctx.store.gui) }).map(section => {
       const group = ctx.el("section", `settings-group settings-${section.id}`);

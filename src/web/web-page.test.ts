@@ -1,16 +1,15 @@
-import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { applyFeedItem, rebuildTimeline } from "./client/timeline.js";
-import { workingFeed } from "./client/timeline.js";
-import { renderMarkdown } from "./client/markdown.js";
-import { draftKey, staleDraftKeys } from "./client/drafts.js";
-import { findImagePaths, splitImagePaths } from "./client/artifacts.js";
-import { fitView, zoomView } from "./client/image-zoom.js";
-import { nextUnanswered } from "./client/question-flow.js";
-import { buildWebPage, ICON_SVG, MANIFEST } from "./web-page.js";
+import { describe, expect, it } from "vitest";
 import { ja } from "../i18n/messages.js";
+import { findImagePaths, splitImagePaths } from "./client/artifacts.js";
+import { draftKey, staleDraftKeys } from "./client/drafts.js";
+import { fitView, zoomView } from "./client/image-zoom.js";
+import { renderMarkdown } from "./client/markdown.js";
+import { nextUnanswered } from "./client/question-flow.js";
+import { applyFeedItem, rebuildTimeline, workingFeed } from "./client/timeline.js";
+import { buildWebPage, ICON_SVG, MANIFEST } from "./web-page.js";
 
-const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1] ?? "");
+const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(match => match[1] ?? "");
 
 describe("buildWebPage", () => {
   it("Google Fonts を読まず、同梱の @font-face を埋め込む", () => {
@@ -25,7 +24,7 @@ describe("buildWebPage", () => {
     const jaPage = buildWebPage("ja").html;
     expect(jaPage).toContain('id="agents" aria-label="Agent"');
     expect(buildWebPage("en").html).toContain('id="agents" aria-label="Agents"');
-    expect(jaPage).toContain('settingsSwitch("unlimited"');
+    expect(jaPage).toMatch(/settingsSwitch\(\s*"unlimited"/);
     expect(jaPage).not.toContain('aria-pressed="true"] { background: var(--sunken); box-shadow: none; color: var(--fg); }');
     expect(jaPage.includes('label.split(" · ")')).toBe(false);
   });
@@ -39,8 +38,8 @@ describe("buildWebPage", () => {
     const html = buildWebPage("ja").html;
     expect(html).toContain('id="usage-side"');
     expect(html).toContain('"wideUsageMinWidth":1700');
-    expect(html).toContain('width > 1360px');
-    expect(html).toContain('min-width: 1700px');
+    expect(html).toContain("width > 1360px");
+    expect(html).toContain("min-width: 1700px");
   });
   it("コマンド印を送り先と同じ場所に置き、利用状況のパネルを持つ", () => {
     const html = buildWebPage("ja").html;
@@ -107,8 +106,24 @@ describe("buildWebPage", () => {
   it("作業ログは発言を時系列に並べて描く", () => {
     const { html } = buildWebPage("ja");
     expect(workingFeed([])).toEqual([]);
-    expect(workingFeed([{ kind: "turn", id: "t1", at: "2026-01-01T00:00:00Z", agent: "claude", status: "working", text: "", plan: "方針", steps: [{ kind: "say", text: "進捗", at: "2026-01-01T00:00:01Z" }] }]))
-      .toMatchObject([{ kind: "head", turnId: "t1" }, { kind: "say", text: "方針" }, { kind: "say", text: "進捗" }]);
+    expect(
+      workingFeed([
+        {
+          kind: "turn",
+          id: "t1",
+          at: "2026-01-01T00:00:00Z",
+          agent: "claude",
+          status: "working",
+          text: "",
+          plan: "方針",
+          steps: [{ kind: "say", text: "進捗", at: "2026-01-01T00:00:01Z" }],
+        },
+      ]),
+    ).toMatchObject([
+      { kind: "head", turnId: "t1" },
+      { kind: "say", text: "方針" },
+      { kind: "say", text: "進捗" },
+    ]);
     expect(html).toContain('"working-say md"');
     expect(html).not.toContain("working-entry");
   });
@@ -118,7 +133,16 @@ describe("buildWebPage", () => {
     const composer = html.slice(html.indexOf('<form class="composer"'), html.indexOf('<div class="box">'));
     expect(composer).toContain('id="question-dock"');
     expect(html).not.toContain("question-toggle");
-    expect(nextUnanswered([{ question: "a", options: [] }, { question: "b", options: [] }], { selected: [new Set([0]), new Set()], other: ["", ""] }, 0)).toBe(1);
+    expect(
+      nextUnanswered(
+        [
+          { question: "a", options: [] },
+          { question: "b", options: [] },
+        ],
+        { selected: [new Set([0]), new Set()], other: ["", ""] },
+        0,
+      ),
+    ).toBe(1);
     expect(html).toContain("if (!question.multiSelect && !wasSelected) return advance();");
     expect(html).toMatch(/\.question-dock-body\s*\{[^}]*max-height:\s*50vh;\s*overflow-y:\s*auto/);
   });
@@ -135,9 +159,9 @@ describe("buildWebPage", () => {
     expect(html).not.toContain('id="shell-input-label"');
     expect(html).toContain("<span>コマンド</span>");
     expect(html).toContain('.classList.toggle("shell-input", shell)');
-    expect(html).toContain("const disabled = shell || Boolean(solo && solo !== \"free\")");
-    expect(html).toContain('.shell-input .box { border-color: var(--code)');
-    expect(html).toContain('.shell-input .box .input-highlight, .shell-input .box textarea { font-family: var(--font-mono)');
+    expect(html).toContain('const disabled = shell || Boolean(solo && solo !== "free")');
+    expect(html).toContain(".shell-input .box { border-color: var(--code)");
+    expect(html).toContain(".shell-input .box .input-highlight, .shell-input .box textarea { font-family: var(--font-mono)");
     expect(buildWebPage("en").html).toContain("<span>Command</span>");
   });
   it("project の選択と新規オープンを画面上部に表示する", () => {
@@ -188,7 +212,25 @@ describe("buildWebPage", () => {
 
   it("画面の振る舞いに必要な要素がそろっている", () => {
     const { html } = buildWebPage("ja");
-    for (const id of ["log", "newer", "input", "input-highlight", "suggest", "pending", "open-artifacts", "attach", "attach-file", "composer", "mobile-agents", "agents", "conversations", "sheet", "conn", "toast", "detail"]) {
+    for (const id of [
+      "log",
+      "newer",
+      "input",
+      "input-highlight",
+      "suggest",
+      "pending",
+      "open-artifacts",
+      "attach",
+      "attach-file",
+      "composer",
+      "mobile-agents",
+      "agents",
+      "conversations",
+      "sheet",
+      "conn",
+      "toast",
+      "detail",
+    ]) {
       expect(html).toContain(`id="${id}"`);
     }
   });
@@ -228,7 +270,8 @@ describe("buildWebPage", () => {
 
   it("PC ではシートを画面中央のモーダルとして表示する", () => {
     const { html } = buildWebPage("ja");
-    const desktopCss = html.split("@media (min-width: 900px) and (hover: hover) and (pointer: fine)")[1]
+    const desktopCss = html
+      .split("@media (min-width: 900px) and (hover: hover) and (pointer: fine)")[1]
       ?.split("@media (max-width: 899px), (pointer: coarse)")[0];
     expect(desktopCss).toBeDefined();
     expect(desktopCss).toMatch(/\.sheet\s*\{[^}]*align-items:\s*center;[^}]*justify-items:\s*center;/);

@@ -10,8 +10,7 @@ const setup = (files: { user?: unknown; project?: unknown } = {}) => {
   const projectRoot = join(base, "project");
   mkdirSync(join(homeDir, ".clodex"), { recursive: true });
   mkdirSync(projectRoot);
-  const write = (path: string, content: unknown) =>
-    writeFileSync(path, typeof content === "string" ? content : JSON.stringify(content));
+  const write = (path: string, content: unknown) => writeFileSync(path, typeof content === "string" ? content : JSON.stringify(content));
   if (files.user !== undefined) write(join(homeDir, ".clodex", "config.json"), files.user);
   if (files.project !== undefined) write(join(projectRoot, ".clodex.json"), files.project);
   return { homeDir, projectRoot };
@@ -59,8 +58,7 @@ describe("loadConfig", () => {
   });
 
   it("片方だけ記入した役割だけを設定する", () => {
-    expect(loadConfig(setup({ user: { roles: { claude: "設計", codex: "" } } })))
-      .toEqual({ roles: { claude: "設計" } });
+    expect(loadConfig(setup({ user: { roles: { claude: "設計", codex: "" } } }))).toEqual({ roles: { claude: "設計" } });
   });
 
   it("UTF-8 BOM のある設定を読む", () => {
@@ -130,8 +128,7 @@ describe("ensureUserConfigTemplate", () => {
   it("既存の設定は変更しない", () => {
     const { homeDir } = setup({ user: '{"primary":"codex"}' });
     ensureUserConfigTemplate(homeDir);
-    expect(readFileSync(join(homeDir, ".clodex", "config.json"), "utf8"))
-      .toBe('{"primary":"codex"}');
+    expect(readFileSync(join(homeDir, ".clodex", "config.json"), "utf8")).toBe('{"primary":"codex"}');
   });
 
   it("書けなくても例外を出さない", () => {

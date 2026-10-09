@@ -1,10 +1,15 @@
 import type { LimitName } from "../../coordinator/budget-manager.js";
 
-export interface LimitChange { name: LimitName; value: number }
+export interface LimitChange {
+  name: LimitName;
+  value: number;
+}
 
 // 空欄は既定値（入力欄のプレースホルダに出している値）として扱う
 export function limitChanges(
-  current: Record<LimitName, number>, draft: Record<LimitName, string>, defaults: Record<LimitName, number>,
+  current: Record<LimitName, number>,
+  draft: Record<LimitName, string>,
+  defaults: Record<LimitName, number>,
 ): { changes: LimitChange[]; valid: boolean } {
   const names: LimitName[] = ["messages", "reviews", "delegations", "depth"];
   const min = 1;

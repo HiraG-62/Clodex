@@ -1,7 +1,7 @@
-import { safeGitArgs } from "./safe-git.js";
 // 並列に動かす会話の作業場所（git worktree）を作る（DESIGN.md §28 D1）。削除・マージは人が git で行う
 import { execFile } from "node:child_process";
 import { basename, dirname, join } from "node:path";
+import { safeGitArgs } from "./safe-git.js";
 
 const SHORT_ID_LENGTH = 8;
 const BRANCH_PREFIX = "clodex/";
@@ -21,8 +21,12 @@ export const worktreePlace = (projectRoot: string, conversationId: string): Work
 
 export const createWorktree = (projectRoot: string, conversationId: string): Promise<WorktreeResult> => {
   const worktree = worktreePlace(projectRoot, conversationId);
-  return new Promise((done) => {
-    execFile("git", safeGitArgs(["worktree", "add", worktree.workDir, "-b", worktree.branch]), { cwd: projectRoot, windowsHide: true },
-      (error, _stdout, stderr) => done(error ? { ok: false, error: (stderr || error.message).trim() } : { ok: true, worktree }));
+  return new Promise(done => {
+    execFile(
+      "git",
+      safeGitArgs(["worktree", "add", worktree.workDir, "-b", worktree.branch]),
+      { cwd: projectRoot, windowsHide: true },
+      (error, _stdout, stderr) => done(error ? { ok: false, error: (stderr || error.message).trim() } : { ok: true, worktree }),
+    );
   });
 };

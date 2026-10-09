@@ -6,7 +6,13 @@ const defaults = { messages: 8, reviews: 3, delegations: 4, depth: 2 };
 const draft = { messages: "8", reviews: "3", delegations: "4", depth: "2" };
 
 it("変更された上限だけを返す", () => {
-  expect(limitChanges(current, { ...draft, messages: "16", depth: "5" }, defaults)).toEqual({ valid: true, changes: [{ name: "messages", value: 16 }, { name: "depth", value: 5 }] });
+  expect(limitChanges(current, { ...draft, messages: "16", depth: "5" }, defaults)).toEqual({
+    valid: true,
+    changes: [
+      { name: "messages", value: 16 },
+      { name: "depth", value: 5 },
+    ],
+  });
   expect(limitChanges(current, draft, defaults)).toEqual({ valid: true, changes: [] });
 });
 

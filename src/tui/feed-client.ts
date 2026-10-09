@@ -9,17 +9,16 @@ export interface FeedClient {
   history(before: number): Promise<HistoryPage>;
 }
 
-export const createLocalFeedClient = (
-  feed: WebFeed, send: (line: string) => Promise<void>, files: () => Promise<string[]>,
-): FeedClient => ({
-  connect: async (onItem) => {
+export const createLocalFeedClient = (feed: WebFeed, send: (line: string) => Promise<void>, files: () => Promise<string[]>): FeedClient => ({
+  connect: async onItem => {
     for (const item of feed.recent()) onItem(item);
     const state = feed.latestState();
     if (state) onItem({ type: "state", state });
     return feed.subscribe(onItem);
   },
-  send, files,
-  history: async (before) => feed.before(before),
+  send,
+  files,
+  history: async before => feed.before(before),
 });
 
 export const createRemoteFeedClient = (lock: HubLock, token: string): FeedClient => {
@@ -37,10 +36,17 @@ export const createRemoteFeedClient = (lock: HubLock, token: string): FeedClient
       let retryDelay = RETRY_INITIAL_MS;
       let wake: (() => void) | undefined;
       let activeReader: ReadableStreamDefaultReader<Uint8Array> | undefined;
-      const wait = (ms: number) => new Promise<void>((resolve) => {
-        const timer = setTimeout(() => { wake = undefined; resolve(); }, ms);
-        wake = () => { clearTimeout(timer); resolve(); };
-      });
+      const wait = (ms: number) =>
+        new Promise<void>(resolve => {
+          const timer = setTimeout(() => {
+            wake = undefined;
+            resolve();
+          }, ms);
+          wake = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+        });
       const read = async (reader: ReadableStreamDefaultReader<Uint8Array>) => {
         const decoder = new TextDecoder();
         let buffer = "";
@@ -52,11 +58,17 @@ export const createRemoteFeedClient = (lock: HubLock, token: string): FeedClient
             const blocks = buffer.split(/\r?\n\r?\n/);
             buffer = blocks.pop() ?? "";
             for (const block of blocks) {
-              const data = block.split(/\r?\n/).filter((line) => line.startsWith("data: ")).map((line) => line.slice(6)).join("\n");
+              const data = block
+                .split(/\r?\n/)
+                .filter(line => line.startsWith("data: "))
+                .map(line => line.slice(6))
+                .join("\n");
               if (data) onItem(JSON.parse(data) as FeedItem);
             }
           }
-        } finally { reader.releaseLock(); }
+        } finally {
+          reader.releaseLock();
+        }
       };
       const openStream = async () => {
         const response = await request("/events", { signal: controller.signal });
@@ -72,8 +84,11 @@ export const createRemoteFeedClient = (lock: HubLock, token: string): FeedClient
         let reader: ReadableStreamDefaultReader<Uint8Array> | undefined = first;
         while (!controller.signal.aborted) {
           if (reader) {
-            try { await read(reader); }
-            catch (error) { if (!controller.signal.aborted) console.error(error); }
+            try {
+              await read(reader);
+            } catch (error) {
+              if (!controller.signal.aborted) console.error(error);
+            }
             activeReader = undefined;
           }
           if (controller.signal.aborted) break;
@@ -81,17 +96,24 @@ export const createRemoteFeedClient = (lock: HubLock, token: string): FeedClient
           await wait(retryDelay);
           if (controller.signal.aborted) break;
           retryDelay = Math.min(retryDelay * 2, RETRY_MAX_MS);
-          try { reader = await openStream(); }
-          catch (error) {
+          try {
+            reader = await openStream();
+          } catch (error) {
             if (!controller.signal.aborted) console.error(error);
             reader = undefined;
           }
         }
       })();
-      return () => { controller.abort(); wake?.(); void activeReader?.cancel().catch(() => {}); };
+      return () => {
+        controller.abort();
+        wake?.();
+        void activeReader?.cancel().catch(() => {});
+      };
     },
-    send: async (line) => { await request("/api/input", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ line }) }); },
-    history: async (before) => await (await request(`/api/history?before=${before}`)).json() as HistoryPage,
-    files: async () => await (await request("/api/files")).json() as string[],
+    send: async line => {
+      await request("/api/input", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ line }) });
+    },
+    history: async before => (await (await request(`/api/history?before=${before}`)).json()) as HistoryPage,
+    files: async () => (await (await request("/api/files")).json()) as string[],
   };
 };

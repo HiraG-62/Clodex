@@ -1,8 +1,8 @@
 // feed からログの項目を組み立てる（DESIGN.md §17 Web UI）。
 // ブラウザ側にそのまま埋め込むため、外部のものを参照しない 1 つの関数として書く（型の import のみ）
 import type { AgentId, AgentStatus, SubagentState, TurnResult } from "../../agents/agent-adapter.js";
-import type { UserQuestion } from "../../protocol/questions.js";
 import type { AgentMessage } from "../../protocol/messages.js";
+import type { UserQuestion } from "../../protocol/questions.js";
 import type { FeedItem, HistoryItem } from "../web-feed.js";
 
 export type TimelineStep = { kind: "say"; text: string; at: string } | { kind: "tool"; name: string; input: string; files?: string[] };
@@ -11,18 +11,24 @@ export type TimelineItem =
   | { kind: "question"; id: string; at: string; agent: AgentId; questions: UserQuestion[]; answers?: string[][] }
   | { kind: "human"; id: string; at: string; agent: AgentId; text: string; steer?: boolean; steerId?: string; delivered?: boolean; queued?: boolean }
   | {
-    kind: "turn"; id: string; at: string; agent: AgentId;
-    status: "working" | TurnResult["status"]; steps: TimelineStep[]; text: string;
-    plan?: string; // ターンの最初の発言（方針。DESIGN.md §17 ログ）
-    planAt?: string;
-    messages?: Array<{ message: AgentMessage; envelope?: string }>;
-  }
+      kind: "turn";
+      id: string;
+      at: string;
+      agent: AgentId;
+      status: "working" | TurnResult["status"];
+      steps: TimelineStep[];
+      text: string;
+      plan?: string; // ターンの最初の発言（方針。DESIGN.md §17 ログ）
+      planAt?: string;
+      messages?: Array<{ message: AgentMessage; envelope?: string }>;
+    }
   | { kind: "message"; id: string; at: string; message: AgentMessage; envelope?: string }
   | { kind: "notice"; id: string; at: string; text: string; compactAgent?: AgentId }
   | { kind: "error"; id: string; at: string; agent: AgentId; text: string }
   | { kind: "output"; id: string; text: string };
 
-export type DisplayTimelineItem = TimelineItem
+export type DisplayTimelineItem =
+  | TimelineItem
   | { kind: "starting"; id: string; at: string; agent: AgentId }
   | { kind: "subagents"; id: string; agent: AgentId; running: SubagentState[] };
 
@@ -35,17 +41,22 @@ export function limitLiveHistory(history: readonly HistoryItem[], item: HistoryI
 
 export function withWorkingTurnsLast(items: readonly TimelineItem[]): TimelineItem[] {
   return [
-    ...items.filter((item) => item.kind !== "turn" || item.status !== "working"),
-    ...items.filter((item) => item.kind === "turn" && item.status === "working"),
+    ...items.filter(item => item.kind !== "turn" || item.status !== "working"),
+    ...items.filter(item => item.kind === "turn" && item.status === "working"),
   ];
 }
 
-export function withStartingTurns(items: readonly TimelineItem[], agents: readonly { id: AgentId; status: AgentStatus }[], now: string, pendingInputs: readonly { agent: AgentId }[] = []): DisplayTimelineItem[] {
+export function withStartingTurns(
+  items: readonly TimelineItem[],
+  agents: readonly { id: AgentId; status: AgentStatus }[],
+  now: string,
+  pendingInputs: readonly { agent: AgentId }[] = [],
+): DisplayTimelineItem[] {
   const result: DisplayTimelineItem[] = [...items];
   for (const agent of agents) {
     if (agent.status === "stopped") continue;
-    const last = items.findLast((item) => "agent" in item && item.agent === agent.id && ["human", "turn", "error"].includes(item.kind));
-    if (agent.status === "busy" || pendingInputs.some((input) => input.agent === agent.id)) {
+    const last = items.findLast(item => "agent" in item && item.agent === agent.id && ["human", "turn", "error"].includes(item.kind));
+    if (agent.status === "busy" || pendingInputs.some(input => input.agent === agent.id)) {
       if (last?.kind === "human" && !last.queued && !last.steer) result[result.indexOf(last)] = { ...last, queued: true };
       continue;
     }
@@ -57,11 +68,14 @@ export function withStartingTurns(items: readonly TimelineItem[], agents: readon
   return result;
 }
 
-export function withSubagentRows(items: readonly DisplayTimelineItem[], agents: readonly { id: AgentId; status: AgentStatus; subagents: readonly SubagentState[] }[]): DisplayTimelineItem[] {
+export function withSubagentRows(
+  items: readonly DisplayTimelineItem[],
+  agents: readonly { id: AgentId; status: AgentStatus; subagents: readonly SubagentState[] }[],
+): DisplayTimelineItem[] {
   const result = [...items];
   for (const agent of agents) {
     if (agent.status === "busy" || agent.status === "starting" || !agent.subagents.length) continue;
-    if (items.some((item) => item.kind === "starting" && item.agent === agent.id)) continue;
+    if (items.some(item => item.kind === "starting" && item.agent === agent.id)) continue;
     result.push({ kind: "subagents", id: `subagents-${agent.id}`, agent: agent.id, running: [...agent.subagents] });
   }
   return result;
@@ -72,7 +86,8 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   const limit = (list: TimelineItem[]) => (list.length > MAX_ITEMS ? list.slice(list.length - MAX_ITEMS) : list);
   type Turn = Extract<TimelineItem, { kind: "turn" }>;
 
-  if (item.type === "state" || item.type === "version" || item.type === "toast" || item.type === "notify" || item.type === "gui" || item.type === "gui_command") return items;
+  if (item.type === "state" || item.type === "version" || item.type === "toast" || item.type === "notify" || item.type === "gui" || item.type === "gui_command")
+    return items;
   if (item.type === "reset") return [];
   if (item.type === "output") {
     const last = items[items.length - 1];
@@ -83,17 +98,27 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   const id = `e${item.seq}`;
   const { event } = item;
   if (event.kind === "question") return limit([...items, { kind: "question", id: event.id, agent: event.agent, at: event.at, questions: event.questions }]);
-  if (event.kind === "answer") return items.map((entry) => entry.kind === "question" && entry.id === event.id ? { ...entry, answers: event.answers } : entry);
+  if (event.kind === "answer") return items.map(entry => (entry.kind === "question" && entry.id === event.id ? { ...entry, answers: event.answers } : entry));
   if (event.kind === "human") {
-    return limit([...items, { kind: "human", id, at: event.at, agent: event.agent, text: event.text,
-      ...(event.steer ? { steer: true } : {}), ...(event.steerId ? { steerId: event.steerId } : {}) }]);
+    return limit([
+      ...items,
+      {
+        kind: "human",
+        id,
+        at: event.at,
+        agent: event.agent,
+        text: event.text,
+        ...(event.steer ? { steer: true } : {}),
+        ...(event.steerId ? { steerId: event.steerId } : {}),
+      },
+    ]);
   }
   if (event.kind === "notice") return limit([...items, { kind: "notice", id, at: event.at, text: event.text }]);
   if (event.kind === "message") {
     if (event.message.type !== "ACK") {
       const from = event.message.from;
-      let index = items.findLastIndex((entry) => entry.kind === "turn" && entry.agent === from && entry.status === "working");
-      if (index < 0 && event.message.auto) index = items.findLastIndex((entry) => entry.kind === "turn" && entry.agent === from);
+      let index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === from && entry.status === "working");
+      if (index < 0 && event.message.auto) index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === from);
       const turn = items[index];
       if (turn?.kind === "turn") {
         const attached = { message: event.message, ...(item.envelope ? { envelope: item.envelope } : {}) };
@@ -105,7 +130,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
 
   const { agent, event: agentEvent, at } = event;
   if (agentEvent.type === "steer_delivered") {
-    return items.map((entry) => entry.kind === "human" && entry.steerId === agentEvent.steerId ? { ...entry, delivered: true } : entry);
+    return items.map(entry => (entry.kind === "human" && entry.steerId === agentEvent.steerId ? { ...entry, delivered: true } : entry));
   }
   const newTurn = (): Turn => ({ kind: "turn", id, at, agent, status: "working", steps: [], text: "" });
   // その Agent の実行中のターンを更新する。開始を受け取っていなければ新しいターンとして受け止める
@@ -124,15 +149,20 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
       // 1 つの Agent が同時に動かすターンは 1 つ。閉じていない前のターン（Hub が作業中に止まったもの）は中断にする
       const isUnfinished = (entry: TimelineItem): entry is Turn => entry.kind === "turn" && entry.agent === agent && entry.status === "working";
       const unfinished = items.filter(isUnfinished);
-      const other = items.filter((entry) => !isUnfinished(entry));
-      return limit([...other, ...unfinished.map((entry) => ({ ...entry, status: "interrupted" as const })), newTurn()]);
+      const other = items.filter(entry => !isUnfinished(entry));
+      return limit([...other, ...unfinished.map(entry => ({ ...entry, status: "interrupted" as const })), newTurn()]);
     }
     case "text":
-      return updateTurn((turn) => (turn.plan === undefined
-        ? { ...turn, plan: agentEvent.text, planAt: at }
-        : { ...turn, steps: [...turn.steps, { kind: "say", text: agentEvent.text, at }] }));
+      return updateTurn(turn =>
+        turn.plan === undefined
+          ? { ...turn, plan: agentEvent.text, planAt: at }
+          : { ...turn, steps: [...turn.steps, { kind: "say", text: agentEvent.text, at }] },
+      );
     case "tool":
-      return updateTurn((turn) => ({ ...turn, steps: [...turn.steps, { kind: "tool", name: agentEvent.name, input: agentEvent.input, ...(agentEvent.files ? { files: agentEvent.files } : {}) }] }));
+      return updateTurn(turn => ({
+        ...turn,
+        steps: [...turn.steps, { kind: "tool", name: agentEvent.name, input: agentEvent.input, ...(agentEvent.files ? { files: agentEvent.files } : {}) }],
+      }));
     case "turn": {
       const { status, text } = agentEvent.result;
       const finish = (turn: Turn): Turn => {
@@ -146,7 +176,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
         }
         return { ...turn, status, text, steps };
       };
-      const index = items.findLastIndex((entry) => entry.kind === "turn" && entry.agent === agent && entry.status === "working");
+      const index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === agent && entry.status === "working");
       if (index < 0) return limit([...items, finish(newTurn())]);
       return limit([...items.slice(0, index), ...items.slice(index + 1), finish(items[index] as Turn)]);
     }
@@ -177,14 +207,14 @@ export function workingFeed(items: readonly TimelineItem[]): WorkingEntry[] {
     counts[item.agent] = count + 1;
     turns.unshift(item);
   }
-  const says = turns.flatMap((turn) => [
+  const says = turns.flatMap(turn => [
     ...(turn.plan === undefined ? [] : [{ turn, text: turn.plan, at: turn.planAt ?? turn.at }]),
-    ...turn.steps.flatMap((step) => step.kind === "say" ? [{ turn, text: step.text, at: step.at }] : []),
+    ...turn.steps.flatMap(step => (step.kind === "say" ? [{ turn, text: step.text, at: step.at }] : [])),
   ]);
   // 発言の無いターンは開始の位置に見出しだけを置く
   const events: Array<{ turn: Turn; at: string; text?: string }> = [
     ...says,
-    ...turns.filter((turn) => !says.some((say) => say.turn === turn)).map((turn) => ({ turn, at: turn.at })),
+    ...turns.filter(turn => !says.some(say => say.turn === turn)).map(turn => ({ turn, at: turn.at })),
   ].sort((a, b) => a.at.localeCompare(b.at));
   const entries: WorkingEntry[] = [];
   let current: Turn | undefined;
@@ -208,12 +238,14 @@ export function rebuildTimeline(history: readonly HistoryItem[], apply: typeof a
 export function mergeReplayHistory(current: readonly HistoryItem[], incoming: readonly HistoryItem[]): { history: HistoryItem[]; preserved: boolean } {
   const oldest = incoming[0];
   if (!oldest) return { history: [...incoming], preserved: false };
-  const matched = current.find((item) => item.seq === oldest.seq);
-  const same = matched?.type === oldest.type && (oldest.type === "event"
-    ? matched.type === "event" && matched.event.kind === oldest.event.kind && matched.event.at === oldest.event.at
-    : matched.type === "output" && matched.text.startsWith(oldest.text.slice(0, 100)));
+  const matched = current.find(item => item.seq === oldest.seq);
+  const same =
+    matched?.type === oldest.type &&
+    (oldest.type === "event"
+      ? matched.type === "event" && matched.event.kind === oldest.event.kind && matched.event.at === oldest.event.at
+      : matched.type === "output" && matched.text.startsWith(oldest.text.slice(0, 100)));
   if (!same) return { history: [...incoming], preserved: false };
-  return { history: [...current.filter((item) => item.seq < oldest.seq), ...incoming], preserved: true };
+  return { history: [...current.filter(item => item.seq < oldest.seq), ...incoming], preserved: true };
 }
 
 export function announcementKind(item: FeedItem): "work" | "failed" | "interrupted" | "question" | undefined {

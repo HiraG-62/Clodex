@@ -18,9 +18,16 @@ const subscriptionSchema = z.object({
 const vapidSchema = z.object({ publicKey: z.string().min(1), privateKey: z.string().min(1) });
 
 export type PushSubscription = z.infer<typeof subscriptionSchema>;
-export interface Vapid { subject: string; publicKey: string; privateKey: string }
+export interface Vapid {
+  subject: string;
+  publicKey: string;
+  privateKey: string;
+}
 export type PushSend = (subscription: PushSubscription, payload: string, vapid: Vapid) => Promise<void>;
-export interface PushNotification { title: string; body: string }
+export interface PushNotification {
+  title: string;
+  body: string;
+}
 
 const sendWebPush: PushSend = async (subscription, payload, { subject, publicKey, privateKey }) => {
   await webpush.sendNotification(subscription, payload, { vapidDetails: { subject, publicKey, privateKey } });
@@ -40,7 +47,10 @@ export class PushService {
   // 購読の id ごとの、つながっている画面の接続と見えているか
   private readonly streams = new Map<string, Set<{ visible: boolean }>>();
 
-  constructor(private readonly dir: string, private readonly send: PushSend = sendWebPush) {
+  constructor(
+    private readonly dir: string,
+    private readonly send: PushSend = sendWebPush,
+  ) {
     const saved = z.array(subscriptionSchema.extend({ id: z.string() })).safeParse(readJson(join(dir, SUBSCRIPTIONS_FILE)));
     this.subscriptions = saved.success ? saved.data : [];
   }
@@ -50,20 +60,20 @@ export class PushService {
   }
 
   has(id: string): boolean {
-    return this.subscriptions.some((entry) => entry.id === id);
+    return this.subscriptions.some(entry => entry.id === id);
   }
 
   subscribe(input: unknown): string | undefined {
     const parsed = subscriptionSchema.safeParse(input);
     if (!parsed.success) return undefined;
     const id = createHash("sha256").update(parsed.data.endpoint).digest("hex").slice(0, ID_LENGTH);
-    this.subscriptions = [...this.subscriptions.filter((entry) => entry.id !== id), { id, ...parsed.data }];
+    this.subscriptions = [...this.subscriptions.filter(entry => entry.id !== id), { id, ...parsed.data }];
     this.save();
     return id;
   }
 
   unsubscribe(id: string): void {
-    this.subscriptions = this.subscriptions.filter((entry) => entry.id !== id);
+    this.subscriptions = this.subscriptions.filter(entry => entry.id !== id);
     this.save();
   }
 
@@ -72,7 +82,11 @@ export class PushService {
     const streams = this.streams.get(id) ?? new Set();
     streams.add(stream);
     this.streams.set(id, streams);
-    return { close: () => { streams.delete(stream); } };
+    return {
+      close: () => {
+        streams.delete(stream);
+      },
+    };
   }
 
   setVisible(id: string, visible: boolean): void {
@@ -81,19 +95,21 @@ export class PushService {
 
   async notify(notification: PushNotification): Promise<void> {
     const payload = JSON.stringify(notification);
-    const targets = this.subscriptions.filter((entry) => ![...this.streams.get(entry.id) ?? []].some((stream) => stream.visible));
+    const targets = this.subscriptions.filter(entry => ![...(this.streams.get(entry.id) ?? [])].some(stream => stream.visible));
     const vapid = this.keys();
     const gone = new Set<string>();
-    await Promise.all(targets.map(async ({ id, ...subscription }) => {
-      try {
-        await this.send(subscription, payload, vapid);
-      } catch (error) {
-        const status = (error as { statusCode?: unknown }).statusCode;
-        if (typeof status === "number" && GONE_STATUSES.has(status)) gone.add(id);
-      }
-    }));
+    await Promise.all(
+      targets.map(async ({ id, ...subscription }) => {
+        try {
+          await this.send(subscription, payload, vapid);
+        } catch (error) {
+          const status = (error as { statusCode?: unknown }).statusCode;
+          if (typeof status === "number" && GONE_STATUSES.has(status)) gone.add(id);
+        }
+      }),
+    );
     if (!gone.size) return;
-    this.subscriptions = this.subscriptions.filter((entry) => !gone.has(entry.id));
+    this.subscriptions = this.subscriptions.filter(entry => !gone.has(entry.id));
     this.save();
   }
 

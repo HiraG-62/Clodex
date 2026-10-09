@@ -3,11 +3,11 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import type { Coordinator } from "../coordinator/coordinator.js";
-import type { RecoveryState, ConversationRecovery } from "../project/recovery-store.js";
 import type { CoordinatorEvent, EventBus } from "../coordinator/event-bus.js";
-import type { NotificationInput } from "./notify-format.js";
 import type { Conversation, ConversationHistory } from "../project/conversation-history.js";
+import type { ConversationRecovery, RecoveryState } from "../project/recovery-store.js";
 import type { WorktreeResult } from "../project/worktree.js";
+import type { NotificationInput } from "./notify-format.js";
 
 // 会話 1 つ分の実行環境（Event Bus・Coordinator・Agent・MCP server 等）
 export interface ConversationRuntime {
@@ -77,16 +77,17 @@ export class Workspace {
     this.recoveryListeners.push(listener);
   }
 
-  allRuntimes(): ConversationRuntime[] { return [...this.runtimes.values()]; }
+  allRuntimes(): ConversationRuntime[] {
+    return [...this.runtimes.values()];
+  }
 
   recoveryConversations(): Record<string, ConversationRecovery> {
     const valid = new Set([...this.options.history.list().map(({ id }) => id), this.options.history.currentId]);
-    return Object.fromEntries([...this.runtimes.entries()].filter(([id]) => valid.has(id))
-      .map(([id, runtime]) => [id, runtime.coordinator.recoveryState()]));
+    return Object.fromEntries([...this.runtimes.entries()].filter(([id]) => valid.has(id)).map(([id, runtime]) => [id, runtime.coordinator.recoveryState()]));
   }
 
   async restore(state: RecoveryState): Promise<void> {
-    const valid = new Map(this.options.history.list().map((conversation) => [conversation.id, conversation]));
+    const valid = new Map(this.options.history.list().map(conversation => [conversation.id, conversation]));
     for (const [id, recovery] of Object.entries(state.conversations)) {
       const conversation = valid.get(id);
       if (!conversation) continue;
@@ -119,7 +120,7 @@ export class Workspace {
   activity(conversationId: string): ConversationActivity | undefined {
     const runtime = this.runtimes.get(conversationId);
     if (!runtime) return undefined;
-    const statuses = runtime.coordinator.status().map((agent) => agent.status);
+    const statuses = runtime.coordinator.status().map(agent => agent.status);
     if (statuses.includes("busy") || statuses.includes("starting")) return "busy";
     return statuses.includes("idle") ? "idle" : "stopped";
   }
@@ -127,14 +128,15 @@ export class Workspace {
   // 同じ作業場所で、今の会話以外の Agent が作業中か（worktree を勧めるため）
   busyElsewhereInSameDir(): boolean {
     const current = this.current;
-    return [...this.runtimes.values()].some((runtime) =>
-      runtime !== current && runtime.workDir === current.workDir && this.activity(runtime.conversationId) === "busy");
+    return [...this.runtimes.values()].some(
+      runtime => runtime !== current && runtime.workDir === current.workDir && this.activity(runtime.conversationId) === "busy",
+    );
   }
 
   async closeAll(): Promise<void> {
     for (const timer of this.pendingFailure.values()) clearTimeout(timer);
     this.pendingFailure.clear();
-    await Promise.all([...this.runtimes.values()].map((runtime) => runtime.close()));
+    await Promise.all([...this.runtimes.values()].map(runtime => runtime.close()));
   }
 
   async restart(): Promise<void> {
@@ -147,11 +149,15 @@ export class Workspace {
     this.runtimes.clear();
     const conversations = [...this.options.history.list(), this.options.history.current];
     for (const id of ids) {
-      const conversation = conversations.find((item) => item.id === id);
+      const conversation = conversations.find(item => item.id === id);
       if (conversation) await this.ensure(conversation);
     }
     this.notifySwitch(this.current);
-    await Promise.all(this.allRuntimes().filter(runtime => existsSync(runtime.workDir)).map((runtime) => runtime.coordinator.start()));
+    await Promise.all(
+      this.allRuntimes()
+        .filter(runtime => existsSync(runtime.workDir))
+        .map(runtime => runtime.coordinator.start()),
+    );
   }
 
   private notifySwitch(runtime: ConversationRuntime): void {
@@ -163,14 +169,18 @@ export class Workspace {
     if (existing) return existing;
     let creating = this.creating.get(conversation.id);
     if (!creating) {
-      creating = this.options.createRuntime(conversation).then((runtime) => {
+      creating = this.options.createRuntime(conversation).then(runtime => {
         this.runtimes.set(conversation.id, runtime);
         const historyDetach = this.options.history.attach(runtime.bus, conversation.id);
-        const eventDetach = runtime.bus.subscribe((event) => this.handleEvent(runtime, event));
+        const eventDetach = runtime.bus.subscribe(event => this.handleEvent(runtime, event));
         const recoveryDetach = runtime.coordinator.onRecoveryChange(() => {
           for (const listener of this.recoveryListeners) listener();
         });
-        this.detach.set(conversation.id, () => { historyDetach(); eventDetach(); recoveryDetach(); });
+        this.detach.set(conversation.id, () => {
+          historyDetach();
+          eventDetach();
+          recoveryDetach();
+        });
         for (const listener of this.runtimeListeners) listener(runtime);
         return runtime;
       });
@@ -193,8 +203,9 @@ export class Workspace {
       this.toolUse.set(runtime.conversationId, used);
     }
     if (current && this.options.isCurrentProject()) return;
-    const conversationTitle = this.options.history.list().find((c) => c.id === runtime.conversationId)?.title
-      ?? (this.options.history.currentId === runtime.conversationId ? this.options.history.current.title : undefined);
+    const conversationTitle =
+      this.options.history.list().find(c => c.id === runtime.conversationId)?.title ??
+      (this.options.history.currentId === runtime.conversationId ? this.options.history.current.title : undefined);
     const base = { projectRoot: this.options.projectRoot, conversationTitle };
     if (event.kind === "question") this.options.notifyAgent({ ...base, kind: "question", agent: event.agent });
     else if (event.kind === "notice") {
@@ -203,14 +214,16 @@ export class Workspace {
         clearTimeout(this.pendingFailure.get(key));
         this.pendingFailure.delete(key);
       }
-      this.options.notifyAgent(event.limitHold
-        ? { ...base, kind: "limitHold", agent: event.limitHold.agent, time: event.limitHold.time }
-        : { ...base, kind: "notice", line: event.text });
-    }
-    else if (event.kind === "agent" && event.event.type === "error") this.options.notifyAgent({ ...base, kind: "error", agent: event.agent, line: event.event.message });
+      this.options.notifyAgent(
+        event.limitHold
+          ? { ...base, kind: "limitHold", agent: event.limitHold.agent, time: event.limitHold.time }
+          : { ...base, kind: "notice", line: event.text },
+      );
+    } else if (event.kind === "agent" && event.event.type === "error")
+      this.options.notifyAgent({ ...base, kind: "error", agent: event.agent, line: event.event.message });
     else if (event.kind === "agent" && event.event.type === "turn") {
       const status = event.event.result.status;
-      const input: NotificationInput = { ...base, kind: status === "completed" ? used[event.agent] ? "work" : "reply" : status, agent: event.agent };
+      const input: NotificationInput = { ...base, kind: status === "completed" ? (used[event.agent] ? "work" : "reply") : status, agent: event.agent };
       if (status !== "failed") this.options.notifyAgent(input);
       else {
         const key = `${runtime.conversationId}:${event.agent}`;

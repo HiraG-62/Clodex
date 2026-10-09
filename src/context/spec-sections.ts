@@ -24,7 +24,7 @@ const splitSections = (text: string): Section[] => {
     occurrences.set(heading, count);
     sections.push({ key: `${heading}\0${count}`, heading, content });
   };
-  for (const line of text.split(/\r?\n/).map((raw) => raw.trimEnd())) {
+  for (const line of text.split(/\r?\n/).map(raw => raw.trimEnd())) {
     if (FENCE.test(line)) inFence = !inFence;
     if (inFence || !HEADING.test(line)) {
       lines.push(line);
@@ -39,12 +39,12 @@ const splitSections = (text: string): Section[] => {
 };
 
 export const changedSections = (before: string, after: string): string[] => {
-  const previous = new Map(splitSections(before).map((section) => [section.key, section]));
+  const previous = new Map(splitSections(before).map(section => [section.key, section]));
   const current = splitSections(after);
-  const currentKeys = new Set(current.map((section) => section.key));
+  const currentKeys = new Set(current.map(section => section.key));
   const changed = [
-    ...current.filter((section) => previous.get(section.key)?.content !== section.content).map((section) => section.heading),
-    ...[...previous.values()].filter((section) => !currentKeys.has(section.key)).map((section) => `${REMOVED_PREFIX}${section.heading}`),
+    ...current.filter(section => previous.get(section.key)?.content !== section.content).map(section => section.heading),
+    ...[...previous.values()].filter(section => !currentKeys.has(section.key)).map(section => `${REMOVED_PREFIX}${section.heading}`),
   ];
   if (changed.length <= MAX_LISTED_SPEC_CHANGES) return changed;
   return [...changed.slice(0, MAX_LISTED_SPEC_CHANGES), `…and ${changed.length - MAX_LISTED_SPEC_CHANGES} more`];

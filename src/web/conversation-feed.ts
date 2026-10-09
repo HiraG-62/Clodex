@@ -18,13 +18,18 @@ interface FeedTarget {
   replace(items: readonly HistoryItem[]): void;
 }
 
-export const connectConversationFeed = (history: HistorySource, store: FeedSource, feed: FeedTarget, working: (id: string) => ReadonlySet<AgentId> = () => new Set()): void => {
+export const connectConversationFeed = (
+  history: HistorySource,
+  store: FeedSource,
+  feed: FeedTarget,
+  working: (id: string) => ReadonlySet<AgentId> = () => new Set(),
+): void => {
   const load = (id: string) => {
-    store.prune([id, ...history.list().map((conversation) => conversation.id)]);
+    store.prune([id, ...history.list().map(conversation => conversation.id)]);
     feed.replace(store.load(id, working(id)));
   };
   load(history.currentId);
   history.onSwitch(load);
   // 削除した会話の feed も消す（今の会話は残す）
-  history.onRemove(() => store.prune([history.currentId, ...history.list().map((conversation) => conversation.id)]));
+  history.onRemove(() => store.prune([history.currentId, ...history.list().map(conversation => conversation.id)]));
 };

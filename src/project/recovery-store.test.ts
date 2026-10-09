@@ -13,10 +13,16 @@ describe("recovery store", () => {
 
   it("配送待ちと作業中の会話だけを保存し、読み直す", () => {
     const { home, project, path } = setup();
-    const data = { current: "c1", conversations: {
-      c1: { interrupted: ["claude" as const], queue: { claude: [{ kind: "input" as const, text: "次", images: ["shot.png"], context: true as const }], codex: [] } },
-      c2: { interrupted: [], queue: { claude: [], codex: [] } },
-    } };
+    const data = {
+      current: "c1",
+      conversations: {
+        c1: {
+          interrupted: ["claude" as const],
+          queue: { claude: [{ kind: "input" as const, text: "次", images: ["shot.png"], context: true as const }], codex: [] },
+        },
+        c2: { interrupted: [], queue: { claude: [], codex: [] } },
+      },
+    };
     saveRecovery(home, project, data);
     expect(loadRecovery(home, project)).toEqual({ current: "c1", conversations: { c1: data.conversations.c1 } });
     expect(JSON.parse(readFileSync(path, "utf8")).conversations).not.toHaveProperty("c2");
@@ -33,8 +39,7 @@ describe("recovery store", () => {
 
   it("lastWork を保存し、壊れた Agent の値だけを無視する", () => {
     const { home, project, path } = setup();
-    const conversation = { interrupted: ["claude" as const], queue: { claude: [], codex: [] },
-      lastWork: { claude: { plan: "方針", actions: ["Read a.ts"] } } };
+    const conversation = { interrupted: ["claude" as const], queue: { claude: [], codex: [] }, lastWork: { claude: { plan: "方針", actions: ["Read a.ts"] } } };
     saveRecovery(home, project, { current: "c1", conversations: { c1: conversation } });
     expect(loadRecovery(home, project)?.conversations.c1?.lastWork).toEqual(conversation.lastWork);
     const saved = JSON.parse(readFileSync(path, "utf8"));
@@ -47,7 +52,11 @@ describe("recovery store", () => {
 it("未回答だけの会話も保存する", () => {
   const home = mkdtempSync(join(tmpdir(), "clodex-question-recovery-"));
   const project = join(home, "project");
-  const conversation = { interrupted: [], queue: { claude: [], codex: [] }, questions: [{ id: "q1", agent: "claude" as const, questions: [{ question: "方針", options: [{ label: "A" }, { label: "B" }] }] }] };
+  const conversation = {
+    interrupted: [],
+    queue: { claude: [], codex: [] },
+    questions: [{ id: "q1", agent: "claude" as const, questions: [{ question: "方針", options: [{ label: "A" }, { label: "B" }] }] }],
+  };
   saveRecovery(home, project, { current: "c1", conversations: { c1: conversation } });
   expect(loadRecovery(home, project)?.conversations.c1).toEqual(conversation);
 });

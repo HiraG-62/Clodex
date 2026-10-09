@@ -7,9 +7,7 @@ const IMAGE_EXTENSION = /\.(?:png|jpe?g|gif|webp)$/i;
 export const REFERENCED_FILES_HEADER = "Referenced files:";
 
 export const extractFileReferences = (text: string): string[] => {
-  const paths = [...text.matchAll(FILE_REFERENCE_PATTERN)]
-    .map((match) => (match[1] ?? "").replace(TRAILING_PUNCTUATION, "").replace(/\\/g, "/"))
-    .filter(Boolean);
+  const paths = [...text.matchAll(FILE_REFERENCE_PATTERN)].map(match => (match[1] ?? "").replace(TRAILING_PUNCTUATION, "").replace(/\\/g, "/")).filter(Boolean);
   return [...new Set(paths)];
 };
 
@@ -18,7 +16,7 @@ export const isImagePath = (path: string): boolean => IMAGE_EXTENSION.test(path)
 // 見つかったファイルを末尾に列挙する。無ければ本文をそのまま返す
 export const appendFileReferences = (text: string, files: readonly string[]): string => {
   if (!files.length) return text;
-  return `${text}\n\n${REFERENCED_FILES_HEADER}\n${files.map((file) => `- ${file}`).join("\n")}`;
+  return `${text}\n\n${REFERENCED_FILES_HEADER}\n${files.map(file => `- ${file}`).join("\n")}`;
 };
 
 export interface ResolvedReferences {
@@ -28,13 +26,15 @@ export interface ResolvedReferences {
 }
 
 // resolve: 読んでよいファイルなら実パス、そうでなければ undefined
-export const resolveReferences = async (
-  text: string, resolve: (path: string) => Promise<string | undefined>,
-): Promise<ResolvedReferences> => {
-  const found = (await Promise.all(extractFileReferences(text).map(async (path) => ({ path, real: await resolve(path) }))))
-    .filter((entry): entry is { path: string; real: string } => entry.real !== undefined);
+export const resolveReferences = async (text: string, resolve: (path: string) => Promise<string | undefined>): Promise<ResolvedReferences> => {
+  const found = (await Promise.all(extractFileReferences(text).map(async path => ({ path, real: await resolve(path) })))).filter(
+    (entry): entry is { path: string; real: string } => entry.real !== undefined,
+  );
   return {
-    text: appendFileReferences(text, found.map(({ path }) => path)),
+    text: appendFileReferences(
+      text,
+      found.map(({ path }) => path),
+    ),
     images: found.filter(({ real }) => isImagePath(real)).map(({ real }) => real),
   };
 };

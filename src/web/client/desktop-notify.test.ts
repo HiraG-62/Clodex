@@ -1,11 +1,30 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "../../agents/agent-adapter.js";
 import type { FeedItem, WebState } from "../web-feed.js";
-import { updateDesktopNotify, type DesktopNotifyState } from "./desktop-notify.js";
+import { type DesktopNotifyState, updateDesktopNotify } from "./desktop-notify.js";
 
-const IDLE: WebState = { project: "app", primary: "claude", roles: {}, agents: [], tabs: [], conversations: [], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } };
+const IDLE: WebState = {
+  project: "app",
+  primary: "claude",
+  roles: {},
+  agents: [],
+  tabs: [],
+  conversations: [],
+  pendingInputs: [],
+  pendingMessages: [],
+  questions: [],
+  processes: [],
+  language: "ja",
+  sandbox: { enabled: false, ready: false },
+  limitsUnlimited: false,
+  limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } },
+};
 const state = (pending = false): FeedItem => ({ type: "state", state: { ...IDLE, pendingInputs: pending ? [{ id: "1", agent: "claude", text: "次" }] : [] } });
-const event = (value: AgentEvent, agent: "claude" | "codex" = "claude"): FeedItem => ({ type: "event", seq: 1, event: { kind: "agent", agent, event: value, at: "now" } });
+const event = (value: AgentEvent, agent: "claude" | "codex" = "claude"): FeedItem => ({
+  type: "event",
+  seq: 1,
+  event: { kind: "agent", agent, event: value, at: "now" },
+});
 const turn = (status: "completed" | "failed" | "interrupted" = "completed", agent: "claude" | "codex" = "claude") =>
   event({ type: "turn", result: { status, text: "本文" } }, agent);
 
@@ -52,9 +71,16 @@ describe("updateDesktopNotify", () => {
       next(turn(kind));
       expect(next(state())).toEqual({ kind, agent: "claude" });
     }
-    expect(next({ type: "event", seq: 2, event: { kind: "question", id: "q", agent: "codex", questions: [], at: "now" } })).toEqual({ kind: "question", agent: "codex" });
+    expect(next({ type: "event", seq: 2, event: { kind: "question", id: "q", agent: "codex", questions: [], at: "now" } })).toEqual({
+      kind: "question",
+      agent: "codex",
+    });
     expect(next(event({ type: "error", message: "失敗" }))).toEqual({ kind: "error", agent: "claude", line: "失敗" });
-    expect(next({ type: "event", seq: 3, event: { kind: "notice", text: "上限", limitHold: { agent: "claude", time: "01:00" }, at: "now" } })).toEqual({ kind: "limitHold", agent: "claude", time: "01:00" });
+    expect(next({ type: "event", seq: 3, event: { kind: "notice", text: "上限", limitHold: { agent: "claude", time: "01:00" }, at: "now" } })).toEqual({
+      kind: "limitHold",
+      agent: "claude",
+      time: "01:00",
+    });
   });
 
   it("上限の notice が来たら直前の失敗を重ねて通知しない", () => {
@@ -62,7 +88,11 @@ describe("updateDesktopNotify", () => {
     next(state());
     next(event({ type: "turn_started" }));
     next(turn("failed"));
-    expect(next({ type: "event", seq: 4, event: { kind: "notice", text: "上限", limitHold: { agent: "claude", time: "01:00" }, at: "now" } })).toEqual({ kind: "limitHold", agent: "claude", time: "01:00" });
+    expect(next({ type: "event", seq: 4, event: { kind: "notice", text: "上限", limitHold: { agent: "claude", time: "01:00" }, at: "now" } })).toEqual({
+      kind: "limitHold",
+      agent: "claude",
+      time: "01:00",
+    });
     expect(next(state())).toBeUndefined();
   });
 

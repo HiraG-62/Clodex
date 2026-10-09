@@ -23,8 +23,9 @@ const setup = (limits = {}) => {
 
 describe("artifactsDirPath", () => {
   it("~/.clodex/artifacts の下に project ごとのディレクトリを置く", () => {
-    expect(artifactsDirPath("C:\\home", "C:\\home\\.clodex\\state\\E--dev-Clodex-1a2b3c4d.json"))
-      .toBe(join("C:\\home", ".clodex", "artifacts", "E--dev-Clodex-1a2b3c4d"));
+    expect(artifactsDirPath("C:\\home", "C:\\home\\.clodex\\state\\E--dev-Clodex-1a2b3c4d.json")).toBe(
+      join("C:\\home", ".clodex", "artifacts", "E--dev-Clodex-1a2b3c4d"),
+    );
   });
 });
 

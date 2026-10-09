@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { ROLE_PRESET_NAMES, ROLE_PRESETS, matchingRolePreset } from "./role-presets.js";
+import { matchingRolePreset, ROLE_PRESET_NAMES, ROLE_PRESETS } from "./role-presets.js";
 
 it("3 つのプリセットに両言語と両 Agent の専用文章がある", () => {
   expect(ROLE_PRESET_NAMES).toEqual(["design-review", "codex-design", "implement-review"]);
@@ -21,8 +21,10 @@ it("両 Agent の文章が完全一致するプリセットだけを返す", () 
     }
   }
   expect(matchingRolePreset({ claude: ROLE_PRESETS["design-review"].ja.claude })).toBeUndefined();
-  expect(matchingRolePreset({
-    claude: ROLE_PRESETS["design-review"].ja.claude,
-    codex: ROLE_PRESETS["design-review"].en.codex,
-  })).toBeUndefined();
+  expect(
+    matchingRolePreset({
+      claude: ROLE_PRESETS["design-review"].ja.claude,
+      codex: ROLE_PRESETS["design-review"].en.codex,
+    }),
+  ).toBeUndefined();
 });

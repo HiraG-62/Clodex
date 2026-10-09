@@ -37,7 +37,7 @@ export const LIMIT_MAX = 100;
 export const isLimitValue = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= LIMIT_MIN && value <= LIMIT_MAX;
 export const humanBudgetError = (error: string): string => {
-  const name = LIMIT_NAMES.find((name) => error.startsWith(`Budget limit reached: ${LIMIT_KEYS[name]} (`));
+  const name = LIMIT_NAMES.find(name => error.startsWith(`Budget limit reached: ${LIMIT_KEYS[name]} (`));
   return name ? `${error} (/limits ${name} <n>)` : error;
 };
 
@@ -57,12 +57,11 @@ interface MessageMeta {
 
 const EMPTY_USAGE: ChainUsage = { messages: 0, reviewRounds: 0, delegations: 0 };
 
-const STOPPED_ERROR = "This exchange was stopped by the human (/interrupt). Do not send more messages for it; " +
-  "report the current status to the human instead.";
+const STOPPED_ERROR =
+  "This exchange was stopped by the human (/interrupt). Do not send more messages for it; " + "report the current status to the human instead.";
 
 const limitError = (name: keyof BudgetLimits, limit: number) =>
-  `Budget limit reached: ${name} (${limit}). Do not send more messages for this chain; ` +
-  "report the current status to the human instead.";
+  `Budget limit reached: ${name} (${limit}). Do not send more messages for this chain; ` + "report the current status to the human instead.";
 
 export class BudgetManager {
   private readonly meta = new Map<string, MessageMeta>();

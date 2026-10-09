@@ -1,7 +1,7 @@
 // 起動オプション（DESIGN.md §7）
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { AGENT_IDS, isAgentId, type AgentId } from "../agents/agent-adapter.js";
+import { AGENT_IDS, type AgentId, isAgentId } from "../agents/agent-adapter.js";
 
 export interface CliArgs {
   project?: string;
@@ -35,9 +35,12 @@ export const parseCliArgs = (argv: string[]): CliArgs => {
   if (values["codex-model"]) models.codex = values["codex-model"];
 
   return {
-    ...(values.project ? { project: values.project } : {}), ...(primary ? { primary } : {}), models,
+    ...(values.project ? { project: values.project } : {}),
+    ...(primary ? { primary } : {}),
+    models,
     resume: values.resume ?? false,
-    web: serve || (values.web ?? false), serve,
+    web: serve || (values.web ?? false),
+    serve,
   };
 };
 

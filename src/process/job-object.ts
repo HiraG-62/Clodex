@@ -45,18 +45,29 @@ public static class HubJob {
 type HelperResult = { code: number | null; stderr: string };
 type Helper = (script: string, signal: AbortSignal) => Promise<HelperResult>;
 
-const runPowerShell: Helper = (script, signal) => new Promise((resolve, reject) => {
-  const child = spawn(POWERSHELL, psArgs(script), { windowsHide: true, stdio: ["ignore", "ignore", "pipe"], signal });
-  let stderr = "";
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (text: string) => { stderr += text; });
-  child.once("error", reject);
-  child.once("close", (code) => resolve({ code, stderr: stderr.trim() }));
-});
+const runPowerShell: Helper = (script, signal) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(POWERSHELL, psArgs(script), { windowsHide: true, stdio: ["ignore", "ignore", "pipe"], signal });
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (text: string) => {
+      stderr += text;
+    });
+    child.once("error", reject);
+    child.once("close", code => resolve({ code, stderr: stderr.trim() }));
+  });
 
 export const registerHubJob = async ({
-  platform = process.platform, pid = process.pid, run = runPowerShell, timeoutMs = JOB_TIMEOUT_MS,
-}: { platform?: NodeJS.Platform; pid?: number; run?: Helper; timeoutMs?: number } = {}): Promise<{ ok: true } | { ok: false; message: string }> => {
+  platform = process.platform,
+  pid = process.pid,
+  run = runPowerShell,
+  timeoutMs = JOB_TIMEOUT_MS,
+}: {
+  platform?: NodeJS.Platform;
+  pid?: number;
+  run?: Helper;
+  timeoutMs?: number;
+} = {}): Promise<{ ok: true } | { ok: false; message: string }> => {
   if (platform !== "win32") return { ok: true };
   const script = `$source = @'\n${nativeSource}\n'@; Add-Type -TypeDefinition $source; [HubJob]::Attach(${pid})`;
   const controller = new AbortController();

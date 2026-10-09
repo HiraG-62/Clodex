@@ -1,4 +1,4 @@
-import { createCommandExecutor, type CommandRunnerOptions } from "../cli/command-runner.js";
+import { type CommandRunnerOptions, createCommandExecutor } from "../cli/command-runner.js";
 
 export const PROCESS_OUTPUT_LINES = 200;
 const MS_PER_SECOND = 1000;
@@ -25,7 +25,7 @@ export const createProcessManager = ({ cwd, print, now = Date.now, onChange = ()
     const id = nextId++;
     const process: ManagedProcess = { id, command, status: "running", startedAt: now() };
     let markFinished = () => {};
-    const entry: Entry = { process, lines: [], finished: new Promise((resolve) => (markFinished = resolve)) };
+    const entry: Entry = { process, lines: [], finished: new Promise(resolve => (markFinished = resolve)) };
     entries.set(id, entry);
     const append = (line: string) => {
       entry.lines.push(line);
@@ -51,7 +51,9 @@ export const createProcessManager = ({ cwd, print, now = Date.now, onChange = ()
     await Promise.all([...entries.values()].map(({ finished }) => finished));
   };
   return {
-    start, kill, stopAll,
+    start,
+    kill,
+    stopAll,
     list: (): ManagedProcess[] => [...entries.values()].map(({ process }) => ({ ...process })),
     output: (id: number): string[] | undefined => {
       const entry = entries.get(id);

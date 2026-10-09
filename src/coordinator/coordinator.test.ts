@@ -1,14 +1,14 @@
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { ConversationHistory } from "../project/conversation-history.js";
-import { type SoloMode, Coordinator } from "./coordinator.js";
-import { EventBus, type CoordinatorEvent } from "./event-bus.js";
-import { MAX_BODY_LENGTH, type CreateMessageResult } from "../protocol/messages.js";
+import { type CreateMessageResult, MAX_BODY_LENGTH } from "../protocol/messages.js";
+import { Coordinator, type SoloMode } from "./coordinator.js";
+import { type CoordinatorEvent, EventBus } from "./event-bus.js";
 
-const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 const NOW = "2026-10-05T07:00:00.000Z";
 const PROJECT_ROOT = "C:\\dev\\app";
 const mcpUrlFor = (agent: string) => `http://127.0.0.1:5000/mcp/token-${agent}`;
@@ -19,7 +19,7 @@ const setup = (projectRoot = PROJECT_ROOT) => {
   const codex = new FakeAgentAdapter("codex");
   const bus = new EventBus(() => new Date(NOW));
   const events: CoordinatorEvent[] = [];
-  bus.subscribe((e) => events.push(e));
+  bus.subscribe(e => events.push(e));
   const coordinator = new Coordinator({
     projectRoot,
     agents: { claude, codex },
@@ -95,8 +95,13 @@ describe("人の判断と作業の引き継ぎ", () => {
     const recovery = coordinator.recoveryState();
     expect(recovery.lastWork?.claude).toEqual({ plan: "方針の一行目", actions: ["Read file-1", "Read file-2", "Read file-3", "Read file-4", "Read file-5"] });
     const resumed = new FakeAgentAdapter("claude");
-    const after = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude: resumed, codex: new FakeAgentAdapter("codex") }, bus: new EventBus(), mcpUrlFor,
-      resumeSessionIds: { claude: "previous-session" } });
+    const after = new Coordinator({
+      projectRoot: PROJECT_ROOT,
+      agents: { claude: resumed, codex: new FakeAgentAdapter("codex") },
+      bus: new EventBus(),
+      mcpUrlFor,
+      resumeSessionIds: { claude: "previous-session" },
+    });
     after.restore(recovery);
     await flush();
     expect(resumed.sent[0]).toContain("Before the restart you were: 方針の一行目");
@@ -114,34 +119,47 @@ describe("自動 RESULT", () => {
     await flush();
     codex.completeTurn({ status: "completed", text: "実装しました" });
     await flush();
-    const messages = events.filter((event) => event.kind === "message").map((event) => event.message);
+    const messages = events.filter(event => event.kind === "message").map(event => event.message);
     expect(messages).toHaveLength(2);
-    expect(messages[1]).toMatchObject({ from: "codex", to: "claude", type: "RESULT", taskId: "T-1",
-      replyTo: request.message.id, status: "done", body: "実装しました", auto: true });
+    expect(messages[1]).toMatchObject({
+      from: "codex",
+      to: "claude",
+      type: "RESULT",
+      taskId: "T-1",
+      replyTo: request.message.id,
+      status: "done",
+      body: "実装しました",
+      auto: true,
+    });
     expect(claude.sent[0]).toContain("Auto: the recipient ended its turn without send_message; this is its final reply.");
   });
 
-  it.each(["RESULT", "QUESTION"] as const)("依頼元へ %s を送っていれば自動で返さない", async (type) => {
+  it.each(["RESULT", "QUESTION"] as const)("依頼元へ %s を送っていれば自動で返さない", async type => {
     const { codex, events, coordinator } = setup();
     const request = coordinator.receiveMessage("claude", reviewRequest);
     expect(request.ok).toBe(true);
     if (!request.ok) return;
     await flush();
-    const reply = coordinator.receiveMessage("codex", { to: "claude", type, taskId: "T-1", body: "返事",
-      ...(type === "RESULT" ? { replyTo: request.message.id } : {}) });
+    const reply = coordinator.receiveMessage("codex", {
+      to: "claude",
+      type,
+      taskId: "T-1",
+      body: "返事",
+      ...(type === "RESULT" ? { replyTo: request.message.id } : {}),
+    });
     expect(reply.ok).toBe(true);
     codex.completeTurn({ status: "completed", text: "最終応答" });
     await flush();
-    expect(events.filter((event) => event.kind === "message")).toHaveLength(2);
+    expect(events.filter(event => event.kind === "message")).toHaveLength(2);
   });
 
-  it.each(["failed", "interrupted"] as const)("%s なら自動で返さない", async (status) => {
+  it.each(["failed", "interrupted"] as const)("%s なら自動で返さない", async status => {
     const { codex, events, coordinator } = setup();
     coordinator.receiveMessage("claude", reviewRequest);
     await flush();
     codex.completeTurn({ status, text: "途中" });
     await flush();
-    expect(events.filter((event) => event.kind === "message")).toHaveLength(1);
+    expect(events.filter(event => event.kind === "message")).toHaveLength(1);
   });
 
   it("空の最終応答と返信不要の message では自動で返さない", async () => {
@@ -158,7 +176,7 @@ describe("自動 RESULT", () => {
     await flush();
     codex.completeTurn({ status: "completed", text: "確認" });
     await flush();
-    expect(events.filter((event) => event.kind === "message")).toHaveLength(3);
+    expect(events.filter(event => event.kind === "message")).toHaveLength(3);
     expect(claude.sent).toEqual([]);
   });
 
@@ -168,16 +186,15 @@ describe("自動 RESULT", () => {
     expect(original.ok).toBe(true);
     if (!original.ok) return;
     await flush();
-    const correction = coordinator.receiveMessage("claude", { to: "codex", type: "QUESTION", taskId: "T-2",
-      body: "追加の確認", interrupt: true });
+    const correction = coordinator.receiveMessage("claude", { to: "codex", type: "QUESTION", taskId: "T-2", body: "追加の確認", interrupt: true });
     expect(correction.ok).toBe(true);
     if (!correction.ok) return;
     await flush();
     expect(codex.steered).toHaveLength(1);
     codex.completeTurn({ status: "completed", text: "確認済み" });
     await flush();
-    const automatic = events.flatMap((event) => event.kind === "message" && event.message.auto ? [event.message] : []);
-    expect(automatic.map((message) => message.replyTo)).toEqual([original.message.id]);
+    const automatic = events.flatMap(event => (event.kind === "message" && event.message.auto ? [event.message] : []));
+    expect(automatic.map(message => message.replyTo)).toEqual([original.message.id]);
   });
 
   it("長い最終応答を上限内で切り詰める", async () => {
@@ -186,7 +203,7 @@ describe("自動 RESULT", () => {
     await flush();
     codex.completeTurn({ status: "completed", text: "x".repeat(MAX_BODY_LENGTH + 200) });
     await flush();
-    const messages = events.filter((event) => event.kind === "message").map((event) => event.message);
+    const messages = events.filter(event => event.kind === "message").map(event => event.message);
     expect(messages[1]?.body).toHaveLength(MAX_BODY_LENGTH);
     expect(messages[1]?.body.endsWith("…")).toBe(true);
   });
@@ -198,23 +215,48 @@ describe("自動 RESULT", () => {
     await flush();
     codex.completeTurn({ status: "completed", text: "完了" });
     await flush();
-    expect(events.filter((event) => event.kind === "message")).toHaveLength(1);
-    expect(events).toContainEqual(expect.objectContaining({ kind: "agent", agent: "codex",
-      event: { type: "error", message: expect.stringContaining("Budget limit reached") } }));
+    expect(events.filter(event => event.kind === "message")).toHaveLength(1);
+    expect(events).toContainEqual(
+      expect.objectContaining({ kind: "agent", agent: "codex", event: { type: "error", message: expect.stringContaining("Budget limit reached") } }),
+    );
   });
 
   it("復旧した配送待ちの依頼にも自動 RESULT を返す", async () => {
     const { claude, codex, events, coordinator } = setup();
-    coordinator.restore({ interrupted: [], queue: { claude: [], codex: [{ kind: "message", message: {
-      id: "msg_restored", from: "claude", to: "codex", type: "DELEGATE", taskId: "R", body: "復旧した依頼",
-      repository: PROJECT_ROOT, createdAt: NOW,
-    } }] } });
+    coordinator.restore({
+      interrupted: [],
+      queue: {
+        claude: [],
+        codex: [
+          {
+            kind: "message",
+            message: {
+              id: "msg_restored",
+              from: "claude",
+              to: "codex",
+              type: "DELEGATE",
+              taskId: "R",
+              body: "復旧した依頼",
+              repository: PROJECT_ROOT,
+              createdAt: NOW,
+            },
+          },
+        ],
+      },
+    });
     await flush();
     codex.completeTurn({ status: "completed", text: "復旧した作業を完了" });
     await flush();
-    expect(events).toContainEqual(expect.objectContaining({ kind: "message", message: expect.objectContaining({
-      type: "RESULT", replyTo: "msg_restored", auto: true,
-    }) }));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: "message",
+        message: expect.objectContaining({
+          type: "RESULT",
+          replyTo: "msg_restored",
+          auto: true,
+        }),
+      }),
+    );
     expect(claude.sent[0]).toContain("復旧した作業を完了");
   });
 });
@@ -228,7 +270,8 @@ describe("Coordinator", () => {
     void coordinator.sendToAgent("claude", "next", ["shot.png"]);
     await flush();
     expect(coordinator.recoveryState()).toMatchObject({
-      interrupted: ["claude"], queue: { claude: [{ kind: "input", text: "next", images: ["shot.png"] }] },
+      interrupted: ["claude"],
+      queue: { claude: [{ kind: "input", text: "next", images: ["shot.png"] }] },
     });
     const before = states.length;
     await coordinator.stop();
@@ -243,7 +286,7 @@ describe("Coordinator", () => {
     coordinator.onRecoveryChange(() => states.push(coordinator.recoveryState()));
     void coordinator.sendToAgent("claude", "first");
     await flush();
-    expect(states.some((state) => state.interrupted.includes("claude"))).toBe(true);
+    expect(states.some(state => state.interrupted.includes("claude"))).toBe(true);
     void coordinator.sendToAgent("claude", "cancel me");
     const queued = states.at(-1)?.queue.claude;
     expect(queued).toEqual([{ kind: "input", text: "cancel me" }]);
@@ -263,22 +306,39 @@ describe("Coordinator", () => {
     const codex = new FakeAgentAdapter("codex");
     const bus = new EventBus();
     const events: CoordinatorEvent[] = [];
-    bus.subscribe((event) => events.push(event));
+    bus.subscribe(event => events.push(event));
     const coordinator = new Coordinator({
-      projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus, mcpUrlFor,
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex },
+      bus,
+      mcpUrlFor,
       resumeSessionIds: { claude: "saved" },
     });
-    const formal = { id: "old", from: "codex" as const, to: "claude" as const, type: "REVIEW_REQUEST" as const,
-      taskId: "T", body: "review", repository: PROJECT_ROOT, createdAt: NOW };
-    coordinator.restore({ interrupted: ["claude", "codex"], queue: {
-      claude: [{ kind: "input", text: "first" }, { kind: "message", message: formal }],
-      codex: [],
-    } });
+    const formal = {
+      id: "old",
+      from: "codex" as const,
+      to: "claude" as const,
+      type: "REVIEW_REQUEST" as const,
+      taskId: "T",
+      body: "review",
+      repository: PROJECT_ROOT,
+      createdAt: NOW,
+    };
+    coordinator.restore({
+      interrupted: ["claude", "codex"],
+      queue: {
+        claude: [
+          { kind: "input", text: "first" },
+          { kind: "message", message: formal },
+        ],
+        codex: [],
+      },
+    });
     await flush();
     expect(claude.sent[0]).toContain("Clodex restarted and your previous turn was interrupted");
     expect(codex.sent).toEqual([]);
-    expect(events.filter((event) => event.kind === "human")).toEqual([]);
-    expect(events.some((event) => event.kind === "notice")).toBe(true);
+    expect(events.filter(event => event.kind === "human")).toEqual([]);
+    expect(events.some(event => event.kind === "notice")).toBe(true);
     claude.completeTurn();
     await flush();
     expect(claude.sent[1]).toBe("first");
@@ -308,8 +368,7 @@ describe("Coordinator", () => {
     vi.spyOn(codex, "steer").mockRejectedValueOnce(new Error("steer failed"));
     coordinator.receiveMessage("claude", { ...reviewRequest, interrupt: true });
     await flush();
-    expect(events).toContainEqual(expect.objectContaining({ kind: "agent", agent: "codex",
-      event: { type: "error", message: "steer failed" } }));
+    expect(events).toContainEqual(expect.objectContaining({ kind: "agent", agent: "codex", event: { type: "error", message: "steer failed" } }));
     codex.completeTurn();
   });
 
@@ -317,8 +376,11 @@ describe("Coordinator", () => {
     const claude = new FakeAgentAdapter("claude");
     const codex = new FakeAgentAdapter("codex");
     const coordinator = new Coordinator({
-      projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor,
-      instructions: (agent) => (agent === "codex" ? "You are codex." : undefined),
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex },
+      bus: new EventBus(),
+      mcpUrlFor,
+      instructions: agent => (agent === "codex" ? "You are codex." : undefined),
     });
     coordinator.receiveMessage("claude", reviewRequest);
     void coordinator.sendToAgent("claude", "hi");
@@ -331,7 +393,10 @@ describe("Coordinator", () => {
     const claude = new FakeAgentAdapter("claude");
     const codex = new FakeAgentAdapter("codex");
     const coordinator = new Coordinator({
-      projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor,
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex },
+      bus: new EventBus(),
+      mcpUrlFor,
       settings: { claude: { model: "haiku", effort: "high" }, codex: { effort: "low" } },
     });
     expect([claude.model, claude.effort, codex.model, codex.effort]).toEqual(["haiku", "high", undefined, "low"]);
@@ -344,7 +409,10 @@ describe("Coordinator", () => {
     const claude = new FakeAgentAdapter("claude");
     const codex = new FakeAgentAdapter("codex");
     const coordinator = new Coordinator({
-      projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor,
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex },
+      bus: new EventBus(),
+      mcpUrlFor,
       resumeSessionIds: { claude: "saved-claude" },
     });
     void coordinator.sendToAgent("claude", "hi");
@@ -359,7 +427,7 @@ describe("Coordinator", () => {
     const result = coordinator.receiveMessage("claude", { ...reviewRequest, to: "claude" });
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining("yourself") });
     await flush();
-    expect(events.filter((e) => e.kind === "message")).toEqual([]);
+    expect(events.filter(e => e.kind === "message")).toEqual([]);
     expect(codex.sent).toEqual([]);
   });
 
@@ -368,14 +436,19 @@ describe("Coordinator", () => {
     const result = coordinator.receiveMessage("claude", { to: "codex", type: "ACK", taskId: "T-1", body: "ok", replyTo: "msg_x" });
     expect(result.ok).toBe(true);
     await flush();
-    expect(events.filter((e) => e.kind === "message")).toHaveLength(1);
+    expect(events.filter(e => e.kind === "message")).toHaveLength(1);
     expect(codex.starts).toEqual([]);
   });
 
   it("双方向に配送できる（Codex の RESULT が Claude に届く）", async () => {
     const { claude, coordinator } = setup();
     coordinator.receiveMessage("codex", {
-      to: "claude", type: "RESULT", taskId: "T-1", body: "LGTM", replyTo: "msg_prev", status: "approved",
+      to: "claude",
+      type: "RESULT",
+      taskId: "T-1",
+      body: "LGTM",
+      replyTo: "msg_prev",
+      status: "approved",
     });
     await flush();
     expect(claude.sent[0]).toContain("Status: approved");
@@ -393,7 +466,7 @@ describe("Coordinator", () => {
     await flush();
     void coordinator.sendToAgent("codex", "画像を見て", [], true);
     expect(events).toContainEqual({ kind: "human", agent: "codex", text: "画像を見て", at: NOW });
-    expect(events.filter((event) => event.kind === "human").every((event) => !event.text.includes("read_conversation"))).toBe(true);
+    expect(events.filter(event => event.kind === "human").every(event => !event.text.includes("read_conversation"))).toBe(true);
     expect(coordinator.pendingInputs()).toContainEqual(expect.objectContaining({ agent: "codex", text: "画像を見て" }));
     expect(coordinator.recoveryState().queue.codex).toContainEqual({ kind: "input", text: "画像を見て", context: true });
     codex.completeTurn();
@@ -404,9 +477,13 @@ describe("Coordinator", () => {
 
   it("/context の配送待ちを復旧しても指示を Agent にだけ添える", async () => {
     const { codex, coordinator } = setup();
-    coordinator.restore({ interrupted: [], queue: {
-      claude: [], codex: [{ kind: "input", text: "前の依頼", context: true }],
-    } });
+    coordinator.restore({
+      interrupted: [],
+      queue: {
+        claude: [],
+        codex: [{ kind: "input", text: "前の依頼", context: true }],
+      },
+    });
     await flush();
     expect(codex.sent[0]).toContain("前の依頼");
     expect(codex.sent[0]).toContain("read_conversation");
@@ -427,8 +504,8 @@ describe("Coordinator", () => {
 
   it("Claude の model / effort を通常の入力と同じ順序で配送する", async () => {
     const { claude, coordinator } = setup();
-    claude.setModel = async (model) => claude.send(`/model ${model}`);
-    claude.setEffort = async (level) => claude.send(`/effort ${level}`);
+    claude.setModel = async model => claude.send(`/model ${model}`);
+    claude.setEffort = async level => claude.send(`/effort ${level}`);
     const first = coordinator.sendToAgent("claude", "first");
     const model = coordinator.setModel("haiku", "claude");
     const effort = coordinator.setEffort("high", "claude");
@@ -477,9 +554,13 @@ describe("Coordinator", () => {
     codex.startError = new Error("spawn codex ENOENT");
     coordinator.receiveMessage("claude", reviewRequest);
     await flush();
-    expect(events).toContainEqual(expect.objectContaining({
-      kind: "agent", agent: "codex", event: { type: "error", message: expect.stringContaining("ENOENT") },
-    }));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: "agent",
+        agent: "codex",
+        event: { type: "error", message: expect.stringContaining("ENOENT") },
+      }),
+    );
   });
 
   describe("利用枠の上限での停止と自動再開", () => {
@@ -488,11 +569,11 @@ describe("Coordinator", () => {
       const codex = new FakeAgentAdapter("codex");
       const bus = new EventBus(() => new Date(NOW));
       const events: CoordinatorEvent[] = [];
-      bus.subscribe((e) => events.push(e));
+      bus.subscribe(e => events.push(e));
       const coordinator = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus, mcpUrlFor, limitResumeMarginMs: 0 });
       return { claude, codex, events, coordinator };
     };
-    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
     it("上限停止を作業中の相手へ伝え、相手の編集ファイルを再開時に添える", async () => {
       const { claude, codex, coordinator } = setupLimit();
@@ -538,8 +619,14 @@ describe("Coordinator", () => {
       for (const solo of [false, true]) {
         const claude = new FakeAgentAdapter("claude");
         const codex = new FakeAgentAdapter("codex");
-        const coordinator = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor,
-          limitResumeMarginMs: 0, solo: () => solo ? "free" : undefined });
+        const coordinator = new Coordinator({
+          projectRoot: PROJECT_ROOT,
+          agents: { claude, codex },
+          bus: new EventBus(),
+          mcpUrlFor,
+          limitResumeMarginMs: 0,
+          solo: () => (solo ? "free" : undefined),
+        });
         if (solo) await codex.start({ cwd: PROJECT_ROOT });
         void coordinator.sendToAgent("claude", "作業");
         await flush();
@@ -560,9 +647,9 @@ describe("Coordinator", () => {
       claude.emit({ type: "rate_limit", fiveHour: { usedPercent: 100, resetsAt: Date.now() / 1000 + 0.1 } });
       claude.emit({ type: "turn_started" });
       claude.emit({ type: "turn", result: { status: "failed", text: "You've hit your session limit" } });
-      expect(coordinator.status().find((agent) => agent.id === "claude")?.holdUntil).toBeDefined();
+      expect(coordinator.status().find(agent => agent.id === "claude")?.holdUntil).toBeDefined();
       claude.emit({ type: "turn", result: { status: "failed", text: "limit" } });
-      expect(events.filter((event) => event.kind === "notice" && /再開|resuming/i.test(event.text))).toHaveLength(1);
+      expect(events.filter(event => event.kind === "notice" && /再開|resuming/i.test(event.text))).toHaveLength(1);
       await wait(200);
       expect(claude.sent[0]).toContain("usage limit has reset");
       claude.completeTurn();
@@ -572,8 +659,8 @@ describe("Coordinator", () => {
       const { claude, events, coordinator } = setupLimit();
       claude.emit({ type: "rate_limit", fiveHour: { usedPercent: 80, resetsAt: Date.now() / 1000 + 3600 } });
       claude.emit({ type: "turn", result: { status: "failed", text: "error" } });
-      expect(coordinator.status().find((agent) => agent.id === "claude")?.holdUntil).toBeUndefined();
-      expect(events.some((event) => event.kind === "notice" && event.text.includes("claude"))).toBe(false);
+      expect(coordinator.status().find(agent => agent.id === "claude")?.holdUntil).toBeUndefined();
+      expect(events.some(event => event.kind === "notice" && event.text.includes("claude"))).toBe(false);
     });
 
     it("上限の枠があるときに失敗したら配送を止め、リセット後に続きを送ってから残りを送る", async () => {
@@ -586,8 +673,8 @@ describe("Coordinator", () => {
       claude.completeTurn({ status: "failed", text: "limit" });
       await flush();
       expect(claude.sent).toEqual(["first"]);
-      expect(events.filter((event) => event.kind === "notice" && /再開|resuming/i.test(event.text))).toHaveLength(1);
-      expect(coordinator.status().find((agent) => agent.id === "claude")?.holdUntil).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(events.filter(event => event.kind === "notice" && /再開|resuming/i.test(event.text))).toHaveLength(1);
+      expect(coordinator.status().find(agent => agent.id === "claude")?.holdUntil).toMatch(/^\d{4}-\d{2}-\d{2}T/);
       const queued = coordinator.receiveMessage("codex", { to: "claude", type: "QUESTION", taskId: "hold", body: "待機中の質問" });
       expect(queued.ok).toBe(true);
       if (queued.ok) {
@@ -598,7 +685,7 @@ describe("Coordinator", () => {
       expect(coordinator.recoveryState().interrupted).toEqual(["claude"]);
       expect(events).toContainEqual(expect.objectContaining({ kind: "notice", text: expect.stringContaining("claude") }));
       await wait(200);
-      expect(coordinator.status().find((agent) => agent.id === "claude")?.holdUntil).toBeUndefined();
+      expect(coordinator.status().find(agent => agent.id === "claude")?.holdUntil).toBeUndefined();
       expect(claude.sent).toHaveLength(2);
       expect(claude.sent[1]).toContain("usage limit has reset");
       claude.completeTurn();
@@ -632,10 +719,14 @@ describe("Coordinator", () => {
       const codex = new FakeAgentAdapter("codex");
       const bus = new EventBus(() => new Date(NOW));
       const events: CoordinatorEvent[] = [];
-      bus.subscribe((e) => events.push(e));
+      bus.subscribe(e => events.push(e));
       let seq = 0;
       const coordinator = new Coordinator({
-        projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus, mcpUrlFor, retryDelayMs: 0,
+        projectRoot: PROJECT_ROOT,
+        agents: { claude, codex },
+        bus,
+        mcpUrlFor,
+        retryDelayMs: 0,
         createMessageId: () => `msg_${String(++seq).padStart(8, "0")}`,
       });
       return { claude, codex, events, coordinator };
@@ -647,7 +738,8 @@ describe("Coordinator", () => {
       coordinator.receiveMessage("claude", delegate);
       await flush();
       codex.completeTurn({ status: "failed", text: "server overloaded" });
-      await flush(); await flush();
+      await flush();
+      await flush();
       expect(codex.sent).toHaveLength(2);
       expect(codex.sent[0]).not.toContain("[Clodex] Retry:");
       expect(codex.sent[1]).toContain("[Clodex] Retry: your previous attempt at this message failed partway.");
@@ -662,9 +754,11 @@ describe("Coordinator", () => {
       coordinator.receiveMessage("claude", delegate);
       await flush();
       codex.completeTurn({ status: "failed", text: "server overloaded\nretry later" });
-      await flush(); await flush();
+      await flush();
+      await flush();
       codex.completeTurn({ status: "failed", text: "server overloaded" });
-      await flush(); await flush();
+      await flush();
+      await flush();
       expect(codex.sent).toHaveLength(2);
       expect(claude.sent).toHaveLength(1);
       expect(claude.sent[0]).toContain("DELEGATE msg_00000001 to codex");
@@ -679,7 +773,8 @@ describe("Coordinator", () => {
       await flush();
       codex.emit({ type: "rate_limit", fiveHour: { usedPercent: 100, resetsAt: Date.now() / 1000 + 3600 } });
       codex.completeTurn({ status: "failed", text: "limit" });
-      await flush(); await flush();
+      await flush();
+      await flush();
       expect(codex.sent).toHaveLength(1);
       expect(claude.sent).toEqual([]);
       await coordinator.stop();
@@ -690,14 +785,16 @@ describe("Coordinator", () => {
       coordinator.receiveMessage("codex", { to: "claude", type: "RESULT", taskId: "T", body: "done", replyTo: "msg_x" });
       await flush();
       claude.completeTurn({ status: "failed", text: "boom" });
-      await flush(); await flush();
+      await flush();
+      await flush();
       expect(claude.sent).toHaveLength(1);
       coordinator.receiveMessage("claude", delegate);
       await flush();
       const stopped = coordinator.stop();
       codex.completeTurn({ status: "failed", text: "process exited" });
       await stopped;
-      await flush(); await flush();
+      await flush();
+      await flush();
       expect(codex.sent).toHaveLength(1);
       expect(claude.sent).toHaveLength(1);
     });
@@ -736,10 +833,14 @@ describe("Coordinator", () => {
     // claude が second を処理中: claude -> codex（深さ 3）は拒否
     const third = coordinator.receiveMessage("claude", { to: "codex", type: "QUESTION", taskId: "T-9", body: "?" });
     expect(third).toMatchObject({ ok: false, error: expect.stringContaining("maxDelegationDepth") });
-    expect(events).toContainEqual(expect.objectContaining({
-      kind: "agent", agent: "claude", event: { type: "error", message: expect.stringContaining("maxDelegationDepth") },
-    }));
-    expect(events.filter((e) => e.kind === "message")).toHaveLength(2);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: "agent",
+        agent: "claude",
+        event: { type: "error", message: expect.stringContaining("maxDelegationDepth") },
+      }),
+    );
+    expect(events.filter(e => e.kind === "message")).toHaveLength(2);
   });
 
   it("人間の入力を処理中のターンから送った message は新しい chain になる", async () => {
@@ -769,8 +870,30 @@ describe("Coordinator", () => {
     claude.status = "busy";
     claude.sessionId = "s-1";
     expect(coordinator.status()).toEqual([
-      { id: "claude", status: "busy", sessionId: "s-1", permission: "edit", model: undefined, modelLabel: "default", effort: undefined, models: [], usage: {}, subagents: [] },
-      { id: "codex", status: "stopped", sessionId: undefined, permission: "edit", model: undefined, modelLabel: "default", effort: undefined, models: [], usage: {}, subagents: [] },
+      {
+        id: "claude",
+        status: "busy",
+        sessionId: "s-1",
+        permission: "edit",
+        model: undefined,
+        modelLabel: "default",
+        effort: undefined,
+        models: [],
+        usage: {},
+        subagents: [],
+      },
+      {
+        id: "codex",
+        status: "stopped",
+        sessionId: undefined,
+        permission: "edit",
+        model: undefined,
+        modelLabel: "default",
+        effort: undefined,
+        models: [],
+        usage: {},
+        subagents: [],
+      },
     ]);
   });
 
@@ -814,7 +937,8 @@ describe("Coordinator", () => {
     expect([claude.model, codex.model]).toEqual(["haiku", undefined]);
     expect([claude.effort, codex.effort]).toEqual(["low", "low"]);
     expect(coordinator.status().map(({ model, effort }) => ({ model, effort }))).toEqual([
-      { model: "haiku", effort: "low" }, { model: undefined, effort: "low" },
+      { model: "haiku", effort: "low" },
+      { model: undefined, effort: "low" },
     ]);
   });
 
@@ -822,7 +946,10 @@ describe("Coordinator", () => {
     const claude = new FakeAgentAdapter("claude");
     const codex = new FakeAgentAdapter("codex");
     new Coordinator({
-      projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor,
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex },
+      bus: new EventBus(),
+      mcpUrlFor,
       settings: { claude: { permission: "full" }, codex: { permission: "read-only" } },
     });
     expect([claude.permission, codex.permission]).toEqual(["full", "read-only"]);
@@ -858,7 +985,7 @@ describe("Coordinator", () => {
     await expect(coordinator.switchSessions({ claude: "c-old" })).resolves.toBeUndefined();
     expect([claude.status, codex.status]).toEqual(["stopped", "stopped"]);
     // 停止中は古い session ではなく、次の起動で使う session を見せる
-    expect(coordinator.status().map((agent) => agent.sessionId)).toEqual(["c-old", undefined]);
+    expect(coordinator.status().map(agent => agent.sessionId)).toEqual(["c-old", undefined]);
 
     void coordinator.sendToAgent("claude", "hi");
     coordinator.receiveMessage("claude", reviewRequest);
@@ -872,9 +999,13 @@ describe("Coordinator", () => {
     claude.status = "idle";
     claude.sessionId = "old";
     let finishStop: (() => void) | undefined;
-    claude.stop = () => new Promise<void>((resolve) => {
-      finishStop = () => { claude.status = "stopped"; resolve(); };
-    });
+    claude.stop = () =>
+      new Promise<void>(resolve => {
+        finishStop = () => {
+          claude.status = "stopped";
+          resolve();
+        };
+      });
     const switching = coordinator.switchSessions({ claude: "new" }, ["claude"]);
     const delivered = coordinator.sendToAgent("claude", "during stop");
     await flush();
@@ -891,14 +1022,15 @@ describe("Coordinator", () => {
   it("起動中や配送待ちの作業があれば switchSessions を拒否し、Agent を止めない", async () => {
     const { claude, coordinator } = setup();
     const started: Array<() => void> = [];
-    claude.start = (options) => new Promise((resolve) => {
-      claude.starts.push(options);
-      claude.status = "starting";
-      started.push(() => {
-        claude.status = "idle";
-        resolve();
+    claude.start = options =>
+      new Promise(resolve => {
+        claude.starts.push(options);
+        claude.status = "starting";
+        started.push(() => {
+          claude.status = "idle";
+          resolve();
+        });
       });
-    });
     void coordinator.sendToAgent("claude", "hi");
     await flush();
     expect(claude.status).toBe("starting");
@@ -963,9 +1095,16 @@ describe("Coordinator の取り消しと割り込み", () => {
     const created = coordinator.receiveMessage("claude", { to: "codex", type: "DELEGATE", taskId: "T", body: "実装して\n詳細" });
     expect(created.ok).toBe(true);
     if (!created.ok) return;
-    expect(coordinator.pendingMessages()).toEqual([{
-      id: created.message.id, agent: "codex", from: "claude", type: "DELEGATE", taskId: "T", text: "実装して\n詳細",
-    }]);
+    expect(coordinator.pendingMessages()).toEqual([
+      {
+        id: created.message.id,
+        agent: "codex",
+        from: "claude",
+        type: "DELEGATE",
+        taskId: "T",
+        text: "実装して\n詳細",
+      },
+    ]);
     expect(coordinator.cancelInput(created.message.id)).toMatchObject({ id: created.message.id, agent: "codex" });
     expect(coordinator.pendingMessages()).toEqual([]);
     codex.completeTurn();
@@ -980,12 +1119,13 @@ describe("Coordinator の取り消しと割り込み", () => {
     void coordinator.sendToAgent("codex", "second");
     void coordinator.sendToAgent("codex", "third");
     expect(coordinator.pendingInputs()).toEqual([
-      { id: "in2", agent: "codex", text: "second" }, { id: "in3", agent: "codex", text: "third" },
+      { id: "in2", agent: "codex", text: "second" },
+      { id: "in3", agent: "codex", text: "third" },
     ]);
     expect(coordinator.cancelInput()).toEqual({ id: "in3", agent: "codex", text: "third" });
     expect(coordinator.cancelInput("in2")).toEqual({ id: "in2", agent: "codex", text: "second" });
     expect(coordinator.cancelInput("in1")).toBeUndefined();
-    expect(events.filter((e) => e.kind === "notice")).toHaveLength(2);
+    expect(events.filter(e => e.kind === "notice")).toHaveLength(2);
     codex.completeTurn();
     await flush();
     expect(codex.sent).toEqual(["first"]);
@@ -1087,7 +1227,7 @@ describe("Coordinator の言語の 1 行（DESIGN.md §13 Language）", () => {
     const codex = new FakeAgentAdapter("codex");
     const bus = new EventBus();
     const events: CoordinatorEvent[] = [];
-    bus.subscribe((e) => events.push(e));
+    bus.subscribe(e => events.push(e));
     const coordinator = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus, mcpUrlFor, language: "ja" });
     return { claude, codex, events, coordinator };
   };
@@ -1124,7 +1264,11 @@ describe("Coordinator の役割の反映", () => {
     const codex = new FakeAgentAdapter("codex");
     let role = "old";
     const coordinator = new Coordinator({
-      projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor, instructions: () => role,
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex },
+      bus: new EventBus(),
+      mcpUrlFor,
+      instructions: () => role,
     });
     void coordinator.sendToAgent("codex", "a");
     await flush();
@@ -1153,12 +1297,12 @@ describe("Coordinator の spec 検証", () => {
     expect(codex.sent[0]).toContain("Spec: design.md");
   });
   it.each(["missing.md", ".", "../outside.md", "..\\outside.md", "outside/outside.md", join(project, "design.md")])(
-    "%s は記録・配送せず拒否する", async (spec) => {
+    "%s は記録・配送せず拒否する",
+    async spec => {
       const { coordinator, codex, events } = setup(project);
-      expect(coordinator.receiveMessage("claude", { ...reviewRequest, spec }))
-        .toMatchObject({ ok: false, error: expect.stringContaining("spec") });
+      expect(coordinator.receiveMessage("claude", { ...reviewRequest, spec })).toMatchObject({ ok: false, error: expect.stringContaining("spec") });
       await flush();
-      expect(events.filter((e) => e.kind === "message")).toEqual([]);
+      expect(events.filter(e => e.kind === "message")).toEqual([]);
       expect(codex.sent).toEqual([]);
     },
   );
@@ -1188,8 +1332,7 @@ describe("Coordinator の spec の差分", () => {
   it("Agent が送った specChanges は使わない", () => {
     const { coordinator } = setup(project);
     write("# 設計\n本文\n");
-    expect(changesOf(coordinator.receiveMessage("claude", { ...reviewRequest, spec: "design.md", specChanges: ["偽"] })))
-      .toBeUndefined();
+    expect(changesOf(coordinator.receiveMessage("claude", { ...reviewRequest, spec: "design.md", specChanges: ["偽"] }))).toBeUndefined();
   });
 });
 
@@ -1246,8 +1389,10 @@ it("上限到達の人向けエラーだけに /limits を添える", async () =
     const result = coordinator.receiveMessage("codex", { to: "claude", type: "ISSUE", taskId: "limit", body: "reply" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).not.toContain("/limits");
-    expect(events.some((e) => e.kind === "agent" && e.event.type === "error" && e.event.message.includes("/limits messages <n>"))).toBe(true);
-  } finally { await coordinator.stop(); }
+    expect(events.some(e => e.kind === "agent" && e.event.type === "error" && e.event.message.includes("/limits messages <n>"))).toBe(true);
+  } finally {
+    await coordinator.stop();
+  }
 });
 
 describe("Coordinator の solo（DESIGN.md §11 Solo）", () => {
@@ -1256,7 +1401,14 @@ describe("Coordinator の solo（DESIGN.md §11 Solo）", () => {
     const codex = new FakeAgentAdapter("codex");
     let solo: SoloMode | undefined = "free";
     const coordinator = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor, solo: () => solo });
-    return { claude, codex, coordinator, setSolo: (mode: SoloMode | undefined) => { solo = mode; } };
+    return {
+      claude,
+      codex,
+      coordinator,
+      setSolo: (mode: SoloMode | undefined) => {
+        solo = mode;
+      },
+    };
   };
 
   it("solo の間は send_message を拒否し、解除すれば受け付ける", async () => {
@@ -1303,8 +1455,14 @@ describe("solo 解除の配送通知", () => {
     const pending = new Set(["claude", "codex"] as const);
     const claude = new FakeAgentAdapter("claude");
     const codex = new FakeAgentAdapter("codex");
-    const coordinator = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor,
-      soloReleased: (agent) => pending.has(agent), consumeSoloReleased: (agent) => pending.delete(agent) });
+    const coordinator = new Coordinator({
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex },
+      bus: new EventBus(),
+      mcpUrlFor,
+      soloReleased: agent => pending.has(agent),
+      consumeSoloReleased: agent => pending.delete(agent),
+    });
     return { claude, codex, pending, coordinator };
   };
 
@@ -1353,7 +1511,7 @@ describe("solo 解除の配送通知", () => {
     void coordinator.sendToAgent("codex", "実行中");
     await flush();
     void coordinator.sendToAgent("codex", "送信待ち");
-    expect(coordinator.pendingInputs().map((item) => item.text)).toEqual(["送信待ち"]);
+    expect(coordinator.pendingInputs().map(item => item.text)).toEqual(["送信待ち"]);
     pending.add("codex");
     codex.completeTurn();
     await flush();
@@ -1368,18 +1526,28 @@ describe("solo 解除の配送通知", () => {
     history.setSolo(undefined);
     const id = history.currentId;
     const first = new FakeAgentAdapter("claude");
-    const before = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude: first, codex: new FakeAgentAdapter("codex") },
-      bus: new EventBus(), mcpUrlFor, soloReleased: (agent) => history.soloReleasedOf(id, agent),
-      consumeSoloReleased: (agent) => history.consumeSoloReleased(id, agent) });
+    const before = new Coordinator({
+      projectRoot: PROJECT_ROOT,
+      agents: { claude: first, codex: new FakeAgentAdapter("codex") },
+      bus: new EventBus(),
+      mcpUrlFor,
+      soloReleased: agent => history.soloReleasedOf(id, agent),
+      consumeSoloReleased: agent => history.consumeSoloReleased(id, agent),
+    });
     void before.sendToAgent("claude", "最初");
     await flush();
     expect(first.sent[0]).toContain("Solo mode is off");
     await before.stop();
     const restored = new ConversationHistory(path, { resumeLatest: true });
     const codex = new FakeAgentAdapter("codex");
-    const after = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude: new FakeAgentAdapter("claude"), codex },
-      bus: new EventBus(), mcpUrlFor, soloReleased: (agent) => restored.soloReleasedOf(id, agent),
-      consumeSoloReleased: (agent) => restored.consumeSoloReleased(id, agent) });
+    const after = new Coordinator({
+      projectRoot: PROJECT_ROOT,
+      agents: { claude: new FakeAgentAdapter("claude"), codex },
+      bus: new EventBus(),
+      mcpUrlFor,
+      soloReleased: agent => restored.soloReleasedOf(id, agent),
+      consumeSoloReleased: agent => restored.consumeSoloReleased(id, agent),
+    });
     void after.sendToAgent("codex", "再開");
     await flush();
     expect(codex.sent[0]).toContain("Solo mode is off");

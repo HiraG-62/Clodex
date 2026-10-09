@@ -9,9 +9,15 @@ class ElementStub {
   classList = { add: vi.fn() };
   listeners = new Map<string, () => void>();
   constructor(readonly className = "") {}
-  append(...nodes: ElementStub[]) { this.children.push(...nodes); }
-  addEventListener(name: string, listener: () => void) { this.listeners.set(name, listener); }
-  click() { this.listeners.get("click")?.(); }
+  append(...nodes: ElementStub[]) {
+    this.children.push(...nodes);
+  }
+  addEventListener(name: string, listener: () => void) {
+    this.listeners.set(name, listener);
+  }
+  click() {
+    this.listeners.get("click")?.();
+  }
 }
 
 const makeContext = () => {
@@ -21,10 +27,16 @@ const makeContext = () => {
     store: { settingsRequests: new Set<string>(), pushId: undefined, gui: null },
     storage,
     t: (key: string) => key,
-    el: (_tag: string, className = "") => { const node = new ElementStub(className); nodes.push(node); return node; },
+    el: (_tag: string, className = "") => {
+      const node = new ElementStub(className);
+      nodes.push(node);
+      return node;
+    },
     settingsSwitch: () => new ElementStub(),
     withPending: (_button: ElementStub, operation: () => Promise<Response>) => operation(),
-    setPending: vi.fn(), refreshOpenSheet: vi.fn(), showToast: vi.fn(),
+    setPending: vi.fn(),
+    refreshOpenSheet: vi.fn(),
+    showToast: vi.fn(),
   } as unknown as ClientContext;
   return { ctx, nodes, storage };
 };
@@ -62,12 +74,18 @@ describe("createGuiPush", () => {
     vi.stubGlobal("navigator", { serviceWorker: { register: vi.fn().mockResolvedValue(registration), ready: Promise.resolve(registration) } });
     vi.stubGlobal("window", { PushManager: class {} });
     vi.stubGlobal("Notification", { requestPermission: vi.fn().mockResolvedValue("granted") });
-    vi.stubGlobal("fetch", vi.fn((url: string) => Promise.resolve(url === "/api/push/key"
-      ? { json: async () => ({ key: "AQID" }) }
-      : { ok: true, json: async () => ({ id: "device-1" }) })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        Promise.resolve(url === "/api/push/key" ? { json: async () => ({ key: "AQID" }) } : { ok: true, json: async () => ({ id: "device-1" }) }),
+      ),
+    );
     const { ctx, storage } = makeContext();
     let pick: ((checked: boolean, button: HTMLButtonElement) => void) | undefined;
-    ctx.settingsSwitch = (_key, _label, _checked, action) => { pick = action; return new ElementStub() as unknown as HTMLElement; };
+    ctx.settingsSwitch = (_key, _label, _checked, action) => {
+      pick = action;
+      return new ElementStub() as unknown as HTMLElement;
+    };
     createGuiPush(ctx).pushSection();
     pick?.(true, new ElementStub() as unknown as HTMLButtonElement);
     await vi.waitFor(() => expect(subscribe).toHaveBeenCalledOnce());

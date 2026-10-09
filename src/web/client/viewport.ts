@@ -2,8 +2,6 @@ import { chooseProjectPath } from "./project-picker.js";
 import type { ClientContext } from "./store.js";
 
 export function createViewport(ctx: ClientContext) {
-
-
   ctx.$("#mobile-menu").addEventListener("click", ctx.openConversations);
   ctx.$("#target-toggle").addEventListener("click", () => {
     ctx.store.target = (ctx.store.target ?? ctx.store.state?.primary ?? "claude") === "claude" ? "codex" : "claude";
@@ -13,11 +11,19 @@ export function createViewport(ctx: ClientContext) {
     ctx.store.sheetKind = undefined;
     ctx.store.sheetAgent = undefined;
     const actions = ctx.el("div", "mobile-menu-actions");
-    for (const [name, key, id] of [["files", "web.top.artifacts", "open-artifacts"], ["settings", "web.top.settings", "open-settings"], ["list-tree", "web.mobile.detail", "detail"], ["folder-open", "web.mobile.openProject", "open-project"]] as const) {
+    for (const [name, key, id] of [
+      ["files", "web.top.artifacts", "open-artifacts"],
+      ["settings", "web.top.settings", "open-settings"],
+      ["list-tree", "web.mobile.detail", "detail"],
+      ["folder-open", "web.mobile.openProject", "open-project"],
+    ] as const) {
       const button = ctx.iconButton(name, ctx.t(key));
       button.append(ctx.el("span", "", ctx.t(key)));
       if (id === "detail") button.setAttribute("aria-pressed", String(ctx.store.detail));
-      button.addEventListener("click", () => { ctx.closeSheet(); ctx.$("#" + id).click(); });
+      button.addEventListener("click", () => {
+        ctx.closeSheet();
+        ctx.$("#" + id).click();
+      });
       actions.append(button);
     }
     const themeButton = ctx.iconButton(ctx.THEME_ICON[ctx.store.theme], "");
@@ -37,13 +43,20 @@ export function createViewport(ctx: ClientContext) {
     ctx.store.sheetKind = undefined;
     ctx.store.sheetAgent = undefined;
     const actions = ctx.el("div", "mobile-menu-actions");
-    for (const [name, key] of [["image-plus", "web.mobile.image"], ["terminal", "web.mobile.command"]] as const) {
+    for (const [name, key] of [
+      ["image-plus", "web.mobile.image"],
+      ["terminal", "web.mobile.command"],
+    ] as const) {
       const button = ctx.iconButton(name, ctx.t(key));
       button.append(ctx.el("span", "", ctx.t(key)));
       button.addEventListener("click", () => {
         ctx.closeSheet();
         if (name === "image-plus") ctx.$("#attach-file").click();
-        else { if (!ctx.input.value.startsWith("!")) ctx.input.value = "!" + ctx.input.value; ctx.onInputChanged(); ctx.input.focus(); }
+        else {
+          if (!ctx.input.value.startsWith("!")) ctx.input.value = "!" + ctx.input.value;
+          ctx.onInputChanged();
+          ctx.input.focus();
+        }
       });
       actions.append(button);
     }
@@ -65,15 +78,17 @@ export function createViewport(ctx: ClientContext) {
   adaptTabs();
   const grab = ctx.$("#sheet-grab");
   let dragStart: number | undefined;
-  grab.addEventListener("pointerdown", (event) => {
+  grab.addEventListener("pointerdown", event => {
     dragStart = event.clientY;
     grab.setPointerCapture(event.pointerId);
   });
-  grab.addEventListener("pointerup", (event) => {
+  grab.addEventListener("pointerup", event => {
     if (dragStart !== undefined && event.clientY - dragStart >= ctx.SWIPE_CLOSE_PX) ctx.closeSheet();
     dragStart = undefined;
   });
-  grab.addEventListener("pointercancel", () => { dragStart = undefined; });
+  grab.addEventListener("pointercancel", () => {
+    dragStart = undefined;
+  });
   const syncViewport = () => {
     const viewport = window.visualViewport;
     const focused = document.activeElement?.matches("input, textarea, select");
@@ -97,7 +112,7 @@ export function createViewport(ctx: ClientContext) {
   syncViewport();
   ctx.$("#sheet-close").addEventListener("click", ctx.closeSheet);
   ctx.$("#sheet-backdrop").addEventListener("click", ctx.closeSheet);
-  document.addEventListener("keydown", (e) => {
+  document.addEventListener("keydown", e => {
     if (ctx.sheet.hidden) return;
     if (e.key === "Escape") ctx.closeSheet();
     ctx.trapTab(e, ctx.sheet.querySelector<HTMLElement>(".sheet-panel")!);
@@ -106,31 +121,40 @@ export function createViewport(ctx: ClientContext) {
   ctx.$("#open-settings").addEventListener("click", ctx.openSettings);
   ctx.$("#new-conversation").addEventListener("click", () => void ctx.send("/new", ctx.$("#new-conversation")));
   ctx.$("#open-artifacts").addEventListener("click", ctx.openArtifacts);
-  ctx.$("#projects").addEventListener("change", (event) => {
+  ctx.$("#projects").addEventListener("change", event => {
     const value = (event.currentTarget as HTMLSelectElement).value;
     if (!value) return;
     const select = event.currentTarget as HTMLSelectElement;
     if (value === ctx.EDIT_PROJECTS_VALUE) {
-      select.value = ctx.store.state?.projects?.find((project) => project.current)?.projectRoot ?? "";
+      select.value = ctx.store.state?.projects?.find(project => project.current)?.projectRoot ?? "";
       return ctx.openProjectEditor();
     }
     select.disabled = true;
     ctx.$("#project-pill").classList.add("is-loading");
-    void ctx.send(`/project ${value}`).then((ok) => { if (!ok) ctx.renderState(); }).finally(() => {
-      select.disabled = false;
-      ctx.$("#project-pill").classList.remove("is-loading");
-    });
+    void ctx
+      .send(`/project ${value}`)
+      .then(ok => {
+        if (!ok) ctx.renderState();
+      })
+      .finally(() => {
+        select.disabled = false;
+        ctx.$("#project-pill").classList.remove("is-loading");
+      });
   });
-  ctx.$("#open-project").addEventListener("click", () => void ctx.withPending(ctx.$("#open-project"), async () => {
-    const tauri = (window as Window & { __TAURI__?: { dialog?: { open(options: { directory: boolean; multiple: boolean }): Promise<string | null> } } }).__TAURI__;
-    const dialog = tauri?.dialog;
-    const path = await chooseProjectPath(
-      dialog ? () => dialog.open({ directory: true, multiple: false }) : undefined,
-      () => window.prompt(ctx.t("web.top.projectPrompt")),
-    );
-    if (path) await ctx.send(`/project ${path}`);
-    return undefined;
-  }));
+  ctx.$("#open-project").addEventListener(
+    "click",
+    () =>
+      void ctx.withPending(ctx.$("#open-project"), async () => {
+        const tauri = (window as Window & { __TAURI__?: { dialog?: { open(options: { directory: boolean; multiple: boolean }): Promise<string | null> } } })
+          .__TAURI__;
+        const dialog = tauri?.dialog;
+        const path = await chooseProjectPath(dialog ? () => dialog.open({ directory: true, multiple: false }) : undefined, () =>
+          window.prompt(ctx.t("web.top.projectPrompt")),
+        );
+        if (path) await ctx.send(`/project ${path}`);
+        return undefined;
+      }),
+  );
 
   // ---- 詳細表示 ----
   const detailButton = ctx.$("#detail");
@@ -143,5 +167,5 @@ export function createViewport(ctx: ClientContext) {
   };
   detailButton.setAttribute("aria-pressed", String(ctx.store.detail));
   detailButton.addEventListener("click", () => setDetail(!ctx.store.detail));
-  return {  };
+  return {};
 }

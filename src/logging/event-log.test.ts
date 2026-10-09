@@ -9,15 +9,26 @@ import { attachEventLog, createJsonlWriter, createTerminalFormatter, defaultLogP
 // ローカル時刻 14:32:10 の ISO 文字列（タイムゾーンに依存しないテストにする）
 const AT = new Date(2026, 9, 5, 14, 32, 10).toISOString();
 
-const agentEvent = (agent: "claude" | "codex", event: Extract<CoordinatorEvent, { kind: "agent" }>["event"]): CoordinatorEvent =>
-  ({ kind: "agent", agent, event, at: AT });
+const agentEvent = (agent: "claude" | "codex", event: Extract<CoordinatorEvent, { kind: "agent" }>["event"]): CoordinatorEvent => ({
+  kind: "agent",
+  agent,
+  event,
+  at: AT,
+});
 
 const message = (body: string): CoordinatorEvent => ({
   kind: "message",
   at: AT,
   message: {
-    id: "msg_2", from: "codex", to: "claude", type: "RESULT", taskId: "AUTH-142", body, replyTo: "msg_1",
-    repository: "C:\\dev\\app", createdAt: AT,
+    id: "msg_2",
+    from: "codex",
+    to: "claude",
+    type: "RESULT",
+    taskId: "AUTH-142",
+    body,
+    replyTo: "msg_1",
+    repository: "C:\\dev\\app",
+    createdAt: AT,
   },
 });
 
@@ -30,9 +41,15 @@ describe("formatEvent（verbose）", () => {
     ["turn", agentEvent("codex", { type: "turn", result: { status: "interrupted", text: "" } }), "14:32:10 [CODEX] turn interrupted"],
     ["exit", agentEvent("claude", { type: "exit", code: 0 }), "14:32:10 [CLAUDE] exited (code 0)"],
     ["error", agentEvent("codex", { type: "error", message: "boom" }), "14:32:10 [CODEX] ERROR boom"],
-    ["rate_limit", agentEvent("claude", {
-      type: "rate_limit", fiveHour: { usedPercent: 2, resetsAt: 0 }, weekly: { usedPercent: 49, resetsAt: 0 },
-    }), "14:32:10 [CLAUDE] usage 5h 2% / 7d 49%"],
+    [
+      "rate_limit",
+      agentEvent("claude", {
+        type: "rate_limit",
+        fiveHour: { usedPercent: 2, resetsAt: 0 },
+        weekly: { usedPercent: 49, resetsAt: 0 },
+      }),
+      "14:32:10 [CLAUDE] usage 5h 2% / 7d 49%",
+    ],
     ["human", { kind: "human", agent: "codex", text: "review this", at: AT }, "14:32:10 [YOU -> CODEX] review this"],
     ["notice", { kind: "notice", text: "codex 5h usage: 91%", at: AT }, "14:32:10 [CLODEX] codex 5h usage: 91%"],
   ])("%s", (_, event, expected) => {
@@ -44,13 +61,11 @@ describe("formatEvent（verbose）", () => {
   });
 
   it("複数行のテキストは 2 行目以降をインデントする", () => {
-    expect(formatEvent(agentEvent("claude", { type: "text", text: "line1\nline2\r\nline3" }), "verbose"))
-      .toBe("14:32:10 [CLAUDE] line1\n    line2\n    line3");
+    expect(formatEvent(agentEvent("claude", { type: "text", text: "line1\nline2\r\nline3" }), "verbose")).toBe("14:32:10 [CLAUDE] line1\n    line2\n    line3");
   });
 
   it("片方しかない rate_limit も出せる", () => {
-    expect(formatEvent(agentEvent("codex", { type: "rate_limit", weekly: { usedPercent: 30, resetsAt: 0 } }), "verbose"))
-      .toBe("14:32:10 [CODEX] usage 7d 30%");
+    expect(formatEvent(agentEvent("codex", { type: "rate_limit", weekly: { usedPercent: 30, resetsAt: 0 } }), "verbose")).toBe("14:32:10 [CODEX] usage 7d 30%");
   });
 });
 
@@ -68,13 +83,11 @@ describe("formatEvent（既定）", () => {
   });
 
   it("最終応答が複数行なら 2 行目以降をインデントする", () => {
-    expect(formatEvent(agentEvent("claude", { type: "turn", result: { status: "completed", text: "a\nb" } }), "normal"))
-      .toBe("14:32:10 [CLAUDE] a\n    b");
+    expect(formatEvent(agentEvent("claude", { type: "turn", result: { status: "completed", text: "a\nb" } }), "normal")).toBe("14:32:10 [CLAUDE] a\n    b");
   });
 
   it("message は誰が誰に何を頼んだかと本文の先頭 1 行を出す", () => {
-    expect(formatEvent(message("修正が必要\n詳細..."), "normal"))
-      .toBe('14:32:10 [MESSAGE] codex -> claude RESULT task=AUTH-142 "修正が必要"');
+    expect(formatEvent(message("修正が必要\n詳細..."), "normal")).toBe('14:32:10 [MESSAGE] codex -> claude RESULT task=AUTH-142 "修正が必要"');
   });
 
   it("長い本文は切り詰める", () => {
@@ -102,7 +115,10 @@ describe("createJsonlWriter", () => {
     const e2 = agentEvent("codex", { type: "exit", code: 1 });
     write(e1);
     write(e2);
-    const lines = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    const lines = readFileSync(path, "utf8")
+      .trim()
+      .split("\n")
+      .map(l => JSON.parse(l));
     expect(lines).toEqual([e1, e2]);
   });
 });
@@ -114,8 +130,7 @@ describe("defaultLogPath", () => {
   });
 
   it("ドライブ直下では project root の置換名を使う", () => {
-    expect(defaultLogPath(homedir(), "C:\\", new Date(2026, 9, 5, 14, 32, 10)))
-      .toBe(join(homedir(), ".clodex", "logs", "C---20261005-143210.jsonl"));
+    expect(defaultLogPath(homedir(), "C:\\", new Date(2026, 9, 5, 14, 32, 10))).toBe(join(homedir(), ".clodex", "logs", "C---20261005-143210.jsonl"));
   });
 });
 
@@ -124,14 +139,19 @@ describe("attachEventLog", () => {
     const path = join(mkdtempSync(join(tmpdir(), "clodex-log-")), "log.jsonl");
     const bus = new EventBus(() => new Date(AT));
     const printed: string[] = [];
-    const detach = attachEventLog(bus, { path, print: (line) => printed.push(line), mode: () => "normal" });
+    const detach = attachEventLog(bus, { path, print: line => printed.push(line), mode: () => "normal" });
     const hidden = agentEvent("claude", { type: "text", text: "途中" });
     const shown = agentEvent("claude", { type: "turn", result: { status: "completed", text: "完了" } });
     bus.publish(hidden);
     bus.publish(shown);
     detach();
     bus.publish(agentEvent("claude", { type: "error", message: "後続" }));
-    expect(readFileSync(path, "utf8").trim().split("\n").map((line) => JSON.parse(line))).toEqual([hidden, shown]);
+    expect(
+      readFileSync(path, "utf8")
+        .trim()
+        .split("\n")
+        .map(line => JSON.parse(line)),
+    ).toEqual([hidden, shown]);
     expect(printed).toEqual([formatEvent(shown, "normal")]);
   });
 });
@@ -139,26 +159,28 @@ describe("attachEventLog", () => {
 describe("createTerminalFormatter（既定表示の方針）", () => {
   const lines = (events: CoordinatorEvent[]) => {
     const format = createTerminalFormatter();
-    return events.map((event) => format(event, "normal")).filter((line) => line !== undefined);
+    return events.map(event => format(event, "normal")).filter(line => line !== undefined);
   };
 
   it("ターンの最初の発言だけを方針として出す", () => {
-    expect(lines([
-      agentEvent("codex", { type: "turn_started" }),
-      agentEvent("codex", { type: "text", text: "テストを直します。" }),
-      agentEvent("codex", { type: "text", text: "途中です。" }),
-      agentEvent("codex", { type: "turn", result: { status: "completed", text: "直しました。" } }),
-    ])).toEqual([
-      "14:32:10 [CODEX] working...", "14:32:10 [CODEX] テストを直します。", "14:32:10 [CODEX] 直しました。",
-    ]);
+    expect(
+      lines([
+        agentEvent("codex", { type: "turn_started" }),
+        agentEvent("codex", { type: "text", text: "テストを直します。" }),
+        agentEvent("codex", { type: "text", text: "途中です。" }),
+        agentEvent("codex", { type: "turn", result: { status: "completed", text: "直しました。" } }),
+      ]),
+    ).toEqual(["14:32:10 [CODEX] working...", "14:32:10 [CODEX] テストを直します。", "14:32:10 [CODEX] 直しました。"]);
   });
 
   it("最終応答が方針と同じなら重ねて出さない", () => {
-    expect(lines([
-      agentEvent("claude", { type: "turn_started" }),
-      agentEvent("claude", { type: "text", text: "完了です。" }),
-      agentEvent("claude", { type: "turn", result: { status: "completed", text: "完了です。" } }),
-    ])).toEqual(["14:32:10 [CLAUDE] working...", "14:32:10 [CLAUDE] 完了です。"]);
+    expect(
+      lines([
+        agentEvent("claude", { type: "turn_started" }),
+        agentEvent("claude", { type: "text", text: "完了です。" }),
+        agentEvent("claude", { type: "turn", result: { status: "completed", text: "完了です。" } }),
+      ]),
+    ).toEqual(["14:32:10 [CLAUDE] working...", "14:32:10 [CLAUDE] 完了です。"]);
   });
 
   it("verbose では全 event をそのまま出す", () => {
@@ -169,7 +191,8 @@ describe("createTerminalFormatter（既定表示の方針）", () => {
 
 describe("defaultLogPath の会話ごとのファイル", () => {
   it("suffix を名前の末尾に足す", () => {
-    expect(defaultLogPath(homedir(), "C:\\dev\\Clodex", new Date(2026, 9, 5, 14, 32, 10), "1a2b3c4d"))
-      .toBe(join(homedir(), ".clodex", "logs", "Clodex-20261005-143210-1a2b3c4d.jsonl"));
+    expect(defaultLogPath(homedir(), "C:\\dev\\Clodex", new Date(2026, 9, 5, 14, 32, 10), "1a2b3c4d")).toBe(
+      join(homedir(), ".clodex", "logs", "Clodex-20261005-143210-1a2b3c4d.jsonl"),
+    );
   });
 });

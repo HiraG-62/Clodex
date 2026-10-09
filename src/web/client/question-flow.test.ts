@@ -3,7 +3,7 @@ import { nextUnanswered, questionAnswers } from "./question-flow.js";
 
 const question = (label: string, multiSelect = false) => ({ question: label, options: [{ label: `${label}1` }, { label: `${label}2` }], multiSelect });
 const QUESTIONS = [question("a"), question("b", true), question("c")];
-const draft = (selected: number[][], other: string[] = ["", "", ""]) => ({ selected: selected.map((indexes) => new Set(indexes)), other });
+const draft = (selected: number[][], other: string[] = ["", "", ""]) => ({ selected: selected.map(indexes => new Set(indexes)), other });
 
 describe("questionAnswers", () => {
   it("選んだ選択肢の label と「その他」の入力を質問ごとに並べる", () => {

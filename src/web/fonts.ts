@@ -16,7 +16,7 @@ interface FontSource {
 }
 
 const sources = Object.fromEntries(
-  (Object.keys(FONT_WEIGHTS) as FontPackage[]).map((name) => {
+  (Object.keys(FONT_WEIGHTS) as FontPackage[]).map(name => {
     const packageFile = fileURLToPath(import.meta.resolve(`@fontsource/${name}/package.json`));
     const metadata: unknown = JSON.parse(readFileSync(packageFile, "utf8"));
     if (typeof metadata !== "object" || metadata === null || !("version" in metadata) || typeof metadata.version !== "string") {
@@ -26,19 +26,22 @@ const sources = Object.fromEntries(
   }),
 ) as Record<FontPackage, FontSource>;
 
-export const rewriteFontCss = (css: string, name: FontPackage, version: string): string => css
-  .replace(/,\s*url\(\.\/files\/[^)]+\.woff\)\s*format\(['"]woff['"]\)/g, "")
-  .replace(/url\(\.\/files\/([^)/]+\.woff2)\)/g, (_, fileName: string) =>
-    `url(/fonts/${name}@${version}/${fileName})`)
-  .replace(/font-family: 'Geist Sans';/g, "font-family: 'Geist';");
+export const rewriteFontCss = (css: string, name: FontPackage, version: string): string =>
+  css
+    .replace(/,\s*url\(\.\/files\/[^)]+\.woff\)\s*format\(['"]woff['"]\)/g, "")
+    .replace(/url\(\.\/files\/([^)/]+\.woff2)\)/g, (_, fileName: string) => `url(/fonts/${name}@${version}/${fileName})`)
+    .replace(/font-family: 'Geist Sans';/g, "font-family: 'Geist';");
 
-export const loadFontCss = (): string => (Object.keys(FONT_WEIGHTS) as FontPackage[])
-  .flatMap((name) => FONT_WEIGHTS[name].map((weight) => {
-    const source = sources[name];
-    const css = readFileSync(join(source.directory, `${weight}.css`), "utf8");
-    return rewriteFontCss(css, name, source.version);
-  }))
-  .join("\n");
+export const loadFontCss = (): string =>
+  (Object.keys(FONT_WEIGHTS) as FontPackage[])
+    .flatMap(name =>
+      FONT_WEIGHTS[name].map(weight => {
+        const source = sources[name];
+        const css = readFileSync(join(source.directory, `${weight}.css`), "utf8");
+        return rewriteFontCss(css, name, source.version);
+      }),
+    )
+    .join("\n");
 
 export const fontFilePath = (pathname: string): string | undefined => {
   const match = /^\/fonts\/([^/]+)\/([^/]+)$/.exec(pathname);

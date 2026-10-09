@@ -1,6 +1,7 @@
 // スラッシュコマンドの一覧（DESIGN.md §8）。/help・サジェスト・Tab 補完で共有する
-import { LANGUAGES } from "../context/language.js";
+
 import { ROLE_PRESET_NAMES } from "../config/role-presets.js";
+import { LANGUAGES } from "../context/language.js";
 import { LIMIT_NAMES } from "../coordinator/budget-manager.js";
 import { t } from "../i18n/i18n.js";
 import type { MessageKey } from "../i18n/messages.js";
@@ -51,7 +52,7 @@ const SPECS: readonly SlashCommandSpec[] = [
 ];
 
 // 言語は起動時に決まるので、呼ぶたびに文言を引く
-export const slashCommands = (): SlashCommand[] => SPECS.map((spec) => ({ ...spec, description: t(spec.description) }));
+export const slashCommands = (): SlashCommand[] => SPECS.map(spec => ({ ...spec, description: t(spec.description) }));
 export const SLASH_COMMAND_NAMES: readonly string[] = SPECS.map(({ name }) => name);
 
 export const commandUsage = ({ name, args }: Pick<SlashCommand, "name" | "args">): string => `/${name}${args ? ` ${args}` : ""}`;
@@ -62,9 +63,9 @@ export const completeCommand = (line: string): [string[], string] => {
   if (line.startsWith("/role ")) return [["preset", "claude", "codex"].map(value => `/role ${value} `).filter(value => value.startsWith(line)), line];
   if (line.startsWith("/language ")) return [LANGUAGES.map(value => `/language ${value} `).filter(value => value.startsWith(line)), line];
   if (line.startsWith("/limits ")) {
-    return [[...LIMIT_NAMES, "reset"].map((name) => `/limits ${name} `).filter((value) => value.startsWith(line)), line];
+    return [[...LIMIT_NAMES, "reset"].map(name => `/limits ${name} `).filter(value => value.startsWith(line)), line];
   }
   if (!/^\/\S*$/.test(line)) return [[], line];
-  const hits = SLASH_COMMAND_NAMES.map((name) => `/${name} `).filter((candidate) => candidate.startsWith(line));
+  const hits = SLASH_COMMAND_NAMES.map(name => `/${name} `).filter(candidate => candidate.startsWith(line));
   return [hits, line];
 };

@@ -1,7 +1,7 @@
-import { mkdtempSync, mkdirSync, realpathSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { resolveProjectRoot } from "./project-root.js";
 

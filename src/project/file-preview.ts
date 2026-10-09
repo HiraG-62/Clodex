@@ -1,11 +1,10 @@
-import { safeGitArgs } from "./safe-git.js";
 // 成果物のプレビュー用にファイルと差分を返す（DESIGN.md §28 v0.3 B）。
 // 読めるのは project root と artifacts ディレクトリの中の通常ファイルだけ（実パスで確かめる）
 import { execFile } from "node:child_process";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { basename, extname, join, relative, resolve } from "node:path";
-
 import { inside } from "./path-scope.js";
+import { safeGitArgs } from "./safe-git.js";
 
 const ARTIFACTS_DIR = join(".clodex", "artifacts");
 const UPLOADS_DIR = join(".clodex", "uploads");
@@ -15,13 +14,15 @@ const BINARY_SNIFF_BYTES = 8000;
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
 const TEXT_CONTENT_TYPE = "text/plain; charset=utf-8";
 const IMAGE_TYPES: Record<string, string> = {
-  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
 };
 const HTTP = { notFound: 404, tooLarge: 413, unsupported: 415 } as const;
 
-export type PreviewResult =
-  | { ok: true; contentType: string; body: Buffer }
-  | { ok: false; status: number; message: string };
+export type PreviewResult = { ok: true; contentType: string; body: Buffer } | { ok: false; status: number; message: string };
 
 export interface FilePreviewOptions {
   projectRoot: string;
@@ -42,15 +43,18 @@ export const uploadsDirPath = (homeDir: string, conversationStatePath: string): 
 const notFound = (path: string): PreviewResult => ({ ok: false, status: HTTP.notFound, message: `not found: ${path}` });
 
 export const createFilePreview = ({
-  projectRoot, allowedDirs, maxTextBytes = DEFAULT_MAX_TEXT_BYTES, maxImageBytes = DEFAULT_MAX_IMAGE_BYTES,
+  projectRoot,
+  allowedDirs,
+  maxTextBytes = DEFAULT_MAX_TEXT_BYTES,
+  maxImageBytes = DEFAULT_MAX_IMAGE_BYTES,
 }: FilePreviewOptions) => {
   // 実パス（symlink を解決したもの）が許可したディレクトリの中にある通常ファイルなら、その実パスを返す
   const locate = async (path: string): Promise<string | undefined> => {
     const candidate = resolve(projectRoot, path.replace(/\\/g, "/"));
     try {
       const real = await realpath(candidate);
-      const roots = await Promise.all([projectRoot, ...allowedDirs].map((dir) => realpath(dir).catch(() => undefined)));
-      if (!roots.some((root) => root && inside(root, real))) return undefined;
+      const roots = await Promise.all([projectRoot, ...allowedDirs].map(dir => realpath(dir).catch(() => undefined)));
+      if (!roots.some(root => root && inside(root, real))) return undefined;
       return (await stat(real)).isFile() ? real : undefined;
     } catch {
       return undefined;
@@ -76,9 +80,10 @@ export const createFilePreview = ({
     const real = await locate(path);
     const root = await realpath(projectRoot).catch(() => projectRoot);
     if (!real || !inside(root, real)) return notFound(path);
-    const output = await new Promise<string>((done) => {
-      execFile("git", safeGitArgs(["diff", "HEAD", "--", relative(root, real)]), { cwd: root, maxBuffer: GIT_MAX_BUFFER, windowsHide: true },
-        (error, stdout) => done(error ? "" : stdout));
+    const output = await new Promise<string>(done => {
+      execFile("git", safeGitArgs(["diff", "HEAD", "--", relative(root, real)]), { cwd: root, maxBuffer: GIT_MAX_BUFFER, windowsHide: true }, (error, stdout) =>
+        done(error ? "" : stdout),
+      );
     });
     return { ok: true, contentType: TEXT_CONTENT_TYPE, body: Buffer.from(output, "utf8") };
   };

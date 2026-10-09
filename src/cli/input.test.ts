@@ -56,11 +56,11 @@ describe("parseInput", () => {
     expect(parseInput(line, "claude")).toEqual(expected);
   });
 
-  it.each(["/rename", "/rename #2", "/rename #x 名前", "/rename #0 名前"])('%s は使い方を返す', (line) => {
+  it.each(["/rename", "/rename #2", "/rename #x 名前", "/rename #0 名前"])("%s は使い方を返す", line => {
     expect(parseInput(line, "claude")).toMatchObject({ kind: "invalid", message: expect.stringContaining("/rename [#<number>] <title>") });
   });
 
-  it.each(["/tab", "/tab conv-1", "/tab unpin", "/tab unpin conv-1"])('%s は使い方を返す', (line) => {
+  it.each(["/tab", "/tab conv-1", "/tab unpin", "/tab unpin conv-1"])("%s は使い方を返す", line => {
     expect(parseInput(line, "claude")).toMatchObject({ kind: "invalid", message: expect.stringContaining("/tab") });
   });
 
@@ -75,14 +75,15 @@ describe("parseInput", () => {
   });
 
   it("/context は依頼と送り先を保ち、本文が無ければ送らない", () => {
-    expect(parseInput("/context これまでの方針を踏まえて答えて", "claude"))
-      .toEqual({ kind: "send", agent: "claude", text: "これまでの方針を踏まえて答えて", context: true });
-    expect(parseInput("@codex /context 追加の依頼", "claude"))
-      .toEqual({ kind: "send", agent: "codex", text: "追加の依頼", context: true });
-    expect(parseInput("@all /context 共通の質問", "claude"))
-      .toEqual({ kind: "sendAll", text: "共通の質問", context: true });
-    expect(parseInput("@claude! /context 追記", "codex"))
-      .toEqual({ kind: "send", agent: "claude", text: "追記", steer: true, context: true });
+    expect(parseInput("/context これまでの方針を踏まえて答えて", "claude")).toEqual({
+      kind: "send",
+      agent: "claude",
+      text: "これまでの方針を踏まえて答えて",
+      context: true,
+    });
+    expect(parseInput("@codex /context 追加の依頼", "claude")).toEqual({ kind: "send", agent: "codex", text: "追加の依頼", context: true });
+    expect(parseInput("@all /context 共通の質問", "claude")).toEqual({ kind: "sendAll", text: "共通の質問", context: true });
+    expect(parseInput("@claude! /context 追記", "codex")).toEqual({ kind: "send", agent: "claude", text: "追記", steer: true, context: true });
     for (const line of ["/context", "@codex /context", "@all /context"]) expect(parseInput(line, "claude").kind).toBe("invalid");
   });
 
@@ -196,8 +197,25 @@ it("/limits の表示・変更・リセットと範囲を検証する", () => {
   expect(parseInput("/limits", "claude")).toEqual({ kind: "limits" });
   expect(parseInput("/limits reset", "claude")).toEqual({ kind: "limits", reset: true });
   expect(parseInput("/limits messages 16", "claude")).toEqual({ kind: "limits", values: [{ name: "messages", value: 16 }] });
-  expect(parseInput("/limits messages 16 reviews 5", "claude")).toEqual({ kind: "limits", values: [{ name: "messages", value: 16 }, { name: "reviews", value: 5 }] });
-  for (const arg of ["messages 0", "messages 101", "messages 1.5", "messages x", "unknown 2", "reset extra", "messages 2 extra", "messages 2 messages 3", "messages 2 reviews", "messages 2 reviews 101"]) {
+  expect(parseInput("/limits messages 16 reviews 5", "claude")).toEqual({
+    kind: "limits",
+    values: [
+      { name: "messages", value: 16 },
+      { name: "reviews", value: 5 },
+    ],
+  });
+  for (const arg of [
+    "messages 0",
+    "messages 101",
+    "messages 1.5",
+    "messages x",
+    "unknown 2",
+    "reset extra",
+    "messages 2 extra",
+    "messages 2 messages 3",
+    "messages 2 reviews",
+    "messages 2 reviews 101",
+  ]) {
     expect(parseInput(`/limits ${arg}`, "claude").kind).toBe("invalid");
   }
 });

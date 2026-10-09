@@ -1,11 +1,15 @@
-import {
-  COORDINATOR_MCP_SERVER, summarizeToolInput,
-  type AgentStartOptions, type PermissionLevel, type SubagentState, type TurnResult,
-} from "./agent-adapter.js";
 import { z } from "zod";
-import { agentEnv, agentStartError, spawnAgentProcess, type SpawnAgentProcess } from "./agent-process.js";
+import {
+  type AgentStartOptions,
+  COORDINATOR_MCP_SERVER,
+  type PermissionLevel,
+  type SubagentState,
+  summarizeToolInput,
+  type TurnResult,
+} from "./agent-adapter.js";
+import { agentEnv, agentStartError, type SpawnAgentProcess, spawnAgentProcess } from "./agent-process.js";
 import { BaseAgentAdapter } from "./base-agent-adapter.js";
-import { codexRateLimitEvent, type CodexRateLimits } from "./rate-limits.js";
+import { type CodexRateLimits, codexRateLimitEvent } from "./rate-limits.js";
 
 // codex app-server の JSON-RPC プロトコル（docs/spikes/codex-lifecycle.md）
 const CODEX_COMMAND = "codex";
@@ -26,15 +30,14 @@ const SANDBOX_POLICY: Record<PermissionLevel, unknown> = {
   full: { type: "dangerFullAccess" },
 };
 // AGENTS.md が無い project でも CLAUDE.md のルールを読ませる。edit でも依存関係の取得などに要るのでネットワークを許す（docs/spikes/codex-project-config.md）
-const PROJECT_CONFIG_ARGS = [
-  "-c", 'project_doc_fallback_filenames=["CLAUDE.md"]',
-  "-c", "sandbox_workspace_write.network_access=true",
-];
+const PROJECT_CONFIG_ARGS = ["-c", 'project_doc_fallback_filenames=["CLAUDE.md"]', "-c", "sandbox_workspace_write.network_access=true"];
 const METHOD_NOT_FOUND = -32601;
 const CODEX_REQUEST_TIMEOUT_MS = 120_000;
 const UNEXPECTED_RESPONSE_PREVIEW_LENGTH = 200;
 const threadResponse = z.object({
-  thread: z.object({ id: z.string() }), model: z.string().optional(), reasoningEffort: z.string().nullable().optional(),
+  thread: z.object({ id: z.string() }),
+  model: z.string().optional(),
+  reasoningEffort: z.string().nullable().optional(),
 });
 const turnResponse = z.object({ turn: z.object({ id: z.string() }) });
 const accountResponse = z.object({ account: z.object({ type: z.string().optional() }).nullish() });
@@ -119,20 +122,25 @@ export class CodexAdapter extends BaseAgentAdapter {
     }
   }
 
-  private async handshake(
-    cwd: string, resumeSessionId: string | undefined, instructions: string | undefined,
-  ): Promise<void> {
+  private async handshake(cwd: string, resumeSessionId: string | undefined, instructions: string | undefined): Promise<void> {
     await this.request("initialize", { clientInfo: CLIENT_INFO, capabilities: null });
     this.notify("initialized");
     await this.verifySubscription();
 
     this.launchPermission = this.permission;
     const threadParams = {
-      cwd, approvalPolicy: APPROVAL_POLICY, sandbox: SANDBOX_MODE[this.launchPermission], ...(this.model ? { model: this.model } : {}), ...(instructions ? { developerInstructions: instructions } : {}),
+      cwd,
+      approvalPolicy: APPROVAL_POLICY,
+      sandbox: SANDBOX_MODE[this.launchPermission],
+      ...(this.model ? { model: this.model } : {}),
+      ...(instructions ? { developerInstructions: instructions } : {}),
     };
     const threadMethod = resumeSessionId ? "thread/resume" : "thread/start";
-    const response = parseResponse(threadMethod, threadResponse, await this.request(threadMethod,
-      resumeSessionId ? { threadId: resumeSessionId, ...threadParams } : threadParams));
+    const response = parseResponse(
+      threadMethod,
+      threadResponse,
+      await this.request(threadMethod, resumeSessionId ? { threadId: resumeSessionId, ...threadParams } : threadParams),
+    );
     this.sessionId = response.thread.id;
     this.model ??= response.model;
     this.effort ??= response.reasoningEffort ?? undefined;
@@ -147,7 +155,9 @@ export class CodexAdapter extends BaseAgentAdapter {
     if (this.status !== "busy" || !this.turnId) return false;
     try {
       await this.request("turn/steer", {
-        threadId: this.sessionId, expectedTurnId: this.turnId, input: [{ type: "text", text, text_elements: [] }],
+        threadId: this.sessionId,
+        expectedTurnId: this.turnId,
+        input: [{ type: "text", text, text_elements: [] }],
       });
       this.undeliveredSteers.push(steerId);
       return true;
@@ -186,8 +196,7 @@ export class CodexAdapter extends BaseAgentAdapter {
   // thread/compact/start は 1 ターンとして動く。turn ID は turn/started から得る（docs/spikes/compact.md）
   protected writeCompact(): void {
     this.resetTurnState();
-    this.request("thread/compact/start", { threadId: this.sessionId })
-      .catch((error: Error) => this.finishTurn({ status: "failed", text: error.message }));
+    this.request("thread/compact/start", { threadId: this.sessionId }).catch((error: Error) => this.finishTurn({ status: "failed", text: error.message }));
   }
 
   private resetTurnState(): void {
@@ -205,12 +214,12 @@ export class CodexAdapter extends BaseAgentAdapter {
     this.request("turn/start", {
       threadId: this.sessionId,
       // 画像は localImage で渡す（docs/spikes/steer-image-subagent.md）
-      input: [{ type: "text", text, text_elements: [] }, ...images.map((path) => ({ type: "localImage", path }))],
+      input: [{ type: "text", text, text_elements: [] }, ...images.map(path => ({ type: "localImage", path }))],
       ...(sandbox ? { sandboxPolicy: SANDBOX_POLICY[sandbox] } : {}),
       ...(this.model ? { model: this.model } : {}),
       ...(this.effort ? { effort: this.effort } : {}),
     })
-      .then((response) => this.setTurnId(parseResponse("turn/start", turnResponse, response).turn.id))
+      .then(response => this.setTurnId(parseResponse("turn/start", turnResponse, response).turn.id))
       .catch((error: Error) => this.finishTurn({ status: "failed", text: error.message }));
   }
 
@@ -237,7 +246,7 @@ export class CodexAdapter extends BaseAgentAdapter {
   // 利用状況を起動直後から見えるようにする（通知はターン完了後にしか届かないため。DESIGN.md §14）
   private readRateLimits(): void {
     this.request("account/rateLimits/read", undefined)
-      .then((result) => this.emitRateLimits((result as CodexNotificationParams).rateLimits))
+      .then(result => this.emitRateLimits((result as CodexNotificationParams).rateLimits))
       .catch(() => {});
   }
 
@@ -283,7 +292,7 @@ export class CodexAdapter extends BaseAgentAdapter {
   private handleItem(item: CodexItem): void {
     if (item.type === "userMessage") return this.handleUserMessage();
     if (item.type === "fileChange") {
-      const files = item.changes?.map((change) => change.path) ?? [];
+      const files = item.changes?.map(change => change.path) ?? [];
       this.emit({ type: "tool", name: "fileChange", input: summarizeToolInput(files.join(", ")), files });
     }
     if (item.type === "agentMessage" && item.text) {
@@ -321,9 +330,12 @@ export class CodexAdapter extends BaseAgentAdapter {
 
   // v0.1 は承認要求等の server request を扱わない（DESIGN.md §9）
   private rejectServerRequest(rpc: RpcMessage): void {
-    this.proc?.write(JSON.stringify({
-      id: rpc.id, error: { code: METHOD_NOT_FOUND, message: `Clodex does not handle ${rpc.method}` },
-    }));
+    this.proc?.write(
+      JSON.stringify({
+        id: rpc.id,
+        error: { code: METHOD_NOT_FOUND, message: `Clodex does not handle ${rpc.method}` },
+      }),
+    );
     this.emit({ type: "error", message: `codex: unhandled server request ${rpc.method}` });
   }
 
@@ -363,6 +375,8 @@ export class CodexAdapter extends BaseAgentAdapter {
 }
 
 const mcpArgs = (url: string): string[] => [
-  "-c", `mcp_servers.${COORDINATOR_MCP_SERVER}.url="${url}"`,
-  "-c", `mcp_servers.${COORDINATOR_MCP_SERVER}.default_tools_approval_mode="approve"`,
+  "-c",
+  `mcp_servers.${COORDINATOR_MCP_SERVER}.url="${url}"`,
+  "-c",
+  `mcp_servers.${COORDINATOR_MCP_SERVER}.default_tools_approval_mode="approve"`,
 ];

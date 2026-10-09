@@ -4,16 +4,31 @@ import { collectArtifacts, displayPath, findImagePaths, splitImagePaths } from "
 import type { TimelineItem } from "./timeline.js";
 
 const message = (files: string[], body: string): AgentMessage => ({
-  id: "m", from: "claude", to: "codex", type: "DELEGATE", taskId: "T", body, files,
-  repository: "C:\\dev\\app", createdAt: "2026-10-06T00:00:00.000Z",
+  id: "m",
+  from: "claude",
+  to: "codex",
+  type: "DELEGATE",
+  taskId: "T",
+  body,
+  files,
+  repository: "C:\\dev\\app",
+  createdAt: "2026-10-06T00:00:00.000Z",
 });
 
 describe("collectArtifacts", () => {
   it("変更・参照・本文の画像を新しい順に集め、同じパスは最後の種類で 1 つにする", () => {
     const items: TimelineItem[] = [
       {
-        kind: "turn", id: "t1", at: "1", agent: "claude", status: "completed", text: "証跡: C:\\home\\.clodex\\artifacts\\p\\shot.png を見て",
-        steps: [{ kind: "tool", name: "Edit", input: "", files: ["C:\\dev\\app\\src\\a.ts"] }, { kind: "say", text: "途中 ./out/diagram.webp", at: "" }],
+        kind: "turn",
+        id: "t1",
+        at: "1",
+        agent: "claude",
+        status: "completed",
+        text: "証跡: C:\\home\\.clodex\\artifacts\\p\\shot.png を見て",
+        steps: [
+          { kind: "tool", name: "Edit", input: "", files: ["C:\\dev\\app\\src\\a.ts"] },
+          { kind: "say", text: "途中 ./out/diagram.webp", at: "" },
+        ],
       },
       { kind: "message", id: "m1", at: "2", message: message(["src/b.ts", "C:/dev/app/src/a.ts"], "画像は docs/fig.PNG") },
       { kind: "human", id: "h", at: "3", agent: "claude", text: "x.png" },
@@ -33,9 +48,18 @@ describe("collectArtifacts", () => {
   });
 
   it("ターンに含まれた message の参照と画像も拾う", () => {
-    const items: TimelineItem[] = [{ kind: "turn", id: "t", at: "1", agent: "claude", status: "completed", text: "", steps: [],
-      messages: [{ message: { ...message(["src/a.ts"], "図は docs/a.png"), spec: "docs/specs/T.md" } }],
-    }];
+    const items: TimelineItem[] = [
+      {
+        kind: "turn",
+        id: "t",
+        at: "1",
+        agent: "claude",
+        status: "completed",
+        text: "",
+        steps: [],
+        messages: [{ message: { ...message(["src/a.ts"], "図は docs/a.png"), spec: "docs/specs/T.md" } }],
+      },
+    ];
     expect(collectArtifacts(items)).toEqual([
       { path: "docs/a.png", kind: "image", at: "1" },
       { path: "src/a.ts", kind: "referenced", at: "1" },
@@ -47,7 +71,11 @@ describe("collectArtifacts", () => {
 describe("findImagePaths", () => {
   it("Windows パスと相対パスを出現順で取り出す", () => {
     expect(findImagePaths("C:\\out\\shot.PNG ./out/a.jpg docs/b.jpeg ../c.gif ~/d.webp")).toEqual([
-      "C:\\out\\shot.PNG", "./out/a.jpg", "docs/b.jpeg", "../c.gif", "~/d.webp",
+      "C:\\out\\shot.PNG",
+      "./out/a.jpg",
+      "docs/b.jpeg",
+      "../c.gif",
+      "~/d.webp",
     ]);
   });
 
@@ -70,14 +98,18 @@ describe("displayPath", () => {
 });
 
 it("spec を参照として集める", () => {
-  expect(collectArtifacts([{ kind: "message", id: "m", at: "1", message: { ...message([], "依頼"), spec: "docs/specs/T.md" } }]))
-    .toEqual([{ path: "docs/specs/T.md", kind: "referenced", at: "1" }]);
+  expect(collectArtifacts([{ kind: "message", id: "m", at: "1", message: { ...message([], "依頼"), spec: "docs/specs/T.md" } }])).toEqual([
+    { path: "docs/specs/T.md", kind: "referenced", at: "1" },
+  ]);
 });
 
 describe("splitImagePaths", () => {
   it("本文を画像のパスとそれ以外に分ける", () => {
     expect(splitImagePaths("見て C:/out/a.png と b.ts と ./x.JPG")).toEqual([
-      { text: "見て " }, { text: "C:/out/a.png", path: "C:/out/a.png" }, { text: " と b.ts と " }, { text: "./x.JPG", path: "./x.JPG" },
+      { text: "見て " },
+      { text: "C:/out/a.png", path: "C:/out/a.png" },
+      { text: " と b.ts と " },
+      { text: "./x.JPG", path: "./x.JPG" },
     ]);
   });
 
