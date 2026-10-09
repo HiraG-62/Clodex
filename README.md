@@ -8,6 +8,7 @@ Windows ネイティブ環境で Claude Code と Codex CLI を対等な開発エ
 
 - Windows 11
 - Claude Code CLI と Codex CLI がインストール済みで、それぞれサブスクリプションでログイン済み（`claude auth status` / `codex login status`）
+- CLI はネイティブ版（PATH に `claude.exe` と `codex.exe`）。npm で入れた `.cmd` だけでは起動できない
 - API key の環境変数（`ANTHROPIC_API_KEY` など）は Agent に渡さない。Agent はサブスクリプション認証で動かす
 - ソースからビルドする場合は Node.js 22 以上と pnpm
 
