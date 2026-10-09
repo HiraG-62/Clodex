@@ -37,3 +37,8 @@ it("/limits の名前と reset を補完する", () => {
   expect(completeCommand("/limits d")[0]).toEqual(["/limits delegations ", "/limits depth "]);
   expect(completeCommand("/limits r")[0]).toEqual(["/limits reviews ", "/limits reset "]);
 });
+
+it("/role preset の名前を補完する", () => {
+  expect(completeCommand("/role p")[0]).toEqual(["/role preset "]);
+  expect(completeCommand("/role preset c")[0]).toEqual(["/role preset codex-design "]);
+});

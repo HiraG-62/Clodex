@@ -1,6 +1,8 @@
 // 人間の入力を Coordinator の操作に変換する（DESIGN.md §8）。readline 等の I/O は index.ts が持つ
 import { DEFAULT_LIMITS, LIMIT_KEYS, LIMIT_NAMES, type BudgetLimits, type LimitName } from "../coordinator/budget-manager.js";
 import { getLanguage } from "../i18n/i18n.js";
+import { ROLE_PRESET_NAMES, ROLE_PRESETS, isRolePresetName, type RolePresetName } from "../config/role-presets.js";
+import type { MessageKey } from "../i18n/messages.js";
 import type { Language } from "../context/language.js";
 import type { PendingQuestion } from "../protocol/questions.js";
 import { AGENT_IDS, type AgentId, type AgentStatus, type PermissionLevel, type SubagentState, type TurnResult } from "../agents/agent-adapter.js";
@@ -185,6 +187,11 @@ const formatContext = ({ contextTokens, contextWindow }: UsageSnapshot): string 
 
 const agentsOf = (c: Conversation) => (Object.keys(c.sessions) as AgentId[]).sort().join(", ");
 const titleOf = (c: Conversation) => `"${c.title ?? t("shell.untitled")}"`;
+const ROLE_PRESET_LABELS: Record<RolePresetName, MessageKey> = {
+  "design-review": "web.rolePreset.designReview",
+  "codex-design": "web.rolePreset.codexDesign",
+  "implement-review": "web.rolePreset.implementReview",
+};
 
 export const createShell = ({
   coordinator, primary: initialPrimary, print, notify, toggleVerbose, history: historySource, runner, saveSettings = () => {}, resolveReference = async () => undefined,
@@ -407,6 +414,23 @@ export const createShell = ({
     return "continue";
   };
   const handleRole = async (command: CommandOf<"role">): Promise<ShellOutcome> => {
+    if (command.preset !== undefined) {
+      if (!command.preset) {
+        for (const name of ROLE_PRESET_NAMES) print(`${name}: ${t(ROLE_PRESET_LABELS[name])}`);
+        return "continue";
+      }
+      if (!isRolePresetName(command.preset)) {
+        print(t("shell.rolePresetUnknown", { name: command.preset }));
+        return "continue";
+      }
+      const preset = ROLE_PRESETS[command.preset][language?.get() ?? getLanguage()];
+      for (const agent of AGENT_IDS) {
+        const saved = saveRole(agent, preset[agent]);
+        print(t("shell.roleSaved", { agent, text: saved }));
+        print(t("shell.roleRestart", { agent }));
+      }
+      return "continue";
+    }
     if (command.agent && command.text !== undefined) {
       const saved = saveRole(command.agent, command.text);
       print(t("shell.roleSaved", { agent: command.agent, text: saved }));

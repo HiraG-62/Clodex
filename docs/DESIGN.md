@@ -1039,6 +1039,10 @@ AGENTS.md → Codex
 - 優先順位: 起動オプション > project の設定 > ユーザーの設定 > 既定値（primary: `claude`、roles: なし）
 - Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」「権限は人が `/permission` で変えるので、拒否されたらそう伝えること」「依頼を受けたら、作業に入る前に何をするかを 1〜2 文で書くこと」「`send_message` の body は Markdown で 1 行の要約 → 箇条書きで書くこと」「依頼（`DELEGATE` / `REVIEW_REQUEST`）は基本的に設計書を書いて `spec` で渡し、body だけにするのは数行で済む簡単な依頼に限ること。QUESTION に答えるために設計書を直したら RESULT の `spec` で渡すこと（上の Spec）」「人が読む文章の言語（下記 Language）」を伝える
 - 役割が無い Agent には、相手の Agent がいることだけを伝える
+- **プリセット**: よくある分担の役割の文章を、選ぶだけで設定できるようにする（役割が空のままだと分業が起きず、初めて使う人に価値が伝わらないため）。文章を選ぶのは人なので、分け方を固定しない原則（§3.1）とは矛盾しない
+  - `design-review`（設計・レビュー・コミットは Claude、実装は Codex）、`codex-design`（設計・レビューは Codex、実装・コミットは Claude。Codex は `edit` ではコミットできないため）、`implement-review`（設計・実装・コミットは Claude、レビューは Codex）の 3 つ。文章は表示言語（§13 Language）で選ぶ
+  - `/role preset <name>` で両 Agent の役割をまとめて project の `.clodex.json` に保存する（`/role` と同じく、反映は Agent の次の起動から）。`/role preset` だけなら一覧を出す
+  - Web UI は設定の project の節にプリセットの選択を置く。今の役割がどのプリセットとも一致しなければ「カスタム」と出す。選ぶと `/role preset <name>` を送る
 - 役割の本文は Agent の native configuration（CLAUDE.md / AGENTS.md）と結合しない。追加の指示として渡すだけ
 
 ---

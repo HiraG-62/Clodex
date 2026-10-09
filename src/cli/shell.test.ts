@@ -355,6 +355,22 @@ describe("createShell", () => {
     expect(roles.codex).toBe("実装を担当");
     expect(printed.at(-1)).toContain("/new codex");
   });
+  it("/role preset が一覧を出し、選択時は両 Agent の役割を保存する", async () => {
+    const { shell, printed, roles } = setup();
+    await shell.handleLine("/role preset");
+    expect(printed.join("\n")).toContain("design-review");
+    expect(printed.join("\n")).toContain("Claude designs & reviews / Codex implements");
+    await shell.handleLine("/role preset codex-design");
+    expect(roles.claude).toContain("実装とコミットを担当する");
+    expect(roles.codex).toContain("設計とレビューを担当する");
+    expect(printed.at(-1)).toContain("/new codex");
+  });
+  it("/role preset の知らない名前はエラーにする", async () => {
+    const { shell, printed, roles } = setup();
+    await shell.handleLine("/role preset unknown");
+    expect(printed.join("\n")).toContain("unknown");
+    expect(roles).toEqual({ claude: "設計" });
+  });
   it("/project で一覧を表示し、指定パスへ切り替える", async () => {
     const { shell, printed } = setup();
     await shell.handleLine("/project");

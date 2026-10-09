@@ -7,6 +7,12 @@ describe("parseInput", () => {
     expect(parseInput("/role codex", "claude")).toEqual({ kind: "role", agent: "codex" });
     expect(parseInput("/role codex 実装を担当", "claude")).toEqual({ kind: "role", agent: "codex", text: "実装を担当" });
   });
+  it("/role preset を一覧と選択に解釈する", () => {
+    expect(parseInput("/role preset", "claude")).toEqual({ kind: "role", preset: "" });
+    expect(parseInput("/role preset codex-design", "claude")).toEqual({ kind: "role", preset: "codex-design" });
+    expect(parseInput("/role preset unknown", "claude")).toEqual({ kind: "role", preset: "unknown" });
+    expect(parseInput("/role preset codex-design extra", "claude")).toMatchObject({ kind: "invalid" });
+  });
   it("/project を一覧とパス指定に解釈する", () => {
     expect(parseInput("/project", "claude")).toEqual({ kind: "project" });
     expect(parseInput("/project C:\\dev\\app", "claude")).toEqual({ kind: "project", path: "C:\\dev\\app" });

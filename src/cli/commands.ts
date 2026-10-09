@@ -1,5 +1,6 @@
 // スラッシュコマンドの一覧（DESIGN.md §8）。/help・サジェスト・Tab 補完で共有する
 import { LANGUAGES } from "../context/language.js";
+import { ROLE_PRESET_NAMES } from "../config/role-presets.js";
 import { LIMIT_NAMES } from "../coordinator/budget-manager.js";
 import { t } from "../i18n/i18n.js";
 import type { MessageKey } from "../i18n/messages.js";
@@ -28,7 +29,7 @@ const SPECS: readonly SlashCommandSpec[] = [
   { name: "context", args: "<text>", description: "cmd.context" },
   { name: "answer", args: "<id> <json>", description: "cmd.answer" },
   { name: "project", args: "[path|pin <path>|remove <path>]", description: "cmd.project" },
-  { name: "role", args: "[agent] [text]", description: "cmd.role" },
+  { name: "role", args: "[agent] [text] | preset [name]", argumentValues: ["preset", ...ROLE_PRESET_NAMES], description: "cmd.role" },
   { name: "primary", args: "<agent>", description: "cmd.primary" },
   { name: "resume", args: "[number]", description: "cmd.resume" },
   { name: "tab", args: "[unpin] <id> <project root>", description: "cmd.tab" },
@@ -57,6 +58,8 @@ export const commandUsage = ({ name, args }: Pick<SlashCommand, "name" | "args">
 
 // readline の completer。コマンド名の入力中だけ補完する
 export const completeCommand = (line: string): [string[], string] => {
+  if (line.startsWith("/role preset ")) return [ROLE_PRESET_NAMES.map(value => `/role preset ${value} `).filter(value => value.startsWith(line)), line];
+  if (line.startsWith("/role ")) return [["preset", "claude", "codex"].map(value => `/role ${value} `).filter(value => value.startsWith(line)), line];
   if (line.startsWith("/language ")) return [LANGUAGES.map(value => `/language ${value} `).filter(value => value.startsWith(line)), line];
   if (line.startsWith("/limits ")) {
     return [[...LIMIT_NAMES, "reset"].map((name) => `/limits ${name} `).filter((value) => value.startsWith(line)), line];

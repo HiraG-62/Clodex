@@ -1,4 +1,5 @@
 import type { LimitName } from "../../coordinator/budget-manager.js";
+import { ROLE_PRESET_NAMES, type RolePresetName } from "../../config/role-presets.js";
 import type { MessageKey } from "../../i18n/messages.js";
 import type { WebState } from "../web-feed.js";
 import { limitChanges } from "./limit-changes.js";
@@ -25,6 +26,11 @@ export function createSettingsSheet(ctx: ClientContext) {
   };
   const LIMIT_MIN = 1;
   const LIMIT_MAX = 100;
+  const ROLE_PRESET_LABELS: Record<RolePresetName, MessageKey> = {
+    "design-review": "web.rolePreset.designReview",
+    "codex-design": "web.rolePreset.codexDesign",
+    "implement-review": "web.rolePreset.implementReview",
+  };
   ctx.store.settingsRequests = new Set<string>();
   const limitDraft = (form: HTMLElement): Record<LimitName, string> => ({
     messages: form.querySelector<HTMLInputElement>("#limit-messages")!.value,
@@ -118,11 +124,37 @@ export function createSettingsSheet(ctx: ClientContext) {
     actions.append(reset, apply);
     limits.append(actions);
     const language = settingsChoice("language", ctx.t("web.settings.language"), ["ja", "en"] as const, ctx.store.state.language, value => value === "ja" ? "日本語" : "English");
+    const rolePreset = ctx.el("div", "setting");
+    const presetLabel = ctx.el("label", "eyebrow", ctx.t("web.settings.rolePreset")) as HTMLLabelElement;
+    const presetSelect = ctx.el("select", "setting-select") as HTMLSelectElement;
+    presetSelect.id = "role-preset";
+    presetSelect.name = "role-preset";
+    presetLabel.htmlFor = presetSelect.id;
+    const customOption = ctx.el("option", "", ctx.t("web.rolePreset.custom")) as HTMLOptionElement;
+    customOption.value = "custom";
+    customOption.disabled = true;
+    presetSelect.append(customOption);
+    for (const name of ROLE_PRESET_NAMES) {
+      const option = ctx.el("option", "", ctx.t(ROLE_PRESET_LABELS[name])) as HTMLOptionElement;
+      option.value = name;
+      presetSelect.append(option);
+    }
+    presetSelect.value = ctx.store.state.rolePreset ?? "custom";
+    presetSelect.addEventListener("change", () => {
+      const name = presetSelect.value;
+      ctx.store.settingsRequests.add("rolePreset");
+      presetSelect.disabled = true;
+      void ctx.send(`/role preset ${name}`).finally(() => {
+        ctx.store.settingsRequests.delete("rolePreset");
+        ctx.refreshOpenSheet();
+      });
+    });
+    rolePreset.append(presetLabel, presetSelect);
     // 端末ごとの設定なので Hub には送らない。スマホは常に Enter で改行するので出さない
     const sendKeyChoice = ctx.choice("sendKey", ctx.t("web.settings.sendKey"), ctx.SEND_KEYS, ctx.store.sendKey,
       value => ctx.t(value === "enter" ? "web.settings.sendEnter" : "web.settings.sendCtrlEnter"),
       value => { ctx.store.sendKey = value; ctx.storage.set(ctx.SEND_KEY_KEY, value); });
-    const items: Record<SettingsItem, HTMLElement> = { sandbox, limits, sendKey: sendKeyChoice, push: ctx.pushSection(), language, guiUpdate: ctx.guiUpdateSection() };
+    const items: Record<SettingsItem, HTMLElement> = { rolePreset, sandbox, limits, sendKey: sendKeyChoice, push: ctx.pushSection(), language, guiUpdate: ctx.guiUpdateSection() };
     const headings: Record<SettingsSectionId, string> = { project: ctx.t("web.settings.project"), device: ctx.t("web.settings.device"), clodex: "Clodex" };
     const groups = settingsSections({ mobile: ctx.mobile.matches, pushSupported: ctx.pushSupported, guiConnected: Boolean(ctx.store.gui) }).map(section => {
       const group = ctx.el("section", `settings-group settings-${section.id}`);

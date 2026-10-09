@@ -68,6 +68,10 @@ export function createSettingsRefresh(ctx: ClientContext) {
     }
     if (ctx.store.sheetKind === "settings" && ctx.store.state) {
       const body = ctx.$("#sheet-body");
+      const rolePresetSelect = body.querySelector<HTMLSelectElement>('select[name="role-preset"]');
+      const presetPending = [...ctx.store.pendingRequests].some(line => line.startsWith("/role preset "));
+      if (rolePresetSelect && !presetPending && !ctx.store.settingsRequests.has("rolePreset")) rolePresetSelect.value = ctx.store.state.rolePreset ?? "custom";
+      if (rolePresetSelect) rolePresetSelect.disabled = presetPending || ctx.store.settingsRequests.has("rolePreset");
       const sandboxPending = [...ctx.store.pendingRequests].find(line => line.startsWith("/sandbox "));
       const sandboxSwitch = body.querySelector<HTMLButtonElement>('[data-choice="sandbox"][role="switch"]');
       if (sandboxSwitch) {

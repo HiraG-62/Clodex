@@ -17,7 +17,7 @@ export type ShellCommand =
   | { kind: "status" }
   | { kind: "project"; path?: string; action?: ProjectAction }
   | { kind: "tab"; conversationId: string; projectRoot: string; action?: "unpin" }
-  | { kind: "role"; agent?: AgentId; text?: string }
+  | { kind: "role"; agent?: AgentId; text?: string; preset?: string }
   | { kind: "help" }
   | { kind: "exit" }
   | { kind: "verbose" }
@@ -167,6 +167,7 @@ const parseCommand = (name: string, arg: string, primary: AgentId): ShellCommand
       if (!arg) return { kind: "role" };
       const [agent, ...words] = arg.split(/\s+/);
       if (!agent) return { kind: "role" };
+      if (agent === "preset") return words.length <= 1 ? { kind: "role", preset: words[0] ?? "" } : usage("/role preset <name>");
       if (!isAgentId(agent)) return unknownAgent(agent);
       return words.length ? { kind: "role", agent, text: words.join(" ") } : { kind: "role", agent };
     }

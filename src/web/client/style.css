@@ -107,6 +107,7 @@
   .conv-menu:hover { background: var(--sunken); color: var(--fg); }
   .badge { font: 600 11px/1 var(--font-mono); padding: 3px 6px; border-radius: 4px; background: var(--crit); color: var(--invert-fg); }
   .model-form { display: flex; gap: 6px; }
+  .setting-select { justify-self: end; max-width: 240px; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 13px; background: var(--panel); color: var(--fg); }
   .model-form input, .model-form select { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: 14px var(--font-mono); background: var(--panel); color: var(--fg); }
   .model-form button { border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; background: var(--invert-bg); color: var(--invert-fg); font-weight: 600; font-size: 13px; }
   .project-list { display: grid; gap: 2px; }

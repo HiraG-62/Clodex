@@ -18,6 +18,7 @@ import type { PendingInput } from "../cli/shell.js";
 import type { ConversationActivity } from "../hub/workspace.js";
 
 import type { Language } from "../context/language.js";
+import type { RolePresetName } from "../config/role-presets.js";
 import { DEFAULT_LIMITS, LIMIT_KEYS, type BudgetLimits, type LimitName } from "../coordinator/budget-manager.js";
 
 export interface WebState {
@@ -31,6 +32,7 @@ export interface WebState {
   tabs: ConversationTab[];
   primary: AgentId;
   roles: Partial<Record<AgentId, string>>;
+  rolePreset?: RolePresetName;
   agents: AgentState[];
   // activity: 動いている会話の状態（無ければ保存のみ。DESIGN.md §28 D1）
   conversations: Array<Conversation & { current: boolean; activity?: ConversationActivity }>;

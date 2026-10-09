@@ -124,6 +124,14 @@ CLAUDE.md に書くとよいこと:
 
 `/role` で役割を変えると `.clodex.json` に保存される。
 
+役割はプリセットからも選べる（`/role preset <name>`、Web UI は設定の project の節）。選んだ文章は `.clodex.json` に保存されるので、そこから書き換えてもよい。
+
+| プリセット | 分担 |
+|---|---|
+| `design-review` | 設計・レビュー・コミットは Claude、実装は Codex（上の例と同じ） |
+| `codex-design` | 設計・レビューは Codex、実装・コミットは Claude |
+| `implement-review` | 設計・実装・コミットは Claude、レビューは Codex |
+
 ### 設計書の置き場所
 
 既定は `docs/specs/<taskId>.md`。別の場所にしたいときは `roles` に書く。設計書はコミットして履歴に残す前提。
@@ -146,7 +154,7 @@ CLAUDE.md に書くとよいこと:
 
 1. Claude Code CLI と Codex CLI にサブスクリプションでログインしておく（`claude auth status` / `codex login status`）
 2. プロジェクトの `CLAUDE.md` を 5 の表に沿って整える。役割の分担など Clodex で管理することが書かれていれば `roles` に移す。`AGENTS.md` があれば、内容を `CLAUDE.md` に統合して消すか、Codex 固有の差分だけにする
-3. `.clodex.json` に `roles` を書く（全プロジェクト共通でよければ `~/.clodex/config.json` に書く）。worktree を使うなら `worktree.setup` も書く
+3. 役割を決める。プリセットから選ぶ（`/role preset <name>`）か、`.clodex.json` に `roles` を書く（全プロジェクト共通でよければ `~/.clodex/config.json` に書く）。worktree を使うなら `worktree.setup` も書く
 4. プロジェクトのディレクトリで `clodex` を実行する（GUI ならフォルダを選ぶ）
 5. 最初は小さな依頼で、分担・テストの実行・コミットの流れが役割どおりに動くかを確かめる
 

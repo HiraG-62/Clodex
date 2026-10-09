@@ -32,6 +32,7 @@ import { defaultLogPath, type DisplayMode } from "./logging/event-log.js";
 import { pruneLogs } from "./logging/log-retention.js";
 import { listProjectFiles } from "./project/project-files.js";
 import { saveProjectRole } from "./project/role-settings.js";
+import { matchingRolePreset } from "./config/role-presets.js";
 import { createLocalFeedClient, createRemoteFeedClient } from "./tui/feed-client.js";
 import { startTui } from "./tui/tui.js";
 import { MAX_UPLOAD_BYTES, isUploadType, saveUpload } from "./project/uploads.js";
@@ -364,6 +365,7 @@ const main = async (): Promise<void> => {
       }),
       primary: shell.getPrimary(),
       roles: context?.config.roles ?? {},
+      rolePreset: matchingRolePreset(context?.config.roles ?? {}),
       agents: runtime?.coordinator.status() ?? [],
       questions: runtime?.coordinator.pendingQuestions() ?? [],
       pendingInputs: runtime?.coordinator.pendingInputs() ?? [],
