@@ -30,6 +30,7 @@ export interface LimitHold { resumeAt: number; text: string }
 
 export class AgentMailbox {
   private readonly queue: QueueItem[] = [];
+  private starting: Promise<void> | undefined;
   private draining = false;
   private paused = false;
   private closed = false;
@@ -271,12 +272,21 @@ export class AgentMailbox {
   }
 
   async ensureRunning(): Promise<void> {
+    if (this.starting) return this.starting;
     if (this.agent.status !== "stopped") return;
-    this.assertStart();
-    const resumeSessionId = this.sessionId;
-    const { resumeSessionId: _initial, ...options } = this.startOptions();
-    await this.agent.start({ ...options, ...(resumeSessionId ? { resumeSessionId } : {}) });
-    // 起動に失敗したら次の試行でも選んだ session を使う
-    this.nextSession = undefined;
+    const starting = (async () => {
+      this.assertStart();
+      const resumeSessionId = this.sessionId;
+      const { resumeSessionId: _initial, ...options } = this.startOptions();
+      await this.agent.start({ ...options, ...(resumeSessionId ? { resumeSessionId } : {}) });
+      // 起動に失敗したら次の試行でも選んだ session を使う
+      this.nextSession = undefined;
+    })();
+    this.starting = starting;
+    try {
+      await starting;
+    } finally {
+      if (this.starting === starting) this.starting = undefined;
+    }
   }
 }

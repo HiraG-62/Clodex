@@ -107,6 +107,30 @@ describe("AgentMailbox", () => {
     await expect(result).resolves.toEqual({ status: "completed", text: "done" });
   });
 
+  it("並行する起動を共有し、起動中に積んだ入力は完了後に送る", async () => {
+    const { agent, mailbox } = setup();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const originalStart = agent.start.bind(agent);
+    const start = vi.spyOn(agent, "start").mockImplementation(async (options) => {
+      agent.status = "starting";
+      await gate;
+      await originalStart(options);
+    });
+    const first = mailbox.ensureRunning();
+    const second = mailbox.ensureRunning();
+    const queued = mailbox.enqueue("during startup");
+    await flush();
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(agent.sent).toEqual([]);
+    release();
+    await Promise.all([first, second]);
+    await flush();
+    expect(agent.sent).toEqual(["during startup"]);
+    agent.completeTurn();
+    await expect(queued).resolves.toMatchObject({ status: "completed" });
+  });
+
   it("以前の session ID があれば resume で起動する", async () => {
     const { agent, mailbox } = setup();
     agent.sessionId = "old-session";

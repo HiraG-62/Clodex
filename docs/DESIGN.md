@@ -878,6 +878,7 @@ MCP message を受け取った後、
 
 - Agent ごとに mailbox（FIFO キュー）を持ち、人間の入力と formal message を同じキューで直列に送る。実行中のターンには割り込まない
 - 宛先 Agent が stopped なら、送る前に起動する。以前の session ID があれば resume する（Lazy Start: Agent は必要になるまで起動しない。§3.2）
+- Agent の起動中に届いた配送は、起動の完了を待ってから送る。起動の要求が重なっても起動は 1 回だけ
 - `ACK` は記録のみで宛先に配送しない（ACK の往復で Agent を起こさない。§25）
 - 送信元への tool 応答は受理結果（message ID）だけを返す。返信は送信元の現在のターンが終わった後、新しいターンとして届く
 - 起動や送信に失敗したら Event Bus に `error` を出し、mailbox は次の項目へ進む。人の入力・`/compact`・`RESULT`・`ISSUE` は再送しない
