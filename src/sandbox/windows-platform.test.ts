@@ -150,7 +150,7 @@ it("off の再実行で消えた worktree の safe.directory と lease を解除
   const journal = join(home, ".clodex", `sandbox-project-${createHash("sha256").update(project.toLowerCase()).digest("hex").slice(0, 16)}.json`);
   const acl = { sddl: "D:", rules: [] };
   await writeFile(journal, JSON.stringify({ sid: "agent", leases: [{ path: project, before: acl, after: acl, gitHuman: true, gitAgent: true }] }));
-  const directory = project.toUpperCase().replaceAll("\\", "/") + "/";
+  const directory = `${project.toUpperCase().replaceAll("\\", "/")}/`;
   vi.mocked(runHost).mockImplementation(async script => {
     if (script.includes("Get-LocalUser")) return JSON.stringify({ humanSid: "human", agentSid: "agent", profile: "C:\\Users\\agent", machine: {} });
     if (script.includes("--get-all")) return directory;

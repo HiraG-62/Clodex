@@ -169,7 +169,9 @@ describe("createCommandRunner", () => {
     const { runner, spawned, processes } = setup(["pwsh"]);
     const both = [runner.run("a"), runner.run("b")];
     await flush();
-    processes.forEach(child => child.close(0));
+    processes.forEach(child => {
+      child.close(0);
+    });
     await Promise.all(both);
     expect(spawned.map(s => s.file)).toEqual(["pwsh", "pwsh", "powershell", "powershell"]);
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentId, AgentStatus, PermissionLevel, TurnResult } from "../agents/agent-adapter.js";
+import type { AgentId, PermissionLevel, TurnResult } from "../agents/agent-adapter.js";
 import { DEFAULT_LIMITS, LIMIT_KEYS } from "../coordinator/budget-manager.js";
 import type { PendingMessage, SoloMode } from "../coordinator/coordinator.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
@@ -836,7 +836,7 @@ describe("createShell", () => {
   });
 
   it("/new worktree は worktree で新しい会話を始め、作れなければ理由を表示する", async () => {
-    const { history, printed, notified, shell } = setup();
+    const { history, notified, shell } = setup();
     await shell.handleLine("/new worktree");
     expect(history.started).toEqual([{ worktree: true }]);
     expect(notified).toEqual(["new conversation: worktree C:\\dev\\app-1a2b (clodex/1a2b)"]);

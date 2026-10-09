@@ -165,8 +165,9 @@ export async function connectBroker(launcher: BrokerLauncher): Promise<BrokerCon
       let buffered = "",
         finished = false;
       const flush = () => {
-        let end: number;
-        while ((end = buffered.indexOf("\n")) >= 0) {
+        while (true) {
+          const end = buffered.indexOf("\n");
+          if (end < 0) break;
           const line = buffered.slice(0, end).replace(/\r$/, "");
           buffered = buffered.slice(end + 1);
           for (const handler of lines) handler(line);

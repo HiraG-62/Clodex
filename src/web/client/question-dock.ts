@@ -69,7 +69,10 @@ export function createQuestionDock(ctx: ClientContext) {
     const body = ctx.el("div", "question-dock-body");
     const dots = ctx.el("div", "question-dots");
     const answered = (step: number) => Boolean(draft.selected[step]?.size || draft.other[step]?.trim());
-    const refreshDots = () => [...dots.children].forEach((dot, step) => dot.classList.toggle("answered", answered(step)));
+    const refreshDots = () =>
+      [...dots.children].forEach((dot, step) => {
+        dot.classList.toggle("answered", answered(step));
+      });
     if (total > 1) {
       current.questions.forEach((entry, step) => {
         const dot = ctx.el("button", step === index ? "question-dot current" : "question-dot") as HTMLButtonElement;

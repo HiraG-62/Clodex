@@ -44,7 +44,7 @@ export class QuestionStore {
     if (!parsed.success || parsed.data.length !== question.questions.length) return { ok: false, error: t("question.invalid") };
     const answers = parsed.data;
     const context = question.questions.map((item, index) => `${item.header ?? item.question.slice(0, QUESTION_HEADER_LENGTH)}: ${answers[index]!.join(", ")}`);
-    const text = `Answer to your question ${id}:\n` + context.map(line => `- ${line}`).join("\n");
+    const text = `Answer to your question ${id}:\n${context.map(line => `- ${line}`).join("\n")}`;
     this.questions.delete(id);
     return { ok: true, question, answers, text, context };
   }

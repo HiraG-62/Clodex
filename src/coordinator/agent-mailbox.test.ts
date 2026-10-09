@@ -65,7 +65,11 @@ describe("AgentMailbox", () => {
       vi.fn(),
       () => {},
       () => undefined,
-      () => (pending ? ((pending = false), "\n\n[Clodex] Solo mode is off.") : ""),
+      () => {
+        if (!pending) return "";
+        pending = false;
+        return "\n\n[Clodex] Solo mode is off.";
+      },
     );
     mailbox.pause();
     const first = mailbox.enqueue("最初", { inputId: "in1", suffix: "\n言語" });

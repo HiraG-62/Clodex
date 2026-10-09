@@ -11,7 +11,7 @@ describe("changedSections", () => {
     expect(changedSections(spec, spec.replace(/\n/g, "  \r\n"))).toEqual([]);
   });
   it("中身が変わった節と追記した節を見出しのまま並べる", () => {
-    const after = spec.replace("A にする", "B にする") + "\n## 追記\nC も必要\n\n## 追記 2\nD\n";
+    const after = `${spec.replace("A にする", "B にする")}\n## 追記\nC も必要\n\n## 追記 2\nD\n`;
     expect(changedSections(spec, after)).toEqual(["## 方針", "## 追記", "## 追記 2"]);
   });
   it("消えた節には (removed) を付ける", () => {

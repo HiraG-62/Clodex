@@ -22,7 +22,7 @@ export function createViewport(ctx: ClientContext) {
       if (id === "detail") button.setAttribute("aria-pressed", String(ctx.store.detail));
       button.addEventListener("click", () => {
         ctx.closeSheet();
-        ctx.$("#" + id).click();
+        ctx.$(`#${id}`).click();
       });
       actions.append(button);
     }
@@ -53,7 +53,7 @@ export function createViewport(ctx: ClientContext) {
         ctx.closeSheet();
         if (name === "image-plus") ctx.$("#attach-file").click();
         else {
-          if (!ctx.input.value.startsWith("!")) ctx.input.value = "!" + ctx.input.value;
+          if (!ctx.input.value.startsWith("!")) ctx.input.value = `!${ctx.input.value}`;
           ctx.onInputChanged();
           ctx.input.focus();
         }
@@ -69,7 +69,7 @@ export function createViewport(ctx: ClientContext) {
   const adaptTabs = () => {
     (ctx.mobile.matches ? ctx.$("#composer") : tabHome).prepend(tabs);
     for (const [id, key] of [["working-toggle", "web.working.title"]] as const) {
-      const button = ctx.$("#" + id);
+      const button = ctx.$(`#${id}`);
       button.querySelector(".mobile-tab-label")?.remove();
       if (ctx.mobile.matches) button.querySelector(".i")?.after(ctx.el("span", "mobile-tab-label", ctx.t(key)));
     }

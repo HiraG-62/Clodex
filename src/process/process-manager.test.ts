@@ -106,7 +106,9 @@ describe("background process", () => {
     manager.stopAll();
     expect(killed).toEqual([10, 11]);
     advance();
-    children.forEach(child => child.emit("close", 1));
+    children.forEach(child => {
+      child.emit("close", 1);
+    });
     expect(manager.list().map(({ status }) => status)).toEqual(["stopped", "stopped"]);
     expect(printed.slice(-2)).toEqual(["#1 stopped (1.5s): first", "#2 stopped (1.5s): second"]);
   });

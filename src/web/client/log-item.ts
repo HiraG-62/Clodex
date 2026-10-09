@@ -301,7 +301,9 @@ export function createLogItem(ctx: ClientContext) {
       return node;
     }
     const record = ctx.el("dl", "question-record");
-    item.questions.forEach((question, index) => record.append(ctx.el("dt", "", question.question), ctx.el("dd", "", (item.answers?.[index] ?? []).join(", "))));
+    item.questions.forEach((question, index) => {
+      record.append(ctx.el("dt", "", question.question), ctx.el("dd", "", (item.answers?.[index] ?? []).join(", ")));
+    });
     node.append(record);
     appendImagePreviews(node, previewText, item.at);
     return node;

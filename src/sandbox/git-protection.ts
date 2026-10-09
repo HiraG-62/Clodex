@@ -13,7 +13,7 @@ export function isMissing(error: unknown): boolean {
 
 export async function gitProtectionPaths(project: string): Promise<GitProtectionPath[]> {
   const marker = join(project, ".git");
-  let stat;
+  let stat: Awaited<ReturnType<typeof lstat>>;
   try {
     stat = await lstat(marker);
   } catch (error) {

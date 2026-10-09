@@ -299,7 +299,7 @@ export const createShell = ({
     answerQuestion(command.id, command.text);
     return "continue";
   };
-  const handleEmpty = async (command: CommandOf<"empty">): Promise<ShellOutcome> => {
+  const handleEmpty = async (_command: CommandOf<"empty">): Promise<ShellOutcome> => {
     return "continue";
   };
   const handleSend = async (command: CommandOf<"send" | "sendAll">): Promise<ShellOutcome> => {
@@ -362,7 +362,7 @@ export const createShell = ({
     }
     return "continue";
   };
-  const handleStatus = async (command: CommandOf<"status">): Promise<ShellOutcome> => {
+  const handleStatus = async (_command: CommandOf<"status">): Promise<ShellOutcome> => {
     print(t("shell.primary", { agent: primary }));
     {
       const { workDir, branch } =
@@ -534,8 +534,10 @@ export const createShell = ({
     print(t("shell.primary", { agent: primary }));
     return "continue";
   };
-  const handleHelp = async (command: CommandOf<"help">): Promise<ShellOutcome> => {
-    HELP_LINES(primary).forEach(l => print(l));
+  const handleHelp = async (_command: CommandOf<"help">): Promise<ShellOutcome> => {
+    HELP_LINES(primary).forEach(l => {
+      print(l);
+    });
     return "continue";
   };
   const handleLanguage = async (command: CommandOf<"language">): Promise<ShellOutcome> => {
@@ -609,11 +611,11 @@ export const createShell = ({
     print(t("shell.effort", { target: command.agent ?? t("shell.allAgents"), level: command.level }));
     return "continue";
   };
-  const handleVerbose = async (command: CommandOf<"verbose">): Promise<ShellOutcome> => {
+  const handleVerbose = async (_command: CommandOf<"verbose">): Promise<ShellOutcome> => {
     print(t("shell.verbose", { state: t(toggleVerbose() ? "shell.on" : "shell.off") }));
     return "continue";
   };
-  const handleExit = async (command: CommandOf<"exit">): Promise<ShellOutcome> => {
+  const handleExit = async (_command: CommandOf<"exit">): Promise<ShellOutcome> => {
     void processes.stopAll();
     return "exit";
   };

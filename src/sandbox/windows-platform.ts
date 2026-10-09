@@ -101,7 +101,7 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
   private readonly credentialPath: string;
   constructor(
     private readonly home: string,
-    private readonly project: string,
+    project: string,
     private readonly notice: (text: string) => void = () => {},
   ) {
     const hash = createHash("sha256").update(project.toLowerCase()).digest("hex").slice(0, JOURNAL_HASH_LENGTH);
@@ -578,7 +578,7 @@ export class WindowsSandboxPlatform implements SandboxPlatform {
 
   async release(): Promise<void> {
     if (!this.identity) {
-      let journal;
+      let journal: z.infer<typeof journalSchema>;
       try {
         journal = journalSchema.parse(JSON.parse(await readFile(this.journalPath, "utf8")));
       } catch (error) {

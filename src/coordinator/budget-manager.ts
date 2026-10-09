@@ -61,7 +61,7 @@ const STOPPED_ERROR =
   "This exchange was stopped by the human (/interrupt). Do not send more messages for it; " + "report the current status to the human instead.";
 
 const limitError = (name: keyof BudgetLimits, limit: number) =>
-  `Budget limit reached: ${name} (${limit}). Do not send more messages for this chain; ` + "report the current status to the human instead.";
+  `Budget limit reached: ${name} (${limit}). Do not send more messages for this chain; report the current status to the human instead.`;
 
 export class BudgetManager {
   private readonly meta = new Map<string, MessageMeta>();
