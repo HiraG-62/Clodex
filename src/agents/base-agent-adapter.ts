@@ -76,7 +76,11 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
     this.quietTurn = quiet;
     if (!quiet) this.emit({ type: "turn_started" });
     const turn = new Promise<TurnResult>((resolve) => (this.resolveTurn = resolve));
-    write();
+    try {
+      write();
+    } catch (error) {
+      this.finishTurn({ status: "failed", text: error instanceof Error ? error.message : String(error) });
+    }
     return turn;
   }
 

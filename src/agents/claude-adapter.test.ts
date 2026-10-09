@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentEvent } from "./agent-adapter.js";
 import { ClaudeAdapter } from "./claude-adapter.js";
 import { createFakeSpawner, flush } from "./fake-agent-process.js";
@@ -20,6 +20,24 @@ const result = (text: string, subtype = "success") => ({
 });
 
 describe("ClaudeAdapter", () => {
+  it("入力の書き込み失敗を failed で返し、次のターンを受け付ける", async () => {
+    const { adapter, proc, events } = await setup();
+    vi.spyOn(proc, "write").mockImplementationOnce(() => { throw new Error("write failed"); });
+    await expect(adapter.send("first")).resolves.toEqual({ status: "failed", text: "write failed" });
+    expect(adapter.status).toBe("idle");
+    const second = adapter.send("second");
+    proc.emit(result("ok"));
+    await expect(second).resolves.toEqual({ status: "completed", text: "ok" });
+    expect(events).toContainEqual({ type: "turn", result: { status: "failed", text: "write failed" } });
+  });
+
+  it("quiet な設定ターンの書き込み失敗も failed にし、event を出さない", async () => {
+    const { adapter, proc, events } = await setup();
+    vi.spyOn(proc, "write").mockImplementationOnce(() => { throw new Error("quiet write failed"); });
+    await expect(adapter.setModel("haiku")).resolves.toEqual({ status: "failed", text: "quiet write failed" });
+    expect(adapter.status).toBe("idle");
+    expect(events.filter((event) => event.type === "turn_started" || event.type === "turn")).toEqual([]);
+  });
   it("background_tasks_changed の local_agent だけを数え、ターンの外でも一覧を更新する", async () => {
     const { adapter, proc, events } = await setup();
     const quick = { task_id: "quick", description: "調査", task_type: "local_agent" };
