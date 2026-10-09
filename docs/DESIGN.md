@@ -194,23 +194,21 @@ Claude / Codex の Subscription 利用上限は **有限資源** として扱う
 
 分業は結果として 2 つの利用枠に負担を分散する。Clodex は両 Agent の利用状況（5 時間枠と週の枠）を見えるようにし、偏りを知らせる（§14）。ただし **送り先を自動で切り替えない**。Agent ごとに session が別なので、作業の途中で担当が変わると文脈が途切れ、品質にむらが出るためである。切り替えは人が作業の区切りで行う。
 
-品質だけでなく、
+Clodex が行うのは、見えるようにすることと、hard limit で止めることだけ。「この Agent を今呼ぶ価値があるか」の判断は Coordinator ではなく人と Agent が行う（§3.9 Deterministic Coordinator）。
 
-> この Agent を今呼ぶ価値があるか
+- 見えるようにする: 両 Agent の利用枠（5 時間・週）とコンテキストの大きさ（§14 利用枠の可視化と通知、§17）
+- 止める: Agent 同士のやり取りの chain ごとの上限（message 数・レビュー回数・委譲回数・深さ。§14）
+- 利用枠の上限に達した Agent は、リセットまで送らずに待つ（§14）
 
-を Coordinator が判断できる設計にする。
+人が送っていないのに Clodex が Agent のターンを起こす経路は、次に限る（増やすときはここに足す）。
 
-正確な Token 使用量が CLI から取得できない場合でも、以下を proxy metric として記録する。
-
-- Agent calls
-- Delegations
-- Review rounds
-- Agent messages
-- Message size
-- Context references
-- Files referenced
-- Diff size
-- Context pressure: LOW / MEDIUM / HIGH
+| 経路 | 回数 | 節 |
+|---|---|---|
+| 作業を頼む message のターンが失敗したときの再送 | 1 回だけ | §11 配送ルール |
+| 再送も失敗したとき、送信元に自分で進めるよう伝える | 依頼ごとに 1 回 | §11 配送ルール |
+| Agent が `send_message` を使わずに返した依頼の結果を、依頼元へ届ける（自動 `RESULT`） | 依頼ごとに 1 回 | §11 配送ルール |
+| 利用枠のリセット後に、上限で止まっていた作業の続きを頼む | 止まるごとに 1 回 | §14 |
+| Hub の再起動後に、中断したターンの続きを頼む | 再起動ごとに 1 回 | §18 |
 
 ---
 
