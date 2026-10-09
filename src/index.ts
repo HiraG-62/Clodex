@@ -9,14 +9,14 @@ import { createInterface } from "node:readline";
 import { AGENT_IDS, type AgentId } from "./agents/agent-adapter.js";
 import { EMPTY_MODEL_CATALOG } from "./agents/startup-probe.js";
 import type { Coordinator } from "./coordinator/coordinator.js";
-import { hubCommands, parseCliArgs } from "./cli/args.js";
+import { hubCommands, parseCliArgs, type CliArgs } from "./cli/args.js";
 import { createCommandRunner, type CommandLifecycle } from "./cli/command-runner.js";
 import { createProcessManager } from "./process/process-manager.js";
 import { registerHubJob } from "./process/job-object.js";
 import { completeCommand } from "./cli/commands.js";
-import { createShell, type ConversationList } from "./cli/shell.js";
+import { createShell, type ConversationList, type ShellOutcome } from "./cli/shell.js";
 import { clodexHomeDir, ensureUserConfigTemplate, loadConfig, saveUserLanguage } from "./config/config.js";
-import { detectLanguage } from "./context/language.js";
+import { detectLanguage, type Language } from "./context/language.js";
 import type { CoordinatorEvent } from "./coordinator/event-bus.js";
 import { Hub } from "./hub/hub.js";
 import { installRuntimeErrors } from "./hub/runtime-errors.js";
@@ -31,16 +31,16 @@ import { updateDesktopNotify, type DesktopNotifyState } from "./web/client/deskt
 import { defaultLogPath, type DisplayMode } from "./logging/event-log.js";
 import { pruneLogs } from "./logging/log-retention.js";
 import { listProjectFiles } from "./project/project-files.js";
-import { resolveProjectRoot } from "./project/project-root.js";
 import { saveProjectRole } from "./project/role-settings.js";
 import { createLocalFeedClient, createRemoteFeedClient } from "./tui/feed-client.js";
 import { startTui } from "./tui/tui.js";
 import { MAX_UPLOAD_BYTES, isUploadType, saveUpload } from "./project/uploads.js";
 import { DEFAULT_RECENT_ITEMS, WebFeed, buildLimitState } from "./web/web-feed.js";
 import { buildWebPage } from "./web/web-page.js";
-import { startWebServer } from "./web/web-server.js";
+import { startWebServer, type WebServerHandle } from "./web/web-server.js";
 import { loadOrCreateWebToken, webTokenPath } from "./web/web-token.js";
 import { connectWebFeed, historyItemOf } from "./web/web-ui.js";
+import { initialProject, shouldStartWeb } from "./startup-options.js";
 
 const PROMPT = "clodex> ";
 const DEFAULT_WEB_PORT = 4319;
@@ -69,6 +69,134 @@ const conversationsOf = (context: ProjectContext): ConversationList => ({
 // src と dist のどちらから動かしても、1 つ上に package.json がある
 const CLODEX_VERSION = z.object({ version: z.string() }).parse(JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))).version;
 
+const connectToHub = async (args: CliArgs, cwd: string, homeDir: string, interactive: boolean): Promise<boolean> => {
+  const liveHub = interactive ? readHubLock(homeDir) : undefined;
+  if (!liveHub || !await isHubAlive(liveHub)) return false;
+  let token: string;
+  try {
+    token = readFileSync(webTokenPath(homeDir), "utf8").trim();
+  } catch (error) {
+    process.stderr.write(`${t("error.webToken", { message: errorMessage(error) })}\n`);
+    process.exitCode = 1;
+    return true;
+  }
+  const client = createRemoteFeedClient(liveHub, token);
+  const { commands, ignored } = hubCommands(args, cwd);
+  for (const command of commands) await client.send(command);
+  if (ignored.length) process.stderr.write(`${t("start.hubIgnored", { options: ignored.join(" ") })}\n`);
+  await startTui(client);
+  return true;
+};
+
+interface StartWebOptions {
+  args: CliArgs;
+  hasWebConfig: boolean;
+  configuredPort?: number;
+  homeDir: string;
+  feed: WebFeed;
+  hub: Hub<ProjectContext>;
+  current: () => ProjectContext;
+  language: () => Language;
+  onInput: (line: string) => Promise<void>;
+  onError: (error: unknown) => void;
+  push: PushService;
+}
+
+const startWeb = async ({ args, hasWebConfig, configuredPort, homeDir, feed, hub, current, language, onInput, onError, push }: StartWebOptions): Promise<WebServerHandle | undefined> => {
+  if (!shouldStartWeb(args, hasWebConfig)) return undefined;
+  const web = await startWebServer({
+    port: configuredPort ?? DEFAULT_WEB_PORT,
+    token: loadOrCreateWebToken(homeDir), feed, page: buildWebPage(language()), onInput,
+    listFiles: () => hub.current ? listProjectFiles(hub.current.workspace.current.workDir) : Promise.resolve([]),
+    preview: {
+      file: (path) => hub.current ? hub.current.currentPreview().file(path) : Promise.resolve({ ok: false, status: 404, message: "no project" }),
+      diff: (path) => hub.current ? hub.current.currentPreview().diff(path) : Promise.resolve({ ok: false, status: 404, message: "no project" }),
+    },
+    upload: { maxBytes: MAX_UPLOAD_BYTES, accepts: isUploadType,
+      save: (contentType, body) => saveUpload(current().uploadsDir, contentType, body) },
+    onError, push,
+  });
+  if (args.serve) {
+    const port = Number(new URL(web.url).port);
+    writeHubLock(homeDir, { pid: process.pid, port, url: web.url });
+  }
+  return web;
+};
+
+const printStartup = (args: CliArgs, hub: Hub<ProjectContext>, homeDir: string, printTerminal: (line: string) => void): void => {
+  if (!args.serve) {
+    const context = hub.current;
+    if (context) {
+      printTerminal(t("start.banner", { version: CLODEX_VERSION, project: context.projectRoot, primary: context.primary }));
+      printTerminal(t("start.log", { path: defaultLogPath(homeDir, context.projectRoot, context.startedAt, context.history.currentId.slice(0, LOG_SUFFIX_LENGTH)) }));
+      const saved = AGENT_IDS.flatMap((id) => Object.entries(context.savedSettings[id] ?? {}).map(([key, value]) => `${id} ${key} ${value}`));
+      for (const name of LIMIT_NAMES) {
+        const value = context.savedSettings.limits?.[LIMIT_KEYS[name]];
+        if (value !== undefined) saved.push(`limits ${name} ${value}`);
+      }
+      if (context.savedSettings.limitsUnlimited) saved.push("limits unlimited");
+      if (saved.length) printTerminal(t("start.saved", { settings: saved.join(", ") }));
+      if (args.resume) {
+        const resumed = AGENT_IDS.filter((id) => context.resumedSessions[id]);
+        printTerminal(t("start.resume", { agents: resumed.length ? resumed.join(", ") : t("start.noSaved") }));
+      }
+    }
+    printTerminal(t("start.help"));
+  }
+};
+
+interface ShutdownOptions {
+  args: CliArgs;
+  homeDir: string;
+  interactive: boolean;
+  rl: ReturnType<typeof createInterface> | undefined;
+  runner: ReturnType<typeof createCommandRunner>;
+  processes: ReturnType<typeof createProcessManager>;
+  hub: Hub<ProjectContext>;
+  web: WebServerHandle | undefined;
+  shell: ReturnType<typeof createShell>;
+  handleLine: (line: string) => Promise<ShellOutcome>;
+  print: (line: string) => void;
+}
+
+const installShutdown = ({ args, homeDir, interactive, rl, runner, processes, hub, web, shell, handleLine, print }: ShutdownOptions): (() => Promise<void>) => {
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    rl?.close();
+    runner.stopAll();
+    try {
+      const stopped = Promise.all([runner.idle(), processes.stopAll(), hub.closeAll()]);
+      await Promise.race([stopped, new Promise((resolve) => setTimeout(resolve, STOP_TIMEOUT_MS).unref())]);
+      await web?.close();
+    } finally {
+      if (args.serve) clearHubLock(homeDir, process.pid);
+      setTimeout(() => process.exit(0), FORCE_EXIT_DELAY_MS).unref();
+    }
+  };
+  const report = (error: unknown) => print(t("error.generic", { message: errorMessage(error) }));
+  if (rl) {
+    rl.on("SIGINT", () => void shell.handleSigint().catch(report));
+    let lines = Promise.resolve();
+    rl.on("line", (line) => {
+      lines = lines.then(() => handleLine(line)).then((outcome) => {
+        if (outcome === "exit") return shutdown();
+        if (interactive) rl.prompt();
+      }).catch(report);
+    });
+    rl.on("close", () => {
+      if (shuttingDown) return;
+      void lines.then(() => hub.current?.workspace.current.coordinator.whenIdle()).then(shutdown);
+    });
+  }
+  if (args.serve) {
+    process.on("SIGINT", () => void shutdown());
+    process.on("SIGTERM", () => void shutdown());
+  }
+  return shutdown;
+};
+
 const main = async (): Promise<void> => {
   const args = parseCliArgs(process.argv.slice(2));
   const homeDir = clodexHomeDir();
@@ -79,23 +207,7 @@ const main = async (): Promise<void> => {
   let language = hubConfig.language ?? detectLanguage();
   setLanguage(language);
   const interactive = !args.serve && Boolean(process.stdin.isTTY);
-  const liveHub = interactive ? readHubLock(homeDir) : undefined;
-  if (liveHub && await isHubAlive(liveHub)) {
-    let token: string;
-    try {
-      token = readFileSync(webTokenPath(homeDir), "utf8").trim();
-    } catch (error) {
-      process.stderr.write(`${t("error.webToken", { message: errorMessage(error) })}\n`);
-      process.exitCode = 1;
-      return;
-    }
-    const client = createRemoteFeedClient(liveHub, token);
-    const { commands, ignored } = hubCommands(args, cwd);
-    for (const command of commands) await client.send(command);
-    if (ignored.length) process.stderr.write(`${t("start.hubIgnored", { options: ignored.join(" ") })}\n`);
-    await startTui(client);
-    return;
-  }
+  if (await connectToHub(args, cwd, homeDir, interactive)) return;
   const job = await registerHubJob();
   if (!job.ok) process.stderr.write(`${t("error.jobObject", { message: job.message })}\n`);
   pruneLogs(homeDir);
@@ -171,9 +283,7 @@ const main = async (): Promise<void> => {
     refreshState();
     return context;
   };
-  const initial = args.project
-    ? resolveProjectRoot({ explicitProject: args.project, cwd })
-    : args.serve ? hub.lastProject : resolveProjectRoot({ cwd });
+  const initial = initialProject(args, cwd, hub.lastProject);
   for (const project of hub.recoveryProjects().filter((project) => project !== initial)) await openInHub(project);
   if (initial) await openInHub(initial);
 
@@ -273,83 +383,16 @@ const main = async (): Promise<void> => {
     refreshState();
     return outcome;
   };
-  const web = args.web || hubConfig.web !== undefined ? await startWebServer({
-    port: hubConfig.web?.port ?? DEFAULT_WEB_PORT,
-    token: loadOrCreateWebToken(homeDir), feed, page: buildWebPage(language),
-    onInput: async (line) => { if ((await handleLine(line)) === "exit") void shutdown(); },
-    listFiles: () => hub.current ? listProjectFiles(hub.current.workspace.current.workDir) : Promise.resolve([]),
-    preview: {
-      file: (path) => hub.current ? hub.current.currentPreview().file(path) : Promise.resolve({ ok: false, status: 404, message: "no project" }),
-      diff: (path) => hub.current ? hub.current.currentPreview().diff(path) : Promise.resolve({ ok: false, status: 404, message: "no project" }),
-    },
-    upload: { maxBytes: MAX_UPLOAD_BYTES, accepts: isUploadType,
-      save: (contentType, body) => saveUpload(current().uploadsDir, contentType, body) },
-    onError: (error) => print(t("error.generic", { message: errorMessage(error) })),
-    push,
-  }) : undefined;
-  if (args.serve && web) {
-    const port = Number(new URL(web.url).port);
-    writeHubLock(homeDir, { pid: process.pid, port, url: web.url });
-  }
-
-  if (!args.serve) {
-    const context = hub.current;
-    if (context) {
-      printTerminal(t("start.banner", { version: CLODEX_VERSION, project: context.projectRoot, primary: context.primary }));
-      printTerminal(t("start.log", { path: defaultLogPath(homeDir, context.projectRoot, context.startedAt, context.history.currentId.slice(0, LOG_SUFFIX_LENGTH)) }));
-      const saved = AGENT_IDS.flatMap((id) => Object.entries(context.savedSettings[id] ?? {}).map(([key, value]) => `${id} ${key} ${value}`));
-      for (const name of LIMIT_NAMES) {
-        const value = context.savedSettings.limits?.[LIMIT_KEYS[name]];
-        if (value !== undefined) saved.push(`limits ${name} ${value}`);
-      }
-      if (context.savedSettings.limitsUnlimited) saved.push("limits unlimited");
-      if (saved.length) printTerminal(t("start.saved", { settings: saved.join(", ") }));
-      if (args.resume) {
-        const resumed = AGENT_IDS.filter((id) => context.resumedSessions[id]);
-        printTerminal(t("start.resume", { agents: resumed.length ? resumed.join(", ") : t("start.noSaved") }));
-      }
-    }
-    printTerminal(t("start.help"));
-  }
+  const web = await startWeb({ args, hasWebConfig: hubConfig.web !== undefined, configuredPort: hubConfig.web?.port, homeDir, feed, hub, current,
+    language: () => language, onInput: async (line) => { if ((await handleLine(line)) === "exit") void shutdown(); },
+    onError: (error) => print(t("error.generic", { message: errorMessage(error) })), push });
+  printStartup(args, hub, homeDir, printTerminal);
   if (web) printTerminal(t("start.web", { url: web.url }));
-  let shuttingDown = false;
-  const shutdown = async () => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    rl?.close();
-    runner.stopAll();
-    try {
-      const stopped = Promise.all([runner.idle(), processes.stopAll(), hub.closeAll()]);
-      await Promise.race([stopped, new Promise((resolve) => setTimeout(resolve, STOP_TIMEOUT_MS).unref())]);
-      await web?.close();
-    } finally {
-      if (args.serve) clearHubLock(homeDir, process.pid);
-      setTimeout(() => process.exit(0), FORCE_EXIT_DELAY_MS).unref();
-    }
-  };
-  const report = (error: unknown) => print(t("error.generic", { message: errorMessage(error) }));
-  if (rl) {
-    rl.on("SIGINT", () => void shell.handleSigint().catch(report));
-    let lines = Promise.resolve();
-    rl.on("line", (line) => {
-      lines = lines.then(() => handleLine(line)).then((outcome) => {
-        if (outcome === "exit") return shutdown();
-        if (interactive) rl.prompt();
-      }).catch(report);
-    });
-    rl.on("close", () => {
-      if (shuttingDown) return;
-      void lines.then(() => hub.current?.workspace.current.coordinator.whenIdle()).then(shutdown);
-    });
-  }
+  const shutdown = installShutdown({ args, homeDir, interactive, rl, runner, processes, hub, web, shell, handleLine, print });
   if (interactive) {
     await startTui(createLocalFeedClient(feed, async (line) => { await handleLine(line); },
       () => hub.current ? listProjectFiles(hub.current.workspace.current.workDir) : Promise.resolve([])));
     await shutdown();
-  }
-  if (args.serve) {
-    process.on("SIGINT", () => void shutdown());
-    process.on("SIGTERM", () => void shutdown());
   }
 };
 
