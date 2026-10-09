@@ -7,7 +7,7 @@
     "clodex": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json",
     "gui:dev": "pnpm build && node scripts/stage-gui-runtime.mjs && cd gui && pnpm exec tauri dev",
     "gui:build": "pnpm build && node scripts/stage-gui-runtime.mjs && cd gui && pnpm exec tauri build",
     "dev": "tsx src/index.ts",
