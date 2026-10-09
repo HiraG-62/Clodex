@@ -1157,6 +1157,37 @@ export function clientMain({
     select.value = projects.find((project) => project.current)?.projectRoot ?? "";
   };
 
+  const renderConversationTabs = () => {
+    const strip = $("#conversation-tabs");
+    const tabs = state?.tabs ?? [];
+    strip.hidden = tabs.length === 0;
+    strip.replaceChildren(...tabs.map((tab) => {
+      const row = el("div", `conversation-tab${tab.current ? " current" : ""}${tab.activity === "busy" ? " busy" : ""}`);
+      const name = tab.projectRoot.split(/[\\/]/).filter(Boolean).at(-1) ?? tab.projectRoot;
+      const title = tab.title || t("web.conv.untitled");
+      const main = el("button", "tab-main") as HTMLButtonElement;
+      main.type = "button";
+      main.title = `${name} · ${title}`;
+      main.setAttribute("aria-label", main.title);
+      main.append(el("span", "tab-project", name), el("span", "tab-title", title));
+      if (tab.activity === "busy") main.append(el("span", "tab-busy"));
+      main.disabled = tab.current;
+      const command = `/tab ${tab.conversationId} ${tab.projectRoot}`;
+      main.dataset.command = command;
+      main.addEventListener("click", () => void send(command, main));
+      row.append(main);
+      const number = state?.conversations.findIndex((conversation) => conversation.id === tab.conversationId) ?? -1;
+      if (tab.pinned || number >= 0) {
+        const action = iconButton(tab.pinned ? "x" : "pin", t(tab.pinned ? "web.conv.unpin" : "web.conv.pin"), "tab-action");
+        action.type = "button";
+        action.addEventListener("click", () => void send(tab.pinned
+          ? `/tab unpin ${tab.conversationId} ${tab.projectRoot}` : `/pin ${number + 1}`, action));
+        row.append(action);
+      }
+      return row;
+    }));
+  };
+
   const renderState = () => {
     renderQuestionDock();
     if (!state) return;
@@ -1170,6 +1201,7 @@ export function clientMain({
     const listedProjects = state.projects ?? [];
     fillProjectSelect(projects, listedProjects);
     projects.hidden = listedProjects.length === 0;
+    renderConversationTabs();
     // スマホ: 状態の行
     $("#mobile-title").textContent = state.conversations.find((conversation) => conversation.current)?.title ?? t("web.conv.untitled");
     $("#mobile-project").replaceChildren(icon("folder"), el("span", "", $("#project-name").textContent ?? ""));

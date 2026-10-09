@@ -36,7 +36,7 @@ export const DISABLE_MOUSE_TRACKING = "\x1b[?1006l\x1b[?1000l";
 export const TUI_RENDER_OPTIONS = { exitOnCtrlC: false, alternateScreen: true } as const;
 const { line: LINE_COLOR, muted: MUTED_COLOR, warn: WARN_COLOR,
   claude: CLAUDE_COLOR, codex: CODEX_COLOR } = TERMINAL_COLORS;
-const EMPTY_STATE: WebState = { project: "", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: getLanguage(), sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: buildLimitState() };
+const EMPTY_STATE: WebState = { project: "", primary: "claude", roles: {}, agents: [], tabs: [], conversations: [], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: getLanguage(), sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: buildLimitState() };
 const EMPTY_FEED: TerminalFeed = { timeline: [], completed: [] };
 
 const runWindowsConsoleMode = (): Promise<void> => new Promise((resolve, reject) => {

@@ -34,7 +34,7 @@ describe("resolvePendingSettings", () => {
 });
 
 it("画面全体が切り替わるコマンドだけを待つ", () => {
-  for (const line of ["/new", "/new codex", "/resume 2", "/project E:\\dev", "/sandbox on"]) expect(isNavigationCommand(line)).toBe(true);
+  for (const line of ["/new", "/new codex", "/resume 2", "/project E:\\dev", "/tab id E:\\dev", "/sandbox on"]) expect(isNavigationCommand(line)).toBe(true);
   for (const line of ["/newer", "/model codex x", "文章 /new", "!echo /new"]) expect(isNavigationCommand(line)).toBe(false);
 });
 

@@ -41,7 +41,7 @@ export const conversationStatePath = (homeDir: string, projectRoot: string): str
 };
 
 // 壊れていても起動は妨げない（空の履歴として扱う）
-const loadConversations = (path: string): Conversation[] => {
+export const loadConversations = (path: string): Conversation[] => {
   if (!existsSync(path)) return [];
   try {
     const parsed = stateSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));

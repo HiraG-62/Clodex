@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Hub } from "./hub.js";
 import { saveRecovery } from "../project/recovery-store.js";
+import { ConversationHistory, conversationStatePath } from "../project/conversation-history.js";
 
 const setup = () => {
   const homeDir = mkdtempSync(join(tmpdir(), "clodex-hub-"));
@@ -16,6 +17,28 @@ const setup = () => {
 };
 
 describe("Hub", () => {
+  it("閉じた project の固定した会話を一覧に出し、Agent を開かずに固定を外す", async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), "clodex-tab-hub-"));
+    const opened: string[] = [];
+    const makeHub = () => new Hub({ homeDir, cwd: homeDir, openProject: async (projectRoot: string) => {
+      opened.push(projectRoot);
+      return { projectRoot, history: new ConversationHistory(conversationStatePath(homeDir, projectRoot), { resumeLatest: false }), close: async () => {} };
+    } });
+    const first = makeHub();
+    const context = await first.open("one");
+    context.history.rename("固定した会話");
+    const id = context.history.currentId;
+    context.history.togglePin(id);
+    const second = makeHub();
+    const source = (project: typeof context) => ({ conversations: project.history.list(), current: project.history.current });
+    expect(second.tabs(source)).toMatchObject([{ projectRoot: context.projectRoot, conversationId: id, pinned: true }]);
+    expect(second.unpinConversation(context.projectRoot, id, (project) => project.history)).toBe(false);
+    expect(second.tabs(source)).toEqual([]);
+    expect(opened).toHaveLength(1);
+    const saved = new ConversationHistory(conversationStatePath(homeDir, context.projectRoot), { resumeLatest: false }).list();
+    expect(saved.map((conversation) => conversation.id)).toEqual([id]);
+    expect(saved[0]).not.toHaveProperty("pinned");
+  });
   it("保存済み project のうち復旧する作業があるものだけ列挙する", async () => {
     const { homeDir, hub } = setup();
     await hub.open("one");

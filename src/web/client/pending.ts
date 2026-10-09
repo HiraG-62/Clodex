@@ -28,7 +28,7 @@ export function resolvePendingSettings(pending: PendingSettings, agents: readonl
 }
 
 export function isNavigationCommand(line: string): boolean {
-  return /^\/(?:new|resume|project|sandbox)(?:\s|$)/.test(line.trim());
+  return /^\/(?:new|resume|project|tab|sandbox)(?:\s|$)/.test(line.trim());
 }
 
 export type CommandStarts = Record<number, { at: string; outputId: string }>;

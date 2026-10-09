@@ -356,9 +356,21 @@ const STYLE = `
   .working-say { color: var(--fg-2); font-size: 13px; overflow-wrap: anywhere; border-left: 2px solid var(--line-strong); padding-left: 10px; }
 
   .app { display: grid; height: 100%; max-width: ${WEB_LAYOUT.sideWidth + WEB_LAYOUT.chatMaxWidth}px; margin: 0 auto; min-width: 0;
-    grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto;
-    grid-template-areas: "top" "conn" "status" "log" "compose"; }
-  .topbar { grid-area: top; } .conn { grid-area: conn; } .status { grid-area: status; } .log-wrap { grid-area: log; } .composer { grid-area: compose; }
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "top" "tabs" "conn" "status" "log" "compose"; }
+  .topbar { grid-area: top; } .conversation-tabs { grid-area: tabs; } .conn { grid-area: conn; } .status { grid-area: status; } .log-wrap { grid-area: log; } .composer { grid-area: compose; }
+  .conversation-tabs { display: flex; align-items: stretch; gap: 4px; min-width: 0; overflow-x: auto; padding: 5px 10px; border-bottom: 1px solid var(--line); scrollbar-width: thin; }
+  .conversation-tabs[hidden] { display: none; }
+  .conversation-tab { display: flex; align-items: center; flex: none; min-width: 0; max-width: 230px; border-radius: var(--r); background: var(--sunken); }
+  .conversation-tab.current { background: var(--panel); box-shadow: var(--ring-strong); }
+  .conversation-tab.current .tab-main:disabled { color: var(--fg); opacity: 1; cursor: default; }
+  .conversation-tab.busy { box-shadow: inset 2px 0 var(--accent), var(--ring); }
+  .tab-main { display: flex; align-items: center; gap: 5px; min-width: 0; padding: 5px 4px 5px 9px; border: 0; background: transparent; color: var(--fg); font-size: 12px; }
+  .tab-project { flex: none; color: var(--muted); font-size: 10px; max-width: 65px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tab-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tab-busy { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--accent); }
+  .tab-action { width: 25px; height: 25px; margin: 2px; }
+  .tab-action .i { width: 14px; height: 14px; }
   @media (min-width: 900px) and (hover: hover) and (pointer: fine) {
     .handoff { grid-template-columns: 22px minmax(0, 1fr); column-gap: 12px; }
     .handoff > :not(.route) { grid-column: 2; }
@@ -366,8 +378,8 @@ const STYLE = `
     .sheet { align-items: center; justify-items: center; }
     .sheet-panel { border-radius: 14px; max-height: 85vh; max-width: 640px; padding-bottom: 20px; }
     .sheet-panel.wide { max-width: 960px; }
-    .app { grid-template-columns: ${WEB_LAYOUT.sideWidth}px minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto;
-      grid-template-areas: "top top" "conn conn" "side agents" "side log" "side compose"; border-inline: 1px solid var(--line); }
+    .app { grid-template-columns: ${WEB_LAYOUT.sideWidth}px minmax(0, 1fr); grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+      grid-template-areas: "top top" "side tabs" "side conn" "side agents" "side log" "side compose"; border-inline: 1px solid var(--line); }
     .side { grid-area: side; display: flex; border-right: 1px solid var(--line); overflow-y: auto; }
     .status { display: none; }
     .log { padding-inline: 32px; } .composer { padding-inline: 32px; }
@@ -597,7 +609,7 @@ const STYLE = `
   .usage-side .gauge-reset { display: inline; margin-right: 8px; color: var(--muted); }
   .usage-side .gauge { font-size: 11.5px; }
   @media (width > ${WEB_LAYOUT.sideWidth + WEB_LAYOUT.chatMaxWidth}px) and (hover: hover) and (pointer: fine) {
-    .app { max-width: none; border: 0; grid-template-columns: max(${WEB_LAYOUT.sideWidth}px, calc((100vw - ${WEB_LAYOUT.chatMaxWidth}px) / 2)) ${WEB_LAYOUT.chatMaxWidth}px minmax(0, 1fr); grid-template-areas: "top top top" "conn conn conn" "side agents ." "side log ." "side compose ."; }
+    .app { max-width: none; border: 0; grid-template-columns: max(${WEB_LAYOUT.sideWidth}px, calc((100vw - ${WEB_LAYOUT.chatMaxWidth}px) / 2)) ${WEB_LAYOUT.chatMaxWidth}px minmax(0, 1fr); grid-template-areas: "top top top" "side tabs ." "side conn ." "side agents ." "side log ." "side compose ."; }
     .side { width: ${WEB_LAYOUT.sideWidth}px; justify-self: start; background: var(--bg); }
   }
   @media (min-width: ${WEB_LAYOUT.wideUsageMinWidth}px) and (hover: hover) and (pointer: fine) {
@@ -659,7 +671,7 @@ const STYLE = `
   @media (max-width: 899px), (pointer: coarse) {
     .mobile-only { display: flex; }
     html, body { overflow: hidden; }
-    .app { position: fixed; top: var(--viewport-top, 0px); left: 0; right: 0; height: var(--viewport-height, 100dvh); grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-areas: "top" "conn" "log" "compose"; padding-inline: env(safe-area-inset-left) env(safe-area-inset-right); }
+    .app { position: fixed; top: var(--viewport-top, 0px); left: 0; right: 0; height: var(--viewport-height, 100dvh); grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; grid-template-areas: "top" "tabs" "conn" "log" "compose"; padding-inline: env(safe-area-inset-left) env(safe-area-inset-right); }
     .topbar { height: calc(48px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 2px 0; gap: 0; flex-wrap: nowrap; }
     .topbar > .brand, .topbar > .project-pill, .topbar > #open-project, .header-tray, .side, .agent-strip { display: none; }
     .topbar > .icon-btn { width: 44px; height: 44px; flex: none; }
@@ -770,7 +782,7 @@ const STYLE = `
     .mobile-pop .grab, .mobile-pop .sheet-head { display: none; }
     .pending button { min-width: 44px; min-height: 44px; }
     .ref { min-height: 44px; }
-    body.kbd .topbar { display: none; }
+    body.kbd .topbar, body.kbd .conversation-tabs { display: none; }
     body.kbd .app { grid-template-areas: "conn" "log" "compose"; grid-template-rows: auto minmax(0, 1fr) auto; }
     body.kbd .working-tabs { display: none; }
     body.kbd .composer { padding-bottom: 6px; }
@@ -807,6 +819,7 @@ ${UI_ICONS}
       ${button("open-settings", "settings", "web.top.settings")}
     </div>
   </header>
+  <nav class="conversation-tabs" id="conversation-tabs" aria-label="${m("web.side.conversations")}" hidden></nav>
   <div class="conn" id="conn" hidden role="status"><span class="spin" id="conn-spinner"></span><span id="conn-label">${m("web.conn.lost")}</span><button class="btn" id="reload" type="button" hidden>${m("web.conn.reload")}</button></div>
   <section class="agent-strip" id="agents" aria-label="Agent"><div class="strip-well" aria-hidden="true">${[0, 1].map(() => '<div class="strip-skeleton"><span class="sk sk-avatar"></span><div class="sk-identity"><div><span class="sk sk-name"></span><span class="sk sk-state"></span></div><span class="sk sk-settings"></span></div><div class="sk-gauges"><span class="sk"></span><span class="sk"></span><span class="sk"></span></div></div>').join("")}</div></section>
   <aside class="side">

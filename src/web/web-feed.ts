@@ -1,6 +1,7 @@
 // Web UI へ送る feed（DESIGN.md §17 Web UI）。event と output は直近を保持し、接続時に送り直す
 import type { PendingQuestion } from "../protocol/questions.js";
 import type { HubProjectEntry } from "../hub/hub.js";
+import type { ConversationTab } from "../hub/tabs.js";
 import type { AgentId } from "../agents/agent-adapter.js";
 import type { AgentState } from "../cli/shell.js";
 import type { CommandLifecycle } from "../cli/command-runner.js";
@@ -26,6 +27,7 @@ export interface WebState {
   limitsUnlimited: boolean;
   project: string;
   projects?: HubProjectEntry[];
+  tabs: ConversationTab[];
   primary: AgentId;
   roles: Partial<Record<AgentId, string>>;
   agents: AgentState[];

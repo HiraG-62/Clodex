@@ -102,6 +102,8 @@ export interface ShellOptions {
     open(path: string): Promise<{ projectRoot: string; primary: AgentId }>;
     togglePin(path: string): boolean | undefined;
     remove(path: string): ProjectRemoveError | undefined;
+    findConversation(projectRoot: string, id: string): Conversation | undefined;
+    unpinConversation(projectRoot: string, id: string): boolean | undefined;
     hasCurrent?(): boolean;
   };
   language?: { get(): Language; set(value: Language): void | Promise<void> };
@@ -267,7 +269,7 @@ export const createShell = ({
 
   const handleLine = async (line: string): Promise<ShellOutcome> => {
     const command = parseInput(line, lockedAgent() ?? primary);
-    if (projects?.hasCurrent && !projects.hasCurrent() && !["project", "language", "help", "exit", "empty"].includes(command.kind)) {
+    if (projects?.hasCurrent && !projects.hasCurrent() && !["project", "tab", "language", "help", "exit", "empty"].includes(command.kind)) {
       print(t("shell.noProjectSelected"));
       return "continue";
     }
@@ -384,6 +386,26 @@ export const createShell = ({
           print(`${project.projectRoot}${status}${project.pinned ? t("shell.projectPinnedMark") : ""}`);
         }
         return "continue";
+      case "tab": {
+        if (!projects) return "continue";
+        const picked = projects.findConversation(command.projectRoot, command.conversationId);
+        if (!picked) {
+          notify(t("reject.notFound"), "warn");
+          return "continue";
+        }
+        if (command.action === "unpin") {
+          const pinned = projects.unpinConversation(command.projectRoot, command.conversationId);
+          if (pinned === undefined) notify(t("reject.notFound"), "warn");
+          else notify(t("shell.unpinned", { title: titleOf(picked) }));
+          return "continue";
+        }
+        const opened = await projects.open(command.projectRoot);
+        primary = opened.primary;
+        const selected = await history().switchTo(command.conversationId);
+        if (!selected) notify(t("reject.notFound"), "warn");
+        else notify(t("shell.resumed", { title: titleOf(selected) }));
+        return "continue";
+      }
       case "role":
         if (command.agent && command.text !== undefined) {
           const saved = saveRole(command.agent, command.text);

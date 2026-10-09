@@ -173,6 +173,8 @@ const main = async (): Promise<void> => {
     print, notify, toggleVerbose, runner, processes,
     projects: {
       list: () => hub.list(), open: openInHub, hasCurrent: () => hub.current !== undefined,
+      findConversation: (path, id) => hub.conversation(path, id, (context) => context.history),
+      unpinConversation: (path, id) => { const pinned = hub.unpinConversation(path, id, (context) => context.history); refreshState(); return pinned; },
       togglePin: (path) => { const pinned = hub.togglePin(path); refreshState(); return pinned; },
       remove: (path) => { const error = hub.remove(path); refreshState(); return error; },
     },
@@ -223,6 +225,13 @@ const main = async (): Promise<void> => {
       limitsUnlimited: context?.unlimited ?? false,
       project: runtime?.workDir ?? context?.projectRoot ?? "",
       projects: hub.list(),
+      tabs: hub.tabs((project) => {
+        const withActivity = (conversation: typeof project.history.current) => {
+          const activity = project.workspace.activity(conversation.id);
+          return { ...conversation, ...(activity ? { activity } : {}) };
+        };
+        return { conversations: project.history.list().map(withActivity), current: withActivity(project.history.current) };
+      }),
       primary: shell.getPrimary(),
       roles: context?.config.roles ?? {},
       agents: runtime?.coordinator.status() ?? [],

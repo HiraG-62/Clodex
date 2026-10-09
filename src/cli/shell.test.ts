@@ -197,11 +197,14 @@ const setup = ({ withoutProject = false } = {}) => {
   const roles: Partial<Record<AgentId, string>> = { claude: "設計" };
   const references: string[] = [];
   let hasProject = !withoutProject;
+  const tabUnpinned: Array<{ projectRoot: string; id: string }> = [];
   const projects = {
     list: () => [{ projectRoot: "C:\\dev\\one", open: true, current: true, pinned: true }, { projectRoot: "C:\\dev\\two", open: false, current: false, pinned: false }],
     open: async (path: string) => { hasProject = true; return { projectRoot: path, primary: "codex" as AgentId }; },
     togglePin: (path: string) => (path === "C:\\dev\\two" ? true : undefined),
     remove: (path: string) => (path === "C:\\dev\\two" ? undefined : path === "C:\\dev\\one" ? "open" as const : "missing" as const),
+    findConversation: (projectRoot: string, id: string) => projectRoot === "C:\\dev\\two" && id === "conv-old" ? history.conversations[1] : undefined,
+    unpinConversation: (projectRoot: string, id: string) => { tabUnpinned.push({ projectRoot, id }); return false; },
     hasCurrent: () => hasProject,
   };
   // 本物と同じく、project を開く前に会話を求めると例外にする
@@ -233,7 +236,7 @@ const setup = ({ withoutProject = false } = {}) => {
     worktreeSetup: () => worktreeSetup.value,
     saveRole: (agent, value) => { roles[agent] = value; return value; },
   });
-  return { languageSettings, languages, coordinator, printed, notified, levels, shell, history, runner, saved, busy, worktreeSetup, projects, roles, background, references, sandbox };
+  return { languageSettings, languages, coordinator, printed, notified, levels, shell, history, runner, saved, busy, worktreeSetup, projects, roles, background, references, sandbox, tabUnpinned };
 };
 
 it("/language は現在値を表示し、正しい値だけ保存する", async () => {
@@ -250,6 +253,31 @@ it("/language は現在値を表示し、正しい値だけ保存する", async 
 });
 
 describe("createShell", () => {
+  it("/tab で別 project の会話へ切り替え、無い会話なら project を開かない", async () => {
+    const { shell, history, projects, notified, levels } = setup({ withoutProject: true });
+    const opened: string[] = [];
+    const originalOpen = projects.open;
+    projects.open = async (path) => { opened.push(path); return originalOpen(path); };
+    await shell.handleLine("/tab missing C:\\dev\\two");
+    expect(opened).toEqual([]);
+    expect(notified.at(-1)).toBe("conversation not found");
+    expect(levels.at(-1)).toBe("warn");
+    await shell.handleLine("/tab conv-old C:\\dev\\two");
+    expect(opened).toEqual(["C:\\dev\\two"]);
+    expect(history.currentId).toBe("conv-old");
+    expect(notified.at(-1)).toBe('switched to: "Remember BANANA"');
+  });
+
+  it("/tab unpin は project を開かずに固定を外す", async () => {
+    const { shell, projects, tabUnpinned, notified } = setup();
+    const opened: string[] = [];
+    const originalOpen = projects.open;
+    projects.open = async (path) => { opened.push(path); return originalOpen(path); };
+    await shell.handleLine("/tab unpin conv-old C:\\dev\\two");
+    expect(tabUnpinned).toEqual([{ projectRoot: "C:\\dev\\two", id: "conv-old" }]);
+    expect(opened).toEqual([]);
+    expect(notified.at(-1)).toBe('unpinned: "Remember BANANA"');
+  });
   it("Web の /sandbox on 失敗は表示し、入力 API は 204 を返す", async()=>{
     const {shell,sandbox,printed}=setup();sandbox.set=async()=>{throw new Error("Invalid runtime ACL");};
     const server=await startWebServer({port:0,token:"test-token",feed:new WebFeed(),page:buildWebPage("en"),

@@ -4,7 +4,7 @@ import { en, ja } from "../../i18n/messages.js";
 import type { FeedItem, WebState } from "../web-feed.js";
 import { backgroundPushPayload, updateDesktopNotify, type DesktopNotifyState } from "./desktop-notify.js";
 
-const IDLE: WebState = { project: "app", primary: "claude", roles: {}, agents: [], conversations: [], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } };
+const IDLE: WebState = { project: "app", primary: "claude", roles: {}, agents: [], tabs: [], conversations: [], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "ja", sandbox: { enabled: false, ready: false }, limitsUnlimited: false, limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } };
 const state = (pending = false): FeedItem => ({ type: "state", state: { ...IDLE, pendingInputs: pending ? [{ id: "1", agent: "claude", text: "次" }] : [] } });
 const event = (value: AgentEvent, agent: "claude" | "codex" = "claude"): FeedItem => ({ type: "event", seq: 1, event: { kind: "agent", agent, event: value, at: "now" } });
 const turn = (text = "完了\n詳細", status: "completed" | "failed" | "interrupted" = "completed") => event({ type: "turn", result: { status, text } });

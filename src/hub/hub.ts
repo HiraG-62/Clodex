@@ -1,10 +1,12 @@
 // 複数の project の実行環境を持ち、今の project を選ぶ（DESIGN.md §28 D2a）
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { writeFileAtomic } from "../project/atomic-write.js";
 import { resolveProjectRoot } from "../project/project-root.js";
 import { hasRecoveryWork, loadRecovery } from "../project/recovery-store.js";
+import { ConversationHistory, conversationStatePath, loadConversations, type Conversation } from "../project/conversation-history.js";
+import { buildTabs, type ConversationTab, type TabConversation } from "./tabs.js";
 
 const HUB_PATH = join(".clodex", "hub.json");
 const savedSchema = z.object({ projects: z.array(z.string()), pinned: z.array(z.string()).optional(), lastProject: z.string().optional() });
@@ -32,6 +34,7 @@ export interface HubOptions<T extends HubProject> {
 
 export class Hub<T extends HubProject> {
   private readonly contexts = new Map<string, T>();
+  private readonly closedConversations = new Map<string, { modified: number; size: number; conversations: Conversation[] }>();
   private saved: string[];
   private pinned: string[];
   private selected: string | undefined;
@@ -73,6 +76,46 @@ export class Hub<T extends HubProject> {
       projectRoot, open: this.contexts.has(projectRoot), current: projectRoot === this.selected, pinned: this.pinned.includes(projectRoot),
     }));
     return [...entries.filter((entry) => entry.pinned), ...entries.filter((entry) => !entry.pinned)];
+  }
+
+  private savedConversations(projectRoot: string): Conversation[] {
+    const path = conversationStatePath(this.options.homeDir, projectRoot);
+    const stats = existsSync(path) ? statSync(path) : undefined;
+    const modified = stats?.mtimeMs ?? 0;
+    const size = stats?.size ?? 0;
+    const cached = this.closedConversations.get(projectRoot);
+    if (cached?.modified === modified && cached.size === size) return cached.conversations;
+    const conversations = loadConversations(path);
+    this.closedConversations.set(projectRoot, { modified, size, conversations });
+    return conversations;
+  }
+
+  tabs(source: (project: T) => { conversations: readonly TabConversation[]; current: TabConversation }): ConversationTab[] {
+    const projects = this.list().map(({ projectRoot }) => {
+      const context = this.contexts.get(projectRoot);
+      return { projectRoot, conversations: context ? source(context).conversations : this.savedConversations(projectRoot) };
+    });
+    const context = this.current;
+    const current = context ? { projectRoot: context.projectRoot, conversation: source(context).current } : undefined;
+    return buildTabs(projects, current);
+  }
+
+  conversation(projectRoot: string, id: string, source: (project: T) => { list(): Conversation[] }): Conversation | undefined {
+    if (!this.saved.includes(projectRoot)) return undefined;
+    const context = this.contexts.get(projectRoot);
+    return (context ? source(context).list() : this.savedConversations(projectRoot)).find((conversation) => conversation.id === id);
+  }
+
+  unpinConversation(projectRoot: string, id: string, source: (project: T) => Pick<ConversationHistory, "list" | "togglePin">): boolean | undefined {
+    if (!this.saved.includes(projectRoot)) return undefined;
+    const context = this.contexts.get(projectRoot);
+    const history = context ? source(context) : new ConversationHistory(conversationStatePath(this.options.homeDir, projectRoot), { resumeLatest: false });
+    const conversation = history.list().find((entry) => entry.id === id);
+    if (!conversation) return undefined;
+    if (!conversation.pinned) return false;
+    const pinned = history.togglePin(id);
+    if (!context) this.closedConversations.delete(projectRoot);
+    return pinned;
   }
 
   // 切り替え後のピン止めの状態。一覧に無ければ undefined

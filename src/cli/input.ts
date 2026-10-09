@@ -16,6 +16,7 @@ export type ShellCommand =
   | { kind: "interrupt"; agent?: AgentId }
   | { kind: "status" }
   | { kind: "project"; path?: string; action?: ProjectAction }
+  | { kind: "tab"; conversationId: string; projectRoot: string; action?: "unpin" }
   | { kind: "role"; agent?: AgentId; text?: string }
   | { kind: "help" }
   | { kind: "exit" }
@@ -175,6 +176,15 @@ const parseCommand = (name: string, arg: string, primary: AgentId): ShellCommand
       if (!action) return { kind: "project", path: arg };
       const path = action[2]?.trim();
       return path ? { kind: "project", action: action[1] as ProjectAction, path } : usage("/project pin|remove <path>");
+    }
+    case "tab": {
+      const tabUsage = "/tab [unpin] <id> <project root>";
+      const unpin = arg === "unpin" || arg.startsWith("unpin ");
+      const rest = unpin ? arg.slice("unpin".length).trim() : arg;
+      const match = rest.match(/^(\S+)\s+(.+)$/);
+      return match?.[1] && match[2]
+        ? { kind: "tab", ...(unpin ? { action: "unpin" as const } : {}), conversationId: match[1], projectRoot: match[2] }
+        : usage(tabUsage);
     }
     case "interrupt":
       if (!arg) return { kind: "interrupt" };
