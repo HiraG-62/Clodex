@@ -9,6 +9,12 @@ import { ja } from "../i18n/messages.js";
 const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1] ?? "");
 
 describe("buildWebPage", () => {
+  it("ログ全体を読み上げず、完了と質問の通知領域を持つ", () => {
+    const html = buildWebPage("ja").html;
+    expect(html).toMatch(/<main class="log" id="log"[^>]*>/);
+    expect(html).not.toMatch(/<main class="log" id="log"[^>]*aria-live/);
+    expect(html).toContain('class="visually-hidden" id="announcements" aria-live="polite"');
+  });
   it("広い画面の利用状況領域と共通の寸法を埋め込む", () => {
     const html = buildWebPage("ja").html;
     expect(html).toContain('id="usage-side"');

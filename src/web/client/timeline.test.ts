@@ -2,16 +2,16 @@ import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "../../agents/agent-adapter.js";
 import type { AgentMessage } from "../../protocol/messages.js";
 import type { FeedItem } from "../web-feed.js";
-import { rebuildTimeline, applyFeedItem, withWorkingTurnsLast, withStartingTurns, withSubagentRows, workingFeed, type TimelineItem } from "./timeline.js";
+import { rebuildTimeline, applyFeedItem, withWorkingTurnsLast, withStartingTurns, withSubagentRows, workingFeed, mergeReplayHistory, announcementKind, type TimelineItem } from "./timeline.js";
 
 const AT = "2026-10-05T12:00:00.000Z";
 const LATER = "2026-10-05T12:05:00.000Z";
 let seq = 0;
-const agent = (name: "claude" | "codex", event: AgentEvent, at = AT): FeedItem =>
+const agent = (name: "claude" | "codex", event: AgentEvent, at = AT): Extract<FeedItem, { type: "event" }> =>
   ({ type: "event", seq: ++seq, event: { kind: "agent", agent: name, event, at } });
-const human = (name: "claude" | "codex", text: string): FeedItem =>
+const human = (name: "claude" | "codex", text: string): Extract<FeedItem, { type: "event" }> =>
   ({ type: "event", seq: ++seq, event: { kind: "human", agent: name, text, at: AT } });
-const output = (text: string): FeedItem => ({ type: "output", seq: ++seq, text });
+const output = (text: string): Extract<FeedItem, { type: "output" }> => ({ type: "output", seq: ++seq, text });
 const formal = (from: "claude" | "codex", body: string, auto = false): FeedItem => {
   const message: AgentMessage = {
     id: `msg_${++seq}`, from, to: from === "claude" ? "codex" : "claude", type: "DELEGATE", taskId: "T",
@@ -20,6 +20,36 @@ const formal = (from: "claude" | "codex", body: string, auto = false): FeedItem 
   return { type: "event", seq, event: { kind: "message", message, at: AT }, envelope: `封筒: ${body}` };
 };
 const run = (items: FeedItem[]) => items.reduce<TimelineItem[]>(applyFeedItem, []);
+
+describe("mergeReplayHistory", () => {
+  it("同じ流れなら読み足した履歴を残す", () => {
+    const current = [output("old"), output("same"), output("stale")];
+    const incoming = [current[1]!, output("new")];
+    expect(mergeReplayHistory(current, incoming)).toEqual({ history: [current[0], ...incoming], preserved: true });
+  });
+  it("会話が変わったら履歴を置き換える", () => {
+    const current = [human("claude", "old")];
+    const incoming = [human("claude", "new")];
+    expect(mergeReplayHistory(current, incoming)).toEqual({ history: incoming, preserved: false });
+  });
+  it("seq が振り直されたら履歴を置き換える", () => {
+    const current = [{ type: "output" as const, seq: 1, text: "old" }];
+    const incoming = [{ type: "output" as const, seq: 1, text: "new" }];
+    expect(mergeReplayHistory(current, incoming)).toEqual({ history: incoming, preserved: false });
+  });
+  it("受け取った履歴が空なら置き換える", () => {
+    expect(mergeReplayHistory([output("old")], [])).toEqual({ history: [], preserved: false });
+  });
+});
+
+it("読み上げ対象はターン完了と質問だけ", () => {
+  expect(announcementKind(agent("claude", { type: "turn", result: { status: "completed", text: "ok" } }))).toBe("work");
+  expect(announcementKind(agent("claude", { type: "turn", result: { status: "interrupted", text: "" } }))).toBe("interrupted");
+  expect(announcementKind(agent("claude", { type: "turn", result: { status: "failed", text: "" } }))).toBe("failed");
+  expect(announcementKind({ type: "event", seq: ++seq, event: { kind: "question", id: "q", agent: "claude", at: AT, questions: [] } })).toBe("question");
+  expect(announcementKind(agent("claude", { type: "text", text: "途中" }))).toBeUndefined();
+  expect(announcementKind(output("途中"))).toBeUndefined();
+});
 
 describe("withStartingTurns", () => {
   it("配送待ちや busy 中の human は、取り消して idle になっても仮ターンにしない", () => {

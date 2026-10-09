@@ -15,7 +15,7 @@ import { clientMain } from "./client/client-main.js";
 import { createInputAssist } from "./client/input-assist.js";
 import { collectArtifacts, displayPath, findImagePaths, splitImagePaths } from "./client/artifacts.js";
 import { renderMarkdown } from "./client/markdown.js";
-import { applyFeedItem, rebuildTimeline, withWorkingTurnsLast, withStartingTurns, withSubagentRows, workingFeed } from "./client/timeline.js";
+import { applyFeedItem, rebuildTimeline, withWorkingTurnsLast, withStartingTurns, withSubagentRows, workingFeed, mergeReplayHistory, announcementKind } from "./client/timeline.js";
 import { nextUnanswered, questionAnswers } from "./client/question-flow.js";
 import { composeInputLine } from "./client/compose-input.js";
 import { draftKey, staleDraftKeys } from "./client/drafts.js";
@@ -156,6 +156,7 @@ const STYLE = `
   .conv .m { color: var(--muted); font-size: 11.5px; }
 
   .log-wrap { position: relative; min-height: 0; display: grid; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
   .log { overflow-y: auto; overscroll-behavior: contain; padding: 4px 16px 24px; display: grid; align-content: start; min-width: 0; }
   .empty { margin: 32px auto; max-width: 320px; text-align: center; color: var(--muted); font-size: 13px; }
   .empty b { display: block; color: var(--fg); font-size: 15px; margin-bottom: 4px; }
@@ -829,11 +830,12 @@ ${UI_ICONS}
     </section>
   </aside>
   <div class="log-wrap">
-    <main class="log" id="log" aria-label="${m("web.log.label")}" aria-live="polite">
+    <main class="log" id="log" aria-label="${m("web.log.label")}">
       <div class="history-loading" id="history-loading" hidden role="status"><span class="spin"></span>${m("web.history.loading")}</div>
       <div class="log-skeleton" id="log-skeleton" aria-hidden="true">${[0, 1, 2, 3].map(() => '<div class="sk-row"><span class="sk sk-avatar"></span><div class="sk-lines"><span class="sk"></span><span class="sk"></span><span class="sk"></span></div></div>').join("")}</div>
       <div class="empty" id="empty" hidden><b>${m("web.empty.title")}</b></div>
     </main>
+    <div class="visually-hidden" id="announcements" aria-live="polite"></div>
     <button class="newer" type="button" id="newer" aria-label="${m("web.newer")}" title="${m("web.newer")}" hidden>${icon("arrow-down")}</button>
   </div>
   <form class="composer" id="composer">
@@ -907,6 +909,8 @@ const FUNCTIONS = `
   renderMarkdown: ${inlineScript(renderMarkdown.toString())},
   applyFeedItem: ${inlineScript(applyFeedItem.toString())},
   rebuildTimeline: ${inlineScript(rebuildTimeline.toString())},
+  mergeReplayHistory: ${inlineScript(mergeReplayHistory.toString())},
+  announcementKind: ${inlineScript(announcementKind.toString())},
   workingFeed: ${inlineScript(workingFeed.toString())},
   nextUnanswered: ${inlineScript(nextUnanswered.toString())},
   questionAnswers: ${inlineScript(questionAnswers.toString())},

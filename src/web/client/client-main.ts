@@ -10,7 +10,7 @@ import type { FeedItem, GuiAction, GuiInfo, GuiUpdate, HistoryItem, HistoryPage,
 import type { renderMarkdown as RenderMarkdown } from "./markdown.js";
 import type { nextUnanswered as NextUnanswered, questionAnswers as QuestionAnswers } from "./question-flow.js";
 import type { PendingQuestion } from "../../protocol/questions.js";
-import type { TimelineItem, DisplayTimelineItem, withWorkingTurnsLast as WithWorkingTurnsLast, withStartingTurns as WithStartingTurns, withSubagentRows as WithSubagentRows, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline, workingFeed as WorkingFeed } from "./timeline.js";
+import type { TimelineItem, DisplayTimelineItem, withWorkingTurnsLast as WithWorkingTurnsLast, withStartingTurns as WithStartingTurns, withSubagentRows as WithSubagentRows, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline, workingFeed as WorkingFeed, mergeReplayHistory as MergeReplayHistory, announcementKind as AnnouncementKind } from "./timeline.js";
 import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
 import type { isSendKey as IsSendKey, SendKey } from "./send-key.js";
 import type { fitView as FitView, zoomView as ZoomView } from "./image-zoom.js";
@@ -38,6 +38,8 @@ export interface ClientDeps {
   renderMarkdown: typeof RenderMarkdown;
   applyFeedItem: typeof ApplyFeedItem;
   rebuildTimeline: typeof RebuildTimeline;
+  mergeReplayHistory: typeof MergeReplayHistory;
+  announcementKind: typeof AnnouncementKind;
   workingFeed: typeof WorkingFeed;
   nextUnanswered: typeof NextUnanswered;
   questionAnswers: typeof QuestionAnswers;
@@ -62,7 +64,7 @@ export interface ClientDeps {
 }
 
 export function clientMain({
-  layout, withWorkingTurnsLast, withStartingTurns, withSubagentRows, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, settingsSections, limitChanges, pendingRows, draftKey, staleDraftKeys,
+  layout, withWorkingTurnsLast, withStartingTurns, withSubagentRows, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, mergeReplayHistory, announcementKind, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, settingsSections, limitChanges, pendingRows, draftKey, staleDraftKeys,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -189,6 +191,8 @@ export function clientMain({
   const controlUpdaters = new WeakMap<HTMLElement, (agent: AgentState) => void>();
 
   const log = $("#log");
+  const announcements = $("#announcements");
+  let replayAnchor: { id: string; top: number } | undefined;
   const newer = $("#newer");
   let unreadWhileReading = false;
   const input = document.querySelector<HTMLTextAreaElement>("#input")!;
@@ -2518,13 +2522,16 @@ export function clientMain({
   const conn = $("#conn");
   const commitReplay = () => {
     if (!replaying) return;
-    history = incomingHistory;
+    const merged = mergeReplayHistory(history, incomingHistory);
+    replayAnchor = merged.preserved && !nearBottom() ? [...rendered].map(([id, entry]) => ({ id, top: entry.node.getBoundingClientRect().top }))
+      .find(({ top }) => top >= log.getBoundingClientRect().top) : undefined;
+    history = merged.history;
     incomingHistory = [];
     items = rebuildTimeline(history, applyFeedItem).map((item) => item.kind === "human" ? { ...item, queued: true } : item);
-    opened.clear();
+    if (!merged.preserved) opened.clear();
     historyGeneration++;
     historyLoading = false;
-    historyHasMore = true;
+    if (!merged.preserved) historyHasMore = true;
     commandStarts = {};
     replaying = false;
   };
@@ -2609,6 +2616,12 @@ export function clientMain({
         $("#conn-spinner").hidden = false;
         renderState();
         renderLog();
+        if (replayAnchor) {
+          const node = rendered.get(replayAnchor.id)?.node;
+          if (node) log.scrollTop += node.getBoundingClientRect().top - replayAnchor.top;
+          replayAnchor = undefined;
+          syncNewer();
+        }
         if (projectChanged && document.activeElement === input) void loadFiles();
         return;
       }
@@ -2627,6 +2640,11 @@ export function clientMain({
         return;
       }
       if (replaying) { incomingHistory.push(item); return; }
+      const announcement = announcementKind(item);
+      if (announcement && item.type === "event") {
+        const agent = item.event.kind === "question" ? item.event.agent : item.event.kind === "agent" ? item.event.agent : undefined;
+        if (agent) announcements.textContent = `${AGENTS[agent].name}: ${t(`notify.${announcement}`)}`;
+      }
       if (!nearBottom()) unreadWhileReading = true;
       history.push(item);
       items = applyFeedItem(items, item);

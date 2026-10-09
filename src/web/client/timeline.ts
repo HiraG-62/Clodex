@@ -198,3 +198,21 @@ export function workingFeed(items: readonly TimelineItem[]): WorkingEntry[] {
 export function rebuildTimeline(history: readonly HistoryItem[], apply: typeof applyFeedItem): TimelineItem[] {
   return history.reduce<TimelineItem[]>(apply, []);
 }
+
+export function mergeReplayHistory(current: readonly HistoryItem[], incoming: readonly HistoryItem[]): { history: HistoryItem[]; preserved: boolean } {
+  const oldest = incoming[0];
+  if (!oldest) return { history: [...incoming], preserved: false };
+  const matched = current.find((item) => item.seq === oldest.seq);
+  const same = matched?.type === oldest.type && (oldest.type === "event"
+    ? matched.type === "event" && matched.event.kind === oldest.event.kind && matched.event.at === oldest.event.at
+    : matched.type === "output" && matched.text.startsWith(oldest.text.slice(0, 100)));
+  if (!same) return { history: [...incoming], preserved: false };
+  return { history: [...current.filter((item) => item.seq < oldest.seq), ...incoming], preserved: true };
+}
+
+export function announcementKind(item: FeedItem): "work" | "failed" | "interrupted" | "question" | undefined {
+  if (item.type !== "event") return undefined;
+  if (item.event.kind === "question") return "question";
+  if (item.event.kind !== "agent" || item.event.event.type !== "turn") return undefined;
+  return item.event.event.result.status === "completed" ? "work" : item.event.event.result.status;
+}
