@@ -136,7 +136,7 @@ export type WorkingEntry =
   | { kind: "head"; turnId: string; agent: AgentId; at: string; plan?: string; done?: true }
   | { kind: "say"; agent: AgentId; text: string };
 
-// 作業中パネル（DESIGN.md §28 作業中の表示）: Agent ごとに直近のターンの発言を時系列に並べ、発言のターンが変わるところに見出しを挟む
+// 作業ログ（DESIGN.md §28 作業ログ）: Agent ごとに直近のターンの発言を時系列に並べ、発言のターンが変わるところに見出しを挟む
 export function workingFeed(items: readonly TimelineItem[]): WorkingEntry[] {
   type Turn = Extract<TimelineItem, { kind: "turn" }>;
   const RECENT_TURNS = 2;

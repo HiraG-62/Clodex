@@ -85,7 +85,7 @@ describe("buildWebPage", () => {
     expect(zoomView({ scale: 1, x: 0, y: 0 }, 2, { x: 0, y: 0 }).scale).toBe(2);
   });
 
-  it("作業中パネルは発言を時系列に並べる関数を埋め込んで描く", () => {
+  it("作業ログは発言を時系列に並べる関数を埋め込んで描く", () => {
     const { html } = buildWebPage("ja");
     const script = scriptsOf(html)[1]!;
     const deps = script.slice(script.lastIndexOf("workingFeed:"), script.lastIndexOf("withStartingTurns:"));
