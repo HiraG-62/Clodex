@@ -13,6 +13,20 @@ const setup = () => {
 };
 
 describe("AgentMailbox", () => {
+  it("hold を二重に呼んでも最初の再開時刻と指示を保つ", async () => {
+    vi.useFakeTimers();
+    try {
+      const { mailbox, agent } = setup();
+      const first = Date.now() + 1000;
+      mailbox["hold"]({ resumeAt: first, text: "最初の続き" });
+      mailbox["hold"]({ resumeAt: first + 1000, text: "二度目の続き" });
+      expect(mailbox.holdUntil).toBe(new Date(first).toISOString());
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(agent.sent).toEqual(["最初の続き"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("外からの hold で配送を止め、再開時に続きの指示を先に送る", async () => {
     const { agent, mailbox } = setup();
     const resumeAt = Date.now() + 60;

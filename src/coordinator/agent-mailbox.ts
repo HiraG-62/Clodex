@@ -106,6 +106,7 @@ export class AgentMailbox {
   }
 
   private hold({ resumeAt, text }: LimitHold): void {
+    if (this.holdTimer) return;
     this.paused = true;
     this.resumeAt = resumeAt;
     this.holdTimer = setTimeout(() => {
