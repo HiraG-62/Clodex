@@ -13,17 +13,28 @@ afterEach(cleanup);
 
 const fakeClient = () => {
   let listener: (item: FeedItem) => void = () => {};
+  let connectionListener: (connected: boolean) => void = () => {};
   let resolveConnected: () => void = () => {};
   const connected = new Promise<void>((resolve) => { resolveConnected = resolve; });
   const client: FeedClient = {
-    connect: async (onItem) => { listener = onItem; resolveConnected(); return () => {}; },
+    connect: async (onItem, onConnectionChange) => { listener = onItem; connectionListener = onConnectionChange ?? (() => {}); resolveConnected(); return () => {}; },
     send: async () => {}, files: async () => [], history: async () => ({ items: [], hasMore: false }),
   };
-  return { client, connected, emit: (item: FeedItem) => listener(item) };
+  return { client, connected, emit: (item: FeedItem) => listener(item), connection: (value: boolean) => connectionListener(value) };
 };
 const waitFor = (assertion: () => void) => vi.waitFor(assertion, { interval: 5 });
 
 describe("TuiApp", () => {
+  it("切断中は再接続中を出し、復旧時に消す", async () => {
+    setLanguage("ja");
+    const { client, connected, connection } = fakeClient();
+    const app = render(React.createElement(TuiApp, { client }));
+    await connected;
+    connection(false);
+    await waitFor(() => expect(app.lastFrame()).toContain("再接続中…"));
+    connection(true);
+    await waitFor(() => expect(app.lastFrame()).not.toContain("再接続中…"));
+  });
   it("本体が待機中でも動いているサブエージェントの数を表示する", async () => {
     setLanguage("ja");
     const { client, emit, connected } = fakeClient();

@@ -159,6 +159,7 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
   const previousLineCount = useRef(0);
   const scrollBounds = useRef({ total: 0, height: 0 });
   const [notice, setNotice] = useState("");
+  const [reconnecting, setReconnecting] = useState(false);
   const [now, setNow] = useState(Date.now());
   const assist = useMemo(makeAssist, [state.language]);
   const cardLabels = useMemo(labels, [state.language]);
@@ -207,7 +208,13 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
         history.current.push(item);
         setFeed((old) => advanceTerminalFeed(old, item, false));
       }
-    }).then((stop) => { if (closed) stop(); else unsubscribe = stop; }).catch((error: unknown) => setNotice(String(error)));
+    }, (connected) => {
+      if (closed) return;
+      if (!connected) receivedVersion = false;
+      setReconnecting(!connected);
+    })
+      .then((stop) => { if (closed) stop(); else unsubscribe = stop; })
+      .catch((error: unknown) => setNotice(String(error)));
     return () => { closed = true; historyGeneration.current++; clearTimeout(toastTimer); unsubscribe?.(); };
   }, [client]);
   useEffect(() => {
@@ -226,7 +233,8 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
       cache.lines(item, cardLabels, expanded, size.columns, t("tui.elapsed", { seconds: nowSeconds(item.at) })))];
   const agentRows = state.agents.reduce((count, agent) => count + 1 + (feed.timeline.some((item) => item.kind === "turn" && item.agent === agent.id && item.status === "working") ? 1 : 0), 0);
   const inputRows = Math.max(1, buffer.text.split("\n").reduce((count, line) => count + wrapText(line, size.columns - 4).length, 0)) + 2;
-  const fixedRows = agentRows + inputRows + (choices.length ? choices.length + 2 : 0) + (notice ? 1 : 0) + 1;
+  const visibleNotice = reconnecting ? t("tui.reconnecting") : notice;
+  const fixedRows = agentRows + inputRows + (choices.length ? choices.length + 2 : 0) + (visibleNotice ? 1 : 0) + 1;
   const logHeight = Math.max(0, size.rows - fixedRows);
   scrollBounds.current = { total: logLines.length, height: logHeight };
   useEffect(() => {
@@ -341,7 +349,7 @@ export const TuiApp = ({ client, onExit, startMouse, mouseInput }: {
       h(Text, { wrap: "wrap" }, cursor.before, h(Text, { inverse: true }, cursor.at), cursor.after,
         buffer.text ? null : h(Text, { color: MUTED_COLOR }, t("tui.inputLabel")))),
     h(StatusPanel, { state, feed, now }),
-    notice ? h(Text, { color: WARN_COLOR }, notice) : null,
+    visibleNotice ? h(Text, { color: WARN_COLOR }, visibleNotice) : null,
     h(Text, { color: MUTED_COLOR, wrap: "truncate-end" }, `${project} · ${t("tui.footer", { queued: state.pendingInputs.length + state.pendingMessages.length })}`),
   );
 };

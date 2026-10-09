@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebFeed } from "../web/web-feed.js";
 import { createLocalFeedClient, createRemoteFeedClient } from "./feed-client.js";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("createLocalFeedClient", () => {
   it("履歴と新着を受け、入力とファイル候補を渡す", async () => {
@@ -24,6 +24,31 @@ describe("createLocalFeedClient", () => {
 });
 
 describe("createRemoteFeedClient", () => {
+  it("stream 終了後は間隔を伸ばして再接続し、stop 後は再接続しない", async () => {
+    vi.useFakeTimers();
+    let streams = 0;
+    const fetchMock = vi.fn(async () => {
+      streams++;
+      if (streams === 2) throw new Error("offline");
+      return new Response(new ReadableStream({ start(controller) { controller.close(); } }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createRemoteFeedClient({ pid: 1, port: 4319, url: "http://127.0.0.1:4319" }, "secret");
+    const changes: boolean[] = [];
+    const stop = await client.connect(() => {}, (connected) => changes.push(connected));
+    await vi.advanceTimersByTimeAsync(999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(changes).toContain(false);
+    stop();
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
   it("token 付き HTTP/SSE で feed・入力・ファイル候補を扱う", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
     const fetchMock = vi.fn(async (url: URL, init: RequestInit) => {
