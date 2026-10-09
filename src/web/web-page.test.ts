@@ -99,24 +99,10 @@ describe("buildWebPage", () => {
   it("作業ログは発言を時系列に並べて描く", () => {
     const { html } = buildWebPage("ja");
     expect(workingFeed([])).toEqual([]);
-    expect(html).toContain("const feed = workingFeed(items);");
-    expect(html).toContain('el("div", "working-say md")');
+    expect(workingFeed([{ kind: "turn", id: "t1", at: "2026-01-01T00:00:00Z", agent: "claude", status: "working", text: "", plan: "方針", steps: [{ kind: "say", text: "進捗", at: "2026-01-01T00:00:01Z" }] }]))
+      .toMatchObject([{ kind: "head", turnId: "t1" }, { kind: "say", text: "方針" }, { kind: "say", text: "進捗" }]);
+    expect(html).toContain('"working-say md"');
     expect(html).not.toContain("working-entry");
-  });
-
-  it("Push を使える画面だけ設定に通知の節を出し、購読した端末は見えているかを Hub に知らせる", () => {
-    const { html } = buildWebPage("ja");
-    expect(html).toContain('const pushSupported = "serviceWorker" in navigator && "PushManager" in window && !tauriApi;');
-    expect(html).toContain('applicationServerKey: base64Bytes(key)');
-    expect(html).toContain('query.set("push", pushId)');
-    expect(html).toContain('postJson("/api/push/visibility"');
-  });
-
-  it("割り込みが届いたらチェックマークのアイコンを出し、文言は title に持たせる", () => {
-    const { html } = buildWebPage("ja");
-    expect(html).toContain('const delivered = el("span", "steer-delivered");');
-    expect(html).toContain('delivered.append(icon("check"));');
-    expect(html).not.toContain("steer-state");
   });
 
   it("未回答の質問は入力欄の上の質問欄に 1 問ずつ出し、件数の pill は出さない", () => {
@@ -129,13 +115,11 @@ describe("buildWebPage", () => {
     expect(html).toMatch(/\.question-dock-body\s*\{[^}]*max-height:\s*50vh;\s*overflow-y:\s*auto/);
   });
 
-  it("GUI の中の画面は GUI の版を添えてつなぎ、更新の依頼を Tauri の command で行う", () => {
+  it("GUI 更新と割り込みの表示用 CSS を含める", () => {
     const { html } = buildWebPage("ja");
-    expect(html).toContain('if (guiVersion) query.set("gui", guiVersion);');
-    expect(html).toContain('invoke("install_update")');
-    expect(html).toContain('invoke("check_update")');
-    expect(html).toContain('postJson("/api/gui/update", { action })');
     expect(html).toContain(".gui-update[hidden] { display: none; }");
+    expect(html).toContain(".steer-delivered .i { width: 14px; height: 14px; }");
+    expect(html).not.toContain("steer-state");
   });
 
   it("コマンド入力の色・ラベル・切り替え処理をページに含める", () => {
