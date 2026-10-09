@@ -251,8 +251,10 @@ const STYLE = `
   .elapsed { font-size: 11.5px; color: var(--muted); }
   .output { margin: 0; padding: 12px 0; border-bottom: 1px solid var(--line); font: 12px/1.6 var(--font-mono); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
 
-  .newer { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); border: 0; border-radius: 999px; padding: 6px 14px;
-    font-size: 12.5px; font-weight: 600; background: var(--invert-bg); color: var(--invert-fg); box-shadow: 0 4px 16px rgba(0,0,0,.18); }
+  .newer { position: absolute; right: 16px; bottom: 16px; display: grid; place-items: center; width: 44px; height: 44px;
+    border: 0; border-radius: 50%; background: var(--invert-bg); color: var(--invert-fg); box-shadow: 0 4px 16px rgba(0,0,0,.18); }
+  .newer[hidden] { display: none; }
+  .newer.unread::after { content: ""; position: absolute; top: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 
   .composer { padding: 10px 16px; padding-bottom: max(12px, env(safe-area-inset-bottom)); background: var(--bg); margin: 0; }
   .box { border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); display: grid; }
@@ -734,7 +736,7 @@ const STYLE = `
     .box .attach { display: none; }
     .box .mobile-add { grid-column: 3; grid-row: 3; width: 44px; height: 44px; border-radius: 13px; }
     .box .send { grid-column: 4; grid-row: 3; width: 44px; height: 44px; border-radius: 13px; }
-    .newer { bottom: 60px; }
+    .newer { right: max(12px, env(safe-area-inset-right)); bottom: 12px; }
     .sheet { align-items: end; }
     .sheet-panel { max-height: 80dvh; max-width: none; border-radius: 16px 16px 0 0; padding: 0 max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); animation: sheet-mobile-in 260ms cubic-bezier(.2,.7,.3,1); }
     @keyframes sheet-mobile-in { from { transform: translateY(100%); } }
@@ -831,7 +833,7 @@ ${UI_ICONS}
       <div class="log-skeleton" id="log-skeleton" aria-hidden="true">${[0, 1, 2, 3].map(() => '<div class="sk-row"><span class="sk sk-avatar"></span><div class="sk-lines"><span class="sk"></span><span class="sk"></span><span class="sk"></span></div></div>').join("")}</div>
       <div class="empty" id="empty" hidden><b>${m("web.empty.title")}</b></div>
     </main>
-    <button class="newer" type="button" id="newer" hidden>${m("web.newer")}</button>
+    <button class="newer" type="button" id="newer" aria-label="${m("web.newer")}" title="${m("web.newer")}" hidden>${icon("arrow-down")}</button>
   </div>
   <form class="composer" id="composer">
     <section class="question-dock" id="question-dock" aria-label="${m("web.question.title")}" hidden></section>

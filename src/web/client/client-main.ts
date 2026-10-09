@@ -191,6 +191,7 @@ export function clientMain({
 
   const log = $("#log");
   const newer = $("#newer");
+  let unreadWhileReading = false;
   const input = document.querySelector<HTMLTextAreaElement>("#input")!;
 
   // ---- 送信 ----
@@ -724,9 +725,15 @@ export function clientMain({
   };
 
   const nearBottom = () => log.scrollHeight - log.scrollTop - log.clientHeight < NEAR_BOTTOM_PX;
+  const syncNewer = () => {
+    const reading = !nearBottom();
+    if (!reading) unreadWhileReading = false;
+    newer.hidden = !reading;
+    newer.classList.toggle("unread", reading && unreadWhileReading);
+  };
   const scrollToBottom = () => {
     log.scrollTop = log.scrollHeight;
-    newer.hidden = true;
+    syncNewer();
   };
 
   const workingPanel = $("#working-panel");
@@ -820,7 +827,6 @@ export function clientMain({
       withStartingTurns(withWorkingTurnsLast(items), state?.agents ?? [], new Date().toISOString(), state?.pendingInputs ?? []), state?.agents ?? [],
     );
     items = visibleItems.filter((item): item is TimelineItem => item.kind !== "starting" && item.kind !== "subagents");
-    let changed = false;
     for (const item of visibleItems) {
       if (item.kind !== "starting") continue;
       if (!startingAt.has(item.agent)) startingAt.set(item.agent, item.at);
@@ -840,7 +846,6 @@ export function clientMain({
       let node = current?.node;
       const sameStarting = current?.item.kind === "starting" && item.kind === "starting" && current.item.at === item.at;
       if (!current || (current.item !== item && !sameStarting) || force) {
-        changed = true;
         node = renderItem(item);
         if (current) current.node.replaceWith(node);
         rendered.set(item.id, { item, node });
@@ -866,7 +871,7 @@ export function clientMain({
       rendered.get(commandStart.outputId)?.node.before(clockRow);
     }
     enhanceMarkdown(log);
-    if (stick) scrollToBottom(); else if (changed) newer.hidden = false;
+    if (stick) scrollToBottom(); else syncNewer();
     renderWorking();
   };
 
@@ -2474,14 +2479,13 @@ export function clientMain({
       historyHasMore = page.hasMore;
       const previousHeight = log.scrollHeight;
       const previousTop = log.scrollTop;
-      const wasNewerHidden = newer.hidden;
       history = [...page.items, ...history];
       historyLoading = false;
       const queued = new Set(items.filter((item) => item.kind === "human" && item.queued).map((item) => item.id));
       items = rebuildTimeline(history, applyFeedItem).map((item) => item.kind === "human" && queued.has(item.id) ? { ...item, queued: true } : item);
       renderLog();
       log.scrollTop = previousTop + log.scrollHeight - previousHeight;
-      newer.hidden = wasNewerHidden;
+      syncNewer();
     } catch {
       if (generation === historyGeneration) showToast(t("web.history.failed"), "warn");
     } finally {
@@ -2489,7 +2493,7 @@ export function clientMain({
     }
   };
   log.addEventListener("scroll", () => {
-    if (nearBottom()) newer.hidden = true;
+    syncNewer();
     if (log.scrollTop <= HISTORY_THRESHOLD_PX) void loadHistory();
   });
 
@@ -2615,9 +2619,11 @@ export function clientMain({
         replaying = true;
         questionDrafts.clear();
         opened.clear();
+        unreadWhileReading = false;
         return;
       }
       if (replaying) { incomingHistory.push(item); return; }
+      if (!nearBottom()) unreadWhileReading = true;
       history.push(item);
       items = applyFeedItem(items, item);
       if (item.type === "output") commandStarts = nextCommandStarts(commandStarts, item.command, new Date().toISOString(), items.at(-1)?.id);
