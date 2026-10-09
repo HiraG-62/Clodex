@@ -710,6 +710,11 @@ Clodex の終了（`/exit`・Ctrl+D・`clodex serve` のシグナル・GUI の�
 - 止めるもの: 全会話の Agent（Claude / Codex）、実行中の `!command`、Process Manager の process（§15）。どれもプロセスツリーごと止める（Windows では `taskkill /T /F`。親だけを止めると子が残る）
 - すべて終わるのを待つ。待つのは最大 10 秒（定数）で、過ぎたら残りを待たずに終える
 - GUI が起動した Hub は、GUI が `/exit` を送って最大 15 秒（Hub の上限より長い定数）待つ。それでも Hub が終わらなければ Hub のプロセスツリーごと止める（Hub の node だけを止めると、その子の Agent やシェルが残る）
+- 異常終了（fatal の例外・`taskkill /F`）では上の処理が走らないので、Windows の Job Object で止める（docs/spikes/orphan-processes.md）
+  - Hub は起動時、子プロセスを 1 つも起動する前に、自分を `KILL_ON_JOB_CLOSE` の Job に入れる。Job を作るのは helper（PowerShell の `Add-Type` の C#）で、helper は Hub を Job に登録し、Job の handle を Hub のプロセスに複製してから終わる（helper は常駐しない）
+  - Job の handle を持つのは Hub だけなので、Hub がどう終わっても handle が閉じて Job が閉じ、Hub の子孫（Agent・`!command`・`!&` の process とその孫）がすべて止まる
+  - 登録に失敗しても起動は続ける（stderr に 1 行出す）。Windows 以外では何もしない
+  - sandbox の Agent（別ユーザーのプロセス）が Job に入るか・Job の中から sandbox を起動できるかは未実測。sandbox を使う環境で確かめる
 
 ## リスク
 
@@ -1289,7 +1294,6 @@ PC で動いている `clodex` を、スマホ等のブラウザから GUI で�
 - `pnpm build` で `dist/web/client.js` と `dist/web/style.css` を作る。GUI に同梱するのはこの成果物で、esbuild は同梱しない（devDependency）。ソースから動かすとき（`pnpm dev`・テスト）は、成果物が無ければ起動時に esbuild で bundle する
 - 画面に渡す値（文言のカタログ・コマンドの一覧・画面の配置・版）は、`<script type="application/json">` に JSON で置き、入口が読む。関数のソースを `toString()` で埋め込まない
 - 画面の版（再読み込みの判定。§17）は、bundle・CSS・HTML・渡す値から作る
-
 
 ### 接続と認証
 

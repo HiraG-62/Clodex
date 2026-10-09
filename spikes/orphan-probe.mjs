@@ -44,7 +44,7 @@ if (mode === 'leaf-ignore') {
   writeFileSync(process.argv[3], JSON.stringify({ pid: process.pid }));
   setInterval(() => {}, 1000);
 } else if (mode === 'hub') {
-  const [kind, file, grandFile, gate, grandGate] = process.argv.slice(3);
+  const [kind, file, grandFile, gate, grandGate, exitGate] = process.argv.slice(3);
   if (gate) while (!existsSync(gate)) await delay(25);
   let child;
   if (kind === 'ignore' || kind === 'eof') {
@@ -60,6 +60,7 @@ if (mode === 'leaf-ignore') {
   child.stdout.resume(); child.stderr.resume();
   child.once('error', (error) => writeFileSync(file, JSON.stringify({ hub: process.pid, error: error.message })));
   child.once('spawn', () => writeFileSync(file, JSON.stringify({ hub: process.pid, child: child.pid, kind })));
+  if (exitGate) setInterval(() => { if (existsSync(exitGate)) process.exit(0); }, 25);
   setInterval(() => {}, 1000);
 } else if (mode === 'watch') {
   const [hubText, file, result] = process.argv.slice(3);
@@ -69,6 +70,43 @@ if (mode === 'leaf-ignore') {
   const { child } = await waitFile(file);
   stop(child);
   writeFileSync(result, JSON.stringify({ detected, stopped: Date.now(), child }));
+} else if (mode === 'run-hub-job') {
+  const temp = mkdtempSync(join(tmpdir(), 'clodex-orphan-hub-job-'));
+  const helper = resolve('spikes/orphan-job.ps1');
+  for (const kind of ['forced', 'normal', 'nested']) {
+    const file = join(temp, `${kind}.json`);
+    const grandFile = join(temp, `${kind}-grand.json`);
+    const gate = join(temp, `${kind}-gate`);
+    const exitGate = join(temp, `${kind}-exit`);
+    const result = join(temp, `${kind}-job.json`);
+    const outerResult = join(temp, `${kind}-outer.json`);
+    const hub = spawn(process.execPath, [own, 'hub', 'shell', file, grandFile, gate, '', exitGate], { stdio: 'ignore', windowsHide: true });
+    let child; let grandchild; let outer; let inner;
+    try {
+      if (kind === 'nested') {
+        outer = spawn('powershell.exe', ['-NoProfile', '-File', helper, '-HubPid', String(hub.pid), '-TargetPid', String(hub.pid), '-ResultFile', outerResult], { stdio: 'ignore', windowsHide: true });
+        const outerAssigned = await waitFile(outerResult, 30000);
+        if (outerAssigned.status === 'error') throw new Error(`outer: ${outerAssigned.message}`);
+      }
+      const started = Date.now();
+      inner = spawn('powershell.exe', ['-NoProfile', '-File', helper, '-HubPid', String(hub.pid), '-TargetPid', String(hub.pid), '-ResultFile', result, '-DuplicateToHub'], { stdio: 'ignore', windowsHide: true });
+      const assigned = await waitFile(result, 30000);
+      if (assigned.status !== 'duplicated') throw new Error(assigned.message ?? assigned.status);
+      await new Promise((done) => inner.once('exit', done));
+      const completeMs = Date.now() - started;
+      writeFileSync(gate, 'go');
+      child = (await waitFile(file)).child;
+      grandchild = (await waitFile(grandFile)).pid;
+      const before = { hub: alive(hub.pid), child: alive(child), grandchild: alive(grandchild) };
+      const stoppedAt = Date.now();
+      if (kind === 'normal') writeFileSync(exitGate, 'exit'); else stopOnly(hub.pid);
+      const end = Date.now() + 5000;
+      while (Date.now() < end && (alive(child) || alive(grandchild))) await delay(25);
+      console.log(JSON.stringify({ kind, before, after: { hub: alive(hub.pid), child: alive(child), grandchild: alive(grandchild) }, stopMs: Date.now() - stoppedAt, completeMs, compileMs: assigned.compiled - assigned.started, assignedMs: assigned.assigned - assigned.started }));
+    } catch (error) { console.error(`hub-job-${kind}`, error); }
+    finally { stop(hub.pid); stop(child); stop(grandchild); stop(inner?.pid); stop(outer?.pid); }
+  }
+  console.log(`temp=${temp}`);
 } else if (mode === 'run-job') {
   const temp = mkdtempSync(join(tmpdir(), 'clodex-orphan-job-'));
   const helper = resolve('spikes/orphan-job.ps1');

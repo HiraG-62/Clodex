@@ -49,6 +49,20 @@ Hub 強制終了から helper が Job を閉じるまで、上記の順で 466�
 | 実装の量 | PID と起動時刻の記録・照合、孫の追跡が必要 | Win32 helper、Job の所有と起動時の同期が必要 |
 | 起動の遅れ | Node 見張りの起動と監視開始待ち | PowerShell `Add-Type` に約 0.6〜1.0 秒 |
 
-**B を推奨する。** Hub を Job に登録し終わるまで Agent やシェルを起動しない構成なら、子孫が自動で Job に入り、見張りで発生した親子関係の消失を避けられる。登録と起動の順序は必須条件。Hub 自身を登録する設計は、この試作では外側の Job の模擬までで、helper が管理する Job への Hub 登録から全子孫の停止までを一体では実測していない。
+**B を推奨する。** Hub を Job に登録し終わるまで Agent やシェルを起動しない構成なら、子孫が自動で Job に入り、見張りで発生した親子関係の消失を避けられる。登録と起動の順序は必須条件。Hub 自身を登録する構成は下の追試で確かめた。
 
-sandbox 内の別ユーザーの Agent を A・B で停止できるかは未確認。別ユーザーのプロセスに対する `OpenProcess` と Job 登録、または継承の可否を実装前に確認する必要がある。
+sandbox 内の別ユーザーの Agent を A・B で停止できるかは未確認。別ユーザーのプロセスへの Job の継承は、sandbox を使える環境で確認する。
+
+## Hub 自身を Job に登録する追試
+
+`node spikes/orphan-probe.mjs run-hub-job` で、helper が擬似 Hub 自身を `KILL_ON_JOB_CLOSE` の Job に登録し、`DuplicateHandle` で Job handle を擬似 Hub に複製してから自身の handle を閉じて終了する形を確かめた。`Add-Type` による C# のコンパイル、登録、複製はすべて成功した。helper が終了した後も Hub と PowerShell 経由の孫 Node は動き続けた。Hub 停止後、子と孫の両方が終了した。
+
+| 条件 | helper 起動から複製・終了まで | コンパイル | 登録 | Hub 停止から子孫の停止まで |
+|---|---:|---:|---:|---:|
+| `taskkill /PID <hub> /F`（`/T` なし） | 2114 ms | 846 ms | 855 ms | 450 ms |
+| 擬似 Hub の `process.exit(0)` | 2133 ms | 805 ms | 817 ms | 38 ms |
+| Hub を別の Job に登録してから内側の Job を登録 | 1575 ms | 570 ms | 612 ms | 534 ms |
+
+helper の起動から複製・終了までの値には、PowerShell の起動と終了の待機が含まれる。登録・複製の完了は helper 終了後に擬似 Hub が子を起動する gate で同期した。別ユーザーの sandbox のプロセスは、この PC に `clodex-agent` ユーザーが無いため未実測。
+
+製品の helper は失敗時に Hub を止めないため、`DuplicateHandle` を `AssignProcessToJobObject` より先に行う。Job は登録前から `KILL_ON_JOB_CLOSE` に設定する。`pnpm dev serve` を一時の `CLODEX_HOME` と port 47997 で起動し、`!& node -e "setInterval(()=>{},1000)"` を Web API から送った。Hub PID 18748、PowerShell PID 35528、孫 Node PID 36124 が動作中であることを確認してから、`taskkill /PID 18748 /F`（`/T` なし）を実行した。約 717 ms 後には 3 プロセスとも終了していた。Agent のターンは送っていない。

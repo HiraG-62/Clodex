@@ -12,6 +12,7 @@ import type { Coordinator } from "./coordinator/coordinator.js";
 import { hubCommands, parseCliArgs } from "./cli/args.js";
 import { createCommandRunner, type CommandLifecycle } from "./cli/command-runner.js";
 import { createProcessManager } from "./process/process-manager.js";
+import { registerHubJob } from "./process/job-object.js";
 import { completeCommand } from "./cli/commands.js";
 import { createShell, type ConversationList } from "./cli/shell.js";
 import { clodexHomeDir, ensureUserConfigTemplate, loadConfig, saveUserLanguage } from "./config/config.js";
@@ -88,6 +89,8 @@ const main = async (): Promise<void> => {
     await startTui(client);
     return;
   }
+  const job = await registerHubJob();
+  if (!job.ok) process.stderr.write(`${t("error.jobObject", { message: job.message })}\n`);
   pruneLogs(homeDir);
   const rl = args.serve || interactive ? undefined : createInterface({
     input: process.stdin, output: process.stdout, prompt: PROMPT, terminal: false, completer: completeCommand,

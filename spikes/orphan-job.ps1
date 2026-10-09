@@ -1,7 +1,8 @@
 param(
   [Parameter(Mandatory=$true)][int]$HubPid,
   [Parameter(Mandatory=$true)][int]$TargetPid,
-  [Parameter(Mandatory=$true)][string]$ResultFile
+  [Parameter(Mandatory=$true)][string]$ResultFile,
+  [switch]$DuplicateToHub
 )
 
 $started = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
@@ -12,7 +13,7 @@ using System.ComponentModel;
 public static class OrphanJob {
   const uint KILL_ON_JOB_CLOSE = 0x2000;
   const int JobObjectExtendedLimitInformation = 9;
-  const uint PROCESS_SET_QUOTA = 0x100, PROCESS_TERMINATE = 1, PROCESS_QUERY_LIMITED_INFORMATION = 0x1000, SYNCHRONIZE = 0x100000;
+  const uint PROCESS_SET_QUOTA = 0x100, PROCESS_TERMINATE = 1, PROCESS_QUERY_LIMITED_INFORMATION = 0x1000, PROCESS_DUP_HANDLE = 0x40, SYNCHRONIZE = 0x100000, DUPLICATE_SAME_ACCESS = 2;
   [StructLayout(LayoutKind.Sequential)] struct BasicLimit { public long processTime, jobTime; public uint flags; public UIntPtr min, max; public uint active; public UIntPtr affinity; public uint priority, scheduling; }
   [StructLayout(LayoutKind.Sequential)] struct Io { public ulong a,b,c,d,e,f; }
   [StructLayout(LayoutKind.Sequential)] struct Limit { public BasicLimit basic; public Io io; public UIntPtr processMemory, jobMemory, peakProcess, peakJob; }
@@ -22,9 +23,11 @@ public static class OrphanJob {
   [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
   [DllImport("kernel32.dll", SetLastError=true)] static extern uint WaitForSingleObject(IntPtr handle, uint timeout);
   [DllImport("kernel32.dll", SetLastError=true)] static extern bool CloseHandle(IntPtr handle);
+  [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+  [DllImport("kernel32.dll", SetLastError=true)] static extern bool DuplicateHandle(IntPtr sourceProcess, IntPtr source, IntPtr targetProcess, out IntPtr copy, uint access, bool inherit, uint options);
   static void Check(bool okay, string action) { if (!okay) throw new Win32Exception(Marshal.GetLastWin32Error(), action); }
-  public static void Run(int hubPid, int targetPid, string output, long started, long compiled) {
-    IntPtr hub=OpenProcess(SYNCHRONIZE,false,hubPid);
+  public static void Run(int hubPid, int targetPid, string output, long started, long compiled, bool duplicateToHub) {
+    IntPtr hub=OpenProcess(SYNCHRONIZE|PROCESS_DUP_HANDLE,false,hubPid);
     Check(hub!=IntPtr.Zero,"OpenProcess hub");
     IntPtr target=OpenProcess(PROCESS_SET_QUOTA|PROCESS_TERMINATE|PROCESS_QUERY_LIMITED_INFORMATION,false,targetPid);
     Check(target!=IntPtr.Zero,"OpenProcess target");
@@ -35,6 +38,13 @@ public static class OrphanJob {
       Check(SetInformationJobObject(job,JobObjectExtendedLimitInformation,ref limit,Marshal.SizeOf(typeof(Limit))),"SetInformationJobObject");
       Check(AssignProcessToJobObject(job,target),"AssignProcessToJobObject");
       long assigned=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+      if (duplicateToHub) {
+        IntPtr copy;
+        Check(DuplicateHandle(GetCurrentProcess(),job,hub,out copy,0,false,DUPLICATE_SAME_ACCESS),"DuplicateHandle");
+        CloseHandle(job);job=IntPtr.Zero;
+        System.IO.File.WriteAllText(output,"{\"started\":"+started+",\"compiled\":"+compiled+",\"assigned\":"+assigned+",\"status\":\"duplicated\"}");
+        return;
+      }
       System.IO.File.WriteAllText(output,"{\"started\":"+started+",\"compiled\":"+compiled+",\"assigned\":"+assigned+",\"status\":\"assigned\"}");
       WaitForSingleObject(hub,0xffffffff);
       long closed=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -48,7 +58,7 @@ public static class OrphanJob {
 try {
   Add-Type -TypeDefinition $source -ErrorAction Stop
   $compiled = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-  [OrphanJob]::Run($HubPid, $TargetPid, $ResultFile, $started, $compiled)
+  [OrphanJob]::Run($HubPid, $TargetPid, $ResultFile, $started, $compiled, $DuplicateToHub.IsPresent)
 } catch {
   @{ status = 'error'; message = $_.Exception.Message; started = $started; failed = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() } |
     ConvertTo-Json -Compress | Set-Content -LiteralPath $ResultFile -Encoding UTF8
