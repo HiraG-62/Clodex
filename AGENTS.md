@@ -20,6 +20,7 @@ Claude Code と Codex CLI を Windows ネイティブ環境で協調させる薄
 pnpm test        # ユニットテスト
 pnpm test:spikes # spikes/ の実測のテスト（spike を直したときだけ）
 pnpm typecheck
+pnpm lint        # biome の lint と format の確認（pnpm format で直す）
 pnpm build       # clodex コマンドに反映する
 ```
 
