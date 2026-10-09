@@ -391,6 +391,7 @@ export const en = {
   "start.hubIgnored": "Ignored while the Hub is running: {options}",
   "error.settingsSave": "settings save failed: {message}",
   "error.jobObject": "Job Object registration failed: {message}",
+  "error.webToken": "Web token unavailable: {message}",
   "error.generic": "error: {message}",
   // 通知・拒否
   "notice.canceled": "canceled input to {agent}: {text}",
@@ -793,6 +794,7 @@ export const ja: Messages = {
   "start.hubIgnored": "Hub 起動中のため無視: {options}",
   "error.settingsSave": "設定を保存できませんでした: {message}",
   "error.jobObject": "Job Object の登録に失敗: {message}",
+  "error.webToken": "Web token を読めません: {message}",
   "error.generic": "エラー: {message}",
   "notice.canceled": "{agent} への入力を取り消しました: {text}",
   "notice.discarded": "Agent 間の送信待ちのメッセージを {count} 件破棄しました",

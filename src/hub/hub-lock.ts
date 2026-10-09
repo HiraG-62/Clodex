@@ -9,6 +9,9 @@ export interface HubLock {
   url: string;
 }
 
+const HUB_PROBE_TIMEOUT_MS = 1_500;
+type HubProbe = (url: string, options: RequestInit) => Promise<Pick<Response, "status">>;
+
 export const hubLockPath = (homeDir: string): string => join(homeDir, ".clodex", "hub.lock");
 
 export const readHubLock = (homeDir: string): HubLock | undefined => {
@@ -27,10 +30,15 @@ export const readHubLock = (homeDir: string): HubLock | undefined => {
   }
 };
 
-export const isHubAlive = (lock: HubLock): boolean => {
+export const isHubAlive = async (lock: HubLock, probe: HubProbe = fetch): Promise<boolean> => {
   try {
     process.kill(lock.pid, 0);
-    return true;
+  } catch {
+    return false;
+  }
+  try {
+    const response = await probe(`${lock.url}/manifest.webmanifest`, { signal: AbortSignal.timeout(HUB_PROBE_TIMEOUT_MS) });
+    return response.status === 200;
   } catch {
     return false;
   }

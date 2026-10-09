@@ -80,8 +80,15 @@ const main = async (): Promise<void> => {
   setLanguage(language);
   const interactive = !args.serve && Boolean(process.stdin.isTTY);
   const liveHub = interactive ? readHubLock(homeDir) : undefined;
-  if (liveHub && isHubAlive(liveHub)) {
-    const token = readFileSync(webTokenPath(homeDir), "utf8").trim();
+  if (liveHub && await isHubAlive(liveHub)) {
+    let token: string;
+    try {
+      token = readFileSync(webTokenPath(homeDir), "utf8").trim();
+    } catch (error) {
+      process.stderr.write(`${t("error.webToken", { message: errorMessage(error) })}\n`);
+      process.exitCode = 1;
+      return;
+    }
     const client = createRemoteFeedClient(liveHub, token);
     const { commands, ignored } = hubCommands(args, cwd);
     for (const command of commands) await client.send(command);
