@@ -36,6 +36,8 @@ export interface RateLimitWindow {
   resetsAt: number; // epoch seconds
 }
 
+export interface SubagentState { id: string; description: string }
+
 export type AgentEvent =
   | { type: "session"; sessionId: string }
   | { type: "text"; text: string }
@@ -45,6 +47,7 @@ export type AgentEvent =
   | { type: "rate_limit"; fiveHour?: RateLimitWindow; weekly?: RateLimitWindow }
   | { type: "context"; tokens: number; window?: number }
   | { type: "compacted" }
+  | { type: "subagents"; running: SubagentState[] }
   | { type: "steer_delivered"; steerId: string } // 割り込みを取り込んだ（DESIGN.md §28 v0.3 C）
   | { type: "exit"; code: number | null }
   | { type: "error"; message: string };

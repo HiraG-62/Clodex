@@ -22,6 +22,20 @@ const fakeClient = () => {
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 describe("TuiApp", () => {
+  it("本体が待機中でも動いているサブエージェントの数を表示する", async () => {
+    setLanguage("ja");
+    const { client, emit } = fakeClient();
+    const app = render(React.createElement(TuiApp, { client }));
+    await tick();
+    emit({ type: "state", state: { project: "app", primary: "claude", roles: {},
+      agents: [{ id: "claude", status: "idle", sessionId: "s", permission: "edit", models: [], usage: {}, subagents: [{ id: "a", description: "調査" }, { id: "b", description: "実装" }] }],
+      conversations: [], pendingInputs: [], pendingMessages: [], questions: [], processes: [], language: "ja",
+      sandbox: { enabled: false, ready: false }, limitsUnlimited: false,
+      limits: { messages: { value: 8, default: 8 }, reviews: { value: 3, default: 3 }, delegations: { value: 4, default: 4 }, depth: { value: 2, default: 2 } } } });
+    await tick();
+    expect(app.lastFrame()).toContain("待機中 · sub 2");
+  });
+
   it("送信待ちの件数に Agent 間メッセージを含める", async () => {
     setLanguage("ja");
     const { client, emit } = fakeClient();

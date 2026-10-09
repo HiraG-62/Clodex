@@ -1,6 +1,6 @@
 import {
   COORDINATOR_MCP_SERVER, summarizeToolInput,
-  type AgentStartOptions, type PermissionLevel, type TurnResult,
+  type AgentStartOptions, type PermissionLevel, type SubagentState, type TurnResult,
 } from "./agent-adapter.js";
 import { agentEnv, spawnAgentProcess, type SpawnAgentProcess } from "./agent-process.js";
 import { BaseAgentAdapter } from "./base-agent-adapter.js";
@@ -49,6 +49,7 @@ interface CodexItem {
   command?: string;
   kind?: string;
   agentPath?: string;
+  agentThreadId?: string;
 }
 
 interface CodexNotificationParams {
@@ -80,6 +81,7 @@ export class CodexAdapter extends BaseAgentAdapter {
   // ターンの最初の userMessage は入力そのもの。2 つ目以降が割り込みで、送った順に取り込まれる（docs/spikes/steer-ack.md）
   private turnInputSeen = false;
   private undeliveredSteers: string[] = [];
+  private readonly subagents = new Map<string, SubagentState>();
 
   constructor(private readonly spawnProcess: SpawnAgentProcess = spawnAgentProcess) {
     super();
@@ -199,6 +201,10 @@ export class CodexAdapter extends BaseAgentAdapter {
   protected handleExit(code: number | null): void {
     for (const { reject } of this.pending.values()) reject(new Error(`codex process exited (code ${code})`));
     this.pending.clear();
+    if (this.subagents.size) {
+      this.subagents.clear();
+      this.emit({ type: "subagents", running: [] });
+    }
     super.handleExit(code);
   }
 
@@ -263,6 +269,15 @@ export class CodexAdapter extends BaseAgentAdapter {
     }
     if (item.type === "subAgentActivity") {
       this.emit({ type: "tool", name: "subagent", input: summarizeToolInput(`${item.kind ?? ""} ${item.agentPath ?? ""}`.trim()) });
+      if (!item.agentThreadId) return;
+      if (item.kind === "started") {
+        const description = item.agentPath ?? "";
+        if (this.subagents.get(item.agentThreadId)?.description === description) return;
+        this.subagents.set(item.agentThreadId, { id: item.agentThreadId, description });
+      } else if (item.kind === "completed") {
+        if (!this.subagents.delete(item.agentThreadId)) return;
+      } else return;
+      this.emit({ type: "subagents", running: [...this.subagents.values()] });
     }
     if (item.type === "commandExecution") {
       this.emit({ type: "tool", name: "command", input: summarizeToolInput(item.command ?? "") });

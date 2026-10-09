@@ -925,6 +925,17 @@ export function clientMain({
     const currentStatus = stateLabel(agent);
     currentStatus.classList.add("mobile-only");
     wrap.append(currentStatus);
+    const subagentDetails = el("div", "subagent-details mobile-only");
+    const updateSubagentDetails = (current: AgentState) => {
+      subagentDetails.replaceChildren();
+      if (!current.subagents?.length) return;
+      subagentDetails.append(el("b", "", `${t("web.agent.subagents")} ${current.subagents.length}`));
+      const list = el("ul");
+      list.append(...current.subagents.map((subagent) => el("li", "", subagent.description || subagent.id)));
+      subagentDetails.append(list);
+    };
+    updateSubagentDetails(agent);
+    wrap.append(subagentDetails);
     const chips = el("div", "setting-chips");
     const chip = (label: string) => {
       const button = el("span", "setting-chip mono", label);
@@ -977,6 +988,7 @@ export function clientMain({
     wrap.append(links);
     controlUpdaters.set(wrap, (current) => {
       updateChips(current);
+      updateSubagentDetails(current);
       currentStatus.className = `state mobile-only ${current.status === "busy" ? "working" : current.status}`;
       currentStatus.textContent = t(STATUS_LABEL[current.status]);
       gaugeValues(current.usage).forEach((g, index) => {
@@ -992,6 +1004,15 @@ export function clientMain({
   const stateLabel = (agent: AgentState) => {
     const node = el("span", `state ${agent.status === "busy" ? "working" : agent.status}`, t(STATUS_LABEL[agent.status]));
     return node;
+  };
+  const subagentBadge = (agent: AgentState) => {
+    if (!agent.subagents?.length) return undefined;
+    const badge = el("span", "subagent-badge");
+    const label = `${t("web.agent.subagents")} ${agent.subagents.length}\n${agent.subagents.map((subagent) => subagent.description || subagent.id).join("\n")}`;
+    badge.title = label;
+    badge.setAttribute("aria-label", label);
+    badge.append(icon("list-tree"), el("span", "", String(agent.subagents.length)));
+    return badge;
   };
   const roleButton = (id: AgentId) => {
     const button = iconButton("sliders", t("web.role.open", { agent: AGENTS[id].name }), "role-button");
@@ -1117,7 +1138,8 @@ export function clientMain({
       button.dataset.agent = agent.id;
       button.dataset.state = agent.status;
       button.setAttribute("aria-expanded", String(!sheet.hidden && sheetAgent === agent.id));
-      button.setAttribute("aria-label", `${AGENTS[agent.id].name} · ${t(STATUS_LABEL[agent.status])}`);
+      const badge = subagentBadge(agent);
+      button.setAttribute("aria-label", `${AGENTS[agent.id].name} · ${t(STATUS_LABEL[agent.status])}${badge ? `\n${badge.title}` : ""}`);
       button.title = button.getAttribute("aria-label")!;
       const inside = el("span", "in");
       inside.append(el("span", "dot"));
@@ -1134,6 +1156,7 @@ export function clientMain({
         ring.append(circle);
       }
       inside.append(ring);
+      if (badge) inside.append(badge);
       button.append(inside);
       button.addEventListener("click", () => openAgentSheet(agent.id));
       return button;
@@ -1157,6 +1180,8 @@ export function clientMain({
         status.append(elapsed);
       }
       h2.append(el("span", "", AGENTS[agent.id].name), status);
+      const badge = subagentBadge(agent);
+      if (badge) h2.append(badge);
       const current = displayedAgent(agent);
       const summary = el("div", "strip-summary");
       summary.title = t("web.agent.summary", { model: current.modelLabel ?? current.model ?? "default", effort: current.effort ?? "default", permission: current.permission });

@@ -3,7 +3,7 @@ import { DEFAULT_LIMITS, LIMIT_KEYS, LIMIT_NAMES, type BudgetLimits, type LimitN
 import { getLanguage } from "../i18n/i18n.js";
 import type { Language } from "../context/language.js";
 import type { PendingQuestion } from "../protocol/questions.js";
-import { AGENT_IDS, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult } from "../agents/agent-adapter.js";
+import { AGENT_IDS, type AgentId, type AgentStatus, type PermissionLevel, type SubagentState, type TurnResult } from "../agents/agent-adapter.js";
 import type { SoloMode, PendingMessage } from "../coordinator/coordinator.js";
 import type { HubProjectEntry, ProjectRemoveError } from "../hub/hub.js";
 import type { UsageSnapshot } from "../coordinator/usage-monitor.js";
@@ -27,6 +27,7 @@ export interface AgentState {
   effort?: string;
   models: readonly ModelOption[];
   usage: UsageSnapshot;
+  subagents: SubagentState[];
   holdUntil?: string;
 }
 

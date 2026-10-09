@@ -515,6 +515,8 @@ const STYLE = `
   .strip-who { min-width: 0; }
   .agent-strip h2 { grid-area: auto; display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; font-size: 13px; line-height: 20px; }
   .agent-strip h2 .state { margin-left: 0; padding: 0; border-radius: 0; background: transparent; font-weight: 400; font-size: 11.5px; gap: 5px; }
+  .subagent-badge { display: inline-flex; align-items: center; gap: 2px; align-self: center; padding: 1px 5px; border-radius: 999px; background: var(--sunken); color: var(--fg-2); font: 600 10px/14px var(--font-mono); white-space: nowrap; }
+  .subagent-badge .i { width: 12px; height: 12px; }
   .agent-strip .state.working::after { display: none; }
   .agent-strip .state .elapsed { font-size: 10.5px; }
   .strip-summary { display: flex; gap: 4px; width: 100%; min-width: 0; padding: 0; border: 0; border-radius: var(--r-inner); background: transparent; color: var(--muted); font: 11.5px/1.4 var(--font-mono); text-align: left; }
@@ -668,6 +670,7 @@ const STYLE = `
     .apill[data-state="starting"] .dot { background: none; border: 1px dashed var(--agent); border-radius: 50%; animation: spin 1s linear infinite; }
     .apill[data-state="stopped"] .dot { background: var(--muted); }
     .apill .shield { width: 12px; height: 12px; color: var(--warn); margin-left: -2px; }
+    .apill .subagent-badge { padding: 1px 3px; background: var(--panel); }
     .ring { width: 20px; height: 20px; transform: rotate(-90deg); }
     .ring circle { fill: none; stroke-width: 2.6; }
     .ring .bg { stroke: var(--line-strong); } .ring .fg { stroke: var(--agent); stroke-linecap: round; }
@@ -728,6 +731,10 @@ const STYLE = `
     .sheet .controls > .state { display: inline-flex; align-items: center; gap: 5px; width: fit-content; font-size: 11.5px; border-radius: 999px; padding: 2px 7px; background: var(--sunken); margin: 6px 0 12px; }
     .sheet .controls > .state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--agent); }
     .sheet .controls > .state::after { display: none; }
+    .sheet .subagent-details { display: block; margin: 0 0 12px; font-size: 12px; color: var(--fg-2); }
+    .sheet .subagent-details:empty { display: none; }
+    .sheet .subagent-details ul { margin: 4px 0 0; padding-left: 18px; }
+    .sheet .subagent-details li { padding: 2px 0; overflow-wrap: anywhere; }
     .sheet .controls .links button { gap: 6px; width: auto; height: 44px; border: 1px solid var(--line); }
     .sheet .controls .links .danger { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 35%, var(--line)); }
     .sheet .controls .links .danger:disabled { color: var(--muted); }

@@ -2023,6 +2023,14 @@ dogfooding で出た要望を 4 段階で入れる。小さく確実なものか
 - 役割の定型文で、次の 2 つに subagent を使うよう伝える: 互いに独立して並列にできる作業、前提のコンテキストを持たない方がよい作業（レビュー、調査など）
 - Claude: Agent tool（background を含む）。subagent の出力は本体の発言と区別する（§9）
 - Codex: 公式の `multi_agent`（既定で有効）。subagent は別の thread で動くので、Adapter は自分の thread の通知だけを扱い、親の `subAgentActivity` を tool として出す（§9）
+- 動いている subagent を画面に出す。本体のターンが終わって Agent が待機中になっても、裏で subagent が動いていれば分かるようにする（本体の状態は今どおり待機中のまま）
+  - Adapter は動いている subagent の一覧が変わるたびに `subagents` event（`{ running: Array<{ id; description }> }`。そのときの全件）を出す
+    - Claude: `system/background_tasks_changed` の `tasks` のうち `task_type: "local_agent"` のもの（`id` は `task_id`、`description` は `description`）。subagent が動かす Bash などの task（`local_bash`）は数えない（docs/spikes/claude-subagent.md）
+    - Codex: 親の thread の `subAgentActivity` の `started` で足し、`completed` で外す（`id` は `agentThreadId`、`description` は `agentPath`）（docs/spikes/steer-image-subagent.md）
+    - プロセスが終わったら（停止・異常終了・`/new` などの起動し直し）空の一覧を出す
+  - Coordinator は Agent ごとに最新の一覧を持ち、state の `AgentState.subagents` に入れる。保存はしない（Hub を再起動したら消える。CLI のプロセスも作り直すため）
+  - Web UI: Agent ストリップのカードとスマホの Agent ピルに、動いている subagent があるときだけ小さな印（アイコンと数）を出す。title に各 subagent の説明を並べる。スマホの Agent のシートには説明の一覧を出す
+  - TUI: 下の行の Agent の状態に、動いている subagent の数を添える
 
 画像の貼り付け:
 

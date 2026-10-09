@@ -414,6 +414,24 @@ describe("CodexAdapter", () => {
 });
 
 describe("CodexAdapter の subagent（docs/spikes/steer-image-subagent.md）", () => {
+  it("親 thread の subAgentActivity から稼働一覧を更新し、終了時に空にする", async () => {
+    const { started, proc, events } = await setup();
+    await started;
+    const activity = (kind: string, agentThreadId: string, agentPath: string) =>
+      proc.emit({ method: "item/completed", params: { threadId: THREAD_ID, item: { type: "subAgentActivity", kind, agentThreadId, agentPath } } });
+    activity("started", "sub-1", "/root/research");
+    activity("started", "sub-2", "/root/reply");
+    proc.emit({ method: "item/completed", params: { threadId: "sub-1", item: { type: "subAgentActivity", kind: "completed", agentThreadId: "sub-2" } } });
+    activity("completed", "sub-1", "/root/research");
+    expect(events.filter((event) => event.type === "subagents")).toEqual([
+      { type: "subagents", running: [{ id: "sub-1", description: "/root/research" }] },
+      { type: "subagents", running: [{ id: "sub-1", description: "/root/research" }, { id: "sub-2", description: "/root/reply" }] },
+      { type: "subagents", running: [{ id: "sub-2", description: "/root/reply" }] },
+    ]);
+    proc.exit(0);
+    expect(events.filter((event) => event.type === "subagents").at(-1)).toEqual({ type: "subagents", running: [] });
+  });
+
   it("別 thread（subagent）の通知では親のターンを終えず、親の subAgentActivity を tool として出す", async () => {
     const { adapter, started, proc, events } = await setup();
     await started;

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { askUserSchema, answersSchema, type AskUserResult, type PendingQuestion } from "../protocol/questions.js";
 import {
-  AGENT_IDS, type AgentAdapter, type AgentId, type AgentStatus, type PermissionLevel, type TurnResult,
+  AGENT_IDS, type AgentAdapter, type AgentId, type AgentStatus, type PermissionLevel, type SubagentState, type TurnResult,
 } from "../agents/agent-adapter.js";
 import { resolveSpecFile } from "../project/spec-file.js";
 import { changedSections } from "../context/spec-sections.js";
@@ -108,6 +108,7 @@ export class Coordinator {
   // 宛先ごと・設計書の実パスごとに、前回渡した中身（DESIGN.md §13 Spec の差分）
   private readonly specSnapshots = new Map<string, string>();
   private readonly liveUsage = new Set<AgentId>();
+  private readonly subagents: Record<AgentId, SubagentState[]> = { claude: [], codex: [] };
   private readonly recoveryListeners = new Set<() => void>();
   private stoppingRecovery: ConversationRecovery | undefined;
 
@@ -161,6 +162,7 @@ export class Coordinator {
     for (const id of AGENT_IDS) {
       agents[id].onEvent((event) => {
         if (event.type === "rate_limit") this.liveUsage.add(id);
+        if (event.type === "subagents") this.subagents[id] = [...event.running];
         bus.publish({ kind: "agent", agent: id, event });
         if (event.type !== "turn" || event.result.status !== "failed") return;
         const mailbox = this.mailboxes?.[id];
@@ -454,13 +456,13 @@ export class Coordinator {
 
   status(): Array<{
     id: AgentId; status: AgentStatus; sessionId: string | undefined; permission: PermissionLevel;
-    model: string | undefined; modelLabel: string; effort: string | undefined; models: ModelCatalog[AgentId]; usage: UsageSnapshot; holdUntil?: string;
+    model: string | undefined; modelLabel: string; effort: string | undefined; models: ModelCatalog[AgentId]; usage: UsageSnapshot; subagents: SubagentState[]; holdUntil?: string;
   }> {
     return AGENT_IDS.map((id) => {
       const { status, permission, model, effort } = this.options.agents[id];
       const models = this.options.modelCatalog?.()[id] ?? [];
       const holdUntil = this.mailboxes[id].holdUntil;
-      return { id, status, sessionId: this.mailboxes[id].sessionId, permission, model, modelLabel: modelLabel(model, models), effort, models, usage: this.usage.snapshot(id), ...(holdUntil ? { holdUntil } : {}) };
+      return { id, status, sessionId: this.mailboxes[id].sessionId, permission, model, modelLabel: modelLabel(model, models), effort, models, usage: this.usage.snapshot(id), subagents: [...this.subagents[id]], ...(holdUntil ? { holdUntil } : {}) };
     });
   }
 

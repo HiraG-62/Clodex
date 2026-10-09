@@ -46,7 +46,7 @@ describe("desktop-notify", () => {
 
   it("初回 state が busy なら終了を通知し、他の Agent が busy の間は待つ", () => {
     const next = session();
-    const busy: FeedItem = { type: "state", state: { ...IDLE, agents: [{ id: "codex", status: "busy", sessionId: undefined, permission: "edit", models: [], usage: {} }] } };
+    const busy: FeedItem = { type: "state", state: { ...IDLE, agents: [{ id: "codex", status: "busy", sessionId: undefined, permission: "edit", models: [], usage: {}, subagents: [] }] } };
     expect(next(busy)).toBeUndefined();
     next(turn());
     expect(next(busy)).toBeUndefined();

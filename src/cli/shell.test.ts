@@ -78,14 +78,14 @@ class FakeCoordinator implements ShellCoordinator {
   settingResult: TurnResult | undefined;
   states: AgentState[] = [
     {
-      id: "claude", status: "idle", sessionId: "s-claude", permission: "edit", model: "haiku", effort: "high", models: ["default", "opus", "sonnet", "haiku"].map((value) => ({ value, label: value })),
+      id: "claude", status: "idle", sessionId: "s-claude", permission: "edit", model: "haiku", effort: "high", models: ["default", "opus", "sonnet", "haiku"].map((value) => ({ value, label: value })), subagents: [],
       usage: {
         fiveHourPercent: 12, fiveHourResetsAt: new Date(2026, 9, 5, 22, 30).getTime() / 1000,
         weeklyPercent: 50, weeklyPace: -20, weeklyResetsAt: new Date(2026, 9, 9, 10, 0).getTime() / 1000,
         contextTokens: 85400, contextWindow: 200000,
       },
     },
-    { id: "codex", status: "stopped", sessionId: undefined, permission: "full", models: [], usage: {} },
+    { id: "codex", status: "stopped", sessionId: undefined, permission: "full", models: [], usage: {}, subagents: [] },
   ];
 
   async setPermission(level: PermissionLevel, agent?: AgentId): Promise<void> {
@@ -687,8 +687,8 @@ describe("createShell", () => {
   it("Ctrl+C は実行中の Agent だけ interrupt する", async () => {
     const { coordinator, shell } = setup();
     coordinator.states = [
-      { id: "claude", status: "busy", sessionId: "s1", permission: "edit", models: [], usage: {} },
-      { id: "codex", status: "idle", sessionId: "s2", permission: "edit", models: [], usage: {} },
+      { id: "claude", status: "busy", sessionId: "s1", permission: "edit", models: [], usage: {}, subagents: [] },
+      { id: "codex", status: "idle", sessionId: "s2", permission: "edit", models: [], usage: {}, subagents: [] },
     ];
     await shell.handleSigint();
     expect(coordinator.interrupted).toEqual(["claude"]);

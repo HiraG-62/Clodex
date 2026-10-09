@@ -20,6 +20,31 @@ const result = (text: string, subtype = "success") => ({
 });
 
 describe("ClaudeAdapter", () => {
+  it("background_tasks_changed の local_agent だけを数え、ターンの外でも一覧を更新する", async () => {
+    const { adapter, proc, events } = await setup();
+    const quick = { task_id: "quick", description: "調査", task_type: "local_agent" };
+    const slow = { task_id: "slow", description: "実装", task_type: "local_agent" };
+    const bash = { task_id: "bash", description: "sleep", task_type: "local_bash" };
+    for (const tasks of [[quick], [quick, slow, bash], [slow, bash], [bash]]) {
+      proc.emit({ type: "system", subtype: "background_tasks_changed", tasks });
+    }
+    expect(events.filter((event) => event.type === "subagents")).toEqual([
+      { type: "subagents", running: [{ id: "quick", description: "調査" }] },
+      { type: "subagents", running: [{ id: "quick", description: "調査" }, { id: "slow", description: "実装" }] },
+      { type: "subagents", running: [{ id: "slow", description: "実装" }] },
+      { type: "subagents", running: [] },
+    ]);
+    expect(events.some((event) => event.type === "turn_started")).toBe(false);
+    expect(adapter.status).toBe("idle");
+  });
+
+  it("プロセス終了時に background Agent の一覧を空にする", async () => {
+    const { proc, events } = await setup();
+    proc.emit({ type: "system", subtype: "background_tasks_changed", tasks: [{ task_id: "a", description: "調査", task_type: "local_agent" }] });
+    proc.exit(0);
+    expect(events.filter((event) => event.type === "subagents").at(-1)).toEqual({ type: "subagents", running: [] });
+  });
+
   it("stream-json の常駐プロセスを、API key を除いた環境と新しい session ID で起動する", async () => {
     process.env.ANTHROPIC_API_KEY = "sk-should-not-leak";
     const { adapter, spawner, events } = await setup();

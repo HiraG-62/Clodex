@@ -621,9 +621,17 @@ describe("Coordinator", () => {
     claude.status = "busy";
     claude.sessionId = "s-1";
     expect(coordinator.status()).toEqual([
-      { id: "claude", status: "busy", sessionId: "s-1", permission: "edit", model: undefined, modelLabel: "default", effort: undefined, models: [], usage: {} },
-      { id: "codex", status: "stopped", sessionId: undefined, permission: "edit", model: undefined, modelLabel: "default", effort: undefined, models: [], usage: {} },
+      { id: "claude", status: "busy", sessionId: "s-1", permission: "edit", model: undefined, modelLabel: "default", effort: undefined, models: [], usage: {}, subagents: [] },
+      { id: "codex", status: "stopped", sessionId: undefined, permission: "edit", model: undefined, modelLabel: "default", effort: undefined, models: [], usage: {}, subagents: [] },
     ]);
+  });
+
+  it("subagents event の全件を状態に反映する", () => {
+    const { claude, coordinator } = setup();
+    claude.emit({ type: "subagents", running: [{ id: "sub-1", description: "調査" }] });
+    expect(coordinator.status()[0]?.subagents).toEqual([{ id: "sub-1", description: "調査" }]);
+    claude.emit({ type: "subagents", running: [] });
+    expect(coordinator.status()[0]?.subagents).toEqual([]);
   });
 
   it("status に Agent の rate_limit から集計した利用状況を含める", () => {

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 import {
   COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, ASK_USER_TOOL, READ_CONVERSATION_TOOL, summarizeToolInput,
-  type AgentStartOptions, type PermissionLevel, type RateLimitWindow, type TurnResult,
+  type AgentStartOptions, type PermissionLevel, type RateLimitWindow, type SubagentState, type TurnResult,
 } from "./agent-adapter.js";
 import { agentEnv, spawnAgentProcess, type SpawnAgentProcess } from "./agent-process.js";
 import { BaseAgentAdapter } from "./base-agent-adapter.js";
@@ -83,6 +83,7 @@ interface ClaudeEvent {
   rate_limit_info?: { unifiedWindows?: { five_hour?: UtilizationWindow; seven_day?: UtilizationWindow } };
   isReplay?: boolean;
   uuid?: string;
+  tasks?: Array<{ task_id?: string; task_type?: string; description?: string }>;
 }
 
 const toRateLimitWindow = (w: UtilizationWindow | undefined): RateLimitWindow | undefined =>
@@ -98,6 +99,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
   // 最後の API 呼び出しの usage。今のコンテキストの大きさとして使う（DESIGN.md §9）
   private lastUsage: MessageUsage | undefined;
   private settingTurn: SettingKind | undefined;
+  private subagents: SubagentState[] = [];
 
   constructor(
     private readonly spawnProcess: SpawnAgentProcess = spawnAgentProcess,
@@ -229,6 +231,16 @@ export class ClaudeAdapter extends BaseAgentAdapter {
   }
 
   private handleSystem(event: ClaudeEvent): void {
+    if (event.subtype === "background_tasks_changed") {
+      const running = (event.tasks ?? [])
+        .filter((task) => task.task_type === "local_agent" && task.task_id)
+        .map((task) => ({ id: task.task_id!, description: task.description ?? "" }));
+      if (JSON.stringify(running) !== JSON.stringify(this.subagents)) {
+        this.subagents = running;
+        this.emit({ type: "subagents", running: [...running] });
+      }
+      return;
+    }
     if (event.subtype === "init" && event.apiKeySource !== SUBSCRIPTION_API_KEY_SOURCE) {
       this.abort(`claude is not using subscription auth (apiKeySource: ${event.apiKeySource})`);
       return;
@@ -275,6 +287,14 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     const acknowledged = !setting || (event.result ?? "").startsWith(setting === "model" ? MODEL_SUCCESS : EFFORT_SUCCESS);
     if (event.subtype === "success" && !event.is_error && acknowledged) return "completed" as const;
     return this.interruptRequested ? "interrupted" as const : "failed" as const;
+  }
+
+  protected handleExit(code: number | null): void {
+    if (this.subagents.length) {
+      this.subagents = [];
+      this.emit({ type: "subagents", running: [] });
+    }
+    super.handleExit(code);
   }
 }
 
