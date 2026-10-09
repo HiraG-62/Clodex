@@ -222,6 +222,7 @@ export class Workspace {
     } else if (event.kind === "agent" && event.event.type === "error")
       this.options.notifyAgent({ ...base, kind: "error", agent: event.agent, line: event.event.message });
     else if (event.kind === "agent" && event.event.type === "turn") {
+      if (event.handoff) return;
       const status = event.event.result.status;
       const input: NotificationInput = { ...base, kind: status === "completed" ? (used[event.agent] ? "work" : "reply") : status, agent: event.agent };
       if (status !== "failed") this.options.notifyAgent(input);

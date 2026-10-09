@@ -110,6 +110,17 @@ describe("Workspace", () => {
     workspace.current.bus.publish({ kind: "agent", agent: "codex", event: { type: "turn", result: { status: "completed", text: "ok" } } });
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({ projectRoot: ROOT, kind: "reply", agent: "codex" }));
   });
+  it("裏の会話で途中のターンは通知せず、人への質問とエラーは通知する", async () => {
+    const { workspace, notify, setCurrentProject } = setup();
+    await workspace.init();
+    setCurrentProject(false);
+    workspace.current.bus.publish({ kind: "agent", agent: "codex", event: { type: "turn", result: { status: "completed", text: "途中" } }, handoff: true });
+    expect(notify).not.toHaveBeenCalled();
+    workspace.current.bus.publish({ kind: "question", id: "q", agent: "codex", questions: [] });
+    workspace.current.bus.publish({ kind: "agent", agent: "codex", event: { type: "error", message: "エラー" } });
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "question" }));
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "error" }));
+  });
   it("今の project の裏の会話の質問を通知する", async () => {
     const { workspace, created, notify } = setup();
     await workspace.init();

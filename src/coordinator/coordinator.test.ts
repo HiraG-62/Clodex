@@ -32,6 +32,73 @@ const setup = (projectRoot = PROJECT_ROOT) => {
 
 const reviewRequest = { to: "codex", type: "REVIEW_REQUEST", taskId: "T-1", body: "review please", files: ["a.ts"] };
 
+describe("Agent 間の途中のターン", () => {
+  const turnEvents = (events: CoordinatorEvent[]) =>
+    events.filter((event): event is Extract<CoordinatorEvent, { kind: "agent" }> => event.kind === "agent" && event.event.type === "turn");
+
+  it.each(["DELEGATE", "QUESTION", "REVIEW_REQUEST"] as const)("%s を処理したターンに印を付ける", async type => {
+    const { codex, events, coordinator } = setup();
+    expect(coordinator.receiveMessage("claude", { to: "codex", type, taskId: "T", body: "依頼" }).ok).toBe(true);
+    await flush();
+    codex.emit({ type: "turn_started" });
+    codex.emit({ type: "turn", result: { status: "completed", text: "完了" } });
+    expect(turnEvents(events)).toMatchObject([{ handoff: true }]);
+    codex.completeTurn({ status: "completed", text: "完了" });
+  });
+
+  it("人の入力から始めて相手に message を送ったターンに印を付ける", async () => {
+    const { claude, events, coordinator } = setup();
+    void coordinator.sendToAgent("claude", "依頼する");
+    await flush();
+    claude.emit({ type: "turn_started" });
+    expect(coordinator.receiveMessage("claude", { to: "codex", type: "QUESTION", taskId: "T", body: "質問" }).ok).toBe(true);
+    claude.emit({ type: "turn", result: { status: "completed", text: "送信済み" } });
+    expect(turnEvents(events)).toMatchObject([{ handoff: true }]);
+    claude.completeTurn();
+  });
+
+  it("自動 RESULT を作る依頼先のターンにも印が付く", async () => {
+    const { codex, events, coordinator } = setup();
+    expect(coordinator.receiveMessage("claude", { to: "codex", type: "DELEGATE", taskId: "T", body: "実装" }).ok).toBe(true);
+    await flush();
+    codex.emit({ type: "turn_started" });
+    codex.emit({ type: "turn", result: { status: "completed", text: "完了" } });
+    codex.completeTurn({ status: "completed", text: "完了" });
+    await flush();
+    expect(turnEvents(events)).toMatchObject([{ handoff: true }]);
+    expect(events.some(event => event.kind === "message" && event.message.auto)).toBe(true);
+  });
+
+  it("RESULT を受けた報告だけのターンと人の入力だけのターンには印を付けない", async () => {
+    const { claude, codex, events, coordinator } = setup();
+    void coordinator.sendToAgent("claude", "人への報告");
+    await flush();
+    claude.emit({ type: "turn_started" });
+    claude.emit({ type: "turn", result: { status: "completed", text: "報告" } });
+    claude.completeTurn();
+    expect(coordinator.receiveMessage("claude", { to: "codex", type: "RESULT", taskId: "T", replyTo: "msg_old", body: "結果" }).ok).toBe(true);
+    await flush();
+    codex.emit({ type: "turn_started" });
+    codex.emit({ type: "turn", result: { status: "completed", text: "報告" } });
+    expect(turnEvents(events).every(event => !event.handoff)).toBe(true);
+    codex.completeTurn();
+  });
+
+  it("割り込みで足した依頼と ACK は、そのターンを途中にしない", async () => {
+    const { codex, events, coordinator } = setup();
+    expect(coordinator.receiveMessage("claude", { to: "codex", type: "RESULT", taskId: "T", replyTo: "msg_old", body: "結果" }).ok).toBe(true);
+    await flush();
+    codex.emit({ type: "turn_started" });
+    expect(coordinator.receiveMessage("claude", { to: "codex", type: "QUESTION", taskId: "T", body: "追加", interrupt: true }).ok).toBe(true);
+    await flush();
+    expect(codex.steered).toHaveLength(1);
+    expect(coordinator.receiveMessage("codex", { to: "claude", type: "ACK", taskId: "T", replyTo: "msg_old", body: "確認" }).ok).toBe(true);
+    codex.emit({ type: "turn", result: { status: "completed", text: "報告" } });
+    expect(turnEvents(events).every(event => !event.handoff)).toBe(true);
+    codex.completeTurn();
+  });
+});
+
 describe("人の判断と作業の引き継ぎ", () => {
   it("片方への入力と回答を相手の次の配送にだけ添え、@all は共有しない", async () => {
     const { claude, codex, coordinator } = setup();

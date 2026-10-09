@@ -116,6 +116,7 @@ export class Coordinator {
   private readonly workRecorder = new WorkRecorder();
   private readonly deliveryNotes: DeliveryNotes;
   private readonly repliedRequests = new Set<string>();
+  private readonly handoffTurns: Partial<Record<AgentId, boolean>> = {};
   // 宛先ごと・設計書の実パスごとに、前回渡した中身（DESIGN.md §13 Spec の差分）
   private readonly specSnapshots = new Map<string, string>();
   private readonly liveUsage = new Set<AgentId>();
@@ -190,12 +191,18 @@ export class Coordinator {
     this.usage = new UsageMonitor(bus, { ...DEFAULT_USAGE_ALERT, ...options.usageAlert });
     for (const id of AGENT_IDS) {
       agents[id].onEvent(event => {
+        if (event.type === "turn_started") {
+          const current = this.mailboxes?.[id]?.current;
+          this.handoffTurns[id] = current ? RETRIED_TYPES.has(current.type) : false;
+        }
         if (event.type === "rate_limit") this.liveUsage.add(id);
         if (event.type === "subagents") this.subagents[id] = [...event.running];
         const files = this.workRecorder.record(id, event);
         this.deliveryNotes.recordPeerFiles(OTHER_AGENT[id], files);
         if (["turn_started", "text", "tool", "turn"].includes(event.type)) this.notifyRecoveryChange();
-        bus.publish({ kind: "agent", agent: id, event });
+        const handoff = event.type === "turn" && this.handoffTurns[id] === true;
+        if (event.type === "turn") delete this.handoffTurns[id];
+        bus.publish({ kind: "agent", agent: id, event, ...(handoff ? { handoff: true } : {}) });
         if (event.type !== "turn" || event.result.status !== "failed") return;
         const mailbox = this.mailboxes?.[id];
         if (!mailbox || mailbox.activeSending || mailbox.holding || mailbox.isClosed) return;
@@ -338,6 +345,7 @@ export class Coordinator {
     }
 
     if (parent && RETRIED_TYPES.has(parent.type) && message.to === parent.from) this.repliedRequests.add(parent.id);
+    if (message.type !== "ACK" && this.handoffTurns[from] !== undefined) this.handoffTurns[from] = true;
     if (specSnapshot) this.specSnapshots.set(specSnapshot.key, specSnapshot.content);
     bus.publish({ kind: "message", message });
     // ACK は記録のみ。配送して Agent を起こさない（DESIGN.md §12, §25）

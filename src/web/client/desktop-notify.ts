@@ -32,6 +32,7 @@ export function updateDesktopNotify(previous: DesktopNotifyState, item: FeedItem
       : { state: previous, notification: { kind: "notice", line: event.text } };
   if (event.kind !== "agent") return { state: previous };
   if (event.event.type === "turn") {
+    if (event.handoff) return { state: { ...previous, lastTurn: undefined } };
     const status = event.event.result.status;
     const kind = status === "completed" ? (previous.toolUsed[event.agent] ? "work" : "reply") : status;
     return { state: { ...previous, lastTurn: { kind, agent: event.agent } } };

@@ -2028,6 +2028,8 @@ D3 の詳細（Tauri GUI。Windows）:
     - Agent のエラー: 「エラー: <1 行目>」/ "Error: <first line>"
     - Agent に関係しない通知（利用枠の偏りなどの `notice`）は、本文をその文のままにし、`（Agent 名）` を付けない
   - 今の会話は、今どおり「どの Agent も作業中でなく配送待ちも無い」状態になったときに、最後に終わったターンで 1 回だけ出す。裏の会話・ほかの project は、ターンが終わるたびに出す
+  - Agent 同士のやり取りの途中のターンでは、ターンの終わりの通知を出さない。途中のターンは、相手からの依頼（`DELEGATE`・`QUESTION`・`REVIEW_REQUEST`）を処理したターンと、ターンの中で相手に formal message を送ったターン（Coordinator が最終応答から作る自動の `RESULT` を含む）。結果は相手の Agent に渡るだけで、人が見る必要が無いため。相手の `RESULT` を受けて人に報告して終えるターンと、人への質問（`ask_user`）は今どおり出す
+    - Coordinator がターンの終わりの event に途中のターンの印（例: `handoff: true`）を付け、Hub は印のあるターンで通知を作らない。今の会話で最後に終わったターンが途中のターンなら、その回は出さない
   - 画面の feed の読み込み（再生）では出さない
 - **通知**: Tauri の中の Web UI が、ウィンドウが見えていないかフォーカスが無いときに、Windows の通知を出す（`tauri-plugin-notification`）。ブラウザの Web UI では出さない
   - 出すのは上の「通知の形式」の `notify` の項目

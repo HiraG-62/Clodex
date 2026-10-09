@@ -4,7 +4,7 @@ import type { AgentMessage } from "../protocol/messages.js";
 import type { UserQuestion } from "../protocol/questions.js";
 
 export type CoordinatorEventInput =
-  | { kind: "agent"; agent: AgentId; event: AgentEvent }
+  | { kind: "agent"; agent: AgentId; event: AgentEvent; handoff?: true }
   | { kind: "message"; message: AgentMessage }
   | { kind: "human"; agent: AgentId; text: string; steer?: boolean; steerId?: string } // steer: 実行中のターンに足した
   | { kind: "question"; id: string; agent: AgentId; questions: UserQuestion[] }

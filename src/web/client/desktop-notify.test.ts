@@ -47,6 +47,22 @@ describe("updateDesktopNotify", () => {
     expect(next(state())).toBeUndefined();
   });
 
+  it("最後に終わったターンが Agent 間の途中なら通知しない", () => {
+    const next = session();
+    next(state());
+    next(event({ type: "turn_started" }));
+    const handoff: FeedItem = {
+      type: "event",
+      seq: 2,
+      event: { kind: "agent", agent: "claude", event: { type: "turn", result: { status: "completed", text: "途中" } }, at: "now", handoff: true },
+    };
+    next(handoff);
+    expect(next(state())).toBeUndefined();
+    next(event({ type: "turn_started" }));
+    next(turn());
+    expect(next(state())).toEqual({ kind: "reply", agent: "claude" });
+  });
+
   it("tool を使ったターンは作業完了にし、配送待ちと他 Agent の作業中は待つ", () => {
     const next = session();
     next(state());
