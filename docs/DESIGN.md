@@ -413,6 +413,8 @@ Project root の解決順:
 | `--resume` | なし | この project の最新の会話を続ける（§18） |
 | `--web` | 設定ファイルの `web` | Web UI を有効にする（§17 Web UI） |
 
+Hub が動いているとき（§28 D2b）は、起動オプションを Hub へのコマンドに変えて送る: `--project` は `/project <絶対パス>`（無ければ起動した場所）、`--primary` は `/primary <agent>`、`--claude-model` / `--codex-model` は `/model <agent> <model>`。`--resume` と `--web` は Hub の状態をそのまま使うので変えず、無視したことを 1 行出す（`Hub 起動中のため無視: --resume`）
+
 ---
 
 # 8. Input UX

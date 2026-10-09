@@ -374,6 +374,7 @@ export const en = {
   "start.noSaved": "new conversation",
   "start.help": "/help for usage",
   "start.web": "web: {url}/?token=<~/.clodex/web-token>  (remote: tailscale serve)",
+  "start.hubIgnored": "Ignored while the Hub is running: {options}",
   "error.settingsSave": "settings save failed: {message}",
   "error.generic": "error: {message}",
   // 通知・拒否
@@ -760,6 +761,7 @@ export const ja: Messages = {
   "start.noSaved": "新しい会話",
   "start.help": "/help で使い方",
   "start.web": "web: {url}/?token=<~/.clodex/web-token>（外部から: tailscale serve）",
+  "start.hubIgnored": "Hub 起動中のため無視: {options}",
   "error.settingsSave": "設定を保存できませんでした: {message}",
   "error.generic": "エラー: {message}",
   "notice.canceled": "{agent} への入力を取り消しました: {text}",

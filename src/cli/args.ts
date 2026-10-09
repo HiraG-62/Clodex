@@ -1,4 +1,5 @@
 // 起動オプション（DESIGN.md §7）
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { AGENT_IDS, isAgentId, type AgentId } from "../agents/agent-adapter.js";
 
@@ -38,4 +39,16 @@ export const parseCliArgs = (argv: string[]): CliArgs => {
     resume: values.resume ?? false,
     web: serve || (values.web ?? false), serve,
   };
+};
+
+// Hub が動いているときは、起動オプションを Hub へのコマンドに変えて送る（DESIGN.md §7）
+export const hubCommands = (args: CliArgs, cwd: string): { commands: string[]; ignored: string[] } => {
+  const commands = [`/project ${args.project ? resolve(cwd, args.project) : cwd}`];
+  if (args.primary) commands.push(`/primary ${args.primary}`);
+  for (const id of AGENT_IDS) {
+    const model = args.models[id];
+    if (model) commands.push(`/model ${id} ${model}`);
+  }
+  const ignored = [...(args.resume ? ["--resume"] : []), ...(args.web ? ["--web"] : [])];
+  return { commands, ignored };
 };

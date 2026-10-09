@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCliArgs } from "./args.js";
+import { hubCommands, parseCliArgs } from "./args.js";
 
 describe("parseCliArgs", () => {
   it("未指定の option は undefined（既定値は設定ファイルとあわせて決める）", () => {
@@ -24,5 +24,19 @@ describe("parseCliArgs", () => {
 
   it("未知の option はエラー", () => {
     expect(() => parseCliArgs(["--unknown"])).toThrow();
+  });
+});
+
+describe("hubCommands", () => {
+  it("option が無ければ起動した場所の project を開くだけ", () => {
+    expect(hubCommands(parseCliArgs([]), "C:\\dev\\app")).toEqual({ commands: ["/project C:\\dev\\app"], ignored: [] });
+  });
+
+  it("option を Hub へのコマンドに変え、変えられないものは ignored に入れる", () => {
+    const args = parseCliArgs(["--project", "sub", "--primary", "codex", "--claude-model", "haiku", "--codex-model", "gpt-5.5", "--resume", "--web"]);
+    expect(hubCommands(args, "C:\\dev\\app")).toEqual({
+      commands: ["/project C:\\dev\\app\\sub", "/primary codex", "/model claude haiku", "/model codex gpt-5.5"],
+      ignored: ["--resume", "--web"],
+    });
   });
 });

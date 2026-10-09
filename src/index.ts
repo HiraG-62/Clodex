@@ -8,7 +8,7 @@ import { createInterface } from "node:readline";
 import { AGENT_IDS, type AgentId } from "./agents/agent-adapter.js";
 import { EMPTY_MODEL_CATALOG } from "./agents/startup-probe.js";
 import type { Coordinator } from "./coordinator/coordinator.js";
-import { parseCliArgs } from "./cli/args.js";
+import { hubCommands, parseCliArgs } from "./cli/args.js";
 import { createCommandRunner, type CommandLifecycle } from "./cli/command-runner.js";
 import { createProcessManager } from "./process/process-manager.js";
 import { completeCommand } from "./cli/commands.js";
@@ -78,7 +78,9 @@ const main = async (): Promise<void> => {
   if (liveHub && isHubAlive(liveHub)) {
     const token = readFileSync(webTokenPath(homeDir), "utf8").trim();
     const client = createRemoteFeedClient(liveHub, token);
-    await client.send(`/project ${cwd}`);
+    const { commands, ignored } = hubCommands(args, cwd);
+    for (const command of commands) await client.send(command);
+    if (ignored.length) process.stderr.write(`${t("start.hubIgnored", { options: ignored.join(" ") })}\n`);
     await startTui(client);
     return;
   }
