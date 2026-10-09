@@ -5,7 +5,7 @@ import {
   COORDINATOR_MCP_SERVER, SEND_MESSAGE_TOOL, ASK_USER_TOOL, READ_CONVERSATION_TOOL, summarizeToolInput,
   type AgentStartOptions, type PermissionLevel, type RateLimitWindow, type SubagentState, type TurnResult,
 } from "./agent-adapter.js";
-import { agentEnv, spawnAgentProcess, type SpawnAgentProcess } from "./agent-process.js";
+import { agentEnv, agentStartError, spawnAgentProcess, type SpawnAgentProcess } from "./agent-process.js";
 import { BaseAgentAdapter } from "./base-agent-adapter.js";
 
 // claude -p の stream-json プロトコル（docs/spikes/claude-lifecycle.md）
@@ -129,7 +129,13 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     this.attach(proc);
     this.status = "starting";
     // Claude は最初のターンまで何も出力しないので、プロセスの起動成功をもって start 完了とする
-    await proc.spawned;
+    try {
+      await proc.spawned;
+    } catch (error) {
+      const failure = agentStartError(CLAUDE_COMMAND, error);
+      if (failure !== error) this.emit({ type: "error", message: failure.message });
+      throw failure;
+    }
     this.status = "idle";
     await this.applyPermissionChangedDuringStart();
     if (this.proc !== proc) return;

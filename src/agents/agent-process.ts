@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { AgentId } from "./agent-adapter.js";
 import { killProcessTree } from "../process/kill-tree.js";
+import { t } from "../i18n/i18n.js";
 
 // 1 行 1 JSON の stdio でやり取りする常駐プロセス。テストで差し替えられるよう抽象化する
 export interface AgentProcess {
@@ -19,6 +20,13 @@ export interface SpawnOptions {
 }
 
 export type SpawnAgentProcess = (command: string, args: string[], options: SpawnOptions) => AgentProcess;
+
+export const agentStartError = (command: string, error: unknown): Error => {
+  if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+    return new Error(t("error.agentCommandMissing", { command }));
+  }
+  return error instanceof Error ? error : new Error(String(error));
+};
 
 // サブスクリプション認証を守るため、子プロセスに渡さない環境変数（docs/spikes/authentication.md）
 const API_KEY_ENV_VARS = new Set(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY"]);

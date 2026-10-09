@@ -392,6 +392,7 @@ export const en = {
   "error.settingsSave": "settings save failed: {message}",
   "error.jobObject": "Job Object registration failed: {message}",
   "error.webToken": "Web token unavailable: {message}",
+  "error.agentCommandMissing": "{command} not found ({command}.exe must be on PATH)",
   "error.generic": "error: {message}",
   // 通知・拒否
   "notice.canceled": "canceled input to {agent}: {text}",
@@ -795,6 +796,7 @@ export const ja: Messages = {
   "error.settingsSave": "設定を保存できませんでした: {message}",
   "error.jobObject": "Job Object の登録に失敗: {message}",
   "error.webToken": "Web token を読めません: {message}",
+  "error.agentCommandMissing": "{command} が見つからない（PATH に {command}.exe が必要）",
   "error.generic": "エラー: {message}",
   "notice.canceled": "{agent} への入力を取り消しました: {text}",
   "notice.discarded": "Agent 間の送信待ちのメッセージを {count} 件破棄しました",

@@ -40,6 +40,31 @@ const agentMessage = (text: string) => ({
 });
 
 describe("CodexAdapter", () => {
+  it("codex.exe が PATH に無い場合は分かりやすい error event と起動エラーを出す", async () => {
+    const missing = Object.assign(new Error("spawn codex ENOENT"), { code: "ENOENT" });
+    const spawner = createFakeSpawner(undefined, { spawnError: missing });
+    const adapter = new CodexAdapter(spawner.spawn);
+    const events: AgentEvent[] = [];
+    adapter.onEvent((event) => events.push(event));
+    await expect(adapter.start({ cwd: "C:\\dev\\app" })).rejects.toThrow("codex not found (codex.exe must be on PATH)");
+    expect(events).toContainEqual({ type: "error", message: "codex not found (codex.exe must be on PATH)" });
+  });
+  it.each(["account/read", "thread/start", "thread/resume"])("%s の形が違えば method を含むエラーで起動を止める", async (method) => {
+    const responder = defaultResponder();
+    const spawner = createFakeSpawner((message) => message.method === method ? { account: 42, thread: 42 } : responder(message));
+    const adapter = new CodexAdapter(spawner.spawn);
+    await expect(adapter.start({ cwd: "C:\\dev\\app", ...(method === "thread/resume" ? { resumeSessionId: THREAD_ID } : {}) }))
+      .rejects.toThrow(`codex: unexpected response to ${method}`);
+    expect(spawner.last.killed).toBe(true);
+  });
+
+  it("turn/start の形が違えば method を含む failed を返す", async () => {
+    const responder = defaultResponder();
+    const spawner = createFakeSpawner((message) => message.method === "turn/start" ? { invalid: true } : responder(message));
+    const adapter = new CodexAdapter(spawner.spawn);
+    await adapter.start({ cwd: "C:\\dev\\app" });
+    await expect(adapter.send("x")).resolves.toMatchObject({ status: "failed", text: expect.stringContaining("unexpected response to turn/start") });
+  });
   it("initialize が応答しなければ期限後に起動を失敗させ、プロセスを止める", async () => {
     vi.useFakeTimers();
     try {

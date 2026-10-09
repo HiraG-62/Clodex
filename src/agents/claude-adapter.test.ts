@@ -470,6 +470,16 @@ describe("ClaudeAdapter", () => {
     expect(events.some((e) => e.type === "session")).toBe(false);
   });
 
+  it("claude.exe が PATH に無い場合は分かりやすい error event と起動エラーを出す", async () => {
+    const missing = Object.assign(new Error("spawn claude ENOENT"), { code: "ENOENT" });
+    const spawner = createFakeSpawner(undefined, { spawnError: missing });
+    const adapter = new ClaudeAdapter(spawner.spawn, () => SESSION_ID);
+    const events: AgentEvent[] = [];
+    adapter.onEvent((event) => events.push(event));
+    await expect(adapter.start({ cwd: "C:\\dev\\app" })).rejects.toThrow("claude not found (claude.exe must be on PATH)");
+    expect(events).toContainEqual({ type: "error", message: "claude not found (claude.exe must be on PATH)" });
+  });
+
   it("同時に呼ばれた stop はすべて終了を待って resolve する", async () => {
     const spawner = createFakeSpawner(undefined, { exitOnKill: false });
     const adapter = new ClaudeAdapter(spawner.spawn, () => SESSION_ID);

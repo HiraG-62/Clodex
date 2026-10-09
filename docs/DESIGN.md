@@ -558,6 +558,8 @@ Adapter の必須処理:
 - 認証方式がサブスクリプションでなければ、プロセスを止めて `error` を出す
 - 実行中ターンへの追加送信（steer）は v0.1 では使わない。busy 中の `send` は Coordinator 側でキューに積む（§12）
 - 予期しない承認要求（Codex の server request）はエラー応答し、`error` を出す。Codex は `approvalPolicy: "never"` で起動し、Coordinator の MCP tool だけ自動承認する
+- Codex の応答のうち Clodex が使うもの（`thread/start`・`thread/resume`・`turn/start`・`account/read`）は、使うフィールドの形を確かめてから使う。形が違えば method 名を含むエラーにする（CLI の更新で形が変わったことが分かるように）
+- CLI の実行ファイルが見つからないとき（PATH に `claude.exe`・`codex.exe` が無い。npm で入れた `.cmd` だけの場合を含む）は、その旨の文言で起動の失敗にする。shell を介して `.cmd` を起動することはしない（引数がコマンドインジェクションの原因になるため）
 - 認証違反などでプロセスを止める（abort）ときは、プロセスの終了を待ってから実行中のターンを `failed`（理由は abort の理由）で終える。終了するまで idle に戻さず、終了中のプロセスに次の入力を送らない
 - interrupt してから 30 秒たってもターンが終わらなければ、abort としてプロセスを止める（次の送信で session を resume して起動し直す）
 - Codex の JSON-RPC の要求は、120 秒たっても応答が無ければ失敗にする（起動中なら起動の失敗としてプロセスを止める）

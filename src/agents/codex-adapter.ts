@@ -2,7 +2,8 @@ import {
   COORDINATOR_MCP_SERVER, summarizeToolInput,
   type AgentStartOptions, type PermissionLevel, type SubagentState, type TurnResult,
 } from "./agent-adapter.js";
-import { agentEnv, spawnAgentProcess, type SpawnAgentProcess } from "./agent-process.js";
+import { z } from "zod";
+import { agentEnv, agentStartError, spawnAgentProcess, type SpawnAgentProcess } from "./agent-process.js";
 import { BaseAgentAdapter } from "./base-agent-adapter.js";
 import { codexRateLimitEvent, type CodexRateLimits } from "./rate-limits.js";
 
@@ -31,6 +32,17 @@ const PROJECT_CONFIG_ARGS = [
 ];
 const METHOD_NOT_FOUND = -32601;
 const CODEX_REQUEST_TIMEOUT_MS = 120_000;
+const UNEXPECTED_RESPONSE_PREVIEW_LENGTH = 200;
+const threadResponse = z.object({
+  thread: z.object({ id: z.string() }), model: z.string().optional(), reasoningEffort: z.string().nullable().optional(),
+});
+const turnResponse = z.object({ turn: z.object({ id: z.string() }) });
+const accountResponse = z.object({ account: z.object({ type: z.string().optional() }).nullish() });
+const parseResponse = <T extends z.ZodType>(method: string, schema: T, value: unknown): z.infer<T> => {
+  const result = schema.safeParse(value);
+  if (result.success) return result.data;
+  throw new Error(`codex: unexpected response to ${method}: ${JSON.stringify(value)?.slice(0, UNEXPECTED_RESPONSE_PREVIEW_LENGTH)}`);
+};
 
 interface RpcMessage {
   id?: number | string;
@@ -93,13 +105,17 @@ export class CodexAdapter extends BaseAgentAdapter {
     if (this.status !== "stopped") throw new Error(`codex is ${this.status}`);
     this.status = "starting";
     const args = ["app-server", ...PROJECT_CONFIG_ARGS, ...(mcpUrl ? mcpArgs(mcpUrl) : [])];
-    this.attach(this.spawnProcess(CODEX_COMMAND, args, { cwd, env: agentEnv(process.env, this.id) }));
+    const proc = this.spawnProcess(CODEX_COMMAND, args, { cwd, env: agentEnv(process.env, this.id) });
+    this.attach(proc);
     try {
+      await proc.spawned;
       await this.handshake(cwd, resumeSessionId, instructions);
     } catch (error) {
       // 起動途中で失敗したら常駐プロセスを残さない
       this.proc?.kill();
-      throw error;
+      const failure = agentStartError(CODEX_COMMAND, error);
+      if (failure !== error) this.emit({ type: "error", message: failure.message });
+      throw failure;
     }
   }
 
@@ -114,9 +130,9 @@ export class CodexAdapter extends BaseAgentAdapter {
     const threadParams = {
       cwd, approvalPolicy: APPROVAL_POLICY, sandbox: SANDBOX_MODE[this.launchPermission], ...(this.model ? { model: this.model } : {}), ...(instructions ? { developerInstructions: instructions } : {}),
     };
-    const response = (resumeSessionId
-      ? await this.request("thread/resume", { threadId: resumeSessionId, ...threadParams })
-      : await this.request("thread/start", threadParams)) as { thread: { id: string }; model?: string; reasoningEffort?: string | null };
+    const threadMethod = resumeSessionId ? "thread/resume" : "thread/start";
+    const response = parseResponse(threadMethod, threadResponse, await this.request(threadMethod,
+      resumeSessionId ? { threadId: resumeSessionId, ...threadParams } : threadParams));
     this.sessionId = response.thread.id;
     this.model ??= response.model;
     this.effort ??= response.reasoningEffort ?? undefined;
@@ -194,7 +210,7 @@ export class CodexAdapter extends BaseAgentAdapter {
       ...(this.model ? { model: this.model } : {}),
       ...(this.effort ? { effort: this.effort } : {}),
     })
-      .then((response) => this.setTurnId((response as { turn?: { id?: string } }).turn?.id))
+      .then((response) => this.setTurnId(parseResponse("turn/start", turnResponse, response).turn.id))
       .catch((error: Error) => this.finishTurn({ status: "failed", text: error.message }));
   }
 
@@ -230,7 +246,7 @@ export class CodexAdapter extends BaseAgentAdapter {
   }
 
   private async verifySubscription(): Promise<void> {
-    const { account } = (await this.request("account/read", {})) as { account?: { type?: string } | null };
+    const { account } = parseResponse("account/read", accountResponse, await this.request("account/read", {}));
     if (account?.type === SUBSCRIPTION_ACCOUNT_TYPE) return;
     const message = `codex is not using subscription auth (account type: ${account?.type ?? "none"})`;
     this.abort(message);
