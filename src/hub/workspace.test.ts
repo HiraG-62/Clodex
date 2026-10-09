@@ -18,11 +18,14 @@ interface FakeRuntime extends ConversationRuntime {
   closed: boolean;
 }
 
-const setup = (worktree: WorktreeResult = { ok: true, worktree: { workDir: "C:\\dev\\app-wt", branch: "clodex/wt" } }) => {
+const setup = (worktree: WorktreeResult = { ok: true, worktree: { workDir: "C:\\dev\\app-wt", branch: "clodex/wt" } }, beforeCreate?: () => Promise<void>) => {
   let currentProject = true;
   const history = new ConversationHistory(join(mkdtempSync(join(tmpdir(), "clodex-ws-")), "state.json"), { resumeLatest: false });
   const created: FakeRuntime[] = [];
+  const createRuntimeCalls = vi.fn();
   const createRuntime = async (conversation: Conversation): Promise<FakeRuntime> => {
+    createRuntimeCalls();
+    await beforeCreate?.();
     const bus = new EventBus();
     const claude = new FakeAgentAdapter("claude");
     const codex = new FakeAgentAdapter("codex");
@@ -40,10 +43,32 @@ const setup = (worktree: WorktreeResult = { ok: true, worktree: { workDir: "C:\\
     createRuntime, createWorktree: async () => worktree });
   const seen: Array<{ conversationId: string; event: CoordinatorEvent; current: boolean }> = [];
   workspace.onEvent((runtime, event, current) => seen.push({ conversationId: runtime.conversationId, event, current }));
-  return { history, workspace, created, seen, notify, setCurrentProject: (value: boolean) => { currentProject = value; } };
+  return { history, workspace, created, createRuntimeCalls, seen, notify, setCurrentProject: (value: boolean) => { currentProject = value; } };
 };
 
 describe("Workspace", () => {
+  it("同じ会話の並行 init で runtime と listener を一度だけ作る", async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const { workspace, created, createRuntimeCalls } = setup(undefined, () => gate);
+    const listener = vi.fn();
+    workspace.onRuntime(listener);
+    const first = workspace.init();
+    const second = workspace.init();
+    expect(createRuntimeCalls).toHaveBeenCalledTimes(1);
+    release!();
+    await Promise.all([first, second]);
+    expect(created).toHaveLength(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("runtime の作成失敗後は次の init で再試行する", async () => {
+    const beforeCreate = vi.fn().mockRejectedValueOnce(new Error("create failed")).mockResolvedValue(undefined);
+    const { workspace, createRuntimeCalls } = setup(undefined, beforeCreate);
+    await expect(workspace.init()).rejects.toThrow("create failed");
+    await expect(workspace.init()).resolves.toBeUndefined();
+    expect(createRuntimeCalls).toHaveBeenCalledTimes(2);
+  });
   it("今の project の今の会話のターン終了は通知しない", async () => {
     const { workspace, notify } = setup();
     await workspace.init();

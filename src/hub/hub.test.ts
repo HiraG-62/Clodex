@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Hub } from "./hub.js";
 import { saveRecovery } from "../project/recovery-store.js";
 import { ConversationHistory, conversationStatePath } from "../project/conversation-history.js";
@@ -17,6 +17,33 @@ const setup = () => {
 };
 
 describe("Hub", () => {
+  it("同じ project の並行 open で context を共有する", async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), "clodex-hub-concurrent-"));
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const openProject = vi.fn(async (projectRoot: string) => {
+      await gate;
+      return { projectRoot, close: async () => {} };
+    });
+    const hub = new Hub({ homeDir, cwd: homeDir, openProject });
+    const first = hub.open("one");
+    const second = hub.open("one");
+    expect(openProject).toHaveBeenCalledTimes(1);
+    release!();
+    const [one, two] = await Promise.all([first, second]);
+    expect(one).toBe(two);
+  });
+
+  it("project の作成失敗後は次の open で再試行する", async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), "clodex-hub-retry-"));
+    const openProject = vi.fn()
+      .mockRejectedValueOnce(new Error("open failed"))
+      .mockImplementation(async (projectRoot: string) => ({ projectRoot, close: async () => {} }));
+    const hub = new Hub({ homeDir, cwd: homeDir, openProject });
+    await expect(hub.open("one")).rejects.toThrow("open failed");
+    await expect(hub.open("one")).resolves.toMatchObject({ projectRoot: resolve(homeDir, "one") });
+    expect(openProject).toHaveBeenCalledTimes(2);
+  });
   it("閉じた project の固定した会話を一覧に出し、Agent を開かずに固定を外す", async () => {
     const homeDir = mkdtempSync(join(tmpdir(), "clodex-tab-hub-"));
     const opened: string[] = [];

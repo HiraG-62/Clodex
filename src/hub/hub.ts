@@ -34,6 +34,7 @@ export interface HubOptions<T extends HubProject> {
 
 export class Hub<T extends HubProject> {
   private readonly contexts = new Map<string, T>();
+  private readonly opening = new Map<string, Promise<T>>();
   private readonly closedConversations = new Map<string, { modified: number; size: number; conversations: Conversation[] }>();
   private saved: string[];
   private pinned: string[];
@@ -141,8 +142,19 @@ export class Hub<T extends HubProject> {
     const projectRoot = resolveProjectRoot({ explicitProject: resolve(this.options.cwd, path), cwd: this.options.cwd });
     let context = this.contexts.get(projectRoot);
     if (!context) {
-      context = await this.options.openProject(projectRoot);
-      this.contexts.set(projectRoot, context);
+      let opening = this.opening.get(projectRoot);
+      if (!opening) {
+        opening = this.options.openProject(projectRoot).then((created) => {
+          this.contexts.set(projectRoot, created);
+          return created;
+        });
+        this.opening.set(projectRoot, opening);
+      }
+      try {
+        context = await opening;
+      } finally {
+        if (this.opening.get(projectRoot) === opening) this.opening.delete(projectRoot);
+      }
     }
     this.selected = projectRoot;
     this.latestProject = projectRoot;

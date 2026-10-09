@@ -33,6 +33,7 @@ export interface WorkspaceOptions {
 export class Workspace {
   private readonly detach = new Map<string, () => void>();
   private readonly runtimes = new Map<string, ConversationRuntime>();
+  private readonly creating = new Map<string, Promise<ConversationRuntime>>();
   private readonly eventListeners: RuntimeEventListener[] = [];
   private readonly switchListeners: Array<(runtime: ConversationRuntime) => void> = [];
   private readonly runtimeListeners: Array<(runtime: ConversationRuntime) => void> = [];
@@ -160,16 +161,26 @@ export class Workspace {
   private async ensure(conversation: Conversation): Promise<ConversationRuntime> {
     const existing = this.runtimes.get(conversation.id);
     if (existing) return existing;
-    const runtime = await this.options.createRuntime(conversation);
-    this.runtimes.set(conversation.id, runtime);
-    const historyDetach = this.options.history.attach(runtime.bus, conversation.id);
-    const eventDetach = runtime.bus.subscribe((event) => this.handleEvent(runtime, event));
-    const recoveryDetach = runtime.coordinator.onRecoveryChange(() => {
-      for (const listener of this.recoveryListeners) listener();
-    });
-    this.detach.set(conversation.id, () => { historyDetach(); eventDetach(); recoveryDetach(); });
-    for (const listener of this.runtimeListeners) listener(runtime);
-    return runtime;
+    let creating = this.creating.get(conversation.id);
+    if (!creating) {
+      creating = this.options.createRuntime(conversation).then((runtime) => {
+        this.runtimes.set(conversation.id, runtime);
+        const historyDetach = this.options.history.attach(runtime.bus, conversation.id);
+        const eventDetach = runtime.bus.subscribe((event) => this.handleEvent(runtime, event));
+        const recoveryDetach = runtime.coordinator.onRecoveryChange(() => {
+          for (const listener of this.recoveryListeners) listener();
+        });
+        this.detach.set(conversation.id, () => { historyDetach(); eventDetach(); recoveryDetach(); });
+        for (const listener of this.runtimeListeners) listener(runtime);
+        return runtime;
+      });
+      this.creating.set(conversation.id, creating);
+    }
+    try {
+      return await creating;
+    } finally {
+      if (this.creating.get(conversation.id) === creating) this.creating.delete(conversation.id);
+    }
   }
 
   private handleEvent(runtime: ConversationRuntime, event: CoordinatorEvent): void {

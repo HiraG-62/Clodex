@@ -1921,6 +1921,7 @@ TUI に使うライブラリは D4 で決める。
 D1 の詳細（1 つのプロセスの中の複数の会話）:
 
 - 会話ごとに **ConversationRuntime**（Event Bus・Coordinator・MCP server・Agent・Event Log の file）を持つ。会話を初めて使うとき（入力・`/resume`）に作り、Clodex の終了まで残す（作業が終わった会話の Agent も止めない。戻ったときにすぐ使える）
+- 同じ会話の ConversationRuntime、同じ project の ProjectContext を作る要求が重なっても（スマホと PC からの同時操作など）、作るのは 1 つだけ。作成中のものがあればその完了を待って共有する。作成に失敗したら、次の要求で作り直す
 - 人が見ている会話（**今の会話**）は 1 つ。terminal と Web UI は今の会話の event を表示し、入力・`/status`・`/interrupt`・`/cancel`・`/compact` 等は今の会話に対して行う
 - `/resume <番号>` は今の会話を切り替えるだけで、前の会話の Agent は止めない（作業中なら続ける）。`/new` は新しい会話を今の会話にする
 - 今の会話以外で Agent のターンが終わったら、`toast` で知らせる（例: `「設計の相談」の codex のターンが終わりました（completed）`。ログには入れない。§17）
