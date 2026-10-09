@@ -100,6 +100,8 @@ export function clientMain({
   const PERCENT = 100;
   // @path の候補を取り直す間隔（入力欄に入るたびに取ると重い）
   const FILES_REFRESH_MS = 30_000;
+  // 候補の行をタップとみなす指の動きの上限（これを超えたら一覧のスクロール）
+  const SUGGEST_TAP_SLOP_PX = 10;
   // @path の参照として本文の末尾に足された部分（cli/file-references.ts）。編集で入力欄に戻すときは外す
   const REFERENCES_SEPARATOR = "\n\nReferenced files:\n";
   const ARTIFACT_LABEL: Record<"changed" | "referenced" | "image", MessageKey> = { changed: "web.artifact.changed", referenced: "web.artifact.referenced", image: "web.artifact.image" };
@@ -2262,6 +2264,15 @@ export function clientMain({
       // 入力欄のフォーカスを外さずに選ぶ
       option.addEventListener("pointerdown", (e) => e.preventDefault());
       option.addEventListener("click", () => accept(index));
+      // タッチでは click の前に入力欄の blur で一覧が閉じるので、指を離した時点で選ぶ。スクロールした指は選ばない
+      let touchY: number | undefined;
+      option.addEventListener("touchstart", (e) => { touchY = e.touches[0]?.clientY; }, { passive: true });
+      option.addEventListener("touchend", (e) => {
+        const endY = e.changedTouches[0]?.clientY;
+        if (touchY === undefined || endY === undefined || Math.abs(endY - touchY) > SUGGEST_TAP_SLOP_PX) return;
+        e.preventDefault();
+        accept(index);
+      });
       return option;
     }));
     if (loading) {
