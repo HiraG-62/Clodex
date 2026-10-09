@@ -463,6 +463,16 @@ describe("createShell", () => {
     expect(notified.at(-1)).toContain("C:\\dev\\one");
   });
 
+  it("会話の要否を handler の設定から判定する", async () => {
+    const { shell, printed } = setup({ withoutProject: true });
+    await shell.handleLine("/help");
+    expect(printed.length).toBeGreaterThan(0);
+    const before = printed.length;
+    await shell.handleLine("/status");
+    expect(printed).toHaveLength(before + 1);
+    expect(printed.at(-1)).toContain("project");
+  });
+
   it("/solo は作業中でなければ今の会話に保存し、作業中なら拒否する", async () => {
     const { coordinator, history, notified, shell } = setup();
     const solo = () => history.conversations.find((c) => c.id === history.currentId)?.solo;

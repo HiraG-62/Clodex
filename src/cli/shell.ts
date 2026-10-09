@@ -11,7 +11,7 @@ import type { Conversation, SavedSessions } from "../project/conversation-histor
 import { t } from "../i18n/i18n.js";
 import { commandUsage, slashCommands } from "./commands.js";
 import { resolveReferences } from "./file-references.js";
-import { parseInput } from "./input.js";
+import { parseInput, type ShellCommand } from "./input.js";
 import { commandResultMessage } from "./command-result.js";
 import type { CommandResult } from "./command-runner.js";
 import type { ModelOption } from "../agents/startup-probe.js";
@@ -267,275 +267,331 @@ export const createShell = ({
   const soloLabel = (mode: SoloMode | undefined) =>
     !mode ? t("shell.soloOff") : mode === "free" ? t("shell.solo") : t("shell.soloAgent", { agent: mode });
 
+  type CommandOf<K extends ShellCommand["kind"]> = Extract<ShellCommand, { kind: K }>;
+  const handleAnswer = async (command: CommandOf<"answer">): Promise<ShellOutcome> => {
+    answerQuestion(command.id, command.text);
+    return "continue";
+  };
+  const handleEmpty = async (command: CommandOf<"empty">): Promise<ShellOutcome> => {
+    return "continue";
+  };
+  const handleSend = async (command: CommandOf<"send" | "sendAll">): Promise<ShellOutcome> => {
+    // 送信はキューに積むだけ。ターン完了は Event Bus 経由で表示される
+    if (rejectLocked(command.kind === "sendAll" ? AGENT_IDS : [command.agent])) return "continue";
+    if (busyElsewhere()) notify(t("notice.sameDirBusy"), "warn");
+    const resolved = await resolveReferences(command.text, resolveReference);
+    const text = command.kind === "sendAll" ? `${ALL_MESSAGE_PREFIX}\n${resolved.text}` : resolved.text;
+    const recipient = coordinator();
+    for (const agent of command.kind === "sendAll" ? AGENT_IDS : [command.agent]) {
+      if (command.steer) await recipient.steerOrSend(agent, text, command.context, command.kind === "sendAll");
+      else void recipient.sendToAgent(agent, text, resolved.images, command.context, command.kind === "sendAll");
+    }
+    if (command.kind === "sendAll") print(t("notice.sentAll"));
+    return "continue";
+  };
+  const handleInterrupt = async (command: CommandOf<"interrupt">): Promise<ShellOutcome> => {
+    if (!command.agent) runner.stopAll();
+    await coordinator().interrupt(command.agent);
+    return "continue";
+  };
+  const handleRun = async (command: CommandOf<"run">): Promise<ShellOutcome> => {
+    // 終了を待たずに次の入力を受け付ける。出力は runner が表示する
+    void runner.run(command.command);
+    return "continue";
+  };
+  const handleRunAndSend = async (command: CommandOf<"runAndSend">): Promise<ShellOutcome> => {
+    const agent = command.agent ?? lockedAgent() ?? primary;
+    if (rejectLocked([agent])) return "continue";
+    // 終わったときに会話が切り替わっていても、実行を始めた会話に送る
+    const recipient = coordinator();
+    void runner.run(command.command).then((result) => {
+      if (result.stopped) return;
+      void recipient.sendToAgent(agent, commandResultMessage(command.command, result));
+    });
+    return "continue";
+  };
+  const handleBackground = async (command: CommandOf<"background">): Promise<ShellOutcome> => {
+    processes.start(command.command);
+    return "continue";
+  };
+  const handleKill = async (command: CommandOf<"kill">): Promise<ShellOutcome> => {
+    if (!processes.kill(command.id)) print(t("shell.processNotRunning", { id: command.id }));
+    return "continue";
+  };
+  const handleProcesses = async (command: CommandOf<"processes">): Promise<ShellOutcome> => {
+    if (command.id !== undefined) {
+      const lines = processes.output(command.id);
+      if (!lines) print(t("shell.noProcess", { id: command.id }));
+      else if (!lines.length) print(t("shell.noProcessOutput"));
+      else lines.forEach(print);
+      return "continue";
+    }
+    const entries = processes.list();
+    if (!entries.length) print(t("shell.noProcesses"));
+    for (const entry of entries) {
+      const elapsed = (((entry.endedAt ?? Date.now()) - entry.startedAt) / MS_PER_SECOND).toFixed(1);
+      const status = entry.status === "exited" ? `exit ${entry.exitCode ?? "null"}` : entry.status;
+      print(`#${entry.id} ${status} ${elapsed}s  ${entry.command}`);
+    }
+    return "continue";
+  };
+  const handleStatus = async (command: CommandOf<"status">): Promise<ShellOutcome> => {
+    print(t("shell.primary", { agent: primary }));
+    {
+      const { workDir, branch } = history().list().find((c) => c.id === history().currentId) ?? {};
+      if (workDir && branch) print(t("shell.worktree", { workDir, branch }));
+      const solo = currentSolo();
+      if (solo) print(soloLabel(solo));
+    }
+    for (const { id, status, sessionId, permission, model, modelLabel, effort, usage } of coordinator().status()) {
+      print(t("shell.status", {
+        id, status, permission, model: modelLabel ?? model ?? t("shell.default"), effort: effort ?? t("shell.default"),
+        session: sessionId ? t("shell.session", { id: sessionId }) : "",
+      }));
+      print(formatUsage(usage));
+      print(formatContext(usage));
+    }
+    for (const input of coordinator().pendingInputs()) print(t("shell.queued", { id: input.id, agent: input.agent, text: input.text }));
+    for (const message of coordinator().pendingMessages()) print(t("shell.queuedMessage", {
+      id: message.id, from: message.from, agent: message.agent, type: message.type, text: message.text.split(/\r?\n/, 1)[0] ?? "",
+    }));
+    return "continue";
+  };
+  const handleProject = async (command: CommandOf<"project">): Promise<ShellOutcome> => {
+    if (command.action && command.path) {
+      if (!projects) return "continue";
+      const project = command.path;
+      if (command.action === "pin") {
+        const pinned = projects.togglePin(project);
+        if (pinned === undefined) notify(t("shell.projectMissing", { project }), "warn");
+        else notify(t(pinned ? "shell.projectPinned" : "shell.projectUnpinned", { project }));
+        return "continue";
+      }
+      const error = projects.remove(project);
+      if (!error) notify(t("shell.projectRemoved", { project }));
+      else notify(t(error === "open" ? "shell.projectOpenNotRemovable" : "shell.projectMissing", { project }), "warn");
+      return "continue";
+    }
+    if (command.path) {
+      if (!projects) return "continue";
+      const opened = await projects.open(command.path);
+      primary = opened.primary;
+      notify(t("shell.projectOpened", { project: opened.projectRoot }));
+      return "continue";
+    }
+    if (!projects?.list().length) print(t("shell.noProjects"));
+    else for (const project of projects.list()) {
+      const status = project.current ? t("shell.projectCurrent") : project.open ? "" : t("shell.projectSaved");
+      print(`${project.projectRoot}${status}${project.pinned ? t("shell.projectPinnedMark") : ""}`);
+    }
+    return "continue";
+  };
+  const handleTab = async (command: CommandOf<"tab">): Promise<ShellOutcome> => {
+    if (!projects) return "continue";
+    const picked = projects.findConversation(command.projectRoot, command.conversationId);
+    if (!picked) {
+      notify(t("reject.notFound"), "warn");
+      return "continue";
+    }
+    if (command.action === "unpin") {
+      const pinned = projects.unpinConversation(command.projectRoot, command.conversationId);
+      if (pinned === undefined) notify(t("reject.notFound"), "warn");
+      else notify(t("shell.unpinned", { title: titleOf(picked) }));
+      return "continue";
+    }
+    const opened = await projects.open(command.projectRoot);
+    primary = opened.primary;
+    const selected = await history().switchTo(command.conversationId);
+    if (!selected) notify(t("reject.notFound"), "warn");
+    else notify(t("shell.resumed", { title: titleOf(selected) }));
+    return "continue";
+  };
+  const handleRole = async (command: CommandOf<"role">): Promise<ShellOutcome> => {
+    if (command.agent && command.text !== undefined) {
+      const saved = saveRole(command.agent, command.text);
+      print(t("shell.roleSaved", { agent: command.agent, text: saved }));
+      print(t("shell.roleRestart", { agent: command.agent }));
+      return "continue";
+    }
+    for (const agent of command.agent ? [command.agent] : AGENT_IDS) {
+      print(t("shell.role", { agent, text: roles()[agent] ?? t("shell.roleUnset") }));
+    }
+    return "continue";
+  };
+  const handleCancel = async (command: CommandOf<"cancel">): Promise<ShellOutcome> => {
+    const canceled = coordinator().cancelInput(command.id);
+    print(canceled
+      ? t("shell.canceled", { id: canceled.id, agent: canceled.agent })
+      : t("shell.nothingToCancel", { id: command.id ? `: ${command.id}` : "" }));
+    return "continue";
+  };
+  const handleNew = async (command: CommandOf<"new">): Promise<ShellOutcome> => {
+    await startFresh(command.agent, command.worktree === true);
+    return "continue";
+  };
+  const handleCompact = async (command: CommandOf<"compact">): Promise<ShellOutcome> => {
+    // 1 ターンとしてキューに積むだけ。進み具合は Event Bus 経由で表示される
+    void coordinator().compact(command.agent);
+    print(t("shell.compactQueued", { target: command.agent ?? t("shell.runningAgents") }));
+    return "continue";
+  };
+  const handleResume = async (command: CommandOf<"resume">): Promise<ShellOutcome> => {
+    if (command.index === undefined) listConversations();
+    else await resumeConversation(command.index);
+    return "continue";
+  };
+  const handleSolo = async (command: CommandOf<"solo">): Promise<ShellOutcome> => {
+    if (!coordinator().idle()) {
+      notify(t("reject.soloBusy"), "warn");
+      return "continue";
+    }
+    history().setSolo(command.mode);
+    notify(soloLabel(command.mode));
+    return "continue";
+  };
+  const handleRename = async (command: CommandOf<"rename">): Promise<ShellOutcome> => {
+    if (command.index !== undefined) {
+      const picked = pickConversation(command.index);
+      if (!picked) return "continue";
+      history().renameConversation(picked.id, command.title);
+    } else history().rename(command.title);
+    notify(t("shell.renamed", { title: command.title }));
+    return "continue";
+  };
+  const handleDelete = async (command: CommandOf<"delete">): Promise<ShellOutcome> => {
+    const picked = pickConversation(command.index);
+    if (!picked) return "continue";
+    notify(history().remove(picked.id) ?? t("shell.deleted", { title: titleOf(picked) }));
+    return "continue";
+  };
+  const handlePin = async (command: CommandOf<"pin">): Promise<ShellOutcome> => {
+    const picked = pickConversation(command.index);
+    const pinned = picked ? history().togglePin(picked.id) : undefined;
+    if (picked && pinned !== undefined) notify(t(pinned ? "shell.pinned" : "shell.unpinned", { title: titleOf(picked) }));
+    return "continue";
+  };
+  const handlePrimary = async (command: CommandOf<"primary">): Promise<ShellOutcome> => {
+    primary = command.agent;
+    print(t("shell.primary", { agent: primary }));
+    return "continue";
+  };
+  const handleHelp = async (command: CommandOf<"help">): Promise<ShellOutcome> => {
+    HELP_LINES(primary).forEach((l) => print(l));
+    return "continue";
+  };
+  const handleLanguage = async (command: CommandOf<"language">): Promise<ShellOutcome> => {
+    try {
+      if (command.value) await language?.set(command.value);
+      print(t("shell.language", { language: language?.get() ?? getLanguage() }));
+    } catch (error) { print(t("shell.languageFailed", { message: error instanceof Error ? error.message : String(error) })); }
+    return "continue";
+  };
+  const handleSandbox = async (command: CommandOf<"sandbox">): Promise<ShellOutcome> => {
+    try {
+      if (!sandbox) throw new Error(t("sandbox.incomplete"));
+      if (command.action === "uninstall") await sandbox.uninstall();
+      else if (command.action) await sandbox.set(command.action === "on");
+      print(t("sandbox.status", { state: sandbox.enabled() ? "on" : "off", setup: t(await sandbox.ready() ? "sandbox.ready" : "sandbox.incomplete") }));
+    } catch (error) { print(t("sandbox.failed", {message:error instanceof Error ? error.message : String(error)})); }
+    return "continue";
+  };
+  const handleLimits = async (command: CommandOf<"limits">): Promise<ShellOutcome> => {
+    if (command.reset) {
+      projectLimits?.reset();
+      print(t("shell.limitsReset"));
+    } else if (command.unlimited) {
+      projectLimits?.setUnlimited();
+      print(t("shell.limitsUnlimited"));
+    } else if (command.values) {
+      for (const { name, value } of command.values) projectLimits?.set(name, value);
+      print(`limits: ${command.values.map(({ name, value }) => `${name} ${value}`).join(", ")}`);
+    } else if (projectLimits?.unlimited()) {
+      print(t("shell.limitsUnlimited"));
+    } else {
+      const limits = projectLimits?.get() ?? DEFAULT_LIMITS;
+      for (const name of LIMIT_NAMES) {
+        const key = LIMIT_KEYS[name];
+        print(`${name} ${limits[key]}${limits[key] === DEFAULT_LIMITS[key] ? "" : t("shell.limitsDefault", { value: DEFAULT_LIMITS[key] })}`);
+      }
+    }
+    return "continue";
+  };
+  const handlePermission = async (command: CommandOf<"permission">): Promise<ShellOutcome> => {
+    if (sandbox?.enabled()) { print(t("sandbox.permission")); return "continue"; }
+    await coordinator().setPermission(command.level, command.agent);
+    saveSettings(targets(command.agent), { permission: command.level });
+    print(t("shell.permission", { target: command.agent ?? t("shell.allAgents"), level: command.level }));
+    return "continue";
+  };
+  const handleModel = async (command: CommandOf<"model">): Promise<ShellOutcome> => {
+    const result = await coordinator().setModel(command.model, command.agent);
+    if (result?.status === "failed") { notify(result.text, "warn"); return "continue"; }
+    saveSettings([command.agent], { model: command.model });
+    print(t("shell.model", { agent: command.agent, model: command.model }));
+    return "continue";
+  };
+  const handleEffort = async (command: CommandOf<"effort">): Promise<ShellOutcome> => {
+    const result = await coordinator().setEffort(command.level, command.agent);
+    if (result?.status === "failed") { notify(result.text, "warn"); return "continue"; }
+    saveSettings(targets(command.agent), { effort: command.level });
+    print(t("shell.effort", { target: command.agent ?? t("shell.allAgents"), level: command.level }));
+    return "continue";
+  };
+  const handleVerbose = async (command: CommandOf<"verbose">): Promise<ShellOutcome> => {
+    print(t("shell.verbose", { state: t(toggleVerbose() ? "shell.on" : "shell.off") }));
+    return "continue";
+  };
+  const handleExit = async (command: CommandOf<"exit">): Promise<ShellOutcome> => {
+    void processes.stopAll();
+    return "exit";
+  };
+  const handleInvalid = async (command: CommandOf<"invalid">): Promise<ShellOutcome> => {
+    print(command.message);
+    return "continue";
+  };
+  const handlers = {
+    answer: { requiresCurrent: true, run: handleAnswer },
+    empty: { requiresCurrent: false, run: handleEmpty },
+    send: { requiresCurrent: true, run: handleSend },
+    sendAll: { requiresCurrent: true, run: handleSend },
+    interrupt: { requiresCurrent: true, run: handleInterrupt },
+    run: { requiresCurrent: true, run: handleRun },
+    runAndSend: { requiresCurrent: true, run: handleRunAndSend },
+    background: { requiresCurrent: true, run: handleBackground },
+    kill: { requiresCurrent: true, run: handleKill },
+    processes: { requiresCurrent: true, run: handleProcesses },
+    status: { requiresCurrent: true, run: handleStatus },
+    project: { requiresCurrent: false, run: handleProject },
+    tab: { requiresCurrent: false, run: handleTab },
+    role: { requiresCurrent: true, run: handleRole },
+    cancel: { requiresCurrent: true, run: handleCancel },
+    new: { requiresCurrent: true, run: handleNew },
+    compact: { requiresCurrent: true, run: handleCompact },
+    resume: { requiresCurrent: true, run: handleResume },
+    solo: { requiresCurrent: true, run: handleSolo },
+    rename: { requiresCurrent: true, run: handleRename },
+    delete: { requiresCurrent: true, run: handleDelete },
+    pin: { requiresCurrent: true, run: handlePin },
+    primary: { requiresCurrent: true, run: handlePrimary },
+    help: { requiresCurrent: false, run: handleHelp },
+    language: { requiresCurrent: false, run: handleLanguage },
+    sandbox: { requiresCurrent: true, run: handleSandbox },
+    limits: { requiresCurrent: true, run: handleLimits },
+    permission: { requiresCurrent: true, run: handlePermission },
+    model: { requiresCurrent: true, run: handleModel },
+    effort: { requiresCurrent: true, run: handleEffort },
+    verbose: { requiresCurrent: true, run: handleVerbose },
+    exit: { requiresCurrent: false, run: handleExit },
+    invalid: { requiresCurrent: true, run: handleInvalid },
+  } satisfies { [K in ShellCommand["kind"]]: { requiresCurrent: boolean; run: (command: CommandOf<K>) => Promise<ShellOutcome> } };
   const handleLine = async (line: string): Promise<ShellOutcome> => {
     const command = parseInput(line, lockedAgent() ?? primary);
-    if (projects?.hasCurrent && !projects.hasCurrent() && !["project", "tab", "language", "help", "exit", "empty"].includes(command.kind)) {
+    const handler = handlers[command.kind] as { requiresCurrent: boolean; run: (command: ShellCommand) => Promise<ShellOutcome> };
+    if (projects?.hasCurrent && !projects.hasCurrent() && handler.requiresCurrent) {
       print(t("shell.noProjectSelected"));
       return "continue";
     }
-    switch (command.kind) {
-      case "answer":
-        answerQuestion(command.id, command.text);
-        return "continue";
-      case "empty":
-        return "continue";
-      case "send":
-      case "sendAll":
-        // 送信はキューに積むだけ。ターン完了は Event Bus 経由で表示される
-      {
-        if (rejectLocked(command.kind === "sendAll" ? AGENT_IDS : [command.agent])) return "continue";
-        if (busyElsewhere()) notify(t("notice.sameDirBusy"), "warn");
-        const resolved = await resolveReferences(command.text, resolveReference);
-        const text = command.kind === "sendAll" ? `${ALL_MESSAGE_PREFIX}\n${resolved.text}` : resolved.text;
-        const recipient = coordinator();
-        for (const agent of command.kind === "sendAll" ? AGENT_IDS : [command.agent]) {
-          if (command.steer) await recipient.steerOrSend(agent, text, command.context, command.kind === "sendAll");
-          else void recipient.sendToAgent(agent, text, resolved.images, command.context, command.kind === "sendAll");
-        }
-        if (command.kind === "sendAll") print(t("notice.sentAll"));
-        return "continue";
-      }
-      case "interrupt":
-        if (!command.agent) runner.stopAll();
-        await coordinator().interrupt(command.agent);
-        return "continue";
-      case "run":
-        // 終了を待たずに次の入力を受け付ける。出力は runner が表示する
-        void runner.run(command.command);
-        return "continue";
-      case "runAndSend": {
-        const agent = command.agent ?? lockedAgent() ?? primary;
-        if (rejectLocked([agent])) return "continue";
-        // 終わったときに会話が切り替わっていても、実行を始めた会話に送る
-        const recipient = coordinator();
-        void runner.run(command.command).then((result) => {
-          if (result.stopped) return;
-          void recipient.sendToAgent(agent, commandResultMessage(command.command, result));
-        });
-        return "continue";
-      }
-      case "background":
-        processes.start(command.command);
-        return "continue";
-      case "kill":
-        if (!processes.kill(command.id)) print(t("shell.processNotRunning", { id: command.id }));
-        return "continue";
-      case "processes": {
-        if (command.id !== undefined) {
-          const lines = processes.output(command.id);
-          if (!lines) print(t("shell.noProcess", { id: command.id }));
-          else if (!lines.length) print(t("shell.noProcessOutput"));
-          else lines.forEach(print);
-          return "continue";
-        }
-        const entries = processes.list();
-        if (!entries.length) print(t("shell.noProcesses"));
-        for (const entry of entries) {
-          const elapsed = (((entry.endedAt ?? Date.now()) - entry.startedAt) / MS_PER_SECOND).toFixed(1);
-          const status = entry.status === "exited" ? `exit ${entry.exitCode ?? "null"}` : entry.status;
-          print(`#${entry.id} ${status} ${elapsed}s  ${entry.command}`);
-        }
-        return "continue";
-      }
-      case "status":
-        print(t("shell.primary", { agent: primary }));
-        {
-          const { workDir, branch } = history().list().find((c) => c.id === history().currentId) ?? {};
-          if (workDir && branch) print(t("shell.worktree", { workDir, branch }));
-          const solo = currentSolo();
-          if (solo) print(soloLabel(solo));
-        }
-        for (const { id, status, sessionId, permission, model, modelLabel, effort, usage } of coordinator().status()) {
-          print(t("shell.status", {
-            id, status, permission, model: modelLabel ?? model ?? t("shell.default"), effort: effort ?? t("shell.default"),
-            session: sessionId ? t("shell.session", { id: sessionId }) : "",
-          }));
-          print(formatUsage(usage));
-          print(formatContext(usage));
-        }
-        for (const input of coordinator().pendingInputs()) print(t("shell.queued", { id: input.id, agent: input.agent, text: input.text }));
-        for (const message of coordinator().pendingMessages()) print(t("shell.queuedMessage", {
-          id: message.id, from: message.from, agent: message.agent, type: message.type, text: message.text.split(/\r?\n/, 1)[0] ?? "",
-        }));
-        return "continue";
-      case "project":
-        if (command.action && command.path) {
-          if (!projects) return "continue";
-          const project = command.path;
-          if (command.action === "pin") {
-            const pinned = projects.togglePin(project);
-            if (pinned === undefined) notify(t("shell.projectMissing", { project }), "warn");
-            else notify(t(pinned ? "shell.projectPinned" : "shell.projectUnpinned", { project }));
-            return "continue";
-          }
-          const error = projects.remove(project);
-          if (!error) notify(t("shell.projectRemoved", { project }));
-          else notify(t(error === "open" ? "shell.projectOpenNotRemovable" : "shell.projectMissing", { project }), "warn");
-          return "continue";
-        }
-        if (command.path) {
-          if (!projects) return "continue";
-          const opened = await projects.open(command.path);
-          primary = opened.primary;
-          notify(t("shell.projectOpened", { project: opened.projectRoot }));
-          return "continue";
-        }
-        if (!projects?.list().length) print(t("shell.noProjects"));
-        else for (const project of projects.list()) {
-          const status = project.current ? t("shell.projectCurrent") : project.open ? "" : t("shell.projectSaved");
-          print(`${project.projectRoot}${status}${project.pinned ? t("shell.projectPinnedMark") : ""}`);
-        }
-        return "continue";
-      case "tab": {
-        if (!projects) return "continue";
-        const picked = projects.findConversation(command.projectRoot, command.conversationId);
-        if (!picked) {
-          notify(t("reject.notFound"), "warn");
-          return "continue";
-        }
-        if (command.action === "unpin") {
-          const pinned = projects.unpinConversation(command.projectRoot, command.conversationId);
-          if (pinned === undefined) notify(t("reject.notFound"), "warn");
-          else notify(t("shell.unpinned", { title: titleOf(picked) }));
-          return "continue";
-        }
-        const opened = await projects.open(command.projectRoot);
-        primary = opened.primary;
-        const selected = await history().switchTo(command.conversationId);
-        if (!selected) notify(t("reject.notFound"), "warn");
-        else notify(t("shell.resumed", { title: titleOf(selected) }));
-        return "continue";
-      }
-      case "role":
-        if (command.agent && command.text !== undefined) {
-          const saved = saveRole(command.agent, command.text);
-          print(t("shell.roleSaved", { agent: command.agent, text: saved }));
-          print(t("shell.roleRestart", { agent: command.agent }));
-          return "continue";
-        }
-        for (const agent of command.agent ? [command.agent] : AGENT_IDS) {
-          print(t("shell.role", { agent, text: roles()[agent] ?? t("shell.roleUnset") }));
-        }
-        return "continue";
-      case "cancel": {
-        const canceled = coordinator().cancelInput(command.id);
-        print(canceled
-          ? t("shell.canceled", { id: canceled.id, agent: canceled.agent })
-          : t("shell.nothingToCancel", { id: command.id ? `: ${command.id}` : "" }));
-        return "continue";
-      }
-      case "new":
-        await startFresh(command.agent, command.worktree === true);
-        return "continue";
-      case "compact":
-        // 1 ターンとしてキューに積むだけ。進み具合は Event Bus 経由で表示される
-        void coordinator().compact(command.agent);
-        print(t("shell.compactQueued", { target: command.agent ?? t("shell.runningAgents") }));
-        return "continue";
-      case "resume":
-        if (command.index === undefined) listConversations();
-        else await resumeConversation(command.index);
-        return "continue";
-      case "solo":
-        if (!coordinator().idle()) {
-          notify(t("reject.soloBusy"), "warn");
-          return "continue";
-        }
-        history().setSolo(command.mode);
-        notify(soloLabel(command.mode));
-        return "continue";
-      case "rename":
-        if (command.index !== undefined) {
-          const picked = pickConversation(command.index);
-          if (!picked) return "continue";
-          history().renameConversation(picked.id, command.title);
-        } else history().rename(command.title);
-        notify(t("shell.renamed", { title: command.title }));
-        return "continue";
-      case "delete": {
-        const picked = pickConversation(command.index);
-        if (!picked) return "continue";
-        notify(history().remove(picked.id) ?? t("shell.deleted", { title: titleOf(picked) }));
-        return "continue";
-      }
-      case "pin": {
-        const picked = pickConversation(command.index);
-        const pinned = picked ? history().togglePin(picked.id) : undefined;
-        if (picked && pinned !== undefined) notify(t(pinned ? "shell.pinned" : "shell.unpinned", { title: titleOf(picked) }));
-        return "continue";
-      }
-      case "primary":
-        primary = command.agent;
-        print(t("shell.primary", { agent: primary }));
-        return "continue";
-      case "help":
-        HELP_LINES(primary).forEach((l) => print(l));
-        return "continue";
-      case "language":
-        try {
-          if (command.value) await language?.set(command.value);
-          print(t("shell.language", { language: language?.get() ?? getLanguage() }));
-        } catch (error) { print(t("shell.languageFailed", { message: error instanceof Error ? error.message : String(error) })); }
-        return "continue";
-      case "sandbox":
-        try {
-          if (!sandbox) throw new Error(t("sandbox.incomplete"));
-          if (command.action === "uninstall") await sandbox.uninstall();
-          else if (command.action) await sandbox.set(command.action === "on");
-          print(t("sandbox.status", { state: sandbox.enabled() ? "on" : "off", setup: t(await sandbox.ready() ? "sandbox.ready" : "sandbox.incomplete") }));
-        } catch (error) { print(t("sandbox.failed", {message:error instanceof Error ? error.message : String(error)})); }
-        return "continue";
-      case "limits": {
-        if (command.reset) {
-          projectLimits?.reset();
-          print(t("shell.limitsReset"));
-        } else if (command.unlimited) {
-          projectLimits?.setUnlimited();
-          print(t("shell.limitsUnlimited"));
-        } else if (command.values) {
-          for (const { name, value } of command.values) projectLimits?.set(name, value);
-          print(`limits: ${command.values.map(({ name, value }) => `${name} ${value}`).join(", ")}`);
-        } else if (projectLimits?.unlimited()) {
-          print(t("shell.limitsUnlimited"));
-        } else {
-          const limits = projectLimits?.get() ?? DEFAULT_LIMITS;
-          for (const name of LIMIT_NAMES) {
-            const key = LIMIT_KEYS[name];
-            print(`${name} ${limits[key]}${limits[key] === DEFAULT_LIMITS[key] ? "" : t("shell.limitsDefault", { value: DEFAULT_LIMITS[key] })}`);
-          }
-        }
-        return "continue";
-      }
-      case "permission":
-        if (sandbox?.enabled()) { print(t("sandbox.permission")); return "continue"; }
-        await coordinator().setPermission(command.level, command.agent);
-        saveSettings(targets(command.agent), { permission: command.level });
-        print(t("shell.permission", { target: command.agent ?? t("shell.allAgents"), level: command.level }));
-        return "continue";
-      case "model": {
-        const result = await coordinator().setModel(command.model, command.agent);
-        if (result?.status === "failed") { notify(result.text, "warn"); return "continue"; }
-        saveSettings([command.agent], { model: command.model });
-        print(t("shell.model", { agent: command.agent, model: command.model }));
-        return "continue";
-      }
-      case "effort": {
-        const result = await coordinator().setEffort(command.level, command.agent);
-        if (result?.status === "failed") { notify(result.text, "warn"); return "continue"; }
-        saveSettings(targets(command.agent), { effort: command.level });
-        print(t("shell.effort", { target: command.agent ?? t("shell.allAgents"), level: command.level }));
-        return "continue";
-      }
-      case "verbose":
-        print(t("shell.verbose", { state: t(toggleVerbose() ? "shell.on" : "shell.off") }));
-        return "continue";
-      case "exit":
-        void processes.stopAll();
-        return "exit";
-      case "invalid":
-        print(command.message);
-        return "continue";
-    }
+    return handler.run(command);
   };
 
   const handleSigint = async (): Promise<void> => {
