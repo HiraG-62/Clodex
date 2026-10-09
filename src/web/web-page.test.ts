@@ -50,6 +50,17 @@ describe("buildWebPage", () => {
     const update = runInNewContext(`({${deps}}).updateDesktopNotify`) as typeof updateDesktopNotify;
     expect(update({ live: true, working: false }, { type: "event", seq: 1, event: { kind: "notice", text: "通知", at: "now" } }, ja).notification?.body).toBe("通知");
   });
+  it("会話ごとの下書き関数を外部依存なく埋め込む", () => {
+    const script = scriptsOf(buildWebPage("ja").html)[1]!;
+    const deps = script.slice(script.lastIndexOf("draftKey:"), script.lastIndexOf("isSendKey:"));
+    const embedded = runInNewContext(`({${deps}})`) as {
+      draftKey: (projectRoot: string, conversationId: string) => string;
+      staleDraftKeys: (keys: string[], projectRoot: string, conversationIds: string[]) => string[];
+    };
+    const kept = embedded.draftKey("C:\\work", "a");
+    const stale = embedded.draftKey("C:\\work", "b");
+    expect(embedded.staleDraftKeys([kept, stale], "C:\\work", ["a"])).toEqual([stale]);
+  });
   it("画像パス抽出を自己完結した関数として埋め込み、会話本文にプレビューを付ける", () => {
     const { html } = buildWebPage("ja");
     const script = scriptsOf(html)[1]!;

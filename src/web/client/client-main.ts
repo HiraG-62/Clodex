@@ -24,6 +24,7 @@ import type { settingsSections as SettingsSections, SettingsItem, SettingsSectio
 import type { limitChanges as LimitChanges } from "./limit-changes.js";
 import type { pendingRows as PendingRows } from "./pending-rows.js";
 import type { LimitName } from "../../coordinator/budget-manager.js";
+import type { draftKey as DraftKey, staleDraftKeys as StaleDraftKeys } from "./drafts.js";
 
 export interface ClientDeps {
   layout: typeof WEB_LAYOUT;
@@ -55,11 +56,13 @@ export interface ClientDeps {
   settingsSections: typeof SettingsSections;
   limitChanges: typeof LimitChanges;
   pendingRows: typeof PendingRows;
+  draftKey: typeof DraftKey;
+  staleDraftKeys: typeof StaleDraftKeys;
   version: string;
 }
 
 export function clientMain({
-  layout, withStartingTurns, withSubagentRows, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify, settingsSections, limitChanges, pendingRows,
+  layout, withStartingTurns, withSubagentRows, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify, settingsSections, limitChanges, pendingRows, draftKey, staleDraftKeys,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -147,6 +150,8 @@ export function clientMain({
   const storage = {
     get: (key: string) => { try { return localStorage.getItem(key); } catch { return null; } },
     set: (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* 保存できなくても動く */ } },
+    remove: (key: string) => { try { localStorage.removeItem(key); } catch { /* 保存できなくても動く */ } },
+    keys: () => { try { return Object.keys(localStorage); } catch { return [] as string[]; } },
   };
   const mark = (agent: AgentId | "you") => {
     const node = el("span", `mark ${agent}`, agent === "you" ? "Y" : AGENTS[agent].mark);
@@ -162,6 +167,7 @@ export function clientMain({
   let historyGeneration = 0;
   const questionDrafts = new Map<string, { selected: Set<number>[]; other: string[]; step: number }>();
   let state: WebState | undefined;
+  let currentDraftKey: string | undefined;
   let pendingSettings: PendingSettings = {};
   let pendingDeadlines: PendingDeadlines = {};
   const settingRequests = new Map<string, symbol>();
@@ -2196,16 +2202,22 @@ export function clientMain({
     input.style.overflowY = input.scrollHeight > input.clientHeight ? "auto" : "hidden";
     if (stick) requestAnimationFrame(scrollToBottom);
   };
+  const saveDraft = (key: string, value: string) => {
+    if (value) storage.set(key, value);
+    else storage.remove(key);
+  };
   // 送信に成功してから入力欄を空にする（失敗しても書いた内容を失わない）
   const sendButton = $("#composer .send") as HTMLButtonElement;
   const submit = async () => {
     const text = input.value.trim();
     if (!text || sendButton.disabled || uploading > 0) return;
+    const submittedDraftKey = currentDraftKey;
     const to = target ?? state?.primary;
     const sent = await send(composeInputLine(text, to), sendButton);
     sendButton.disabled = uploading > 0;
     if (!sent) return;
-    if (input.value.trim() === text) input.value = "";
+    if (submittedDraftKey) storage.remove(submittedDraftKey);
+    if (currentDraftKey === submittedDraftKey && input.value.trim() === text) input.value = "";
     onInputChanged();
     scrollToBottom();
   };
@@ -2325,6 +2337,7 @@ export function clientMain({
     $("#target-toggle").title = $("#target-toggle").getAttribute("aria-label")!;
   }
   function onInputChanged() {
+    if (currentDraftKey) saveDraft(currentDraftKey, input.value);
     const shell = isShellInput(input.value);
     $("#composer").classList.toggle("shell-input", shell);
     sendButton.replaceChildren(icon(shell ? "terminal" : "arrow-up"));
@@ -2540,6 +2553,18 @@ export function clientMain({
         }
         commitReplay();
         state = item.state;
+        const projectRoot = state.projects?.find((project) => project.current)?.projectRoot;
+        const conversationId = state.conversations.find((conversation) => conversation.current)?.id;
+        const nextDraftKey = projectRoot && conversationId ? draftKey(projectRoot, conversationId) : undefined;
+        if (currentDraftKey !== nextDraftKey) {
+          if (currentDraftKey) saveDraft(currentDraftKey, input.value);
+          currentDraftKey = nextDraftKey;
+          input.value = nextDraftKey ? storage.get(nextDraftKey) ?? "" : "";
+          onInputChanged();
+        }
+        if (projectRoot) {
+          for (const key of staleDraftKeys(storage.keys(), projectRoot, state.conversations.map((conversation) => conversation.id))) storage.remove(key);
+        }
         pendingSettings = resolvePendingSettings(pendingSettings, state.agents, pendingDeadlines);
         for (const agent of state.agents) if (agent.status !== "busy") interrupting.delete(agent.id);
         if (pendingPrimary && state.primary === pendingPrimary) {

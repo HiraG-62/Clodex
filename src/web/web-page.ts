@@ -18,6 +18,7 @@ import { renderMarkdown } from "./client/markdown.js";
 import { applyFeedItem, rebuildTimeline, withStartingTurns, withSubagentRows, workingFeed } from "./client/timeline.js";
 import { nextUnanswered, questionAnswers } from "./client/question-flow.js";
 import { composeInputLine } from "./client/compose-input.js";
+import { draftKey, staleDraftKeys } from "./client/drafts.js";
 import { isSendKey } from "./client/send-key.js";
 import { settingsSections } from "./client/settings-sections.js";
 import { limitChanges } from "./client/limit-changes.js";
@@ -900,6 +901,8 @@ const FUNCTIONS = `
   isNavigationCommand: ${inlineScript(isNavigationCommand.toString())},
   nextCommandStarts: ${inlineScript(nextCommandStarts.toString())},
   composeInputLine: ${inlineScript(composeInputLine.toString())},
+  draftKey: ${inlineScript(draftKey.toString())},
+  staleDraftKeys: ${inlineScript(staleDraftKeys.toString())},
   isSendKey: ${inlineScript(isSendKey.toString())},
   settingsSections: ${inlineScript(settingsSections.toString())},
   limitChanges: ${inlineScript(limitChanges.toString())},
