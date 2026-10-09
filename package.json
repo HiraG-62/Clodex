@@ -12,7 +12,8 @@
     "gui:build": "pnpm build && node scripts/stage-gui-runtime.mjs && cd gui && pnpm exec tauri build",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --project unit",
+    "test:spikes": "vitest run --project spikes"
   },
   "engines": {
     "node": ">=22"

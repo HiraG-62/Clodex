@@ -9,5 +9,10 @@ export default defineConfig({
   test: {
     fileParallelism: !runE2e,
     testTimeout: TEST_TIMEOUT_MS,
+    // spikes/ は CLI や OS の挙動を実測したときのテスト。製品のコードを確かめないので、pnpm test では実行しない
+    projects: [
+      { extends: true, test: { name: "unit", include: ["src/**/*.test.ts", "scripts/**/*.test.ts"] } },
+      { extends: true, test: { name: "spikes", include: ["spikes/**/*.test.ts"] } },
+    ],
   },
 });
