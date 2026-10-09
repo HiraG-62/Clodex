@@ -15,7 +15,7 @@ import { clientMain } from "./client/client-main.js";
 import { createInputAssist } from "./client/input-assist.js";
 import { collectArtifacts, displayPath, findImagePaths, splitImagePaths } from "./client/artifacts.js";
 import { renderMarkdown } from "./client/markdown.js";
-import { applyFeedItem, rebuildTimeline, withStartingTurns, withSubagentRows, workingFeed } from "./client/timeline.js";
+import { applyFeedItem, rebuildTimeline, withWorkingTurnsLast, withStartingTurns, withSubagentRows, workingFeed } from "./client/timeline.js";
 import { nextUnanswered, questionAnswers } from "./client/question-flow.js";
 import { composeInputLine } from "./client/compose-input.js";
 import { draftKey, staleDraftKeys } from "./client/drafts.js";
@@ -164,9 +164,6 @@ const STYLE = `
   .entry .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 13px; min-width: 0; }
   .entry .head b { font-weight: 600; }
   .entry .head time { color: var(--muted); font-size: 12px; }
-  .entry .head .jump { width: 22px; height: 22px; align-self: center; }
-  .entry.jumped { animation: jumped 1.6s ease-out; }
-  @keyframes jumped { from { background: color-mix(in srgb, var(--accent) 14%, transparent); } }
   .entry .body { grid-column: 2; min-width: 0; overflow-wrap: anywhere; color: var(--fg-2); }
   .entry.you .body { color: var(--fg); }
   .md > * { margin: 0 0 8px; } .md > *:last-child { margin-bottom: 0; }
@@ -909,6 +906,7 @@ const FUNCTIONS = `
   nextUnanswered: ${inlineScript(nextUnanswered.toString())},
   questionAnswers: ${inlineScript(questionAnswers.toString())},
   withStartingTurns: ${inlineScript(withStartingTurns.toString())},
+  withWorkingTurnsLast: ${inlineScript(withWorkingTurnsLast.toString())},
   withSubagentRows: ${inlineScript(withSubagentRows.toString())},
   resolvePendingSettings: ${inlineScript(resolvePendingSettings.toString())},
   isNavigationCommand: ${inlineScript(isNavigationCommand.toString())},

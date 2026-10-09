@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "../../agents/agent-adapter.js";
 import type { AgentMessage } from "../../protocol/messages.js";
 import type { FeedItem } from "../web-feed.js";
-import { rebuildTimeline, applyFeedItem, withStartingTurns, withSubagentRows, workingFeed, type TimelineItem } from "./timeline.js";
+import { rebuildTimeline, applyFeedItem, withWorkingTurnsLast, withStartingTurns, withSubagentRows, workingFeed, type TimelineItem } from "./timeline.js";
 
 const AT = "2026-10-05T12:00:00.000Z";
 const LATER = "2026-10-05T12:05:00.000Z";
@@ -89,6 +89,31 @@ describe("withSubagentRows", () => {
   });
 });
 
+describe("withWorkingTurnsLast", () => {
+  it("作業中に届いた人の入力と message より、作業中のターンを下に表示する", () => {
+    const items = run([agent("claude", { type: "turn_started" }), human("codex", "確認"), formal("codex", "依頼")]);
+    expect(withWorkingTurnsLast(items).map((item) => item.kind)).toEqual(["human", "message", "turn"]);
+    expect(items[0]?.kind).toBe("turn");
+  });
+
+  it("両 Agent の作業中は開始順に並べる", () => {
+    const items = run([agent("claude", { type: "turn_started" }), agent("codex", { type: "turn_started" }), human("claude", "追加")]);
+    const display = withWorkingTurnsLast(items);
+    expect(display.map((item) => item.kind)).toEqual(["human", "turn", "turn"]);
+    expect(display.slice(1).map((item) => "agent" in item && item.agent)).toEqual(["claude", "codex"]);
+  });
+
+  it("末尾は作業中 → 起動中 → subagent の行にする", () => {
+    const items = run([agent("claude", { type: "turn_started" }), human("codex", "追加")]);
+    const agents = [
+      { id: "claude" as const, status: "idle" as const, subagents: [{ id: "sub", description: "調査" }] },
+      { id: "codex" as const, status: "starting" as const, subagents: [] },
+    ];
+    const display = withSubagentRows(withStartingTurns(withWorkingTurnsLast(items), agents, AT), agents);
+    expect(display.map((item) => item.kind)).toEqual(["human", "turn", "starting", "subagents"]);
+  });
+});
+
 describe("applyFeedItem", () => {
   it("作業中の送信元ターンへ複数の message を順に入れる", () => {
     const timeline = run([
@@ -122,7 +147,7 @@ describe("applyFeedItem", () => {
     expect(timeline.map((item) => item.kind)).toEqual(["turn", "message"]);
   });
 
-  it("最終応答が末尾に分かれたとき、message を最終応答の枠へ移す", () => {
+  it("ターンが終わっても message と方針を同じ枠に残す", () => {
     const timeline = run([
       agent("claude", { type: "turn_started" }),
       agent("claude", { type: "text", text: "調べます" }),
@@ -130,9 +155,8 @@ describe("applyFeedItem", () => {
       human("claude", "割り込み"),
       agent("claude", { type: "turn", result: { status: "completed", text: "依頼しました" } }, LATER),
     ]);
-    expect(timeline.map((item) => item.kind)).toEqual(["turn", "human", "turn"]);
-    expect(timeline[0]).not.toHaveProperty("messages");
-    expect(timeline[2]).toMatchObject({ kind: "turn", messages: [{ message: { body: "依頼" } }] });
+    expect(timeline.map((item) => item.kind)).toEqual(["human", "turn"]);
+    expect(timeline[1]).toMatchObject({ kind: "turn", plan: "調べます", text: "依頼しました", messages: [{ message: { body: "依頼" } }] });
   });
 
   it("履歴を再構築しても message をターンに入れる", () => {
@@ -188,7 +212,7 @@ describe("applyFeedItem", () => {
     }]);
   });
 
-  it("作業中に後ろへ項目が並んだら、最終応答は末尾に新しい項目として出す", () => {
+  it("作業中に後ろへ項目が並んだら、終わった枠ごと末尾へ移す", () => {
     const timeline = run([
       agent("claude", { type: "turn_started" }),
       agent("claude", { type: "text", text: "確認します。" }),
@@ -196,17 +220,25 @@ describe("applyFeedItem", () => {
       human("claude", "割り込み"),
       agent("claude", { type: "turn", result: { status: "completed", text: "直しました。" } }, LATER),
     ]);
-    const [process, , result] = timeline;
     expect(timeline).toEqual([
-      { kind: "turn", id: expect.any(String), at: AT, agent: "claude", status: "completed", text: "", resultId: result?.id,
-        plan: "確認します。", planAt: AT, steps: [{ kind: "tool", name: "Read", input: "a.ts" }] },
       expect.objectContaining({ kind: "human", text: "割り込み" }),
-      { kind: "turn", id: expect.any(String), at: LATER, agent: "claude", status: "completed", text: "直しました。", steps: [], processId: process?.id },
+      { kind: "turn", id: expect.any(String), at: AT, agent: "claude", status: "completed", text: "直しました。",
+        plan: "確認します。", planAt: AT, steps: [{ kind: "tool", name: "Read", input: "a.ts" }] },
     ]);
-    expect(process?.id).not.toBe(result?.id);
   });
 
-  it("方針も作業も残らない枠は消して、最終応答だけを末尾に出す", () => {
+  it("終わった枠は固定され、その後の入力は下に並ぶ", () => {
+    const events = [
+      agent("claude", { type: "turn_started" }), human("codex", "途中"),
+      agent("claude", { type: "turn", result: { status: "completed", text: "完了" } }), human("claude", "次"),
+    ];
+    const expected = ["途中", "完了", "次"];
+    const texts = (items: readonly TimelineItem[]) => items.map((item) => item.kind === "human" || item.kind === "turn" ? item.text : "");
+    expect(texts(run(events))).toEqual(expected);
+    expect(texts(rebuildTimeline(events as Extract<FeedItem, { type: "event" | "output" }>[], applyFeedItem))).toEqual(expected);
+  });
+
+  it("最終応答と同じ方針は重ねず、元の枠を末尾へ移す", () => {
     const timeline = run([
       agent("codex", { type: "turn_started" }),
       agent("codex", { type: "text", text: "完了しました。" }),
@@ -215,13 +247,13 @@ describe("applyFeedItem", () => {
     ]);
     expect(timeline).toMatchObject([
       { kind: "human", text: "割り込み" },
-      { kind: "turn", at: LATER, status: "completed", text: "完了しました。", steps: [] },
+      { kind: "turn", at: AT, status: "completed", text: "完了しました。", steps: [] },
     ]);
     expect(timeline).toHaveLength(2);
-    expect(timeline[1]).not.toHaveProperty("processId");
+    expect(timeline[1]).not.toHaveProperty("plan");
   });
 
-  it("後ろが自分の質問・message だけなら、最終応答は元の枠に入れる", () => {
+  it("自分の質問・message が後ろでも、終わった枠を末尾へ移す", () => {
     const question: FeedItem = { type: "event", seq: ++seq, event: {
       kind: "question", id: "q1", agent: "claude", at: AT, questions: [{ question: "どれ？", options: [{ label: "A" }, { label: "B" }] }],
     } };
@@ -236,8 +268,8 @@ describe("applyFeedItem", () => {
       agent("claude", { type: "turn", result: { status: "completed", text: "選んでください。" } }, LATER),
     ]);
     expect(timeline).toMatchObject([
-      { kind: "turn", agent: "claude", status: "completed", text: "選んでください。", plan: "確認します。", messages: [{ message: { body: "実装" } }] },
       { kind: "question", id: "q1" },
+      { kind: "turn", agent: "claude", status: "completed", text: "選んでください。", plan: "確認します。", messages: [{ message: { body: "実装" } }] },
     ]);
     expect(timeline).toHaveLength(2);
 
@@ -247,11 +279,11 @@ describe("applyFeedItem", () => {
       message("codex"),
       agent("claude", { type: "turn", result: { status: "completed", text: "完了" } }, LATER),
     ]);
-    expect(replied).toHaveLength(3);
-    expect(replied[2]).toMatchObject({ kind: "turn", text: "完了" });
+    expect(replied).toHaveLength(2);
+    expect(replied[1]).toMatchObject({ kind: "turn", text: "完了" });
   });
 
-  it("後ろが作業中のターンだけなら、最終応答は元の枠に入れる", () => {
+  it("後ろが作業中のターンだけでも、終わった枠を末尾へ移す", () => {
     const timeline = run([
       agent("claude", { type: "turn_started" }),
       agent("claude", { type: "tool", name: "Read", input: "a" }),
@@ -259,8 +291,8 @@ describe("applyFeedItem", () => {
       agent("claude", { type: "turn", result: { status: "completed", text: "ok" } }),
     ]);
     expect(timeline).toMatchObject([
-      { kind: "turn", agent: "claude", status: "completed", text: "ok" },
       { kind: "turn", agent: "codex", status: "working" },
+      { kind: "turn", agent: "claude", status: "completed", text: "ok" },
     ]);
   });
 
@@ -380,7 +412,7 @@ it("同じ Agent のターンが始まったら、その Agent の作業中の�
     agent("claude", { type: "turn", result: { status: "completed", text: "続き" } }),
   ]);
   const turns = items.flatMap((item) => item.kind === "turn" ? [`${item.agent}:${item.status}`] : []);
-  expect(turns).toEqual(["claude:interrupted", "codex:working", "claude:completed"]);
+  expect(turns).toEqual(["codex:working", "claude:interrupted", "claude:completed"]);
 });
 
 describe("workingFeed", () => {

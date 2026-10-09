@@ -10,7 +10,7 @@ import type { FeedItem, GuiAction, GuiInfo, GuiUpdate, HistoryItem, HistoryPage,
 import type { renderMarkdown as RenderMarkdown } from "./markdown.js";
 import type { nextUnanswered as NextUnanswered, questionAnswers as QuestionAnswers } from "./question-flow.js";
 import type { PendingQuestion } from "../../protocol/questions.js";
-import type { TimelineItem, DisplayTimelineItem, withStartingTurns as WithStartingTurns, withSubagentRows as WithSubagentRows, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline, workingFeed as WorkingFeed } from "./timeline.js";
+import type { TimelineItem, DisplayTimelineItem, withWorkingTurnsLast as WithWorkingTurnsLast, withStartingTurns as WithStartingTurns, withSubagentRows as WithSubagentRows, applyFeedItem as ApplyFeedItem, rebuildTimeline as RebuildTimeline, workingFeed as WorkingFeed } from "./timeline.js";
 import type { composeInputLine as ComposeInputLine } from "./compose-input.js";
 import type { isSendKey as IsSendKey, SendKey } from "./send-key.js";
 import type { fitView as FitView, zoomView as ZoomView } from "./image-zoom.js";
@@ -28,6 +28,7 @@ import type { draftKey as DraftKey, staleDraftKeys as StaleDraftKeys } from "./d
 
 export interface ClientDeps {
   layout: typeof WEB_LAYOUT;
+  withWorkingTurnsLast: typeof WithWorkingTurnsLast;
   withStartingTurns: typeof WithStartingTurns;
   withSubagentRows: typeof WithSubagentRows;
   resolvePendingSettings: typeof ResolvePendingSettings;
@@ -62,7 +63,7 @@ export interface ClientDeps {
 }
 
 export function clientMain({
-  layout, withStartingTurns, withSubagentRows, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify, settingsSections, limitChanges, pendingRows, draftKey, staleDraftKeys,
+  layout, withWorkingTurnsLast, withStartingTurns, withSubagentRows, resolvePendingSettings, isNavigationCommand, nextCommandStarts, renderMarkdown, applyFeedItem, rebuildTimeline, workingFeed, nextUnanswered, questionAnswers, composeInputLine, isSendKey, fitView, zoomView, createInputAssist, collectArtifacts, findImagePaths, splitImagePaths, displayPath, commands, messages, chooseProjectPath, version, isShellInput, updateDesktopNotify, settingsSections, limitChanges, pendingRows, draftKey, staleDraftKeys,
 }: ClientDeps): void {
   // 画面の言語の文言（i18n/i18n.ts の format と同じ置き換え）
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
@@ -414,33 +415,18 @@ export function clientMain({
     node.append(previews);
   };
 
-  const jumpButton = (targetId: string, name: string, label: string) => {
-    const button = iconButton(name, label, "jump");
-    button.addEventListener("click", () => {
-      const target = rendered.get(targetId)?.node;
-      if (!target) return;
-      target.scrollIntoView({ behavior: "smooth", block: "center" });
-      target.classList.remove("jumped");
-      void target.offsetWidth; // 続けて押してもアニメーションをやり直すため
-      target.classList.add("jumped");
-    });
-    return button;
-  };
-
   const renderTurn = (item: Extract<TimelineItem, { kind: "turn" }>) => {
     const node = el("article", "entry");
     node.append(mark(item.agent));
     const head = el("div", "head");
     head.append(el("b", `c-${item.agent}`, AGENTS[item.agent].name), el("time", "mono", clock(item.at)));
     const label = TURN_LABEL[item.status];
-    if (label && !item.resultId) head.append(el("span", `state ${item.status}`, t(label)));
+    if (label) head.append(el("span", `state ${item.status}`, t(label)));
     if (item.status === "working") {
       const elapsed = el("span", "elapsed mono", elapsedText(item.at));
       elapsed.dataset.start = item.at;
       head.append(elapsed);
     }
-    if (item.processId) head.append(jumpButton(item.processId, "arrow-up", t("web.turn.toProcess")));
-    if (item.resultId) head.append(jumpButton(item.resultId, "arrow-down", t("web.turn.toResult")));
     node.append(head);
     if (item.plan) {
       const plan = el("div", "plan md");
@@ -467,7 +453,7 @@ export function clientMain({
     } else {
       const body = el("div", "body md");
       if (item.text) body.innerHTML = renderMarkdown(item.text);
-      else if (item.status === "completed" && !item.resultId) body.append(el("span", "muted", t("web.turn.completed")));
+      else if (item.status === "completed") body.append(el("span", "muted", t("web.turn.completed")));
       if (body.childNodes.length) node.append(body);
     }
     appendImagePreviews(node, [item.plan, item.text].filter(Boolean).join("\n"), item.at);
@@ -831,7 +817,7 @@ export function clientMain({
   const renderLog = (force = false) => {
     const stick = nearBottom();
     const visibleItems = withSubagentRows(
-      withStartingTurns(items, state?.agents ?? [], new Date().toISOString(), state?.pendingInputs ?? []), state?.agents ?? [],
+      withStartingTurns(withWorkingTurnsLast(items), state?.agents ?? [], new Date().toISOString(), state?.pendingInputs ?? []), state?.agents ?? [],
     );
     items = visibleItems.filter((item): item is TimelineItem => item.kind !== "starting" && item.kind !== "subagents");
     let changed = false;

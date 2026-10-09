@@ -16,8 +16,6 @@ export type TimelineItem =
     plan?: string; // ターンの最初の発言（方針。DESIGN.md §17 ログ）
     planAt?: string;
     messages?: Array<{ message: AgentMessage; envelope?: string }>;
-    resultId?: string; // 最終応答を後ろの別の項目に出した枠の、その項目
-    processId?: string; // 最終応答だけの項目の、方針と作業を残した枠
   }
   | { kind: "message"; id: string; at: string; message: AgentMessage; envelope?: string }
   | { kind: "notice"; id: string; at: string; text: string }
@@ -27,6 +25,13 @@ export type TimelineItem =
 export type DisplayTimelineItem = TimelineItem
   | { kind: "starting"; id: string; at: string; agent: AgentId }
   | { kind: "subagents"; id: string; agent: AgentId; running: SubagentState[] };
+
+export function withWorkingTurnsLast(items: readonly TimelineItem[]): TimelineItem[] {
+  return [
+    ...items.filter((item) => item.kind !== "turn" || item.status !== "working"),
+    ...items.filter((item) => item.kind === "turn" && item.status === "working"),
+  ];
+}
 
 export function withStartingTurns(items: readonly TimelineItem[], agents: readonly { id: AgentId; status: AgentStatus }[], now: string, pendingInputs: readonly { agent: AgentId }[] = []): DisplayTimelineItem[] {
   const result: DisplayTimelineItem[] = [...items];
@@ -111,9 +116,10 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   switch (agentEvent.type) {
     case "turn_started": {
       // 1 つの Agent が同時に動かすターンは 1 つ。閉じていない前のターン（Hub が作業中に止まったもの）は中断にする
-      const closed = items.map((entry) => entry.kind === "turn" && entry.agent === agent && entry.status === "working"
-        ? { ...entry, status: "interrupted" as const } : entry);
-      return limit([...closed, newTurn()]);
+      const isUnfinished = (entry: TimelineItem): entry is Turn => entry.kind === "turn" && entry.agent === agent && entry.status === "working";
+      const unfinished = items.filter(isUnfinished);
+      const other = items.filter((entry) => !isUnfinished(entry));
+      return limit([...other, ...unfinished.map((entry) => ({ ...entry, status: "interrupted" as const })), newTurn()]);
     }
     case "text":
       return updateTurn((turn) => (turn.plan === undefined
@@ -135,18 +141,8 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
         return { ...turn, status, text, steps };
       };
       const index = items.findLastIndex((entry) => entry.kind === "turn" && entry.agent === agent && entry.status === "working");
-      // 自分が送った質問・message はターンの一部なので、枠を分ける理由にしない
-      const ownItem = (entry: TimelineItem) => (entry.kind === "question" && entry.agent === agent)
-        || (entry.kind === "message" && entry.message.from === agent);
-      const later = items.slice(index + 1).some((entry) => !ownItem(entry) && (entry.kind !== "turn" || entry.status !== "working"));
-      if (index < 0 || !later) return updateTurn(finish);
-      // 作業中に後ろへ別の項目が並んだら、最終応答は末尾に出してログを時系列に保つ（DESIGN.md §17 ログ）
-      const finished = finish(items[index] as Turn);
-      const result: Turn = { kind: "turn", id, at, agent, status, steps: [], text,
-        ...(finished.messages ? { messages: finished.messages } : {}) };
-      if (finished.plan === undefined && finished.steps.length === 0) return limit([...items.slice(0, index), ...items.slice(index + 1), result]);
-      const { messages: _moved, ...process } = finished;
-      return limit([...items.slice(0, index), { ...process, text: "", resultId: id }, ...items.slice(index + 1), { ...result, processId: finished.id }]);
+      if (index < 0) return limit([...items, finish(newTurn())]);
+      return limit([...items.slice(0, index), ...items.slice(index + 1), finish(items[index] as Turn)]);
     }
     case "error":
       return limit([...items, { kind: "error", id, at, agent, text: agentEvent.message }]);
@@ -169,8 +165,7 @@ export function workingFeed(items: readonly TimelineItem[]): WorkingEntry[] {
   const turns: Turn[] = [];
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
-    // 最終応答だけを末尾に出した項目は、元の枠と同じターンなので数えない
-    if (item?.kind !== "turn" || item.processId !== undefined) continue;
+    if (item?.kind !== "turn") continue;
     const count = counts[item.agent] ?? 0;
     if (count >= RECENT_TURNS) continue;
     counts[item.agent] = count + 1;
