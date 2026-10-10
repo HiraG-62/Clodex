@@ -9,6 +9,7 @@ import { startWebServer, type WebServerHandle } from "./web-server.js";
 
 const TOKEN = "a".repeat(64);
 const COOKIE = `clodex_token=${TOKEN}`;
+const diffRequests: Array<{ path: string; since?: string }> = [];
 const STATE: WebState = {
   project: "C:app",
   primary: "claude",
@@ -50,7 +51,10 @@ const setup = async (onInput?: (line: string) => Promise<void>, connect?: () => 
         path === "a.png"
           ? { ok: true as const, contentType: "image/png", body: Buffer.from([1, 2]) }
           : { ok: false as const, status: 404, message: `not found: ${path}` },
-      diff: async () => ({ ok: true as const, contentType: "text/plain; charset=utf-8", body: Buffer.from("+x") }),
+      diff: async (path, since) => {
+        diffRequests.push({ path, since });
+        return { ok: true as const, contentType: "text/plain; charset=utf-8", body: Buffer.from("+x") };
+      },
     },
     upload: { maxBytes: 4, accepts: type => type === "image/png", save: async (type, body) => `C:/up/${body.length}.${type.slice(6)}` },
   });
@@ -237,6 +241,8 @@ describe("startWebServer", () => {
     expect(image.headers.get("x-content-type-options")).toBe("nosniff");
     expect((await fetch(`${base}/api/file?path=b.txt`, { headers: { cookie: COOKIE } })).status).toBe(404);
     expect(await (await fetch(`${base}/api/diff?path=a.ts`, { headers: { cookie: COOKIE } })).text()).toBe("+x");
+    expect(await (await fetch(`${base}/api/diff?path=a.ts&since=2026-01-02T00%3A00%3A00Z`, { headers: { cookie: COOKIE } })).text()).toBe("+x");
+    expect(diffRequests.at(-1)).toEqual({ path: "a.ts", since: "2026-01-02T00:00:00Z" });
     expect((await fetch(`${base}/api/file?path=a.png`)).status).toBe(401);
   });
 

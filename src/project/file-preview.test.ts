@@ -87,4 +87,40 @@ describe("createFilePreview.diff", () => {
     if (diff.ok) expect(diff.body.toString("utf8")).toContain("+export const a = 2;");
     await expect(preview.diff(join(outside, "secret.txt"))).resolves.toMatchObject({ ok: false, status: 404 });
   });
+
+  it("since より前のコミットから、コミット済みと作業ツリーの変更を返す", async () => {
+    const { root, preview } = setup();
+    let commitDate = "2026-01-01T00:00:00Z";
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: root, env: { ...process.env, GIT_AUTHOR_DATE: commitDate, GIT_COMMITTER_DATE: commitDate } });
+    git("init", "-q");
+    git("add", "src/a.ts");
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "first");
+    writeFileSync(join(root, "src", "a.ts"), "export const a = 2;\n");
+    commitDate = "2026-01-03T00:00:00Z";
+    git("add", "src/a.ts");
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "second");
+    writeFileSync(join(root, "src", "a.ts"), "export const a = 3;\n");
+    const result = await preview.diff("src/a.ts", "2026-01-02T00:00:00Z");
+    expect(result.ok && result.body.toString()).toContain("-export const a = 1;");
+    expect(result.ok && result.body.toString()).toContain("+export const a = 3;");
+    const earlier = await preview.diff("src/a.ts", "2025-12-31T00:00:00Z");
+    expect(earlier.ok && earlier.body.toString()).toContain("+export const a = 3;");
+    expect(earlier.ok && earlier.body.toString()).not.toContain("-export const a = 1;");
+  });
+
+  it("未追跡ファイルは全行の追加、変更なしは空、不正な since は 400", async () => {
+    const { root, preview } = setup();
+    const git = (...args: string[]) => execFileSync("git", args, { cwd: root });
+    git("init", "-q");
+    git("add", "src/a.ts");
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "first");
+    writeFileSync(join(root, "new.txt"), "one\ntwo\n");
+    const added = await preview.diff("new.txt", "2026-01-02T00:00:00Z");
+    expect(added.ok && added.body.toString()).toContain("--- /dev/null");
+    expect(added.ok && added.body.toString()).toContain("+one\n+two");
+    const same = await preview.diff("src/a.ts", "2027-01-01T00:00:00Z");
+    expect(same.ok && same.body.toString()).toBe("");
+    await expect(preview.diff("src/a.ts", "yesterday")).resolves.toMatchObject({ ok: false, status: 400 });
+  });
 });

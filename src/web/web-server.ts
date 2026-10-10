@@ -43,7 +43,7 @@ export interface WebServerOptions {
   // 成果物のプレビュー（DESIGN.md §28 v0.3 B）
   preview: {
     file(path: string): Promise<PreviewResult>;
-    diff(path: string): Promise<PreviewResult>;
+    diff(path: string, since?: string): Promise<PreviewResult>;
   };
   // 貼り付けた画像を保存し、フルパスを返す（DESIGN.md §28 v0.3 C）
   upload: { maxBytes: number; accepts(contentType: string): boolean; save(contentType: string, body: Buffer): Promise<string> };
@@ -336,7 +336,8 @@ export const startWebServer = async ({
     }
     const previewPath = url.searchParams.get("path");
     if (req.method === "GET" && url.pathname === "/api/file" && previewPath) return sendPreview(res, await preview.file(previewPath));
-    if (req.method === "GET" && url.pathname === "/api/diff" && previewPath) return sendPreview(res, await preview.diff(previewPath));
+    if (req.method === "GET" && url.pathname === "/api/diff" && previewPath)
+      return sendPreview(res, await preview.diff(previewPath, url.searchParams.get("since") ?? undefined));
     if (req.method === "POST" && url.pathname === "/api/input") return handleInput(req, res);
     if (req.method === "POST" && url.pathname === "/api/upload") return handleUpload(req, res);
     if (req.method === "POST" && url.pathname === "/api/gui/update") return handleGuiUpdate(req, res);

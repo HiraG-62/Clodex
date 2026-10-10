@@ -54,6 +54,8 @@ describe("buildRoleInstructions の方針と言語", () => {
   it("artifacts ディレクトリがあれば証跡の画像の置き場所を伝える", () => {
     const text = buildRoleInstructions("claude", undefined, { artifactsDir: "C:\\home\\.clodex\\artifacts\\p" });
     expect(text).toContain("save it under C:\\home\\.clodex\\artifacts\\p");
+    expect(text).toContain("[name](<full path>)");
+    expect(text).toContain("It appears under Shared.");
     expect(text).toContain("final reply or in an ask_user question");
     expect(text).toContain("plain path or as a Markdown link [name](<full path>)");
     expect(text).toContain("Paths in intermediate progress notes are not shown.");

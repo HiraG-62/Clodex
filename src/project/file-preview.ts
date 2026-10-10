@@ -20,7 +20,9 @@ const IMAGE_TYPES: Record<string, string> = {
   ".gif": "image/gif",
   ".webp": "image/webp",
 };
-const HTTP = { notFound: 404, tooLarge: 413, unsupported: 415 } as const;
+const HTTP = { badRequest: 400, notFound: 404, tooLarge: 413, unsupported: 415 } as const;
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 export type PreviewResult = { ok: true; contentType: string; body: Buffer } | { ok: false; status: number; message: string };
 
@@ -75,17 +77,31 @@ export const createFilePreview = ({
     return { ok: true, contentType: TEXT_CONTENT_TYPE, body };
   };
 
-  // その時点の git diff HEAD。未追跡・変更なしなら空（画面は中身を出す）
-  const diff = async (path: string): Promise<PreviewResult> => {
+  const git = (root: string, args: string[]): Promise<{ ok: boolean; output: string }> =>
+    new Promise(done => {
+      execFile("git", safeGitArgs(args), { cwd: root, maxBuffer: GIT_MAX_BUFFER, windowsHide: true }, (error, stdout) => done({ ok: !error, output: stdout }));
+    });
+
+  const diff = async (path: string, since?: string): Promise<PreviewResult> => {
+    if (since !== undefined && (!ISO_DATE.test(since) || !Number.isFinite(Date.parse(since)))) {
+      return { ok: false, status: HTTP.badRequest, message: "invalid since" };
+    }
     const real = await locate(path);
     const root = await realpath(projectRoot).catch(() => projectRoot);
     if (!real || !inside(root, real)) return notFound(path);
-    const output = await new Promise<string>(done => {
-      execFile("git", safeGitArgs(["diff", "HEAD", "--", relative(root, real)]), { cwd: root, maxBuffer: GIT_MAX_BUFFER, windowsHide: true }, (error, stdout) =>
-        done(error ? "" : stdout),
-      );
-    });
-    return { ok: true, contentType: TEXT_CONTENT_TYPE, body: Buffer.from(output, "utf8") };
+    const filePath = relative(root, real).replace(/\\/g, "/");
+    if (since !== undefined) {
+      const tracked = await git(root, ["ls-files", "--error-unmatch", "--", filePath]);
+      if (!tracked.ok) {
+        const content = await readFile(real, "utf8");
+        const lines = content.replace(/\n$/, "").split("\n");
+        const output = `diff --git a/${filePath} b/${filePath}\nnew file mode 100644\n--- /dev/null\n+++ b/${filePath}\n@@ -0,0 +1,${lines.length} @@\n${lines.map(line => `+${line}`).join("\n")}\n`;
+        return { ok: true, contentType: TEXT_CONTENT_TYPE, body: Buffer.from(output, "utf8") };
+      }
+    }
+    const base = since === undefined ? "HEAD" : (await git(root, ["rev-list", "-1", `--before=${since}`, "HEAD"])).output.trim() || EMPTY_TREE;
+    const result = await git(root, ["diff", base, "--", filePath]);
+    return { ok: true, contentType: TEXT_CONTENT_TYPE, body: Buffer.from(result.ok ? result.output : "", "utf8") };
   };
 
   return { file, diff, locate };

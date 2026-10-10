@@ -51,7 +51,8 @@ const roleLines = (agent: AgentId, peer: AgentId, roles: RolesConfig | undefined
 // 証跡の画像は project の外に置かせ、Web UI の成果物に出す（DESIGN.md §28 v0.3 B）
 const artifactsNote = (dir: string) =>
   `To show the human an image, save it under ${dir} and write its full path in your final reply or in an ask_user question, ` +
-  "either as the plain path or as a Markdown link [name](<full path>). It is shown as a preview. Paths in intermediate progress notes are not shown.";
+  "either as the plain path or as a Markdown link [name](<full path>). It is shown as a preview. Paths in intermediate progress notes are not shown. " +
+  "Put any file you want the human to see in your final reply as [name](<full path>). It appears under Shared.";
 
 export interface RoleInstructionOptions {
   language?: Language;

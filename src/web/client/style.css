@@ -198,9 +198,13 @@
   .artifact .kind.changed { background: color-mix(in srgb, var(--claude) 22%, transparent); }
   .artifact .kind.image { background: color-mix(in srgb, var(--warn) 24%, transparent); }
   .artifact .path { font-size: 12.5px; overflow-wrap: anywhere; min-width: 0; }
+  .artifact-group { margin: 16px 4px 6px; font-size: 12px; color: var(--fg-2); }
   .viewer { margin-top: 10px; min-width: 0; }
   .viewer .code { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; font: 12px/1.55 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--sunken); }
-  .viewer .diff .add { color: #1a7f37; } .viewer .diff .del { color: var(--crit); } .viewer .diff .hunk { color: var(--muted); }
+  .viewer .diff span { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .viewer .diff .add { color: #1a7f37; background: color-mix(in srgb, #1a7f37 12%, transparent); }
+  .viewer .diff .del { color: var(--crit); background: color-mix(in srgb, var(--crit) 10%, transparent); }
+  .viewer .diff .hunk, .viewer .diff .header { color: var(--muted); }
   .ref::before { content: "↳ "; color: var(--muted); }
   .finding { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; padding: 10px 12px; border-left: 2px solid var(--warn); background: var(--sunken); border-radius: 0 6px 6px 0; font-size: 13px; }
   .finding.high, .finding.critical { border-left-color: var(--crit); }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "../../protocol/messages.js";
-import { collectArtifacts, displayPath, findImagePaths, splitImagePaths } from "./artifacts.js";
+import { classifyDiffLine, collectArtifacts, displayPath, findImagePaths, splitImagePaths } from "./artifacts.js";
 import type { TimelineItem } from "./timeline.js";
 
 const message = (files: string[], body: string): AgentMessage => ({
@@ -16,7 +16,7 @@ const message = (files: string[], body: string): AgentMessage => ({
 });
 
 describe("collectArtifacts", () => {
-  it("変更・参照・本文の画像を新しい順に集め、同じパスは最後の種類で 1 つにする", () => {
+  it("最終応答と message の本文を資料、tool と message の files を成果物にし、最初の時刻を残す", () => {
     const items: TimelineItem[] = [
       {
         kind: "turn",
@@ -24,27 +24,50 @@ describe("collectArtifacts", () => {
         at: "1",
         agent: "claude",
         status: "completed",
-        text: "証跡: C:\\home\\.clodex\\artifacts\\p\\shot.png を見て",
+        text: "証跡: C:\\home\\.clodex\\artifacts\\p\\shot.png と [コード](<C:/dev/app/src/a.ts>)",
         steps: [
           { kind: "tool", name: "Edit", input: "", files: ["C:\\dev\\app\\src\\a.ts"] },
           { kind: "say", text: "途中 ./out/diagram.webp", at: "" },
         ],
       },
-      { kind: "message", id: "m1", at: "2", message: message(["src/b.ts", "C:/dev/app/src/a.ts"], "画像は docs/fig.PNG") },
+      { kind: "message", id: "m1", at: "2", message: message(["src/b.ts", "C:/dev/app/src/a.ts"], "[画像](docs/fig.PNG) と C:/dev/app/docs/notes.md") },
       { kind: "human", id: "h", at: "3", agent: "claude", text: "x.png" },
     ];
     expect(collectArtifacts(items)).toEqual([
-      { path: "docs/fig.PNG", kind: "image", at: "2" },
-      { path: "C:/dev/app/src/a.ts", kind: "referenced", at: "2" },
-      { path: "src/b.ts", kind: "referenced", at: "2" },
-      { path: "C:\\home\\.clodex\\artifacts\\p\\shot.png", kind: "image", at: "1" },
-      { path: "./out/diagram.webp", kind: "image", at: "1" },
+      { path: "C:/dev/app/docs/notes.md", kind: "referenced", group: "presented", at: "2", firstAt: "2", changed: false },
+      { path: "docs/fig.PNG", kind: "image", group: "presented", at: "2", firstAt: "2", changed: false },
+      { path: "C:/dev/app/src/a.ts", kind: "referenced", group: "presented", at: "2", firstAt: "1", changed: true },
+      { path: "C:\\home\\.clodex\\artifacts\\p\\shot.png", kind: "image", group: "presented", at: "1", firstAt: "1", changed: false },
+      { path: "src/b.ts", kind: "referenced", group: "work", at: "2", firstAt: "2", changed: false },
     ]);
   });
 
   it("画像の拡張子でない語は拾わない", () => {
     const items: TimelineItem[] = [{ kind: "turn", id: "t", at: "1", agent: "codex", status: "completed", text: "a.pngx と png と .png", steps: [] }];
     expect(collectArtifacts(items)).toEqual([]);
+  });
+
+  it("区切りが 2 つの絶対パスを拾い、URL は拾わない", () => {
+    const items: TimelineItem[] = [
+      { kind: "turn", id: "t", at: "1", agent: "codex", status: "completed", text: "C:/dev/a.ts /tmp/b.ts ~/docs/c.md https://example.com/a.ts", steps: [] },
+    ];
+    expect(collectArtifacts(items).map(item => item.path)).toEqual(["~/docs/c.md", "/tmp/b.ts", "C:/dev/a.ts"]);
+  });
+
+  it("変更済みファイルが message の files にもあれば変更の種類を保つ", () => {
+    const items: TimelineItem[] = [
+      {
+        kind: "turn",
+        id: "t",
+        at: "1",
+        agent: "codex",
+        status: "completed",
+        text: "",
+        steps: [{ kind: "tool", name: "Edit", input: "", files: ["src/a.ts"] }],
+      },
+      { kind: "message", id: "m", at: "2", message: message(["src/a.ts"], "依頼") },
+    ];
+    expect(collectArtifacts(items)).toEqual([{ path: "src/a.ts", kind: "changed", group: "work", at: "2", firstAt: "1", changed: true }]);
   });
 
   it("ターンに含まれた message の参照と画像も拾う", () => {
@@ -61,9 +84,9 @@ describe("collectArtifacts", () => {
       },
     ];
     expect(collectArtifacts(items)).toEqual([
-      { path: "docs/a.png", kind: "image", at: "1" },
-      { path: "src/a.ts", kind: "referenced", at: "1" },
-      { path: "docs/specs/T.md", kind: "referenced", at: "1" },
+      { path: "docs/a.png", kind: "image", group: "presented", at: "1", firstAt: "1", changed: false },
+      { path: "docs/specs/T.md", kind: "referenced", group: "presented", at: "1", firstAt: "1", changed: false },
+      { path: "src/a.ts", kind: "referenced", group: "work", at: "1", firstAt: "1", changed: false },
     ]);
   });
 });
@@ -99,7 +122,20 @@ describe("displayPath", () => {
 
 it("spec を参照として集める", () => {
   expect(collectArtifacts([{ kind: "message", id: "m", at: "1", message: { ...message([], "依頼"), spec: "docs/specs/T.md" } }])).toEqual([
-    { path: "docs/specs/T.md", kind: "referenced", at: "1" },
+    { path: "docs/specs/T.md", kind: "referenced", group: "presented", at: "1", firstAt: "1", changed: false },
+  ]);
+});
+
+it("差分の行を追加・削除・区切り・ヘッダに分類する", () => {
+  expect(["+one", "-old", "@@ -1 +1 @@", "diff --git a/x b/x", "index 123", "--- a/x", "+++ b/x", " unchanged"].map(classifyDiffLine)).toEqual([
+    "add",
+    "del",
+    "hunk",
+    "header",
+    "header",
+    "header",
+    "header",
+    "",
   ]);
 });
 

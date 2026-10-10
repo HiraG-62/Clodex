@@ -1,4 +1,4 @@
-import { collectArtifacts, displayPath } from "./artifacts.js";
+import { type Artifact, classifyDiffLine, collectArtifacts, displayPath } from "./artifacts.js";
 import { fitView, zoomView } from "./image-zoom.js";
 import { renderMarkdown } from "./markdown.js";
 import type { ClientContext } from "./store.js";
@@ -12,16 +12,23 @@ export function createArtifactsLightbox(ctx: ClientContext) {
     ctx.store.sheetKind = "artifacts";
     ctx.store.sheetAgent = undefined;
     const artifacts = collectArtifacts(ctx.store.items);
-    const rows: HTMLElement[] = artifacts.map(artifact => {
+    const rows: HTMLElement[] = [];
+    for (const artifact of artifacts) {
+      if (!rows.length || rows.at(-1)?.dataset.group !== artifact.group) {
+        const heading = ctx.el("h3", "artifact-group", ctx.t(artifact.group === "presented" ? "web.artifacts.presented" : "web.artifacts.work"));
+        heading.dataset.group = artifact.group;
+        rows.push(heading);
+      }
       const row = ctx.el("button", "artifact") as HTMLButtonElement;
       row.type = "button";
       row.append(
         ctx.el("span", `kind ${artifact.kind}`, ctx.t(ctx.ARTIFACT_LABEL[artifact.kind])),
         ctx.el("span", "path mono", displayPath(artifact.path, ctx.store.state?.project ?? "")),
       );
-      row.addEventListener("click", () => void openViewer(artifact.path));
-      return row;
-    });
+      row.dataset.group = artifact.group;
+      row.addEventListener("click", () => void openViewer(artifact.path, artifact));
+      rows.push(row);
+    }
     ctx.openSheet(ctx.t("web.artifacts.title"), rows.length ? rows : [ctx.el("p", "muted small", ctx.t("web.artifacts.empty"))]);
   };
   // ---- 画像のビューア（DESIGN.md §28 成果物）: 全画面で拡大縮小・移動する ----
@@ -167,7 +174,7 @@ export function createArtifactsLightbox(ctx: ClientContext) {
     true,
   );
 
-  const openViewer = async (path: string) => {
+  const openViewer = async (path: string, artifact?: Artifact) => {
     if (/\.(png|jpe?g|gif|webp)$/i.test(path)) return openImage(path);
     ctx.store.sheetKind = "viewer";
     ctx.store.sheetAgent = undefined;
@@ -175,10 +182,17 @@ export function createArtifactsLightbox(ctx: ClientContext) {
     const show = async (api: "file" | "diff") => {
       view.replaceChildren(ctx.el("p", "muted small", ctx.t("web.viewer.loading")));
       try {
-        const response = await fetch(fileUrl(api, path));
+        const url = api === "diff" && artifact?.changed ? `${fileUrl(api, path)}&since=${encodeURIComponent(artifact.firstAt)}` : fileUrl(api, path);
+        const response = await fetch(url);
         const text = await response.text();
         if (!response.ok) return view.replaceChildren(ctx.el("p", "muted small", text || ctx.t("web.viewer.failedStatus", { status: response.status })));
-        if (api === "diff" && !text) return view.replaceChildren(ctx.el("p", "muted small", ctx.t("web.viewer.noDiff")));
+        if (api === "diff" && !text) {
+          const content = await fetch(fileUrl("file", path));
+          const body = await content.text();
+          const nodes: HTMLElement[] = [ctx.el("p", "muted small", ctx.t("web.viewer.noDiff"))];
+          if (content.ok) nodes.push(ctx.el("pre", "code", body));
+          return view.replaceChildren(...nodes);
+        }
         if (api === "file" && /\.md$/i.test(path)) {
           const doc = ctx.el("div", "md");
           doc.innerHTML = renderMarkdown(text);
@@ -186,16 +200,7 @@ export function createArtifactsLightbox(ctx: ClientContext) {
         }
         const pre = ctx.el("pre", api === "diff" ? "code diff" : "code");
         for (const line of text.split("\n")) {
-          const cls =
-            api !== "diff"
-              ? ""
-              : line.startsWith("+") && !line.startsWith("+++")
-                ? "add"
-                : line.startsWith("-") && !line.startsWith("---")
-                  ? "del"
-                  : line.startsWith("@@")
-                    ? "hunk"
-                    : "";
+          const cls = api === "diff" ? classifyDiffLine(line) : "";
           pre.append(ctx.el("span", cls, `${line}\n`));
         }
         view.replaceChildren(pre);
@@ -207,12 +212,12 @@ export function createArtifactsLightbox(ctx: ClientContext) {
       "view",
       ctx.t("web.viewer.view"),
       ["file", "diff"] as const,
-      "file",
-      v => ctx.t(v === "file" ? "web.viewer.content" : "web.viewer.diff"),
+      artifact?.changed ? "diff" : "file",
+      v => ctx.t(v === "file" ? "web.viewer.whole" : "web.viewer.diff"),
       v => void show(v),
     );
     ctx.openSheet(displayPath(path, ctx.store.state?.project ?? ""), [tabs, view]);
-    await show("file");
+    await show(artifact?.changed ? "diff" : "file");
   };
   return { openImage, fileUrl, openViewer, openArtifacts };
 }

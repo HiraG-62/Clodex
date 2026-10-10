@@ -128,7 +128,8 @@ const startWeb = async ({
     listFiles: () => (hub.current ? listProjectFiles(hub.current.workspace.current.workDir) : Promise.resolve([])),
     preview: {
       file: path => (hub.current ? hub.current.currentPreview().file(path) : Promise.resolve({ ok: false, status: 404, message: "no project" })),
-      diff: path => (hub.current ? hub.current.currentPreview().diff(path) : Promise.resolve({ ok: false, status: 404, message: "no project" })),
+      diff: (path, since) =>
+        hub.current ? hub.current.currentPreview().diff(path, since) : Promise.resolve({ ok: false, status: 404, message: "no project" }),
     },
     upload: { maxBytes: MAX_UPLOAD_BYTES, accepts: isUploadType, save: (contentType, body) => saveUpload(current().uploadsDir, contentType, body) },
     onError,
