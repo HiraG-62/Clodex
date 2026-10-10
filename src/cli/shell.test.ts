@@ -25,6 +25,8 @@ class FakeHistory implements ConversationList {
   ];
   started: Array<{ worktree?: boolean } | undefined> = [];
   worktreeError: string | undefined;
+  worktreeMove: "ok" | "already" | "busy" | "failed" = "ok";
+  moved = 0;
   list() {
     return this.conversations;
   }
@@ -35,6 +37,17 @@ class FakeHistory implements ConversationList {
     if (options?.worktree)
       this.conversations.push({ id: "conv-fresh", startedAt: at(40), updatedAt: at(40), sessions: {}, workDir: "C:\\dev\\app-1a2b", branch: "clodex/1a2b" });
     return undefined;
+  }
+  async moveCurrentToWorktree() {
+    this.moved++;
+    if (this.worktreeMove === "already") return { ok: false as const, reason: "already" as const };
+    if (this.worktreeMove === "busy") return { ok: false as const, reason: "busy" as const, agents: "claude" };
+    if (this.worktreeMove === "failed") return { ok: false as const, reason: "failed" as const, error: "git failed" };
+    const worktree = { workDir: "C:\\dev\\app-1a2b", branch: "clodex/1a2b" };
+    const current = this.conversations.find(c => c.id === this.currentId)!;
+    current.workDir = worktree.workDir;
+    current.branch = worktree.branch;
+    return { ok: true as const, worktree };
   }
   readonly cleared: AgentId[] = [];
   clearSession(agent: AgentId) {
@@ -857,6 +870,27 @@ describe("createShell", () => {
     history.worktreeError = "fatal: not a git repository";
     await shell.handleLine("/new worktree");
     expect(runner.commands).toEqual(["pnpm install"]);
+  });
+  it("/worktree は今の会話を移し、setup を新しい作業場所で実行する", async () => {
+    const { history, runner, worktreeSetup, shell, notified } = setup();
+    worktreeSetup.value = "pnpm install";
+    await shell.handleLine("/worktree");
+    expect(history.moved).toBe(1);
+    expect(history.list().find(c => c.id === history.currentId)).toMatchObject({ workDir: "C:\\dev\\app-1a2b", branch: "clodex/1a2b" });
+    expect(notified.at(-1)).toBe("worktree: C:\\dev\\app-1a2b (branch clodex/1a2b)");
+    expect(runner.commands).toContain("pnpm install");
+  });
+
+  it("/worktree は worktree 済み・作業中・作成失敗を知らせ、setup を実行しない", async () => {
+    for (const reason of ["already", "busy", "failed"] as const) {
+      const { history, runner, shell, notified, levels } = setup();
+      history.worktreeMove = reason;
+      await shell.handleLine("/worktree");
+      expect(history.list().find(c => c.id === history.currentId)?.workDir).toBeUndefined();
+      expect(runner.commands).toEqual([]);
+      expect(levels.at(-1)).toBe("warn");
+      expect(notified.at(-1)).toBeTruthy();
+    }
   });
 
   it("同じ作業場所で別の会話が作業中なら、送る前に worktree を勧める", async () => {

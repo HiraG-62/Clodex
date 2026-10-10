@@ -33,7 +33,9 @@ const setup = (worktree: WorktreeResult = { ok: true, worktree: { workDir: "C:\\
     const coordinator = new Coordinator({ projectRoot: workDir, agents: { claude, codex }, bus, mcpUrlFor: () => "http://x" });
     const runtime: FakeRuntime = {
       conversationId: conversation.id,
-      workDir,
+      get workDir() {
+        return coordinator.workDir;
+      },
       bus,
       coordinator,
       claude,
@@ -215,6 +217,34 @@ describe("Workspace", () => {
     const before = failed.workspace.current;
     await expect(failed.workspace.startNew({ worktree: true })).resolves.toMatch(/not a git repository/);
     expect(failed.workspace.current).toBe(before);
+  });
+
+  it("既存の会話を移し、起動中の Agent だけ同じ session で新しい cwd に再起動する", async () => {
+    const { workspace, history, created } = setup();
+    await workspace.init();
+    const runtime = created[0]!;
+    await runtime.claude.start({ cwd: ROOT, resumeSessionId: "old-claude" });
+    const result = await workspace.moveCurrentToWorktree();
+    expect(result).toEqual({ ok: true, worktree: { workDir: "C:\\dev\\app-wt", branch: "clodex/wt" } });
+    expect(workspace.current).toBe(runtime);
+    expect(runtime.claude.starts.at(-1)).toMatchObject({ cwd: "C:\\dev\\app-wt", resumeSessionId: "old-claude" });
+    expect(runtime.codex.starts).toEqual([]);
+    expect(history.current).toMatchObject({ workDir: "C:\\dev\\app-wt", branch: "clodex/wt" });
+    expect(await workspace.moveCurrentToWorktree()).toMatchObject({ ok: false, reason: "already" });
+  });
+
+  it("作業中と worktree の作成失敗では会話を移さない", async () => {
+    const busy = setup();
+    await busy.workspace.init();
+    void busy.workspace.current.coordinator.sendToAgent("claude", "作業中");
+    await flush();
+    expect(await busy.workspace.moveCurrentToWorktree()).toMatchObject({ ok: false, reason: "busy" });
+    expect(busy.history.current.workDir).toBeUndefined();
+
+    const failed = setup({ ok: false, error: "fatal: not a git repository" });
+    await failed.workspace.init();
+    expect(await failed.workspace.moveCurrentToWorktree()).toEqual({ ok: false, reason: "failed", error: "fatal: not a git repository" });
+    expect(failed.history.current.workDir).toBeUndefined();
   });
 
   it("同じ作業場所で別の会話の Agent が作業中なら知らせる", async () => {

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -23,10 +23,16 @@ describe("createWorktree", () => {
     writeFileSync(join(root, "a.txt"), "a");
     git("add", "a.txt");
     git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init");
+    writeFileSync(join(root, "a.txt"), "uncommitted");
+    writeFileSync(join(root, "untracked.txt"), "local");
 
     const result = await createWorktree(root, "abcdef12-0000");
     expect(result).toMatchObject({ ok: true, worktree: { branch: "clodex/abcdef12" } });
-    if (result.ok) expect(existsSync(join(result.worktree.workDir, "a.txt"))).toBe(true);
+    if (result.ok) {
+      expect(existsSync(join(result.worktree.workDir, "a.txt"))).toBe(true);
+      expect(readFileSync(join(result.worktree.workDir, "a.txt"), "utf8")).toBe("a");
+      expect(existsSync(join(result.worktree.workDir, "untracked.txt"))).toBe(false);
+    }
     // 同じブランチは作れない
     await expect(createWorktree(root, "abcdef12-0000")).resolves.toMatchObject({ ok: false });
   });

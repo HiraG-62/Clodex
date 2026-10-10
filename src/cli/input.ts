@@ -35,6 +35,7 @@ export type ShellCommand =
   | { kind: "primary"; agent: AgentId }
   | { kind: "resume"; index?: number }
   | { kind: "new"; agent?: AgentId; worktree?: true }
+  | { kind: "worktree" }
   | { kind: "compact"; agent?: AgentId }
   | { kind: "answer"; id: string; text: string }
   | { kind: "cancel"; id?: string }
@@ -207,6 +208,8 @@ const parseCommand = (name: string, arg: string, primary: AgentId): ShellCommand
       if (arg === NEW_WORKTREE_ARG) return { kind: "new", worktree: true };
       if (!arg) return { kind: name };
       return isAgentId(arg) ? { kind: name, agent: arg } : unknownAgent(arg);
+    case "worktree":
+      return arg ? usage("/worktree") : { kind: "worktree" };
     case "compact":
       if (!arg) return { kind: name };
       return isAgentId(arg) ? { kind: name, agent: arg } : unknownAgent(arg);

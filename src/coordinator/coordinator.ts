@@ -185,7 +185,7 @@ export class Coordinator {
   }
 
   constructor(private readonly options: CoordinatorOptions) {
-    const { agents, bus, projectRoot, mcpUrlFor, instructions, limits, settings } = options;
+    const { agents, bus, mcpUrlFor, instructions, limits, settings } = options;
     this.deliveryNotes = new DeliveryNotes(options.soloReleased, options.consumeSoloReleased);
     this.budget = new BudgetManager(limits);
     this.usage = new UsageMonitor(bus, { ...DEFAULT_USAGE_ALERT, ...options.usageAlert });
@@ -226,7 +226,7 @@ export class Coordinator {
         () => {
           const instruction = instructions?.(id);
           return {
-            cwd: projectRoot,
+            cwd: this.options.projectRoot,
             mcpUrl,
             ...(instruction ? { instructions: instruction } : {}),
             ...(resumeSessionId ? { resumeSessionId } : {}),
@@ -443,6 +443,34 @@ export class Coordinator {
   // 作業中のターンも配送待ちの入力・message も無い（solo の切り替えの条件。DESIGN.md §11 Solo）
   idle(): boolean {
     return AGENT_IDS.every(id => this.options.agents[id].status !== "busy" && this.mailboxes[id].isIdle);
+  }
+
+  get workDir(): string {
+    return this.options.projectRoot;
+  }
+
+  async relocate(workDir: string): Promise<string | undefined> {
+    const busy = AGENT_IDS.filter(id => ["busy", "starting"].includes(this.options.agents[id].status) || !this.mailboxes[id].isIdle);
+    if (busy.length) return t("reject.busy", { agents: busy.join(", ") });
+    const started = AGENT_IDS.filter(id => this.options.agents[id].status !== "stopped");
+    const sessions = Object.fromEntries(started.map(id => [id, this.mailboxes[id].sessionId])) as Partial<Record<AgentId, string>>;
+    const previousDir = this.options.projectRoot;
+    for (const id of AGENT_IDS) this.mailboxes[id].pause();
+    try {
+      await Promise.all(started.map(id => this.options.agents[id].stop()));
+      this.options.projectRoot = workDir;
+      for (const id of started) this.mailboxes[id].switchSession(sessions[id]);
+      await Promise.all(started.map(id => this.mailboxes[id].ensureRunning()));
+      return undefined;
+    } catch (error) {
+      this.options.projectRoot = previousDir;
+      await Promise.all(started.map(id => this.options.agents[id].stop().catch(() => undefined)));
+      for (const id of started) this.mailboxes[id].switchSession(sessions[id]);
+      await Promise.all(started.map(id => this.mailboxes[id].ensureRunning().catch(() => undefined)));
+      return error instanceof Error ? error.message : String(error);
+    } finally {
+      for (const id of AGENT_IDS) this.mailboxes[id].resume();
+    }
   }
 
   // 送った順（ID の連番順）に並べる

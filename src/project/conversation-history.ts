@@ -7,6 +7,7 @@ import { AGENT_IDS, type AgentId } from "../agents/agent-adapter.js";
 import type { EventBus } from "../coordinator/event-bus.js";
 import { t } from "../i18n/i18n.js";
 import { writeFileAtomic } from "./atomic-write.js";
+import type { Worktree } from "./worktree.js";
 
 export const MAX_CONVERSATIONS = 20;
 const TITLE_LENGTH = 60;
@@ -95,6 +96,10 @@ export class ConversationHistory {
     this.currentConversation = { ...this.emptyConversation(), ...place };
     if (place.workDir) this.save(list => list);
     this.notifySwitch();
+  }
+
+  moveCurrentToWorktree(worktree: Worktree): void {
+    this.update(worktree);
   }
 
   // 今の会話が変わったとき（/new、/resume）に呼ぶ

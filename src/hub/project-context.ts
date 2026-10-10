@@ -225,7 +225,9 @@ export const openProject = async ({
     const created = coordinator;
     return {
       conversationId: conversation.id,
-      workDir,
+      get workDir() {
+        return created.workDir;
+      },
       bus,
       coordinator: created,
       close: async () => {
@@ -236,7 +238,15 @@ export const openProject = async ({
       },
     };
   };
-  workspace = new Workspace({ notifyAgent, history, projectRoot, isCurrentProject: isCurrent, createRuntime, createWorktree });
+  workspace = new Workspace({
+    notifyAgent,
+    history,
+    projectRoot,
+    isCurrentProject: isCurrent,
+    createRuntime,
+    createWorktree,
+    prepareWorktree: workDir => sandbox.allowWorktree(workDir),
+  });
   await workspace.init();
   const activeWorkspace = workspace;
   const working = (id: string): ReadonlySet<AgentId> =>

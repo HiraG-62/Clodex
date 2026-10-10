@@ -477,6 +477,7 @@ Internal command（v0.1）:
 | `/pin <番号>` | 会話のピン止めを切り替える（`/resume` の番号。§18） |
 | `/compact [claude\|codex]` | 会話を要約してコンテキストを減らす。1 ターンとして mailbox で直列に送る。停止中の Agent には何もしない（docs/spikes/compact.md） |
 | `/new [claude\|codex]` | 新しい session で始め直す。省略時は両 Agent を新しい会話として、指定時はその Agent だけを今の会話の中で始め直す（§18） |
+| `/worktree` | 今の会話を新しい worktree に移す。Agent は今の session のまま続ける（§28 D1） |
 | `/permission [claude\|codex] <read-only\|edit\|full>` | Agent（省略時は両方）の権限レベルを切り替える（§9 Permission） |
 | `/model <claude\|codex> <model>` | Agent の model を切り替える（§9 Model / Effort） |
 | `/effort [claude\|codex] <level>` | Agent（省略時は両方）の reasoning effort を切り替える（§9 Model / Effort） |
@@ -488,7 +489,7 @@ Internal command（v0.1）:
 | `/help` | 入力方法の一覧 |
 | `/exit` | 全 Agent を止めて終了 |
 
-将来の候補: `/agents`, `/tasks`, `/messages`, `/worktree`
+将来の候補: `/agents`, `/tasks`, `/messages`
 
 ---
 
@@ -1330,7 +1331,7 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
 - 画面と TUI は、ログを読み返して一番上（読み込んだ端）に近づいたら前の 200 件を読み、上に足す。足しても見ている位置は動かさない。`hasMore` が false なら以後は読まない。読んでいる間に会話が切り替わったら（`reset`）、その応答は捨てる
 - ターンは複数の event から組み立てるので、前の項目を足したら、持っている全項目からログを組み立て直す（読み込みの境目で分かれたターンを 1 つに戻す）
 - 次の知らせは `toast` で送り、ログ（`output` / `notice`）に入れない。会話の中身を汚さないため
-  - 会話・project の操作の結果: `/new`（worktree を含む）・`/resume`・`/rename`・`/delete`・`/pin`・`/project <path>` の完了と失敗
+  - 会話・project の操作の結果: `/new`（worktree を含む）・`/worktree`・`/resume`・`/rename`・`/delete`・`/pin`・`/project <path>` の完了と失敗
   - ほかの会話で Agent のターンが終わったこと（§28 D1）
   - 同じ作業場所で別の会話が作業中であること（§28 D1）
   - terminal（TUI でない行ごとの表示）には今どおり 1 行で出す
@@ -1966,7 +1967,11 @@ D1 の詳細（1 つのプロセスの中の複数の会話）:
 - 今の会話以外で Agent のターンが終わったら、`toast` で知らせる（例: `「設計の相談」の codex のターンが終わりました（completed）`。ログには入れない。§17）
 - feed は会話ごとに保存する（今と同じ）。今の会話でない間の event も保存する
 - **worktree**: `/new worktree` で、新しい会話用の worktree を作ってその会話の作業場所にする（`git worktree add <project の隣>/<project 名>-<会話の短い ID> -b clodex/<会話の短い ID>`）。会話の履歴に作業場所（`workDir`）とブランチを記録し、`/resume` で戻ったときもそこで Agent を起動する。worktree の削除・マージは人が git で行う
-- 設定ファイルの `worktree.setup`（例: `"pnpm install"`）があれば、worktree を作って切り替えた直後に、その worktree で `!command` と同じように実行する。git が持たない依存関係（`node_modules` など）が無いと、worktree でテストが通らないため。出力は `!command` と同じに表示し、Ctrl+C や `/interrupt` で止められる。終わるのは待たない
+- **既存の会話を worktree に移す**: `/worktree`（Web UI は会話のメニューの「worktree に移す」も）で、今の会話用の worktree を `/new worktree` と同じ名前で作り、その会話の作業場所にする。会話の履歴の `workDir` とブランチを書き換え、起動している Agent は今の session を新しい作業場所で resume して続ける（docs/spikes/worktree-resume.md）。起動していない Agent は次に起動したときに新しい作業場所で始まる
+  - worktree は HEAD から作る。project の未コミットの変更は持ち込まない（project に残る）
+  - すでに worktree で作業している会話では使えない（「worktree で作業中」）。どちらかの Agent が作業中・配送待ちがあるときも使えない（「先に /interrupt」）
+  - 移った先から project や別の worktree へ戻す操作は作らない
+- 設定ファイルの `worktree.setup`（例: `"pnpm install"`）があれば、worktree を作って切り替えた直後（`/worktree` で移した直後も）に、その worktree で `!command` と同じように実行する。git が持たない依存関係（`node_modules` など）が無いと、worktree でテストが通らないため。出力は `!command` と同じに表示し、Ctrl+C や `/interrupt` で止められる。終わるのは待たない
 - 同じ作業場所で別の会話の Agent が作業中のときに入力したら、`/new worktree` を勧める `toast` を出す（止めはしない）
 - Web UI の会話の一覧に、各会話の状態（作業中・待機中・停止中）と worktree の印を出す
 - 入力行は届いた順に処理する（会話の切り替えや worktree の作成を待ってから次の行へ）

@@ -48,6 +48,7 @@ describe("suggest", () => {
     expect(suggest("/cancel i", 9, FILES, state)?.items.map(i => i.insert)).toContain("in2 ");
     expect(suggest("/cancel m", 9, FILES, state)?.items).toContainEqual({ label: "msg_1", detail: "claude → codex DELEGATE", insert: "msg_1 " });
     expect(suggest("/new w", 6, FILES, state)?.items.map(i => i.insert)).toContain("worktree ");
+    expect(suggest("/work", 5, FILES, state)?.items.map(i => i.insert)).toContain("/worktree ");
     expect(suggest("/processes ", 11, FILES, state)?.items.map(({ insert, detail }) => [insert, detail])).toEqual([
       ["1 ", "pnpm dev"],
       ["2 ", "pnpm test"],

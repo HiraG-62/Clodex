@@ -37,6 +37,7 @@ describe("parseInput", () => {
     ["/primary codex", { kind: "primary", agent: "codex" }],
     ["/resume", { kind: "resume" }],
     ["/new", { kind: "new" }],
+    ["/worktree", { kind: "worktree" }],
     ["/compact", { kind: "compact" }],
     ["/compact claude", { kind: "compact", agent: "claude" }],
     ["/new codex", { kind: "new", agent: "codex" }],
@@ -54,6 +55,10 @@ describe("parseInput", () => {
     ["/effort codex minimal", { kind: "effort", agent: "codex", level: "minimal" }],
   ])("%j", (line, expected) => {
     expect(parseInput(line, "claude")).toEqual(expected);
+  });
+
+  it("/worktree の引数は拒否する", () => {
+    expect(parseInput("/worktree existing", "claude")).toMatchObject({ kind: "invalid", message: expect.stringContaining("/worktree") });
   });
 
   it.each(["/rename", "/rename #2", "/rename #x 名前", "/rename #0 名前"])("%s は使い方を返す", line => {

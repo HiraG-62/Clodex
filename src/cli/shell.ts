@@ -8,6 +8,7 @@ import { type BudgetLimits, DEFAULT_LIMITS, LIMIT_KEYS, LIMIT_NAMES, type LimitN
 import type { PendingMessage, SoloMode } from "../coordinator/coordinator.js";
 import type { UsageSnapshot } from "../coordinator/usage-monitor.js";
 import type { HubProjectEntry, ProjectRemoveError } from "../hub/hub.js";
+import type { WorktreeMoveResult } from "../hub/workspace.js";
 import { getLanguage, t } from "../i18n/i18n.js";
 import type { MessageKey } from "../i18n/messages.js";
 import type { ProcessManager } from "../process/process-manager.js";
@@ -65,6 +66,7 @@ export interface ConversationList {
   switchTo(id: string): Promise<Conversation | undefined>;
   // worktree: 新しい会話用の worktree を作る。作れなければ理由を返す
   startNew(options?: { worktree?: boolean }): Promise<string | undefined>;
+  moveCurrentToWorktree(): Promise<WorktreeMoveResult>;
   clearSession(agent: AgentId): void;
   rename(title: string): void;
   renameConversation(id: string, title: string): void;
@@ -488,6 +490,23 @@ export const createShell = ({
     await startFresh(command.agent, command.worktree === true);
     return "continue";
   };
+  const handleWorktree = async (_command: CommandOf<"worktree">): Promise<ShellOutcome> => {
+    const moved = await history().moveCurrentToWorktree();
+    if (!moved.ok) {
+      const message =
+        moved.reason === "already"
+          ? t("shell.alreadyWorktree")
+          : moved.reason === "busy"
+            ? t("reject.busy", { agents: moved.agents })
+            : t("shell.worktreeFailed", { error: moved.error });
+      notify(message, "warn");
+      return "continue";
+    }
+    notify(t("shell.worktree", { workDir: moved.worktree.workDir, branch: moved.worktree.branch }));
+    const setupCommand = worktreeSetup();
+    if (setupCommand) void runner.run(setupCommand);
+    return "continue";
+  };
   const handleCompact = async (command: CommandOf<"compact">): Promise<ShellOutcome> => {
     // 1 ターンとしてキューに積むだけ。進み具合は Event Bus 経由で表示される
     void coordinator().compact(command.agent);
@@ -640,6 +659,7 @@ export const createShell = ({
     role: { requiresCurrent: true, run: handleRole },
     cancel: { requiresCurrent: true, run: handleCancel },
     new: { requiresCurrent: true, run: handleNew },
+    worktree: { requiresCurrent: true, run: handleWorktree },
     compact: { requiresCurrent: true, run: handleCompact },
     resume: { requiresCurrent: true, run: handleResume },
     solo: { requiresCurrent: true, run: handleSolo },

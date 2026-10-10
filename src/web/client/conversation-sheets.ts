@@ -52,6 +52,15 @@ export function createConversationSheets(ctx: ClientContext) {
         });
       }),
     );
+    if (conversation.current && !conversation.workDir) {
+      actions.push(
+        ctx.sheetButton(ctx.t("web.conv.moveWorktree"), "secondary-action", button => {
+          void ctx.send("/worktree", button).then(ok => {
+            if (ok) ctx.closeSheet();
+          });
+        }),
+      );
+    }
     if (!conversation.current) {
       actions.push(
         ctx.sheetButton(ctx.t("web.conv.delete"), "secondary-action danger", button => {

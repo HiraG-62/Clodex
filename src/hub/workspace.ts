@@ -6,7 +6,7 @@ import type { Coordinator } from "../coordinator/coordinator.js";
 import type { CoordinatorEvent, EventBus } from "../coordinator/event-bus.js";
 import type { Conversation, ConversationHistory } from "../project/conversation-history.js";
 import type { ConversationRecovery, RecoveryState } from "../project/recovery-store.js";
-import type { WorktreeResult } from "../project/worktree.js";
+import type { Worktree, WorktreeResult } from "../project/worktree.js";
 import type { NotificationInput } from "./notify-format.js";
 
 // 会話 1 つ分の実行環境（Event Bus・Coordinator・Agent・MCP server 等）
@@ -19,6 +19,11 @@ export interface ConversationRuntime {
 }
 
 export type ConversationActivity = "busy" | "idle" | "stopped";
+export type WorktreeMoveResult =
+  | { ok: true; worktree: Worktree }
+  | { ok: false; reason: "already" }
+  | { ok: false; reason: "busy"; agents: string }
+  | { ok: false; reason: "failed"; error: string };
 
 export type RuntimeEventListener = (runtime: ConversationRuntime, event: CoordinatorEvent, current: boolean) => void;
 export interface WorkspaceOptions {
@@ -28,6 +33,7 @@ export interface WorkspaceOptions {
   projectRoot: string;
   createRuntime: (conversation: Conversation) => Promise<ConversationRuntime>;
   createWorktree: (projectRoot: string, name: string) => Promise<WorktreeResult>;
+  prepareWorktree?: (workDir: string) => Promise<void>;
 }
 
 export class Workspace {
@@ -114,6 +120,30 @@ export class Workspace {
     }
     this.notifySwitch(await this.ensure(this.options.history.current));
     return undefined;
+  }
+
+  async moveCurrentToWorktree(): Promise<WorktreeMoveResult> {
+    if (this.options.history.current.workDir) return { ok: false, reason: "already" };
+    const runtime = this.current;
+    const busy = runtime.coordinator
+      .status()
+      .filter(agent => agent.status === "busy" || agent.status === "starting")
+      .map(agent => agent.id);
+    const queued = [...runtime.coordinator.pendingInputs(), ...runtime.coordinator.pendingMessages()].map(item => item.agent);
+    if (!runtime.coordinator.idle() || busy.length) {
+      return { ok: false, reason: "busy", agents: [...new Set([...busy, ...queued])].join(", ") || "claude, codex" };
+    }
+    const created = await this.options.createWorktree(this.options.projectRoot, this.options.history.currentId);
+    if (!created.ok) return { ok: false, reason: "failed", error: created.error };
+    try {
+      await this.options.prepareWorktree?.(created.worktree.workDir);
+      const error = await runtime.coordinator.relocate(created.worktree.workDir);
+      if (error) return { ok: false, reason: "failed", error };
+      this.options.history.moveCurrentToWorktree(created.worktree);
+      return created;
+    } catch (error) {
+      return { ok: false, reason: "failed", error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   // runtime が無い会話は undefined（保存のみ）

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +8,52 @@ import { EMPTY_MODEL_CATALOG } from "../agents/startup-probe.js";
 import { applyFeedItem, rebuildTimeline } from "../web/client/timeline.js";
 import { WebFeed } from "../web/web-feed.js";
 import { openProject, protectRecoverySave } from "./project-context.js";
+
+it("既存の会話を worktree に移すと runtime と session を保って cwd と preview を切り替える", async () => {
+  const homeDir = mkdtempSync(join(tmpdir(), "clodex-move-context-"));
+  const projectRoot = join(homeDir, "project");
+  mkdirSync(projectRoot);
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: projectRoot });
+  git("init", "-q");
+  writeFileSync(join(projectRoot, "a.txt"), "committed");
+  git("add", "a.txt");
+  git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init");
+  writeFileSync(join(projectRoot, "a.txt"), "uncommitted");
+  const claude = new FakeAgentAdapter("claude");
+  const codex = new FakeAgentAdapter("codex");
+  const context = await openProject({
+    projectRoot,
+    homeDir,
+    args: { models: {}, resume: false, web: false, serve: false },
+    language: "ja",
+    printTerminal: () => {},
+    notify: () => {},
+    notifyAgent: () => {},
+    displayMode: () => "normal",
+    isCurrent: () => true,
+    modelCatalog: EMPTY_MODEL_CATALOG,
+    registerCoordinator: () => () => {},
+    createAgents: () => ({ claude, codex }),
+  });
+  try {
+    const runtime = context.workspace.current;
+    await runtime.coordinator.start();
+    const allow = vi.spyOn(context.sandbox, "allowWorktree");
+    const result = await context.workspace.moveCurrentToWorktree();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(context.workspace.current).toBe(runtime);
+    expect(runtime.workDir).toBe(result.worktree.workDir);
+    expect(claude.starts.at(-1)).toMatchObject({ cwd: result.worktree.workDir, resumeSessionId: "claude-session" });
+    expect(codex.starts.at(-1)).toMatchObject({ cwd: result.worktree.workDir, resumeSessionId: "codex-session" });
+    expect(allow).toHaveBeenCalledWith(result.worktree.workDir);
+    expect(context.history.current).toMatchObject(result.worktree);
+    const preview = await context.currentPreview().file("a.txt");
+    expect(preview.ok && preview.body.toString()).toBe("committed");
+  } finally {
+    await context.close();
+  }
+});
 
 it("復旧状態の保存失敗を呼び出し元へ出さず、連続失敗は一度だけ報告する", () => {
   const save = vi

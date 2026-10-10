@@ -61,6 +61,7 @@ const conversationsOf = (context: ProjectContext): ConversationList => ({
   list: () => context.history.list(),
   switchTo: id => context.workspace.switchTo(id),
   startNew: options => context.workspace.startNew(options),
+  moveCurrentToWorktree: () => context.workspace.moveCurrentToWorktree(),
   clearSession: agent => context.history.clearSession(agent),
   rename: title => context.history.rename(title),
   renameConversation: (id, title) => context.history.renameConversation(id, title),
