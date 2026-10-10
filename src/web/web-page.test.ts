@@ -12,6 +12,11 @@ import { buildWebPage, ICON_SVG, MANIFEST } from "./web-page.js";
 const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(match => match[1] ?? "");
 
 describe("buildWebPage", () => {
+  it("資料のボタンを成果物の前に置く", () => {
+    const html = buildWebPage("ja").html;
+    expect(html).toContain('id="open-shared"');
+    expect(html.indexOf('id="open-shared"')).toBeLessThan(html.indexOf('id="open-artifacts"'));
+  });
   it("Google Fonts を読まず、同梱の @font-face を埋め込む", () => {
     const html = buildWebPage("ja").html;
     expect(html).not.toContain("fonts.googleapis.com");

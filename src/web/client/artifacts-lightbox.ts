@@ -1,6 +1,7 @@
 import { type Artifact, classifyDiffLine, collectArtifacts, displayPath } from "./artifacts.js";
 import { fitView, zoomView } from "./image-zoom.js";
 import { renderMarkdown } from "./markdown.js";
+import { hasNewShared, sharedOpenedKey } from "./shared-unread.js";
 import type { ClientContext } from "./store.js";
 
 export function createArtifactsLightbox(ctx: ClientContext) {
@@ -8,29 +9,52 @@ export function createArtifactsLightbox(ctx: ClientContext) {
   // version: 同じパスの画像が書き換わっても、メッセージごとに別の URL にして古い画像を使い回させない
   const fileUrl = (api: "file" | "diff", path: string, version?: string) =>
     `/api/${api}?path=${encodeURIComponent(path)}${version ? `&v=${encodeURIComponent(version)}` : ""}`;
-  const openArtifacts = () => {
-    ctx.store.sheetKind = "artifacts";
-    ctx.store.sheetAgent = undefined;
-    const artifacts = collectArtifacts(ctx.store.items);
+  const currentSharedKey = () => {
+    const state = ctx.store.state;
+    const conversation = state?.conversations.find(entry => entry.current);
+    return state && conversation ? sharedOpenedKey(state.project, conversation.id) : undefined;
+  };
+  const sheetRows = (group: Artifact["group"]): HTMLElement[] => {
+    const artifacts = collectArtifacts(ctx.store.items).filter(artifact => artifact.group === group);
     const rows: HTMLElement[] = [];
     for (const artifact of artifacts) {
-      if (!rows.length || rows.at(-1)?.dataset.group !== artifact.group) {
-        const heading = ctx.el("h3", "artifact-group", ctx.t(artifact.group === "presented" ? "web.artifacts.presented" : "web.artifacts.work"));
-        heading.dataset.group = artifact.group;
-        rows.push(heading);
-      }
       const row = ctx.el("button", "artifact") as HTMLButtonElement;
       row.type = "button";
       row.append(
         ctx.el("span", `kind ${artifact.kind}`, ctx.t(ctx.ARTIFACT_LABEL[artifact.kind])),
         ctx.el("span", "path mono", displayPath(artifact.path, ctx.store.state?.project ?? "")),
       );
-      row.dataset.group = artifact.group;
-      row.addEventListener("click", () => void openViewer(artifact.path, artifact));
+      row.addEventListener("click", () => void openViewer(artifact.path, artifact, group));
       rows.push(row);
     }
-    ctx.openSheet(ctx.t("web.artifacts.title"), rows.length ? rows : [ctx.el("p", "muted small", ctx.t("web.artifacts.empty"))]);
+    return rows.length ? rows : [ctx.el("p", "muted small", ctx.t("web.artifacts.empty"))];
   };
+  const syncSharedUnread = () => {
+    const key = currentSharedKey();
+    const unread = hasNewShared(collectArtifacts(ctx.store.items), key ? ctx.storage.get(key) : null);
+    for (const selector of ["#open-shared", "#mobile-more", "#mobile-open-shared"]) {
+      document.querySelector(selector)?.classList.toggle("shared-new", unread);
+    }
+    if (ctx.sheet.hidden) return;
+    if (ctx.store.sheetKind === "shared") {
+      if (key) ctx.storage.set(key, new Date().toISOString());
+      ctx.$("#sheet-body").replaceChildren(...sheetRows("presented"));
+      for (const selector of ["#open-shared", "#mobile-more", "#mobile-open-shared"]) document.querySelector(selector)?.classList.remove("shared-new");
+    }
+    if (ctx.store.sheetKind === "artifacts") ctx.$("#sheet-body").replaceChildren(...sheetRows("work"));
+  };
+  const openArtifactSheet = (group: Artifact["group"]) => {
+    ctx.store.sheetKind = group === "presented" ? "shared" : "artifacts";
+    ctx.store.sheetAgent = undefined;
+    if (group === "presented") {
+      const key = currentSharedKey();
+      if (key) ctx.storage.set(key, new Date().toISOString());
+    }
+    ctx.openSheet(ctx.t(group === "presented" ? "web.top.shared" : "web.artifacts.title"), sheetRows(group));
+    syncSharedUnread();
+  };
+  const openShared = () => openArtifactSheet("presented");
+  const openArtifacts = () => openArtifactSheet("work");
   // ---- 画像のビューア（DESIGN.md §28 成果物）: 全画面で拡大縮小・移動する ----
   const lightbox = ctx.$("#lightbox");
   let lightboxReturnFocus: HTMLElement | undefined;
@@ -174,7 +198,7 @@ export function createArtifactsLightbox(ctx: ClientContext) {
     true,
   );
 
-  const openViewer = async (path: string, artifact?: Artifact) => {
+  const openViewer = async (path: string, artifact?: Artifact, returnGroup?: Artifact["group"]) => {
     if (/\.(png|jpe?g|gif|webp)$/i.test(path)) return openImage(path);
     ctx.store.sheetKind = "viewer";
     ctx.store.sheetAgent = undefined;
@@ -216,8 +240,10 @@ export function createArtifactsLightbox(ctx: ClientContext) {
       v => ctx.t(v === "file" ? "web.viewer.whole" : "web.viewer.diff"),
       v => void show(v),
     );
-    ctx.openSheet(displayPath(path, ctx.store.state?.project ?? ""), [tabs, view]);
+    const back = returnGroup ? ctx.iconButton("arrow-left", ctx.t("web.viewer.back")) : undefined;
+    back?.addEventListener("click", () => openArtifactSheet(returnGroup!));
+    ctx.openSheet(displayPath(path, ctx.store.state?.project ?? ""), [...(back ? [back] : []), tabs, view]);
     await show(artifact?.changed ? "diff" : "file");
   };
-  return { openImage, fileUrl, openViewer, openArtifacts };
+  return { openImage, fileUrl, openViewer, openArtifacts, openShared, syncSharedUnread };
 }

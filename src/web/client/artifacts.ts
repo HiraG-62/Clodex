@@ -53,12 +53,12 @@ export function collectArtifacts(items: readonly TimelineItem[]): Artifact[] {
       for (const step of item.steps) {
         if (step.kind === "tool") for (const file of step.files ?? []) add(file, "changed", "work", item.at);
       }
-      presented(item.text, item.at);
+      presented(item.text, item.finalAt ?? item.at);
       if (item.segment === "closed" && !item.text && item.status === "completed") {
         const lastSay = item.steps.at(-1);
-        if (lastSay?.kind === "say") presented(lastSay.text, item.at);
+        if (lastSay?.kind === "say") presented(lastSay.text, lastSay.at || item.finalAt || item.at);
       }
-      for (const { message } of item.messages ?? []) addMessage(message, item.at);
+      for (const { message } of item.messages ?? []) addMessage(message, message.createdAt);
     }
     if (item.kind === "message") addMessage(item.message, item.at);
   }

@@ -84,10 +84,26 @@ describe("collectArtifacts", () => {
       },
     ];
     expect(collectArtifacts(items)).toEqual([
-      { path: "docs/a.png", kind: "image", group: "presented", at: "1", firstAt: "1", changed: false },
-      { path: "docs/specs/T.md", kind: "referenced", group: "presented", at: "1", firstAt: "1", changed: false },
-      { path: "src/a.ts", kind: "referenced", group: "work", at: "1", firstAt: "1", changed: false },
+      { path: "docs/a.png", kind: "image", group: "presented", at: "2026-10-06T00:00:00.000Z", firstAt: "2026-10-06T00:00:00.000Z", changed: false },
+      { path: "docs/specs/T.md", kind: "referenced", group: "presented", at: "2026-10-06T00:00:00.000Z", firstAt: "2026-10-06T00:00:00.000Z", changed: false },
+      { path: "src/a.ts", kind: "referenced", group: "work", at: "2026-10-06T00:00:00.000Z", firstAt: "2026-10-06T00:00:00.000Z", changed: false },
     ]);
+  });
+
+  it("最終応答の資料はターン終了時刻を使う", () => {
+    const items: TimelineItem[] = [
+      {
+        kind: "turn",
+        id: "t",
+        at: "2026-10-10T01:00:00Z",
+        finalAt: "2026-10-10T02:00:00Z",
+        agent: "codex",
+        status: "completed",
+        text: "[資料](docs/a.md)",
+        steps: [],
+      },
+    ];
+    expect(collectArtifacts(items)[0]).toMatchObject({ path: "docs/a.md", at: "2026-10-10T02:00:00Z" });
   });
 });
 

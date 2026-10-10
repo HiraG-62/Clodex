@@ -12,12 +12,17 @@ export function createViewport(ctx: ClientContext) {
     ctx.store.sheetAgent = undefined;
     const actions = ctx.el("div", "mobile-menu-actions");
     for (const [name, key, id] of [
+      ["paperclip", "web.top.shared", "open-shared"],
       ["files", "web.top.artifacts", "open-artifacts"],
       ["settings", "web.top.settings", "open-settings"],
       ["list-tree", "web.mobile.detail", "detail"],
       ["folder-open", "web.mobile.openProject", "open-project"],
     ] as const) {
       const button = ctx.iconButton(name, ctx.t(key));
+      if (id === "open-shared") {
+        button.id = "mobile-open-shared";
+        button.classList.toggle("shared-new", ctx.$("#mobile-more").classList.contains("shared-new"));
+      }
       button.append(ctx.el("span", "", ctx.t(key)));
       if (id === "detail") button.setAttribute("aria-pressed", String(ctx.store.detail));
       button.addEventListener("click", () => {
@@ -30,7 +35,7 @@ export function createViewport(ctx: ClientContext) {
     themeButton.id = "mobile-theme";
     ctx.syncThemeButton(themeButton, true);
     themeButton.addEventListener("click", ctx.cycleTheme);
-    actions.insertBefore(themeButton, actions.children[1]!);
+    actions.insertBefore(themeButton, actions.children[2]!);
     const project = ctx.iconButton("folder", ctx.t("web.mobile.project"));
     project.append(ctx.el("span", "", `${ctx.t("web.mobile.project")}: ${ctx.$("#project-name").textContent}`));
     project.addEventListener("click", ctx.openConversations);
@@ -121,6 +126,7 @@ export function createViewport(ctx: ClientContext) {
   ctx.$("#open-settings").addEventListener("click", ctx.openSettings);
   ctx.$("#new-conversation").addEventListener("click", () => void ctx.send("/new", ctx.$("#new-conversation")));
   ctx.$("#open-artifacts").addEventListener("click", ctx.openArtifacts);
+  ctx.$("#open-shared").addEventListener("click", ctx.openShared);
   ctx.$("#projects").addEventListener("change", event => {
     const value = (event.currentTarget as HTMLSelectElement).value;
     if (!value) return;

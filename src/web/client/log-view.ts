@@ -273,6 +273,7 @@ export function createLogView(ctx: ClientContext) {
     if (stick) scrollToBottom();
     else syncNewer();
     renderWorking();
+    ctx.syncSharedUnread();
   };
   return { renderLog, renderItem, nearBottom, scrollToBottom, syncNewer };
 }

@@ -283,6 +283,7 @@ describe("applyFeedItem", () => {
         agent: "claude",
         status: "completed",
         text: "直しました。",
+        finalAt: AT,
         // 最初の発言は方針。最終応答と同じ最後の発言は作業から外す
         plan: "確認します。",
         planAt: AT,
@@ -338,6 +339,7 @@ describe("applyFeedItem", () => {
         agent: "claude",
         status: "completed",
         text: "直しました。",
+        finalAt: LATER,
         plan: "確認します。",
         planAt: AT,
         steps: [{ kind: "tool", name: "Read", input: "a.ts" }],

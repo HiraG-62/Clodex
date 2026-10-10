@@ -21,6 +21,7 @@ export type TimelineItem =
       rootId?: string;
       steps: TimelineStep[];
       text: string;
+      finalAt?: string;
       plan?: string; // ターンの最初の発言（方針。DESIGN.md §17 ログ）
       planAt?: string;
       messages?: Array<{ message: AgentMessage; envelope?: string }>;
@@ -204,9 +205,9 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
         // 発言が最終応答だけなら、方針として重ねて出さない
         if (turn.plan !== undefined && turn.plan.trim() === text.trim()) {
           const { plan: _same, planAt: _sameAt, ...rest } = turn;
-          return { ...rest, status, text, steps };
+          return { ...rest, status, text, finalAt: at, steps };
         }
-        return { ...turn, status, text, steps };
+        return { ...turn, status, text, finalAt: at, steps };
       };
       const index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === agent && entry.status === "working" && entry.segment !== "closed");
       if (index < 0) return limit([...items, finish(newTurn())]);
@@ -220,7 +221,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
         const previous = items[previousIndex] as Turn | undefined;
         if (previous) {
           const steps = text ? [...previous.steps, { kind: "say" as const, text, at }] : previous.steps;
-          const completed: Turn = { ...previous, status, steps };
+          const completed: Turn = { ...previous, status, finalAt: at, steps };
           return limit(items.filter((_, i) => i !== index).map((entry, i) => (i === previousIndex ? completed : entry)));
         }
       }

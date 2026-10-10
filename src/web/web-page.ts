@@ -31,6 +31,7 @@ ${UI_ICONS}
     <div class="header-tray tray">
       <div class="working-tabs"><button class="icon-btn working-tab" id="working-toggle" type="button" aria-expanded="false" aria-label="${m("web.working.title")}" title="${m("web.working.title")}" hidden>${icon("activity")}<span class="count" id="working-count">0</span></button></div>
       ${button("detail", "list-tree", "web.top.detailTitle", "", 'aria-pressed="false"')}
+      ${button("open-shared", "paperclip", "web.top.shared")}
       ${button("open-artifacts", "files", "web.top.artifacts")}
       ${button("open-conversations", "messages", "web.top.conversations")}
       ${button("cycle-theme", "monitor", "web.settings.theme")}

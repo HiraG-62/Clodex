@@ -198,7 +198,9 @@
   .artifact .kind.changed { background: color-mix(in srgb, var(--claude) 22%, transparent); }
   .artifact .kind.image { background: color-mix(in srgb, var(--warn) 24%, transparent); }
   .artifact .path { font-size: 12.5px; overflow-wrap: anywhere; min-width: 0; }
-  .artifact-group { margin: 16px 4px 6px; font-size: 12px; color: var(--fg-2); }
+  .shared-new { position: relative; }
+  .shared-new::after { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .mobile-menu-actions .shared-new::after { top: 50%; right: 14px; transform: translateY(-50%); }
   .viewer { margin-top: 10px; min-width: 0; }
   .viewer .code { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; font: 12px/1.55 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--sunken); }
   .viewer .diff span { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
