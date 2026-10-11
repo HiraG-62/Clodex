@@ -74,6 +74,7 @@ describe("TuiApp", () => {
               { id: "a", description: "調査" },
               { id: "b", description: "実装" },
             ],
+            backgroundTasks: [{ id: "bash", description: "sleep 12" }],
           },
         ],
         tabs: [],
@@ -93,7 +94,7 @@ describe("TuiApp", () => {
         },
       },
     });
-    await waitFor(() => expect(app.lastFrame()).toContain("待機中 · sub 2"));
+    await waitFor(() => expect(app.lastFrame()).toContain("待機中 · sub 2 · bg 1"));
   });
 
   it("送信待ちの件数に Agent 間メッセージを含める", async () => {

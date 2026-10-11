@@ -78,6 +78,21 @@ describe("ClaudeAdapter", () => {
     expect(events.filter(event => event.type === "subagents").at(-1)).toEqual({ type: "subagents", running: [] });
   });
 
+  it("本体の Bash だけを background task に数え、終了時に空にする", async () => {
+    const { proc, events } = await setup();
+    const bash = { task_id: "bash", task_type: "local_bash", description: "sleep 12" };
+    const childBash = { task_id: "child", task_type: "local_bash", description: "sleep 8", owned_by_subagent: true };
+    proc.emit({ type: "system", subtype: "background_tasks_changed", tasks: [bash, childBash] });
+    proc.emit({ type: "system", subtype: "background_tasks_changed", tasks: [childBash] });
+    expect(events.filter(event => event.type === "background_tasks")).toEqual([
+      { type: "background_tasks", running: [{ id: "bash", description: "sleep 12" }] },
+      { type: "background_tasks", running: [] },
+    ]);
+    proc.emit({ type: "system", subtype: "background_tasks_changed", tasks: [bash] });
+    proc.exit(0);
+    expect(events.filter(event => event.type === "background_tasks").at(-1)).toEqual({ type: "background_tasks", running: [] });
+  });
+
   it("stream-json の常駐プロセスを、API key を除いた環境と新しい session ID で起動する", async () => {
     process.env.ANTHROPIC_API_KEY = "sk-should-not-leak";
     const { adapter, spawner, events } = await setup();

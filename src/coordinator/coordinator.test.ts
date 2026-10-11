@@ -1042,6 +1042,7 @@ describe("Coordinator", () => {
         models: [],
         usage: {},
         subagents: [],
+        backgroundTasks: [],
       },
       {
         id: "codex",
@@ -1054,6 +1055,7 @@ describe("Coordinator", () => {
         models: [],
         usage: {},
         subagents: [],
+        backgroundTasks: [],
       },
     ]);
   });
@@ -1064,6 +1066,14 @@ describe("Coordinator", () => {
     expect(coordinator.status()[0]?.subagents).toEqual([{ id: "sub-1", description: "調査" }]);
     claude.emit({ type: "subagents", running: [] });
     expect(coordinator.status()[0]?.subagents).toEqual([]);
+  });
+
+  it("background_tasks event の全件を状態に反映する", () => {
+    const { coordinator, claude } = setup();
+    claude.emit({ type: "background_tasks", running: [{ id: "bash-1", description: "sleep 12" }] });
+    expect(coordinator.status()[0]?.backgroundTasks).toEqual([{ id: "bash-1", description: "sleep 12" }]);
+    claude.emit({ type: "background_tasks", running: [] });
+    expect(coordinator.status()[0]?.backgroundTasks).toEqual([]);
   });
 
   it("status に Agent の rate_limit から集計した利用状況を含める", () => {

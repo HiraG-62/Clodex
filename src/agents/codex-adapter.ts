@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   type AgentStartOptions,
+  type BackgroundTaskState,
   COORDINATOR_MCP_SERVER,
   type PermissionLevel,
   type SubagentState,
@@ -57,6 +58,8 @@ interface RpcMessage {
 
 interface CodexItem {
   type?: string;
+  id?: string;
+  status?: string;
   text?: string;
   changes?: Array<{ path: string }>;
   server?: string;
@@ -85,6 +88,7 @@ interface PendingRequest {
 }
 
 const TURN_STATUS: Record<string, TurnResult["status"]> = { completed: "completed", interrupted: "interrupted" };
+const backgroundTerminalsResponse = z.object({ data: z.array(z.object({ itemId: z.string(), command: z.string() })), nextCursor: z.string().nullable() });
 
 export class CodexAdapter extends BaseAgentAdapter {
   readonly id = "codex";
@@ -99,6 +103,8 @@ export class CodexAdapter extends BaseAgentAdapter {
   private turnInputSeen = false;
   private undeliveredSteers: string[] = [];
   private readonly subagents = new Map<string, SubagentState>();
+  private readonly backgroundTasks = new Map<string, BackgroundTaskState>();
+  private readonly completedCommands = new Set<string>();
 
   constructor(private readonly spawnProcess: SpawnAgentProcess = spawnAgentProcess) {
     super();
@@ -123,7 +129,7 @@ export class CodexAdapter extends BaseAgentAdapter {
   }
 
   private async handshake(cwd: string, resumeSessionId: string | undefined, instructions: string | undefined): Promise<void> {
-    await this.request("initialize", { clientInfo: CLIENT_INFO, capabilities: null });
+    await this.request("initialize", { clientInfo: CLIENT_INFO, capabilities: { experimentalApi: true, requestAttestation: false } });
     this.notify("initialized");
     await this.verifySubscription();
 
@@ -240,6 +246,11 @@ export class CodexAdapter extends BaseAgentAdapter {
       this.subagents.clear();
       this.emit({ type: "subagents", running: [] });
     }
+    if (this.backgroundTasks.size) {
+      this.backgroundTasks.clear();
+      this.emit({ type: "background_tasks", running: [] });
+    }
+    this.completedCommands.clear();
     super.handleExit(code);
   }
 
@@ -282,7 +293,9 @@ export class CodexAdapter extends BaseAgentAdapter {
       case "turn/completed": {
         const status = TURN_STATUS[params.turn?.status ?? ""] ?? "failed";
         const text = this.lastAgentText || (params.turn?.error?.message ?? "");
-        return this.finishTurn({ status, text });
+        this.finishTurn({ status, text });
+        this.refreshBackgroundTasks();
+        return;
       }
       case "error":
         this.emit({ type: "error", message: `codex: ${params.error?.message ?? params.message ?? "unknown error"}` });
@@ -290,6 +303,10 @@ export class CodexAdapter extends BaseAgentAdapter {
   }
 
   private handleItem(item: CodexItem): void {
+    if (item.type === "commandExecution" && item.id && item.status !== "inProgress") {
+      this.completedCommands.add(item.id);
+      if (this.backgroundTasks.delete(item.id)) this.emit({ type: "background_tasks", running: [...this.backgroundTasks.values()] });
+    }
     if (item.type === "userMessage") return this.handleUserMessage();
     if (item.type === "fileChange") {
       const files = item.changes?.map(change => change.path) ?? [];
@@ -315,7 +332,33 @@ export class CodexAdapter extends BaseAgentAdapter {
       this.emit({ type: "subagents", running: [...this.subagents.values()] });
     }
     if (item.type === "commandExecution") {
-      this.emit({ type: "tool", name: "command", input: summarizeToolInput(item.command ?? "") });
+      if (this.status === "busy") this.emit({ type: "tool", name: "command", input: summarizeToolInput(item.command ?? "") });
+    }
+  }
+
+  private async refreshBackgroundTasks(): Promise<void> {
+    const threadId = this.sessionId;
+    if (!threadId) return;
+    try {
+      const running: BackgroundTaskState[] = [];
+      let cursor: string | null = null;
+      do {
+        const response = await this.request("thread/backgroundTerminals/list", { threadId, ...(cursor ? { cursor } : {}) });
+        const parsed = backgroundTerminalsResponse.safeParse(response);
+        if (!parsed.success) return;
+        running.push(...parsed.data.data.map(task => ({ id: task.itemId, description: task.command })));
+        cursor = parsed.data.nextCursor;
+      } while (cursor);
+      if (this.status === "stopped" || this.sessionId !== threadId) return;
+      const active = running.filter(task => !this.completedCommands.has(task.id));
+      if (JSON.stringify(active) === JSON.stringify([...this.backgroundTasks.values()])) return;
+      this.backgroundTasks.clear();
+      for (const task of active) this.backgroundTasks.set(task.id, task);
+      this.emit({ type: "background_tasks", running: [...active] });
+    } catch {
+      // 一覧の取得失敗はターンの結果を変えない
+    } finally {
+      this.completedCommands.clear();
     }
   }
 

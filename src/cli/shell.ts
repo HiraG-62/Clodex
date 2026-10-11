@@ -31,6 +31,7 @@ export interface AgentState {
   models: readonly ModelOption[];
   usage: UsageSnapshot;
   subagents: SubagentState[];
+  backgroundTasks: SubagentState[];
   holdUntil?: string;
 }
 

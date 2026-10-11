@@ -514,6 +514,7 @@
   .strip-who { min-width: 0; }
   .agent-strip h2 { grid-area: auto; display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; font-size: 13px; line-height: 20px; }
   .agent-strip h2 .state { margin-left: 0; padding: 0; border-radius: 0; background: transparent; font-weight: 400; font-size: 11.5px; gap: 5px; }
+  .task-badges { display: inline-flex; align-items: center; gap: 4px; }
   .subagent-badge { display: inline-flex; align-items: center; gap: 2px; align-self: center; padding: 1px 5px; border-radius: 999px; background: color-mix(in srgb, var(--agent) 85%, var(--fg)); color: var(--invert-fg); font: 600 10px/14px var(--font-mono); white-space: nowrap; animation: subagent-pulse 1.4s ease-in-out infinite; }
   .subagent-badge .i { width: 12px; height: 12px; }
   .agent-strip .state.working::after { display: none; }

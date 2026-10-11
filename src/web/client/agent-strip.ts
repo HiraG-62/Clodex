@@ -127,11 +127,16 @@ export function createAgentStrip(ctx: ClientContext) {
     const subagentDetails = ctx.el("div", "subagent-details mobile-only");
     const updateSubagentDetails = (current: AgentState) => {
       subagentDetails.replaceChildren();
-      if (!current.subagents?.length) return;
-      subagentDetails.append(ctx.el("b", "", `${ctx.t("web.agent.subagents")} ${current.subagents.length}`));
-      const list = ctx.el("ul");
-      list.append(...current.subagents.map(subagent => ctx.el("li", "", subagent.description || subagent.id)));
-      subagentDetails.append(list);
+      for (const [label, running] of [
+        [ctx.t("web.agent.subagents"), current.subagents],
+        [ctx.t("web.agent.backgroundTasks"), current.backgroundTasks ?? []],
+      ] as const) {
+        if (!running.length) continue;
+        subagentDetails.append(ctx.el("b", "", `${label} ${running.length}`));
+        const list = ctx.el("ul");
+        list.append(...running.map(task => ctx.el("li", "", task.description || task.id)));
+        subagentDetails.append(list);
+      }
     };
     updateSubagentDetails(agent);
     wrap.append(subagentDetails);
@@ -218,13 +223,21 @@ export function createAgentStrip(ctx: ClientContext) {
     return node;
   };
   const subagentBadge = (agent: AgentState) => {
-    if (!agent.subagents?.length) return undefined;
-    const badge = ctx.el("span", "subagent-badge");
-    const label = `${ctx.t("web.agent.subagents")} ${agent.subagents.length}\n${agent.subagents.map(subagent => subagent.description || subagent.id).join("\n")}`;
-    badge.title = label;
-    badge.setAttribute("aria-label", label);
-    badge.append(ctx.icon("list-tree"), ctx.el("span", "", String(agent.subagents.length)));
-    return badge;
+    const badges = ctx.el("span", "task-badges");
+    for (const [label, icon, running] of [
+      [ctx.t("web.agent.subagents"), "list-tree", agent.subagents],
+      [ctx.t("web.agent.backgroundTasks"), "terminal", agent.backgroundTasks ?? []],
+    ] as const) {
+      if (!running.length) continue;
+      const badge = ctx.el("span", "subagent-badge");
+      badge.title = `${label} ${running.length}\n${running.map(task => task.description || task.id).join("\n")}`;
+      badge.setAttribute("aria-label", badge.title);
+      badge.append(ctx.icon(icon), ctx.el("span", "", String(running.length)));
+      badges.append(badge);
+    }
+    if (!badges.childElementCount) return undefined;
+    badges.title = [...badges.children].map(child => (child as HTMLElement).title).join("\n");
+    return badges;
   };
   const roleButton = (id: AgentId) => {
     const button = ctx.iconButton("sliders", ctx.t("web.role.open", { agent: ctx.AGENTS[id].name }), "role-button");

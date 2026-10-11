@@ -4,6 +4,7 @@ import { extname } from "node:path";
 import {
   type AgentStartOptions,
   ASK_USER_TOOL,
+  type BackgroundTaskState,
   COORDINATOR_MCP_SERVER,
   type PermissionLevel,
   type RateLimitWindow,
@@ -98,7 +99,7 @@ interface ClaudeEvent {
   rate_limit_info?: { unifiedWindows?: { five_hour?: UtilizationWindow; seven_day?: UtilizationWindow } };
   isReplay?: boolean;
   uuid?: string;
-  tasks?: Array<{ task_id?: string; task_type?: string; description?: string }>;
+  tasks?: Array<{ task_id?: string; task_type?: string; description?: string; owned_by_subagent?: boolean }>;
 }
 
 const toRateLimitWindow = (w: UtilizationWindow | undefined): RateLimitWindow | undefined =>
@@ -113,6 +114,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
   private lastUsage: MessageUsage | undefined;
   private settingTurn: SettingKind | undefined;
   private subagents: SubagentState[] = [];
+  private backgroundTasks: BackgroundTaskState[] = [];
 
   constructor(
     private readonly spawnProcess: SpawnAgentProcess = spawnAgentProcess,
@@ -273,6 +275,13 @@ export class ClaudeAdapter extends BaseAgentAdapter {
         this.subagents = running;
         this.emit({ type: "subagents", running: [...running] });
       }
+      const backgroundTasks = (event.tasks ?? [])
+        .filter(task => task.task_type === "local_bash" && task.task_id && !task.owned_by_subagent)
+        .map(task => ({ id: task.task_id!, description: task.description ?? "" }));
+      if (JSON.stringify(backgroundTasks) !== JSON.stringify(this.backgroundTasks)) {
+        this.backgroundTasks = backgroundTasks;
+        this.emit({ type: "background_tasks", running: [...backgroundTasks] });
+      }
       return;
     }
     if (event.subtype === "init" && event.apiKeySource !== SUBSCRIPTION_API_KEY_SOURCE) {
@@ -326,6 +335,10 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     if (this.subagents.length) {
       this.subagents = [];
       this.emit({ type: "subagents", running: [] });
+    }
+    if (this.backgroundTasks.length) {
+      this.backgroundTasks = [];
+      this.emit({ type: "background_tasks", running: [] });
     }
     super.handleExit(code);
   }

@@ -186,6 +186,16 @@ describe("withSubagentRows", () => {
     const starting = withStartingTurns([], [{ id: "claude", status: "starting" }], AT);
     expect(withSubagentRows(starting, [{ id: "claude", status: "idle", subagents: running }])).toEqual(starting);
   });
+
+  it("background task だけでも行を足し、subagent と一緒なら同じ行にする", () => {
+    const backgroundTasks = [{ id: "bash-1", description: "sleep 12" }];
+    expect(withSubagentRows([], [{ id: "claude", status: "idle", subagents: [], backgroundTasks }])).toEqual([
+      { kind: "subagents", id: "subagents-claude", agent: "claude", running: [], backgroundTasks },
+    ]);
+    expect(withSubagentRows([], [{ id: "claude", status: "idle", subagents: running, backgroundTasks }])).toEqual([
+      { kind: "subagents", id: "subagents-claude", agent: "claude", running, backgroundTasks },
+    ]);
+  });
 });
 
 describe("withWorkingTurnsLast", () => {

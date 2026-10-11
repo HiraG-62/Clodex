@@ -12,6 +12,7 @@ const agent: AgentState = {
   models: [{ value: "default", label: "Default", resolved: "new" }],
   usage: {},
   subagents: [],
+  backgroundTasks: [],
 };
 
 describe("resolvePendingSettings", () => {

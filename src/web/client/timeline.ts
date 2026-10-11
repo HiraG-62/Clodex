@@ -47,7 +47,7 @@ export type TimelineItem =
 export type DisplayTimelineItem =
   | TimelineItem
   | { kind: "starting"; id: string; at: string; agent: AgentId }
-  | { kind: "subagents"; id: string; agent: AgentId; running: SubagentState[] };
+  | { kind: "subagents"; id: string; agent: AgentId; running: SubagentState[]; backgroundTasks?: SubagentState[] };
 
 export const MAX_ITEMS = 1500;
 
@@ -87,13 +87,19 @@ export function withStartingTurns(
 
 export function withSubagentRows(
   items: readonly DisplayTimelineItem[],
-  agents: readonly { id: AgentId; status: AgentStatus; subagents: readonly SubagentState[] }[],
+  agents: readonly { id: AgentId; status: AgentStatus; subagents: readonly SubagentState[]; backgroundTasks?: readonly SubagentState[] }[],
 ): DisplayTimelineItem[] {
   const result = [...items];
   for (const agent of agents) {
-    if (agent.status === "busy" || agent.status === "starting" || !agent.subagents.length) continue;
+    if (agent.status === "busy" || agent.status === "starting" || !(agent.subagents.length || agent.backgroundTasks?.length)) continue;
     if (items.some(item => item.kind === "starting" && item.agent === agent.id)) continue;
-    result.push({ kind: "subagents", id: `subagents-${agent.id}`, agent: agent.id, running: [...agent.subagents] });
+    result.push({
+      kind: "subagents",
+      id: `subagents-${agent.id}`,
+      agent: agent.id,
+      running: [...agent.subagents],
+      ...(agent.backgroundTasks?.length ? { backgroundTasks: [...agent.backgroundTasks] } : {}),
+    });
   }
   return result;
 }

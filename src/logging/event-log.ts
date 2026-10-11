@@ -40,6 +40,8 @@ const describeAgentEvent = (event: AgentEvent): string => {
       return "compacted";
     case "subagents":
       return `subagents ${event.running.length}`;
+    case "background_tasks":
+      return `background tasks ${event.running.length}`;
     case "steer_delivered":
       return "steer delivered";
     case "context":

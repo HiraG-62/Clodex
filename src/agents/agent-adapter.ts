@@ -41,6 +41,8 @@ export interface SubagentState {
   description: string;
 }
 
+export type BackgroundTaskState = SubagentState;
+
 export type AgentEvent =
   | { type: "session"; sessionId: string }
   | { type: "text"; text: string }
@@ -51,6 +53,7 @@ export type AgentEvent =
   | { type: "context"; tokens: number; window?: number }
   | { type: "compacted" }
   | { type: "subagents"; running: SubagentState[] }
+  | { type: "background_tasks"; running: BackgroundTaskState[] }
   | { type: "steer_delivered"; steerId: string } // 割り込みを取り込んだ（DESIGN.md §28 v0.3 C）
   | { type: "exit"; code: number | null }
   | { type: "error"; message: string };

@@ -122,6 +122,7 @@ export class Coordinator {
   private readonly specSnapshots = new Map<string, string>();
   private readonly liveUsage = new Set<AgentId>();
   private readonly subagents: Record<AgentId, SubagentState[]> = { claude: [], codex: [] };
+  private readonly backgroundTasks: Record<AgentId, SubagentState[]> = { claude: [], codex: [] };
   private readonly recoveryListeners = new Set<() => void>();
   private stoppingRecovery: ConversationRecovery | undefined;
 
@@ -200,6 +201,7 @@ export class Coordinator {
         }
         if (event.type === "rate_limit") this.liveUsage.add(id);
         if (event.type === "subagents") this.subagents[id] = [...event.running];
+        if (event.type === "background_tasks") this.backgroundTasks[id] = [...event.running];
         const files = this.workRecorder.record(id, event);
         this.deliveryNotes.recordPeerFiles(OTHER_AGENT[id], files);
         if (["turn_started", "text", "tool", "turn"].includes(event.type)) this.notifyRecoveryChange();
@@ -622,6 +624,7 @@ export class Coordinator {
     models: ModelCatalog[AgentId];
     usage: UsageSnapshot;
     subagents: SubagentState[];
+    backgroundTasks: SubagentState[];
     holdUntil?: string;
   }> {
     return AGENT_IDS.map(id => {
@@ -639,6 +642,7 @@ export class Coordinator {
         models,
         usage: this.usage.snapshot(id),
         subagents: [...this.subagents[id]],
+        backgroundTasks: [...this.backgroundTasks[id]],
         ...(holdUntil ? { holdUntil } : {}),
       };
     });

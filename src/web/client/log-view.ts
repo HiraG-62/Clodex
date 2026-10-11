@@ -25,13 +25,18 @@ export function createLogView(ctx: ClientContext) {
         const node = ctx.el("article", "entry subagent-turn");
         node.dataset.agent = item.agent;
         const head = ctx.el("div", "head");
-        head.append(
-          ctx.el("b", `c-${item.agent}`, ctx.AGENTS[item.agent].name),
-          ctx.el("span", "state", `${ctx.t("web.agent.subagents")} ${item.running.length}`),
-        );
+        head.append(ctx.el("b", `c-${item.agent}`, ctx.AGENTS[item.agent].name));
+        if (item.running.length) head.append(ctx.el("span", "state", `${ctx.t("web.agent.subagents")} ${item.running.length}`));
+        if (item.backgroundTasks?.length) head.append(ctx.el("span", "state", `${ctx.t("web.agent.backgroundTasks")} ${item.backgroundTasks.length}`));
         const body = ctx.el("div", "body");
         for (const subagent of item.running) {
           const description = subagent.description || subagent.id;
+          const row = ctx.el("div", "subagent-description", description);
+          row.title = description;
+          body.append(row);
+        }
+        for (const task of item.backgroundTasks ?? []) {
+          const description = task.description || task.id;
           const row = ctx.el("div", "subagent-description", description);
           row.title = description;
           body.append(row);

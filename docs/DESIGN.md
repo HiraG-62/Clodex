@@ -1915,6 +1915,9 @@ dogfooding で出た要望を 4 段階で入れる。小さく確実なものか
   - Web UI: Agent ストリップのカードとスマホの Agent ピルに、動いている subagent があるときだけ印（アイコンと数）を出す。印はその Agent の色で塗り、作業中の表示と同じ調子でゆっくり明滅させる（`prefers-reduced-motion` では動かさない）。title に各 subagent の説明を並べる。スマホの Agent のシートには説明の一覧を出す
   - ログの末尾: Agent が作業中でなく、動いている subagent があるとき、ログの一番下（起動中の行と同じ置き方。保存しない表示だけの行）に Agent ごとの行を出す。Agent の mark・名前・回る印・「サブエージェント {数}」と、説明を 1 行ずつ。subagent が無くなるか Agent が作業を始めたら消す（作業中のターンの枠が出るため）
   - TUI: 下の行の Agent の状態に、動いている subagent の数を添える
+- 裏で動いているコマンド（background task）も subagent と同じ置き方で画面に出す。Agent がコマンドを裏で動かして完了を待つ間、本体は待機中になり、コマンドが動いているのか分からないため（実測: docs/spikes/background-task.md）
+  - Adapter は動いている background task の一覧が変わるたびに `background_tasks` event（`{ running: Array<{ id; description }> }`。そのときの全件）を出す。対象と取り方は実測で決める（Claude は `run_in_background` の Bash の `local_bash`。subagent が動かすものは数えない。Codex は裏で動く端末があれば）
+  - state の `AgentState.backgroundTasks` に入れる（保存しない）。画面は subagent と同じ（Agent のカード・ピルの印はアイコンを変えて別に出す。ログの末尾の行は「バックグラウンド {数}」と説明を 1 行ずつ。subagent と両方あれば 1 つの行に並べる）。TUI は数を添える
 
 
 画像の貼り付け:

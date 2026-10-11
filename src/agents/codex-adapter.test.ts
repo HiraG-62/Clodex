@@ -629,6 +629,57 @@ describe("CodexAdapter の subagent（docs/spikes/steer-image-subagent.md）", (
   });
 });
 
+describe("CodexAdapter の background terminal", () => {
+  it("ターン後も動く端末を一覧に載せ、item/completed で外す", async () => {
+    const responder = defaultResponder();
+    const spawner = createFakeSpawner(message =>
+      message.method === "thread/backgroundTerminals/list"
+        ? { data: [{ itemId: "exec-1", processId: "123", command: "Start-Sleep -Seconds 12" }], nextCursor: null }
+        : responder(message),
+    );
+    const adapter = new CodexAdapter(spawner.spawn);
+    const events: AgentEvent[] = [];
+    adapter.onEvent(event => events.push(event));
+    await adapter.start({ cwd: "C:\\dev\\app" });
+    spawner.last.emit(turnCompleted("completed"));
+    await flush();
+    expect(events.filter(event => event.type === "background_tasks")).toContainEqual({
+      type: "background_tasks",
+      running: [{ id: "exec-1", description: "Start-Sleep -Seconds 12" }],
+    });
+    spawner.last.emit({
+      method: "item/completed",
+      params: { threadId: THREAD_ID, item: { type: "commandExecution", id: "exec-1", command: "Start-Sleep -Seconds 12", status: "completed" } },
+    });
+    expect(events.filter(event => event.type === "background_tasks").at(-1)).toEqual({ type: "background_tasks", running: [] });
+    expect(events.filter(event => event.type === "tool")).toEqual([]);
+  });
+
+  it("ページが分かれた一覧を全件にまとめる", async () => {
+    const responder = defaultResponder();
+    const spawner = createFakeSpawner(message => {
+      if (message.method !== "thread/backgroundTerminals/list") return responder(message);
+      const cursor = (message.params as JsonObject).cursor;
+      return cursor
+        ? { data: [{ itemId: "exec-2", command: "sleep 20" }], nextCursor: null }
+        : { data: [{ itemId: "exec-1", command: "sleep 10" }], nextCursor: "next" };
+    });
+    const adapter = new CodexAdapter(spawner.spawn);
+    const events: AgentEvent[] = [];
+    adapter.onEvent(event => events.push(event));
+    await adapter.start({ cwd: "C:\\dev\\app" });
+    spawner.last.emit(turnCompleted("completed"));
+    await flush();
+    expect(events.filter(event => event.type === "background_tasks")).toContainEqual({
+      type: "background_tasks",
+      running: [
+        { id: "exec-1", description: "sleep 10" },
+        { id: "exec-2", description: "sleep 20" },
+      ],
+    });
+  });
+});
+
 describe("CodexAdapter の steer", () => {
   it("実行中のターンに turn/steer を送り、turn ID が無い・失敗したら false", async () => {
     const { adapter, started, proc } = await setup();
