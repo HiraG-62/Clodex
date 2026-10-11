@@ -597,11 +597,12 @@ describe("createShell", () => {
   });
 
   it("/cancel は配送待ちの入力を取り消し、取り消せなければその旨を表示する", async () => {
-    const { coordinator, printed, shell } = setup();
+    const { coordinator, printed, notified, shell } = setup();
     await shell.handleLine("/cancel");
     await shell.handleLine("/cancel in9");
     expect(coordinator.canceled).toEqual([undefined, "in9"]);
-    expect(printed).toEqual(["canceled: in2 -> codex", "nothing to cancel: in9"]);
+    expect(printed).toEqual(["nothing to cancel: in9"]);
+    expect(notified).toEqual(["canceled: in2 -> codex"]);
   });
 
   it("/interrupt を Coordinator に渡し、Agent 指定なしなら実行中の command も止める", async () => {
@@ -699,13 +700,13 @@ describe("createShell", () => {
   });
 
   it("/status と /cancel に配送待ちの Agent 間メッセージを含める", async () => {
-    const { coordinator, printed, shell } = setup();
+    const { coordinator, printed, notified, shell } = setup();
     coordinator.messages = [{ id: "msg_1", agent: "codex", from: "claude", type: "DELEGATE", taskId: "T", text: "実装して\n詳細" }];
     await shell.handleLine("/status");
     expect(printed).toContain("queued: msg_1 claude -> codex DELEGATE: 実装して");
     await shell.handleLine("/cancel msg_1");
     expect(coordinator.canceled).toContain("msg_1");
-    expect(printed.at(-1)).toBe("canceled: msg_1 -> codex");
+    expect(notified.at(-1)).toBe("canceled: msg_1 -> codex");
   });
 
   it("/help は入力方法を表示する", async () => {

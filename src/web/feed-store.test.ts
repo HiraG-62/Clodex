@@ -16,6 +16,24 @@ describe("feedDirPath", () => {
 });
 
 describe("FeedStore", () => {
+  it("取り消した入力と formal message を保存した feed から削除する", () => {
+    const store = new FeedStore(makeDir());
+    store.append("a", { type: "event", seq: 1, event: { kind: "human", agent: "codex", inputId: "in1", text: "取り消す", at: "now" } });
+    store.append("a", {
+      type: "event",
+      seq: 2,
+      event: {
+        kind: "message",
+        message: { id: "msg_1", from: "claude", to: "codex", type: "DELEGATE", taskId: "T", body: "取り消す", repository: "C:\\app", createdAt: "now" },
+        at: "now",
+      },
+    });
+    store.append("a", output(3));
+    store.remove("a", "in1");
+    store.remove("a", "msg_1");
+    expect(store.load("a")).toEqual([output(3)]);
+    expect(readFileSync(join(store.directory, "a.jsonl"), "utf8")).not.toContain("取り消す");
+  });
   it("以前に保存した /context の内部指示を表示から除く", () => {
     const store = new FeedStore(makeDir());
     store.append("a", {

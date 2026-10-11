@@ -5,6 +5,7 @@ import type { FeedItem } from "../web-feed.js";
 import {
   announcementKind,
   applyFeedItem,
+  isCanceledHistoryItem,
   limitLiveHistory,
   MAX_ITEMS,
   mergeReplayHistory,
@@ -45,6 +46,23 @@ const formal = (from: "claude" | "codex", body: string, auto = false, type: Agen
   return { type: "event", seq, event: { kind: "message", message, at: AT }, envelope: `封筒: ${body}` };
 };
 const run = (items: FeedItem[]) => items.reduce<TimelineItem[]>(applyFeedItem, []);
+
+it("取り消した入力と formal message を履歴と画面から除く", () => {
+  const input: Extract<FeedItem, { type: "event" }> = {
+    type: "event",
+    seq: 1001,
+    event: { kind: "human", agent: "codex", inputId: "in1", text: "取り消す", at: AT },
+  };
+  const message = formal("claude", "取り消す") as Extract<FeedItem, { type: "event" }>;
+  const history = [input, message];
+  const next = history.filter(
+    item => !isCanceledHistoryItem(item, "in1") && !isCanceledHistoryItem(item, message.event.kind === "message" ? message.event.message.id : ""),
+  );
+  expect(rebuildTimeline(next, applyFeedItem)).toEqual([]);
+  expect(run([...history, { type: "cancel", id: "in1" }, { type: "cancel", id: message.event.kind === "message" ? message.event.message.id : "" }])).toEqual(
+    [],
+  );
+});
 
 it("live の履歴だけを表示と同じ上限で切る", () => {
   const history = Array.from({ length: MAX_ITEMS }, (_, index) => ({ type: "output" as const, seq: index, text: String(index) }));

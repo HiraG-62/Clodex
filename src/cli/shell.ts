@@ -483,7 +483,8 @@ export const createShell = ({
   };
   const handleCancel = async (command: CommandOf<"cancel">): Promise<ShellOutcome> => {
     const canceled = coordinator().cancelInput(command.id);
-    print(canceled ? t("shell.canceled", { id: canceled.id, agent: canceled.agent }) : t("shell.nothingToCancel", { id: command.id ? `: ${command.id}` : "" }));
+    if (canceled) notify(t("shell.canceled", { id: canceled.id, agent: canceled.agent }));
+    else print(t("shell.nothingToCancel", { id: command.id ? `: ${command.id}` : "" }));
     return "continue";
   };
   const handleNew = async (command: CommandOf<"new">): Promise<ShellOutcome> => {

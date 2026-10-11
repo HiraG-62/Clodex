@@ -53,7 +53,6 @@ export interface PendingMessage {
 }
 
 const INPUT_ID_PREFIX = "in";
-const PREVIEW_LENGTH = 40;
 export const RECOVERY_CONTINUE = "[Clodex] Clodex restarted and your previous turn was interrupted. Continue the task you were working on.";
 // solo: Agent 同士のやり取りを止める。"free" は人の送り先を固定しない（DESIGN.md §11 Solo）
 export type SoloMode = "free" | AgentId;
@@ -77,7 +76,6 @@ const HANDOFF_ACTION: Partial<Record<AgentMessage["type"], string>> = {
 const handoffFallback = (message: AgentMessage, error: string) =>
   `[Clodex] Your ${message.type} ${message.id} to ${message.to} failed twice: ${error}. ` +
   `Do not send it again. ${HANDOFF_ACTION[message.type] ?? "Do the work yourself"} and continue the task.`;
-const preview = (text: string) => (text.length > PREVIEW_LENGTH ? `${text.slice(0, PREVIEW_LENGTH)}…` : text);
 
 export interface CoordinatorOptions {
   permissionLocked?: () => boolean;
@@ -433,10 +431,11 @@ export class Coordinator {
   }
 
   sendToAgent(id: AgentId, text: string, images: readonly string[] = [], context = false, shared = false): Promise<TurnResult> {
-    this.options.bus.publish({ kind: "human", agent: id, text });
+    const inputId = `${INPUT_ID_PREFIX}${++this.inputSeq}`;
+    this.options.bus.publish({ kind: "human", agent: id, text, inputId });
     if (!shared) this.deliveryNotes.queueHumanContext(id, text);
     return this.mailboxes[id].enqueue(text, {
-      inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`,
+      inputId,
       images,
       suffix: this.inputSuffix(context),
       ...(context ? { context: true } : {}),
@@ -517,7 +516,7 @@ export class Coordinator {
       ? (this.pendingInputs().find(input => input.id === id) ?? this.pendingMessages().find(message => message.id === id))
       : this.pendingInputs().at(-1);
     if (!target || this.mailboxes[target.agent].cancel(target.id) === undefined) return undefined;
-    this.options.bus.publish({ kind: "notice", text: t("notice.canceled", { agent: target.agent, text: preview(target.text) }) });
+    this.options.bus.publish({ kind: "canceled", id: target.id });
     return target;
   }
 

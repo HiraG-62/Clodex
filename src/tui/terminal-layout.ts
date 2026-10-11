@@ -20,6 +20,14 @@ export const advanceTerminalFeed = (state: TerminalFeed, feed: FeedItem, expande
   if (feed.type === "state" || feed.type === "version" || feed.type === "toast" || feed.type === "notify" || feed.type === "gui" || feed.type === "gui_command")
     return state;
   if (feed.type === "reset") return { timeline: [], completed: state.completed };
+  if (feed.type === "cancel")
+    return {
+      timeline: applyFeedItem(state.timeline, feed),
+      completed: state.completed.flatMap(entry => {
+        const items = applyFeedItem([entry.item], feed);
+        return items.map(item => ({ ...entry, item }));
+      }),
+    };
   if (feed.type === "output") {
     return { ...state, completed: [...state.completed, { item: { kind: "output", id: `o${feed.seq}`, text: feed.text }, expanded }] };
   }

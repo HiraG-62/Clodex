@@ -23,6 +23,17 @@ const STATE: WebState = {
 };
 
 describe("WebFeed", () => {
+  it("取り消した入力を履歴から除き、一時 event だけを配信する", () => {
+    const recorded: FeedItem[] = [];
+    const received: FeedItem[] = [];
+    const feed = new WebFeed(DEFAULT_RECENT_ITEMS, item => recorded.push(item));
+    feed.subscribe(item => received.push(item));
+    feed.publishEvent({ kind: "human", agent: "codex", text: "取り消す", inputId: "in1", at: AT });
+    feed.cancel("in1");
+    expect(feed.recent()).toEqual([]);
+    expect(received.at(-1)).toEqual({ type: "cancel", id: "in1" });
+    expect(recorded).toHaveLength(1);
+  });
   it("limits の既定値は設定ファイルを優先し、実行中の上書きとは分ける", () => {
     expect(buildLimitState({ ...DEFAULT_LIMITS, maxMessagesPerChain: 5 }, { maxMessagesPerChain: 12 })).toEqual({
       messages: { value: 5, default: 12 },

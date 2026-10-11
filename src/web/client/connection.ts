@@ -5,7 +5,15 @@ import { draftKey, staleDraftKeys } from "./drafts.js";
 import { nextCommandStarts, resolvePendingSettings } from "./pending.js";
 import type { ClientContext } from "./store.js";
 import type { TimelineItem } from "./timeline.js";
-import { announcementKind, applyFeedItem, limitLiveHistory, mergeReplayHistory, rebuildTimeline, withStartingTurns } from "./timeline.js";
+import {
+  announcementKind,
+  applyFeedItem,
+  isCanceledHistoryItem,
+  limitLiveHistory,
+  mergeReplayHistory,
+  rebuildTimeline,
+  withStartingTurns,
+} from "./timeline.js";
 
 export function createConnection(ctx: ClientContext) {
   // ---- 接続 ----
@@ -159,6 +167,13 @@ export function createConnection(ctx: ClientContext) {
       }
       if (item.type === "toast") {
         ctx.showToast(item.text, item.level);
+        return;
+      }
+      if (item.type === "cancel") {
+        ctx.store.incomingHistory = ctx.store.incomingHistory.filter(entry => !isCanceledHistoryItem(entry, item.id));
+        ctx.store.history = ctx.store.history.filter(entry => !isCanceledHistoryItem(entry, item.id));
+        ctx.store.items = rebuildTimeline(ctx.store.history, applyFeedItem);
+        scheduleLog();
         return;
       }
       if (item.type === "gui") {

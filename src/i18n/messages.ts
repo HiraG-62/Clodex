@@ -412,7 +412,6 @@ export const en = {
   "error.agentCommandMissing": "{command} not found ({command}.exe must be on PATH)",
   "error.generic": "error: {message}",
   // 通知・拒否
-  "notice.canceled": "canceled input to {agent}: {text}",
   "notice.discarded": "discarded {count} queued agent message(s)",
   "notice.handoffFailed": "{type} to {to} failed twice. {from} continues on its own",
   "notice.limitHold": "{agent} hit its usage limit. Resuming at {time}",
@@ -832,7 +831,6 @@ export const ja: Messages = {
   "error.webToken": "Web token を読めません: {message}",
   "error.agentCommandMissing": "{command} が見つからない（PATH に {command}.exe が必要）",
   "error.generic": "エラー: {message}",
-  "notice.canceled": "{agent} への入力を取り消しました: {text}",
   "notice.discarded": "Agent 間の送信待ちのメッセージを {count} 件破棄しました",
   "notice.handoffFailed": "{to} への {type} が 2 回失敗。{from} が自分で進める",
   "notice.limitHold": "{agent} が利用枠の上限。{time} に再開",

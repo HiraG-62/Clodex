@@ -606,7 +606,7 @@ describe("Coordinator", () => {
   it("人間の入力を human event として記録する", () => {
     const { events, coordinator } = setup();
     void coordinator.sendToAgent("codex", "review this");
-    expect(events).toContainEqual({ kind: "human", agent: "codex", text: "review this", at: NOW });
+    expect(events).toContainEqual({ kind: "human", agent: "codex", text: "review this", inputId: "in1", at: NOW });
   });
 
   it("/context の指示は Agent にだけ送り、会話の event と配送待ちには出さない", async () => {
@@ -614,7 +614,7 @@ describe("Coordinator", () => {
     void coordinator.sendToAgent("codex", "作業中");
     await flush();
     void coordinator.sendToAgent("codex", "画像を見て", [], true);
-    expect(events).toContainEqual({ kind: "human", agent: "codex", text: "画像を見て", at: NOW });
+    expect(events).toContainEqual({ kind: "human", agent: "codex", text: "画像を見て", inputId: "in2", at: NOW });
     expect(events.filter(event => event.kind === "human").every(event => !event.text.includes("read_conversation"))).toBe(true);
     expect(coordinator.pendingInputs()).toContainEqual(expect.objectContaining({ agent: "codex", text: "画像を見て" }));
     expect(coordinator.recoveryState().queue.codex).toContainEqual({ kind: "input", text: "画像を見て", context: true });
@@ -1286,7 +1286,8 @@ describe("Coordinator の取り消しと割り込み", () => {
     expect(coordinator.cancelInput()).toEqual({ id: "in3", agent: "codex", text: "third" });
     expect(coordinator.cancelInput("in2")).toEqual({ id: "in2", agent: "codex", text: "second" });
     expect(coordinator.cancelInput("in1")).toBeUndefined();
-    expect(events.filter(e => e.kind === "notice")).toHaveLength(2);
+    expect(events.filter(e => e.kind === "canceled")).toMatchObject([{ id: "in3" }, { id: "in2" }]);
+    expect(events.filter(e => e.kind === "notice")).toHaveLength(0);
     codex.completeTurn();
     await flush();
     expect(codex.sent).toEqual(["first"]);

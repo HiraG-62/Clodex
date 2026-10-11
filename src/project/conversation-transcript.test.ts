@@ -90,3 +90,17 @@ it("以前に保存した /context の内部指示を会話参照から除く", 
   transcript.append(event({ kind: "human", agent: "codex", text: `依頼\n\n${CONTEXT_INSTRUCTION}` }));
   expect(transcript.page().entries[0]?.body).toBe("依頼");
 });
+
+it("取り消した入力と formal message を会話参照から除く", () => {
+  const transcript = new ConversationTranscript(path());
+  transcript.append(event({ kind: "human", agent: "codex", inputId: "in1", text: "取り消す" }));
+  transcript.append(
+    event({
+      kind: "message",
+      message: { id: "msg_1", from: "claude", to: "codex", type: "DELEGATE", taskId: "T", body: "取り消す", repository: "C:\\app", createdAt: at },
+    }),
+  );
+  transcript.append(event({ kind: "canceled", id: "in1" }));
+  transcript.append(event({ kind: "canceled", id: "msg_1" }));
+  expect(new ConversationTranscript(transcript.filePath).page().entries).toEqual([]);
+});

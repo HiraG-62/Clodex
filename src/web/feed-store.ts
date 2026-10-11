@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, unlin
 import { basename, extname, join } from "node:path";
 import type { AgentId } from "../agents/agent-adapter.js";
 import { withoutContextInstruction } from "../context/conversation-instruction.js";
-import { DEFAULT_RECENT_ITEMS, type HistoryItem } from "./web-feed.js";
+import { DEFAULT_RECENT_ITEMS, type HistoryItem, isCanceledHistoryItem } from "./web-feed.js";
 
 const FEED_EXT = ".jsonl";
 // limit のこの倍を超えたら直近だけに書き直す
@@ -97,6 +97,13 @@ export class FeedStore {
   append(conversationId: string, item: HistoryItem): void {
     mkdirSync(this.dir, { recursive: true });
     appendFileSync(this.pathOf(conversationId), toLines([item]));
+  }
+
+  remove(conversationId: string, id: string): void {
+    const path = this.pathOf(conversationId);
+    if (!existsSync(path)) return;
+    const { items } = readItems(path);
+    writeFileSync(path, toLines(items.filter(item => !isCanceledHistoryItem(item, id))));
   }
 
   // 読めなくても起動や会話の切り替えは妨げない（空の feed として扱う）

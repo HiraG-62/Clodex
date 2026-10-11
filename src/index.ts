@@ -312,6 +312,7 @@ const main = async (): Promise<void> => {
         registerCoordinator,
       });
       context.workspace.onEvent((runtime, event, current) => {
+        if (event.kind === "canceled") context.feedStore.remove(runtime.conversationId, event.id);
         if (hub.current === context && current) {
           for (const listener of currentListeners) listener(event);
         } else {

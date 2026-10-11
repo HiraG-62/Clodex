@@ -30,6 +30,7 @@ export interface ConversationEntry {
   from: ConversationParticipant;
   to?: ConversationParticipant;
   body: string;
+  id?: string;
 }
 export interface ConversationPage {
   entries: ConversationEntry[];
@@ -47,13 +48,17 @@ const entryOf = (event: CoordinatorEvent): ConversationEntry | undefined => {
   const { at } = event;
   switch (event.kind) {
     case "human":
-      return event.text.trim() ? { at, kind: "input", from: "human", to: event.agent, body: withoutContextInstruction(event.text) } : undefined;
+      return event.text.trim()
+        ? { at, kind: "input", from: "human", to: event.agent, body: withoutContextInstruction(event.text), ...(event.inputId ? { id: event.inputId } : {}) }
+        : undefined;
     case "agent":
       return event.event.type === "turn" && event.event.result.status === "completed" && event.event.result.text.trim()
         ? { at, kind: "reply", from: event.agent, body: event.event.result.text }
         : undefined;
     case "message":
-      return event.message.body.trim() ? { at, kind: "message", from: event.message.from, to: event.message.to, body: event.message.body } : undefined;
+      return event.message.body.trim()
+        ? { at, kind: "message", from: event.message.from, to: event.message.to, body: event.message.body, id: event.message.id }
+        : undefined;
     case "question": {
       const body = event.questions.map(({ question }) => question).join("\n");
       return body.trim() ? { at, kind: "question", from: event.agent, to: "human", body } : undefined;
@@ -63,6 +68,7 @@ const entryOf = (event: CoordinatorEvent): ConversationEntry | undefined => {
       return body.trim() ? { at, kind: "answer", from: "human", to: event.agent, body } : undefined;
     }
     case "notice":
+    case "canceled":
       return undefined;
   }
 };
@@ -84,6 +90,12 @@ export class ConversationTranscript {
   }
 
   append(event: CoordinatorEvent): void {
+    if (event.kind === "canceled") {
+      if (!existsSync(this.filePath)) return;
+      const entries = this.readEntries().filter(entry => entry.id !== event.id);
+      writeFileSync(this.filePath, linesOf(entries));
+      return;
+    }
     const entry = entryOf(event);
     if (!entry) return;
     mkdirSync(dirname(this.filePath), { recursive: true });
@@ -92,7 +104,15 @@ export class ConversationTranscript {
 
   page({ before, limit = DEFAULT_PAGE_SIZE }: ReadConversationOptions = {}): ConversationPage {
     if (!existsSync(this.filePath)) return { entries: [] };
-    const entries = readFileSync(this.filePath, "utf8")
+    const entries = this.readEntries();
+    const end = before === undefined ? entries.length : Math.max(0, Math.min(entries.length, Math.floor(before)));
+    const size = Number.isFinite(limit) ? Math.max(1, Math.min(MAX_PAGE_SIZE, Math.floor(limit))) : DEFAULT_PAGE_SIZE;
+    const start = Math.max(0, end - size);
+    return { entries: entries.slice(start, end).map(({ id: _id, ...entry }) => entry), ...(start > 0 ? { nextBefore: start } : {}) };
+  }
+
+  private readEntries(): ConversationEntry[] {
+    return readFileSync(this.filePath, "utf8")
       .split("\n")
       .flatMap(line => {
         if (!line.trim()) return [];
@@ -104,9 +124,5 @@ export class ConversationTranscript {
           return [];
         }
       });
-    const end = before === undefined ? entries.length : Math.max(0, Math.min(entries.length, Math.floor(before)));
-    const size = Number.isFinite(limit) ? Math.max(1, Math.min(MAX_PAGE_SIZE, Math.floor(limit))) : DEFAULT_PAGE_SIZE;
-    const start = Math.max(0, end - size);
-    return { entries: entries.slice(start, end), ...(start > 0 ? { nextBefore: start } : {}) };
   }
 }

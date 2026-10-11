@@ -6,7 +6,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { slashCommands } from "../cli/commands.js";
 import { getLanguage, setLanguage, t } from "../i18n/i18n.js";
 import { createInputAssist } from "../web/client/input-assist.js";
-import { buildLimitState, type HistoryItem, type WebState } from "../web/web-feed.js";
+import { buildLimitState, type HistoryItem, isCanceledHistoryItem, type WebState } from "../web/web-feed.js";
 import type { FeedClient } from "./feed-client.js";
 import {
   advanceTerminalFeed,
@@ -296,6 +296,9 @@ export const TuiApp = ({
             historyPrepended.current = false;
             setFeed(EMPTY_FEED);
             setScroll(scrollToBottom());
+          } else if (item.type === "cancel") {
+            history.current = history.current.filter(entry => !isCanceledHistoryItem(entry, item.id));
+            setFeed(old => advanceTerminalFeed(old, item, false));
           } else {
             history.current.push(item);
             setFeed(old => advanceTerminalFeed(old, item, false));

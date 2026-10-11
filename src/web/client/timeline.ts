@@ -5,11 +5,24 @@ import type { AgentMessage } from "../../protocol/messages.js";
 import type { UserQuestion } from "../../protocol/questions.js";
 import type { FeedItem, HistoryItem } from "../web-feed.js";
 
+export { isCanceledHistoryItem } from "../web-feed.js";
+
 export type TimelineStep = { kind: "say"; text: string; at: string } | { kind: "tool"; name: string; input: string; files?: string[] };
 
 export type TimelineItem =
   | { kind: "question"; id: string; at: string; agent: AgentId; questions: UserQuestion[]; answers?: string[][] }
-  | { kind: "human"; id: string; at: string; agent: AgentId; text: string; steer?: boolean; steerId?: string; delivered?: boolean; queued?: boolean }
+  | {
+      kind: "human";
+      id: string;
+      at: string;
+      agent: AgentId;
+      text: string;
+      inputId?: string;
+      steer?: boolean;
+      steerId?: string;
+      delivered?: boolean;
+      queued?: boolean;
+    }
   | {
       kind: "turn";
       id: string;
@@ -93,6 +106,14 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   if (item.type === "state" || item.type === "version" || item.type === "toast" || item.type === "notify" || item.type === "gui" || item.type === "gui_command")
     return items;
   if (item.type === "reset") return [];
+  if (item.type === "cancel")
+    return items.flatMap(entry => {
+      if (entry.kind === "human" && entry.inputId === item.id) return [];
+      if (entry.kind === "message" && entry.message.id === item.id) return [];
+      if (entry.kind === "turn" && entry.messages?.some(message => message.message.id === item.id))
+        return [{ ...entry, messages: entry.messages.filter(message => message.message.id !== item.id) }];
+      return [entry];
+    });
   if (item.type === "output") {
     const last = items[items.length - 1];
     if (last?.kind === "output") return [...items.slice(0, -1), { ...last, text: `${last.text}\n${item.text}` }];
@@ -112,6 +133,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
         at: event.at,
         agent: event.agent,
         text: event.text,
+        ...(event.inputId ? { inputId: event.inputId } : {}),
         ...(event.steer ? { steer: true } : {}),
         ...(event.steerId ? { steerId: event.steerId } : {}),
       },
@@ -160,6 +182,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
     }
     return limit([...items, { kind: "message", id, at: event.at, message: event.message, ...(item.envelope ? { envelope: item.envelope } : {}) }]);
   }
+  if (event.kind === "canceled") return items;
 
   const { agent, event: agentEvent, at } = event;
   if (agentEvent.type === "steer_delivered") {
