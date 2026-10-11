@@ -46,6 +46,10 @@ it("コマンド入力の枠を緑にして上辺にラベルを置き、! を�
 });
 
 describe("advanceTerminalFeed", () => {
+  it("以前の feed にある notice もログに残さない", () => {
+    const initial = { timeline: [], completed: [] };
+    expect(advanceTerminalFeed(initial, { type: "event", seq: 1, event: { kind: "notice", text: "古い通知", at: "now" } }, false)).toEqual(initial);
+  });
   it("送信待ちからの割り込みは元の発言に印を付ける", () => {
     const input = advanceTerminalFeed(
       { timeline: [], completed: [] },

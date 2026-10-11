@@ -22,7 +22,7 @@ const envelopeOf = (event: CoordinatorEvent, language?: Language) => (event.kind
 
 // 今の会話でない会話の event を、その会話の feed に保存する形にする（DESIGN.md §28 D1）。流さない event なら undefined
 export const historyItemOf = (event: CoordinatorEvent, language?: Language): HistoryItem | undefined => {
-  if (event.kind === "canceled") return undefined;
+  if (event.kind === "canceled" || event.kind === "notice") return undefined;
   if (!isFeedEvent(event)) return undefined;
   const envelope = envelopeOf(event, language);
   return { type: "event", seq: UNNUMBERED, event, ...(envelope ? { envelope } : {}) };
@@ -41,6 +41,7 @@ export const connectWebFeed = (source: EventSource, feed: WebFeed, buildState: (
 
   source.subscribe(event => {
     if (event.kind === "canceled") feed.cancel(event.id);
+    else if (event.kind === "notice") feed.publishToast(event.text, event.level ?? "info");
     else if (isFeedEvent(event)) feed.publishEvent(event, envelopeOf(event, typeof language === "function" ? language() : language));
     refreshState();
   });

@@ -212,7 +212,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
       },
     ]);
   }
-  if (event.kind === "notice") return limit([...items, { kind: "notice", id, at: event.at, text: event.text }]);
+  if (event.kind === "notice") return items;
   if (event.kind === "message") {
     if (event.message.type !== "ACK") {
       const from = event.message.from;

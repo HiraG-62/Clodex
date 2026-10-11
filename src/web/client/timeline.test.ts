@@ -573,7 +573,7 @@ describe("applyFeedItem", () => {
     expect(timeline).toMatchObject([{ kind: "turn", status: "interrupted", text: "" }]);
   });
 
-  it("Agent 間の message は envelope 付きで、通知・エラー・compact も項目にする", () => {
+  it("Agent 間の message は envelope 付きで、notice は無視し、エラー・compact は項目にする", () => {
     const message = {
       id: "msg_1",
       from: "claude",
@@ -592,7 +592,6 @@ describe("applyFeedItem", () => {
     ]);
     expect(timeline).toMatchObject([
       { kind: "message", message, envelope: "FULL" },
-      { kind: "notice", text: "ahead of pace" },
       { kind: "error", agent: "codex", text: "boom" },
       { kind: "notice", text: "", compactAgent: "claude" },
     ]);

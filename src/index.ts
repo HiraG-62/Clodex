@@ -37,7 +37,7 @@ import { createLocalFeedClient, createRemoteFeedClient } from "./tui/feed-client
 import { startTui } from "./tui/tui.js";
 import { type DesktopNotifyState, updateDesktopNotify } from "./web/client/desktop-notify.js";
 import { PushService } from "./web/push.js";
-import { buildLimitState, DEFAULT_RECENT_ITEMS, WebFeed } from "./web/web-feed.js";
+import { buildLimitState, DEFAULT_RECENT_ITEMS, type FeedItem, WebFeed } from "./web/web-feed.js";
 import { buildWebPage } from "./web/web-page.js";
 import { startWebServer, type WebServerHandle } from "./web/web-server.js";
 import { loadOrCreateWebToken, webTokenPath } from "./web/web-token.js";
@@ -276,17 +276,20 @@ const main = async (): Promise<void> => {
     printTerminal(text);
   };
   let pushState: DesktopNotifyState = { live: false, working: false, toolUsed: {} };
+  const updateCurrentNotification = (item: FeedItem) => {
+    const update = updateDesktopNotify(pushState, item);
+    pushState = update.state;
+    const context = hub.current;
+    if (update.notification && context)
+      notifyAgent({ ...update.notification, projectRoot: context.projectRoot, conversationTitle: context.history.current.title });
+  };
   feed.subscribe(item => {
     if (item.type === "notify") {
       if (shouldPushNotification(item.notification.kind))
         push.notify({ title: item.notification.title, body: item.notification.body }).catch((error: unknown) => reportRuntimeError(errorMessage(error)));
       return;
     }
-    const update = updateDesktopNotify(pushState, item);
-    pushState = update.state;
-    const context = hub.current;
-    if (update.notification && context)
-      notifyAgent({ ...update.notification, projectRoot: context.projectRoot, conversationTitle: context.history.current.title });
+    updateCurrentNotification(item);
   });
   reportRuntimeError = message => {
     const text = t("error.generic", { message });
@@ -315,6 +318,7 @@ const main = async (): Promise<void> => {
         if (event.kind === "canceled") context.feedStore.remove(runtime.conversationId, event.id);
         if (hub.current === context && current) {
           for (const listener of currentListeners) listener(event);
+          if (event.kind === "notice") updateCurrentNotification({ type: "event", seq: 0, event });
         } else {
           const item = historyItemOf(event, language);
           if (item) context.saveFeedItem(runtime.conversationId, item);

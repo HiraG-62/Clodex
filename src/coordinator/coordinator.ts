@@ -264,7 +264,12 @@ export class Coordinator {
   private enterLimitHold(id: AgentId, hold: { resumeAt: number; time: string }): void {
     this.deliveryNotes.beginHold(id);
     this.notifyPeerLimit(id, hold.resumeAt);
-    this.options.bus.publish({ kind: "notice", text: t("notice.limitHold", { agent: id, time: hold.time }), limitHold: { agent: id, time: hold.time } });
+    this.options.bus.publish({
+      kind: "notice",
+      text: t("notice.limitHold", { agent: id, time: hold.time }),
+      level: "warn",
+      limitHold: { agent: id, time: hold.time },
+    });
   }
 
   private notifyPeerLimit(id: AgentId, resumeAt: number): void {
@@ -384,7 +389,7 @@ export class Coordinator {
     const sender = this.mailboxes[message.from];
     if (sender.isClosed) return;
     const error = (result.text.split("\n", 1)[0] ?? "").slice(0, ERROR_LINE_LENGTH);
-    this.options.bus.publish({ kind: "notice", text: t("notice.handoffFailed", { type: message.type, to: message.to, from: message.from }) });
+    this.options.bus.publish({ kind: "notice", text: t("notice.handoffFailed", { type: message.type, to: message.to, from: message.from }), level: "warn" });
     this.detach(sender.enqueue(handoffFallback(message, error), { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, suffix: this.reminder }), message.from);
   }
 

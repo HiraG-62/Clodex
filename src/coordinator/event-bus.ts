@@ -11,7 +11,7 @@ export type CoordinatorEventInput =
   | { kind: "steered"; inputId: string; steerId: string }
   | { kind: "question"; id: string; agent: AgentId; questions: UserQuestion[] }
   | { kind: "answer"; id: string; agent: AgentId; answers: string[][] }
-  | { kind: "notice"; text: string; limitHold?: { agent: AgentId; time: string } };
+  | { kind: "notice"; text: string; level?: "warn"; limitHold?: { agent: AgentId; time: string } };
 
 export type CoordinatorEvent = CoordinatorEventInput & { at: string };
 

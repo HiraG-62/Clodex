@@ -832,7 +832,7 @@ describe("Coordinator", () => {
         expect(coordinator.pendingMessages()).toEqual([]);
       }
       expect(coordinator.recoveryState().interrupted).toEqual(["claude"]);
-      expect(events).toContainEqual(expect.objectContaining({ kind: "notice", text: expect.stringContaining("claude") }));
+      expect(events).toContainEqual(expect.objectContaining({ kind: "notice", level: "warn", text: expect.stringContaining("claude") }));
       await wait(200);
       expect(coordinator.status().find(agent => agent.id === "claude")?.holdUntil).toBeUndefined();
       expect(claude.sent).toHaveLength(2);
@@ -913,7 +913,7 @@ describe("Coordinator", () => {
       expect(claude.sent[0]).toContain("DELEGATE msg_00000001 to codex");
       expect(claude.sent[0]).toContain("server overloaded");
       expect(claude.sent[0]).toContain("Do not send it again");
-      expect(events).toContainEqual(expect.objectContaining({ kind: "notice", text: expect.stringContaining("DELEGATE") }));
+      expect(events).toContainEqual(expect.objectContaining({ kind: "notice", level: "warn", text: expect.stringContaining("DELEGATE") }));
     });
 
     it("宛先が上限で待っているなら送り直さない", async () => {

@@ -13,13 +13,17 @@ const weeklyResetsAt = (elapsed: number) => NOW_SECONDS + Math.round((1 - elapse
 const setup = (alert = DEFAULT_USAGE_ALERT) => {
   const bus = new EventBus(now);
   const notices: string[] = [];
+  const levels: Array<"warn" | undefined> = [];
   bus.subscribe(e => {
-    if (e.kind === "notice") notices.push(e.text);
+    if (e.kind === "notice") {
+      notices.push(e.text);
+      levels.push(e.level);
+    }
   });
   const monitor = new UsageMonitor(bus, alert, now);
   const report = (agent: "claude" | "codex", weekly?: RateLimitWindow, fiveHour?: RateLimitWindow) =>
     bus.publish({ kind: "agent", agent, event: { type: "rate_limit", ...(weekly && { weekly }), ...(fiveHour && { fiveHour }) } });
-  return { bus, notices, monitor, report };
+  return { bus, notices, levels, monitor, report };
 };
 
 describe("weeklyPace", () => {
@@ -63,17 +67,19 @@ describe("UsageMonitor", () => {
   });
 
   it("週のペース超過が閾値以上になったら、相手 Agent への切り替えを促す通知を 1 回だけ出す", () => {
-    const { notices, report } = setup();
+    const { notices, levels, report } = setup();
     report("claude", { usedPercent: 40, resetsAt: weeklyResetsAt(0.2) });
     report("claude", { usedPercent: 41, resetsAt: weeklyResetsAt(0.2) });
     expect(notices).toEqual(["claude is ahead of weekly pace (+20). Try /primary codex"]);
+    expect(levels).toEqual(["warn"]);
   });
 
   it("5 時間枠が閾値以上になったら 1 回だけ通知する", () => {
-    const { notices, report } = setup();
+    const { notices, levels, report } = setup();
     report("codex", undefined, { usedPercent: 91, resetsAt: NOW_SECONDS + 3600 });
     report("codex", undefined, { usedPercent: 95, resetsAt: NOW_SECONDS + 3600 });
     expect(notices).toEqual(["codex 5h usage: 91%"]);
+    expect(levels).toEqual(["warn"]);
   });
 
   it("枠が reset されたら再び通知できる", () => {

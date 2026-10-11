@@ -126,6 +126,6 @@ export class UsageMonitor {
   private notifyOnce(key: string, text: string): void {
     if (this.notified.has(key)) return;
     this.notified.add(key);
-    this.bus.publish({ kind: "notice", text });
+    this.bus.publish({ kind: "notice", text, level: "warn" });
   }
 }

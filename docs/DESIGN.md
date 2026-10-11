@@ -1338,6 +1338,7 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
   - 会話・project の操作の結果: `/new`（worktree を含む）・`/worktree`・`/resume`・`/rename`・`/delete`・`/pin`・`/project <path>` の完了と失敗
   - ほかの会話で Agent のターンが終わったこと（§28 D1）
   - 同じ作業場所で別の会話が作業中であること（§28 D1）
+  - Coordinator の通知（`notice`。`@all` の送信・復旧・利用枠の上限での待機・受け渡しの失敗・配送待ちの破棄・利用ペースの警告など）。feed に保存せず、読み込み直しても出さない。受け渡しの失敗・上限での待機・利用ペースの警告は warn、ほかは info。上限で待っていることと再開の時刻は、Agent のカードと送信待ちの行で見える。compact の区切り（`compacted` から作る行）は `notice` ではないので、今どおりログに出す
   - terminal（TUI でない行ごとの表示）には今どおり 1 行で出す
 - `event` / `output` は会話ごとにファイルにも保存する（§18）。`clodex` を起動し直しても、`/resume` で戻っても、その会話の流れを表示できる
 - `agent` event のうち、ログに表示するもの（`turn_started` / `text` / `tool` / `turn` / `error` / `compacted` / `steer_delivered`）だけを feed に流して保存する。それ以外（`session` / `rate_limit` / `context` / `exit`）は `state` に反映するだけにする（頻繁な `context` で直近 1,000 件の枠を使い切らない）

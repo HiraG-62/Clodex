@@ -31,6 +31,22 @@ const message = {
 } as const;
 
 describe("connectWebFeed", () => {
+  it("notice は level に応じた toast だけを配り、履歴に保存しない", () => {
+    const bus = new EventBus();
+    const recorded: FeedItem[] = [];
+    const delivered: FeedItem[] = [];
+    const feed = new WebFeed(100, item => recorded.push(item));
+    connectWebFeed(bus, feed, () => STATE);
+    feed.subscribe(item => delivered.push(item));
+    bus.publish({ kind: "notice", text: "復旧" });
+    bus.publish({ kind: "notice", text: "上限", level: "warn" });
+    expect(delivered).toEqual([
+      { type: "toast", text: "復旧", level: "info" },
+      { type: "toast", text: "上限", level: "warn" },
+    ]);
+    expect(feed.recent()).toEqual([]);
+    expect(recorded).toEqual([]);
+  });
   it("言語変更後の message は新しい言語の envelope にする", () => {
     const bus = new EventBus();
     const feed = new WebFeed();
@@ -116,6 +132,7 @@ describe("historyItemOf", () => {
   it("feed に流す event は保存する形にし、状態専用の event は undefined", () => {
     expect(historyItemOf({ kind: "message", message, at: "x" })).toMatchObject({ type: "event", seq: 0, envelope: expect.stringContaining("msg_1") });
     expect(historyItemOf({ kind: "agent", agent: "claude", event: { type: "context", tokens: 1 }, at: "x" })).toBeUndefined();
+    expect(historyItemOf({ kind: "notice", text: "裏の会話", at: "x" })).toBeUndefined();
   });
 
   it("割り込みが届いた event は feed に保存する", () => {

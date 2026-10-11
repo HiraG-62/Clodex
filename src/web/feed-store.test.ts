@@ -16,6 +16,13 @@ describe("feedDirPath", () => {
 });
 
 describe("FeedStore", () => {
+  it("以前に保存した notice を読み込まない", () => {
+    const store = new FeedStore(makeDir());
+    store.append("a", output(1));
+    store.append("a", { type: "event", seq: 2, event: { kind: "notice", text: "古い通知", at: "now" } });
+    store.append("a", output(3));
+    expect(store.load("a")).toEqual([output(1), output(3)]);
+  });
   it("送信待ちからの割り込み event を保存して再生する", () => {
     const store = new FeedStore(makeDir());
     const item: HistoryItem = { type: "event", seq: 2, event: { kind: "steered", inputId: "in1", steerId: "s-1", at: "now" } };
