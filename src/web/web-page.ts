@@ -125,7 +125,6 @@ const layoutStyle = `
   .side { width: var(--side-width); justify-self: start; background: var(--bg); }
 }
 @media (min-width: ${WEB_LAYOUT.wideUsageMinWidth}px) and (hover: hover) and (pointer: fine) {
-  .working-panel { right: var(--side-width); }
   .usage-side { display: block; position: fixed; right: 0; top: 0; bottom: 0; width: var(--side-width); overflow-y: auto; border-left: 1px solid var(--line); background: var(--bg); }
   .topbar, .conn { margin-right: var(--side-width); }
 }`;

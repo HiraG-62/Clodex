@@ -3,6 +3,7 @@ import { renderMarkdown } from "./markdown.js";
 import type { ClientContext } from "./store.js";
 import type { DisplayTimelineItem, TimelineItem } from "./timeline.js";
 import { type WorkingEntry, withStartingTurns, withSubagentRows, withWorkingTurnsLast, workingFeed } from "./timeline.js";
+import { workingPanelPosition } from "./working-panel-position.js";
 
 export function createLogView(ctx: ClientContext) {
   const renderItem = (item: DisplayTimelineItem): HTMLElement => {
@@ -91,6 +92,26 @@ export function createLogView(ctx: ClientContext) {
 
   const workingPanel = ctx.$("#working-panel");
   const workingToggle = ctx.$("#working-toggle");
+  const workingList = ctx.$("#working-list");
+  const positionWorkingPanel = () => {
+    if (ctx.mobile.matches || workingPanel.hidden) return;
+    const bounds = workingPanelPosition(workingToggle.getBoundingClientRect(), ctx.log.getBoundingClientRect(), {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
+    workingPanel.style.setProperty("--working-top", `${bounds.top}px`);
+    workingPanel.style.setProperty("--working-right", `${bounds.right}px`);
+    workingPanel.style.setProperty("--working-bottom", `${bounds.bottom}px`);
+  };
+  const setWorkingOpen = (open: boolean) => {
+    workingPanel.hidden = !open;
+    workingToggle.setAttribute("aria-expanded", String(open));
+    workingToggle.setAttribute("aria-pressed", String(open));
+    if (!open) return;
+    positionWorkingPanel();
+    workingList.scrollTop = workingList.scrollHeight;
+  };
+  workingToggle.setAttribute("aria-pressed", "false");
   let previousFeed: WorkingEntry[] = [];
   const renderWorking = () => {
     const active = ctx.store.items.filter(
@@ -102,15 +123,12 @@ export function createLogView(ctx: ClientContext) {
     const agent = active.length > 1 ? (ctx.store.state?.primary ?? "claude") : (active[0]?.agent ?? "claude");
     if (workingToggle.dataset.agent !== agent) workingToggle.dataset.agent = agent;
     if (workingToggle.hidden !== (feed.length === 0)) workingToggle.hidden = feed.length === 0;
-    if (!feed.length && !workingPanel.hidden) {
-      workingPanel.hidden = true;
-      workingToggle.setAttribute("aria-expanded", "false");
-    }
-    const list = ctx.$("#working-list");
+    if (!feed.length && !workingPanel.hidden) setWorkingOpen(false);
+    const list = workingList;
     const feedChanged =
       feed.length !== previousFeed.length || feed.some((entry, index) => !previousFeed[index] || !sameWorkingEntry(previousFeed[index], entry));
     if (!feedChanged) return;
-    const following = workingPanel.scrollHeight - workingPanel.scrollTop - workingPanel.clientHeight < ctx.NEAR_BOTTOM_PX;
+    const following = list.scrollHeight - list.scrollTop - list.clientHeight < ctx.NEAR_BOTTOM_PX;
     feed.forEach((entry, index) => {
       if (previousFeed[index] && sameWorkingEntry(previousFeed[index], entry)) return;
       let node: HTMLElement;
@@ -130,8 +148,7 @@ export function createLogView(ctx: ClientContext) {
           button.append(elapsed);
         }
         button.addEventListener("click", () => {
-          workingPanel.hidden = true;
-          workingToggle.setAttribute("aria-expanded", "false");
+          setWorkingOpen(false);
           ctx.store.rendered.get(entry.turnId)?.node.scrollIntoView({ behavior: "smooth", block: "center" });
         });
         node = button;
@@ -142,16 +159,25 @@ export function createLogView(ctx: ClientContext) {
     });
     while (list.children.length > feed.length) list.lastElementChild?.remove();
     previousFeed = feed;
-    if (following) workingPanel.scrollTop = workingPanel.scrollHeight;
+    if (following) list.scrollTop = list.scrollHeight;
   };
-  workingToggle.addEventListener("click", () => {
-    workingPanel.hidden = !workingPanel.hidden;
-    workingToggle.setAttribute("aria-expanded", String(!workingPanel.hidden));
-  });
+  workingToggle.addEventListener("click", () => setWorkingOpen(Boolean(workingPanel.hidden)));
   ctx.$("#working-close").addEventListener("click", () => {
-    workingPanel.hidden = true;
-    workingToggle.setAttribute("aria-expanded", "false");
+    setWorkingOpen(false);
+    workingToggle.focus({ preventScroll: true });
   });
+  if (typeof document !== "undefined") {
+    document.addEventListener("pointerdown", event => {
+      if (workingPanel.hidden || !(event.target instanceof Node)) return;
+      if (!workingPanel.contains(event.target) && !workingToggle.contains(event.target)) setWorkingOpen(false);
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key !== "Escape" || workingPanel.hidden) return;
+      setWorkingOpen(false);
+      workingToggle.focus({ preventScroll: true });
+    });
+    window.addEventListener("resize", positionWorkingPanel);
+  }
 
   const enhanceMarkdown = (root: HTMLElement) => {
     for (const pre of root.querySelectorAll("pre")) {
