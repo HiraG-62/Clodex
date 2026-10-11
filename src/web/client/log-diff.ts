@@ -23,6 +23,8 @@ export function diffTurn(previous: Turn, next: Turn) {
       previous.at !== next.at ||
       previous.steps.length > next.steps.length ||
       previous.messages !== next.messages ||
+      previous.questions !== next.questions ||
+      previous.attachmentOrder !== next.attachmentOrder ||
       previous.status !== "working" ||
       next.status !== "working",
     steps,

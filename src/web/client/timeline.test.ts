@@ -45,6 +45,16 @@ const formal = (from: "claude" | "codex", body: string, auto = false, type: Agen
   };
   return { type: "event", seq, event: { kind: "message", message, at: AT }, envelope: `封筒: ${body}` };
 };
+const question = (id = "q1", name: "claude" | "codex" = "claude"): Extract<FeedItem, { type: "event" }> => ({
+  type: "event",
+  seq: ++seq,
+  event: { kind: "question", id, agent: name, at: AT, questions: [{ question: "どれ？", options: [{ label: "A" }, { label: "B" }] }] },
+});
+const answer = (id = "q1", name: "claude" | "codex" = "claude"): Extract<FeedItem, { type: "event" }> => ({
+  type: "event",
+  seq: ++seq,
+  event: { kind: "answer", id, agent: name, at: LATER, answers: [["A"]] },
+});
 const run = (items: FeedItem[]) => items.reduce<TimelineItem[]>(applyFeedItem, []);
 
 it("取り消した入力と formal message を履歴と画面から除く", () => {
@@ -224,6 +234,64 @@ describe("withWorkingTurnsLast", () => {
 });
 
 describe("applyFeedItem", () => {
+  it("作業中の質問をターンに入れ、回答も同じカードに付ける", () => {
+    const timeline = run([agent("claude", { type: "turn_started" }), agent("claude", { type: "text", text: "確認します" }), question(), answer()]);
+    expect(timeline).toHaveLength(2);
+    expect(timeline[0]).toMatchObject({
+      kind: "turn",
+      segment: "closed",
+      questions: [{ id: "q1", questions: [{ question: "どれ？" }], answers: [["A"]] }],
+      attachmentOrder: [{ kind: "question", id: "q1" }],
+    });
+    expect(timeline[1]).toMatchObject({ kind: "turn", continuation: true, status: "working" });
+  });
+
+  it("質問と message を送った順に保持し、続きは別の枠にする", () => {
+    const timeline = run([
+      agent("claude", { type: "turn_started" }),
+      question(),
+      formal("claude", "依頼"),
+      agent("claude", { type: "tool", name: "Read", input: "a.ts" }),
+      agent("claude", { type: "turn", result: { status: "completed", text: "確認中" } }),
+    ]);
+    expect(timeline).toMatchObject([
+      {
+        kind: "turn",
+        segment: "closed",
+        attachmentOrder: [
+          { kind: "question", id: "q1" },
+          { kind: "message", id: expect.any(String) },
+        ],
+      },
+      { kind: "turn", continuation: true, status: "completed", steps: [{ kind: "tool", name: "Read" }], text: "確認中" },
+    ]);
+  });
+
+  it("質問して終えたターンは 1 枠にまとめ、最終応答は作業へ入れる", () => {
+    const events = [
+      agent("claude", { type: "turn_started" }),
+      question(),
+      agent("claude", { type: "turn", result: { status: "completed", text: "回答待ち" } }),
+    ];
+    for (const timeline of [run(events), rebuildTimeline(events as Extract<FeedItem, { type: "event" | "output" }>[], applyFeedItem)]) {
+      expect(timeline).toHaveLength(1);
+      expect(timeline[0]).toMatchObject({ kind: "turn", questions: [{ id: "q1" }], steps: [{ kind: "say", text: "回答待ち" }] });
+    }
+  });
+
+  it("質問に結び付くターンが無ければ独立した項目にする", () => {
+    expect(run([question(), answer()])).toMatchObject([{ kind: "question", id: "q1", answers: [["A"]] }]);
+  });
+
+  it("ターン終了の直後に届いた質問も、そのターンへ結び付ける", () => {
+    const timeline = run([
+      agent("claude", { type: "turn_started" }),
+      agent("claude", { type: "turn", result: { status: "completed", text: "選んでください" } }),
+      question(),
+    ]);
+    expect(timeline).toMatchObject([{ kind: "turn", questions: [{ id: "q1" }], text: "選んでください" }]);
+    expect(timeline).toHaveLength(1);
+  });
   it("作業中の送信元ターンへ複数の message を順に入れる", () => {
     const timeline = run([
       agent("claude", { type: "turn_started" }),
@@ -441,7 +509,6 @@ describe("applyFeedItem", () => {
       agent("claude", { type: "turn", result: { status: "completed", text: "選んでください。" } }, LATER),
     ]);
     expect(timeline).toMatchObject([
-      { kind: "question", id: "q1" },
       {
         kind: "turn",
         agent: "claude",
@@ -449,10 +516,15 @@ describe("applyFeedItem", () => {
         segment: "closed",
         plan: "確認します。",
         steps: [{ kind: "say", text: "選んでください。" }],
+        questions: [{ id: "q1" }],
+        attachmentOrder: [
+          { kind: "question", id: "q1" },
+          { kind: "message", id: expect.any(String) },
+        ],
         messages: [{ message: { body: "実装" } }],
       },
     ]);
-    expect(timeline).toHaveLength(2);
+    expect(timeline).toHaveLength(1);
 
     const replied = run([
       agent("claude", { type: "turn_started" }),

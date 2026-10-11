@@ -32,13 +32,21 @@ export const advanceTerminalFeed = (state: TerminalFeed, feed: FeedItem, expande
     return { ...state, completed: [...state.completed, { item: { kind: "output", id: `o${feed.seq}`, text: feed.text }, expanded }] };
   }
   if (feed.event.kind === "answer") {
-    const answer = feed.event;
     return {
       ...state,
-      completed: state.completed.map(entry =>
-        entry.item.kind === "question" && entry.item.id === answer.id ? { ...entry, item: { ...entry.item, answers: answer.answers } } : entry,
-      ),
+      timeline: applyFeedItem(state.timeline, feed),
+      completed: state.completed.map(entry => ({ ...entry, item: applyFeedItem([entry.item], feed)[0] ?? entry.item })),
     };
+  }
+  if (feed.event.kind === "question") {
+    const question = feed.event;
+    if (!state.timeline.some(item => item.kind === "turn" && item.agent === question.agent && item.status === "working")) {
+      const last = state.completed.at(-1);
+      if (last?.item.kind === "turn" && last.item.agent === question.agent && last.item.status === "completed") {
+        const attached = applyFeedItem([last.item], feed)[0];
+        if (attached) return { ...state, completed: [...state.completed.slice(0, -1), { ...last, item: attached }] };
+      }
+    }
   }
   if (feed.event.kind === "steered") {
     const steered = feed.event;
@@ -504,42 +512,53 @@ const MESSAGE_COLORS: Record<MessageType, string> = {
 };
 
 export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, expanded: boolean): TerminalCard => {
+  const questionBody = (entry: Extract<TimelineItem, { kind: "question" }>) =>
+    entry.questions
+      .map((question, index) =>
+        [
+          question.header,
+          question.question,
+          ...(entry.answers
+            ? [entry.answers[index]!.join(", ")]
+            : question.options.map((option, optionIndex) => `${optionIndex + 1}. ${option.label}${option.description ? ` — ${option.description}` : ""}`)),
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      )
+      .join("\n\n");
   if (item.kind === "question")
     return {
       kind: item.kind,
       color: agentColor(item.agent),
       title: `${agentName(item.agent)} · ${item.answers ? labels.answered : labels.question}`,
       tag: item.id,
-      body: item.questions
-        .map((question, index) =>
-          [
-            question.header,
-            question.question,
-            ...(item.answers
-              ? [item.answers[index]!.join(", ")]
-              : question.options.map((option, optionIndex) => `${optionIndex + 1}. ${option.label}${option.description ? ` — ${option.description}` : ""}`)),
-          ]
-            .filter(Boolean)
-            .join("\n"),
-        )
-        .join("\n\n"),
+      body: questionBody(item),
     };
-  if (item.kind === "turn")
+  if (item.kind === "turn") {
+    const attachments = item.attachmentOrder?.flatMap(attached => {
+      if (attached.kind === "message") return item.messages?.filter(entry => entry.message.id === attached.id).map(entry => entry.message.body) ?? [];
+      return item.questions?.filter(entry => entry.id === attached.id).map(questionBody) ?? [];
+    }) ?? [...(item.messages ?? []).map(entry => entry.message.body), ...(item.questions ?? []).map(questionBody)];
+    const steps = [
+      ...item.steps.map(step => (step.kind === "say" ? step.text : `${step.name}: ${step.input}`)),
+      ...(attachments.length && item.text ? [item.text] : []),
+    ];
     return {
       kind: item.kind,
       color: agentColor(item.agent),
       title: `${agentName(item.agent)} · ${labels[item.status]}`,
       headerBackgroundColor: agentHeaderColor(item.agent),
-      body: item.text,
+      body: attachments.length ? attachments.join("\n\n") : item.text,
       at: item.at,
       ...(item.plan ? { plan: item.plan } : {}),
-      ...(item.steps.length
+      ...(steps.length
         ? {
-            stepsLabel: labels.steps.replace("{count}", String(item.steps.length)),
-            ...(expanded ? { steps: item.steps.map(step => (step.kind === "say" ? step.text : `${step.name}: ${step.input}`)) } : {}),
+            stepsLabel: labels.steps.replace("{count}", String(steps.length)),
+            ...(expanded ? { steps } : {}),
           }
         : {}),
     };
+  }
   if (item.kind === "message")
     return {
       kind: item.kind,

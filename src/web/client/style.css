@@ -547,6 +547,9 @@
   .question-nav { display: flex; gap: 8px; align-items: center; }
   .question-nav .question-submit { margin-left: auto; }
   .question-record { display: grid; gap: 2px 0; margin: 4px 0 0; font-size: 13px; }
+  .question-card { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .question-card .head { display: flex; align-items: center; gap: 8px; }
+  .question-card .question-record dd { white-space: pre-wrap; }
   .question-record dt { color: var(--muted); }
   .question-record dd { margin: 0 0 6px; white-space: pre-wrap; }
   .question-text { font-weight: 600; }

@@ -208,7 +208,7 @@ export function createLogItem(ctx: ClientContext) {
       plan.innerHTML = renderMarkdown(item.plan);
       node.append(plan);
     }
-    const finalStep = item.messages?.length && item.text ? [{ kind: "say" as const, text: item.text, at: item.at }] : [];
+    const finalStep = (item.messages?.length || item.questions?.length) && item.text ? [{ kind: "say" as const, text: item.text, at: item.at }] : [];
     const steps = [...item.steps, ...finalStep];
     if (steps.length) {
       const list = ctx.el("ol");
@@ -216,9 +216,21 @@ export function createLogItem(ctx: ClientContext) {
       node.append(details(item.id, ctx.t("web.turn.steps", { count: steps.length }), list, "steps"));
     }
     if (item.status === "working" && item.segment !== "closed") node.append(nowLine(item));
-    if (item.messages?.length) {
+    if (item.messages?.length || item.questions?.length) {
       const body = ctx.el("div", "body");
-      for (const entry of item.messages) body.append(renderMessage({ ...entry, id: entry.message.id, at: entry.message.createdAt }));
+      const order = item.attachmentOrder ?? [
+        ...(item.messages ?? []).map(entry => ({ kind: "message" as const, id: entry.message.id })),
+        ...(item.questions ?? []).map(entry => ({ kind: "question" as const, id: entry.id })),
+      ];
+      for (const attached of order) {
+        if (attached.kind === "message") {
+          const entry = item.messages?.find(message => message.message.id === attached.id);
+          if (entry) body.append(renderMessage({ ...entry, id: entry.message.id, at: entry.message.createdAt }));
+        } else {
+          const entry = item.questions?.find(question => question.id === attached.id);
+          if (entry) body.append(renderQuestion(entry, true));
+        }
+      }
       node.append(body);
     } else {
       const body = ctx.el("div", "body md");
@@ -286,23 +298,23 @@ export function createLogItem(ctx: ClientContext) {
     return node;
   };
 
-  const renderQuestion = (item: Extract<TimelineItem, { kind: "question" }>): HTMLElement => {
-    const node = ctx.el("article", `entry question ${item.agent}`);
+  const renderQuestion = (item: Extract<TimelineItem, { kind: "question" }>, embedded = false): HTMLElement => {
+    const node = embedded ? ctx.el("section", "question-card") : ctx.el("article", `entry question ${item.agent}`);
     const head = ctx.el("div", "head");
     head.append(
-      ctx.el("b", `c-${item.agent}`, ctx.AGENTS[item.agent].name),
+      ...(embedded ? [] : [ctx.el("b", `c-${item.agent}`, ctx.AGENTS[item.agent].name)]),
       ctx.el("time", "mono", ctx.clock(item.at)),
       ctx.el("span", "kind", ctx.t(item.answers ? "web.question.answered" : "web.question.waiting")),
     );
-    node.append(ctx.mark(item.agent), head);
+    if (!embedded) node.append(ctx.mark(item.agent));
+    node.append(head);
     const previewText = item.questions.flatMap(question => [question.question, ...question.options.map(option => option.description ?? "")]).join("\n");
-    if (!item.answers) {
-      appendImagePreviews(node, previewText, item.at);
-      return node;
-    }
     const record = ctx.el("dl", "question-record");
     item.questions.forEach((question, index) => {
-      record.append(ctx.el("dt", "", question.question), ctx.el("dd", "", (item.answers?.[index] ?? []).join(", ")));
+      const choices =
+        item.answers?.[index]?.join(", ") ??
+        question.options.map((option, optionIndex) => `${optionIndex + 1}. ${option.label}${option.description ? ` — ${option.description}` : ""}`).join("\n");
+      record.append(ctx.el("dt", "", question.question), ctx.el("dd", "", choices));
     });
     node.append(record);
     appendImagePreviews(node, previewText, item.at);

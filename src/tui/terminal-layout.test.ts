@@ -368,3 +368,22 @@ it("質問を番号付きカードにし、回答で同じカードを更新す�
   expect(answered.completed).toHaveLength(1);
   expect(answered.completed[0]!.item).toMatchObject({ id: "q1", answers: [["A"]] });
 });
+
+it("作業中の質問をターンの本文に入れ、回答で同じ枠を更新する", () => {
+  const questions = [{ question: "どちら？", options: [{ label: "A" }, { label: "B" }] }];
+  const started = advanceTerminalFeed(
+    { timeline: [], completed: [] },
+    { type: "event", seq: 10, event: { kind: "agent", agent: "claude", at: "now", event: { type: "turn_started" } } },
+    false,
+  );
+  const asked = advanceTerminalFeed(started, { type: "event", seq: 11, event: { kind: "question", id: "q2", agent: "claude", questions, at: "now" } }, false);
+  expect(asked.completed).toHaveLength(1);
+  expect(asked.completed[0]?.item).toMatchObject({ kind: "turn", questions: [{ id: "q2" }] });
+  expect(formatTimelineItem(asked.completed[0]!.item, labels, false).body).toContain("どちら？\n1. A");
+  const answered = advanceTerminalFeed(
+    asked,
+    { type: "event", seq: 12, event: { kind: "answer", id: "q2", agent: "claude", answers: [["A"]], at: "later" } },
+    false,
+  );
+  expect(formatTimelineItem(answered.completed[0]!.item, labels, false).body).toContain("どちら？\nA");
+});

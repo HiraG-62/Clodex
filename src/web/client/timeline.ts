@@ -38,6 +38,8 @@ export type TimelineItem =
       plan?: string; // ターンの最初の発言（方針。DESIGN.md §17 ログ）
       planAt?: string;
       messages?: Array<{ message: AgentMessage; envelope?: string }>;
+      questions?: Array<Extract<TimelineItem, { kind: "question" }>>;
+      attachmentOrder?: Array<{ kind: "message" | "question"; id: string }>;
     }
   | { kind: "message"; id: string; at: string; message: AgentMessage; envelope?: string }
   | { kind: "notice"; id: string; at: string; text: string; compactAgent?: AgentId }
@@ -108,6 +110,53 @@ export function withSubagentRows(
 export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineItem[] {
   const limit = (list: TimelineItem[]) => (list.length > MAX_ITEMS ? list.slice(list.length - MAX_ITEMS) : list);
   type Turn = Extract<TimelineItem, { kind: "turn" }>;
+  type Question = Extract<TimelineItem, { kind: "question" }>;
+  type Attachment = { kind: "message"; entry: { message: AgentMessage; envelope?: string } } | { kind: "question"; entry: Question };
+  const hasAttachments = (turn: Turn) => Boolean(turn.messages?.length || turn.questions?.length);
+  const appendAttachment = (turn: Turn, attachment: Attachment): Turn =>
+    attachment.kind === "message"
+      ? {
+          ...turn,
+          messages: [...(turn.messages ?? []), attachment.entry],
+          attachmentOrder: [...(turn.attachmentOrder ?? []), { kind: "message", id: attachment.entry.message.id }],
+        }
+      : {
+          ...turn,
+          questions: [...(turn.questions ?? []), attachment.entry],
+          attachmentOrder: [...(turn.attachmentOrder ?? []), { kind: "question", id: attachment.entry.id }],
+        };
+  const attachToTurn = (index: number, attachment: Attachment, at: string, split: boolean): TimelineItem[] => {
+    const turn = items[index];
+    if (turn?.kind !== "turn") return items;
+    if (!split || turn.status !== "working") return [...items.slice(0, index), appendAttachment(turn, attachment), ...items.slice(index + 1)];
+    const previous = items[index - 1];
+    if (
+      index === items.length - 1 &&
+      turn.continuation &&
+      !turn.steps.length &&
+      !hasAttachments(turn) &&
+      previous?.kind === "turn" &&
+      previous.segment === "closed" &&
+      previous.agent === turn.agent &&
+      (previous.rootId ?? previous.id) === turn.rootId
+    ) {
+      return [...items.slice(0, index - 1), appendAttachment(previous, attachment), turn];
+    }
+    // 区切った枠は作業中として扱わない（次のターンの開始で中断にしたり、一番下へ寄せたりしない）。状態は画面に出さない
+    const closed: Turn = { ...appendAttachment(turn, attachment), status: "completed", segment: "closed" };
+    const continuation: Turn = {
+      kind: "turn",
+      id: `${id}-next`,
+      at,
+      agent: turn.agent,
+      status: "working",
+      steps: [],
+      text: "",
+      continuation: true,
+      rootId: turn.rootId ?? turn.id,
+    };
+    return limit([...items.slice(0, index), ...items.slice(index + 1), closed, continuation]);
+  };
 
   if (item.type === "state" || item.type === "version" || item.type === "toast" || item.type === "notify" || item.type === "gui" || item.type === "gui_command")
     return items;
@@ -117,7 +166,13 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
       if (entry.kind === "human" && entry.inputId === item.id) return [];
       if (entry.kind === "message" && entry.message.id === item.id) return [];
       if (entry.kind === "turn" && entry.messages?.some(message => message.message.id === item.id))
-        return [{ ...entry, messages: entry.messages.filter(message => message.message.id !== item.id) }];
+        return [
+          {
+            ...entry,
+            messages: entry.messages.filter(message => message.message.id !== item.id),
+            attachmentOrder: entry.attachmentOrder?.filter(attached => attached.id !== item.id),
+          },
+        ];
       return [entry];
     });
   if (item.type === "output") {
@@ -128,8 +183,20 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
 
   const id = `e${item.seq}`;
   const { event } = item;
-  if (event.kind === "question") return limit([...items, { kind: "question", id: event.id, agent: event.agent, at: event.at, questions: event.questions }]);
-  if (event.kind === "answer") return items.map(entry => (entry.kind === "question" && entry.id === event.id ? { ...entry, answers: event.answers } : entry));
+  if (event.kind === "question") {
+    const question: Question = { kind: "question", id: event.id, agent: event.agent, at: event.at, questions: event.questions };
+    let index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === event.agent && entry.status === "working" && entry.segment !== "closed");
+    const last = items.at(-1);
+    if (index < 0 && last?.kind === "turn" && last.agent === event.agent && last.status === "completed") index = items.length - 1;
+    return index < 0 ? limit([...items, question]) : attachToTurn(index, { kind: "question", entry: question }, event.at, true);
+  }
+  if (event.kind === "answer")
+    return items.map(entry => {
+      if (entry.kind === "question" && entry.id === event.id) return { ...entry, answers: event.answers };
+      if (entry.kind === "turn" && entry.questions?.some(question => question.id === event.id))
+        return { ...entry, questions: entry.questions.map(question => (question.id === event.id ? { ...question, answers: event.answers } : question)) };
+      return entry;
+    });
   if (event.kind === "human") {
     return limit([
       ...items,
@@ -154,36 +221,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
       const turn = items[index];
       if (turn?.kind === "turn") {
         const attached = { message: event.message, ...(item.envelope ? { envelope: item.envelope } : {}) };
-        if (event.message.auto || turn.status !== "working") {
-          return [...items.slice(0, index), { ...turn, messages: [...(turn.messages ?? []), attached] }, ...items.slice(index + 1)];
-        }
-        const previous = items[index - 1];
-        if (
-          index === items.length - 1 &&
-          turn.continuation &&
-          !turn.steps.length &&
-          !turn.messages?.length &&
-          previous?.kind === "turn" &&
-          previous.segment === "closed" &&
-          previous.agent === from &&
-          (previous.rootId ?? previous.id) === turn.rootId
-        ) {
-          return [...items.slice(0, index - 1), { ...previous, messages: [...(previous.messages ?? []), attached] }, turn];
-        }
-        // 区切った枠は作業中として扱わない（次のターンの開始で中断にしたり、一番下へ寄せたりしない）。状態は画面に出さない
-        const closed: Turn = { ...turn, status: "completed", segment: "closed", messages: [...(turn.messages ?? []), attached] };
-        const continuation: Turn = {
-          kind: "turn",
-          id: `${id}-next`,
-          at: event.at,
-          agent: from,
-          status: "working",
-          steps: [],
-          text: "",
-          continuation: true,
-          rootId: turn.rootId ?? turn.id,
-        };
-        return limit([...items.slice(0, index), ...items.slice(index + 1), closed, continuation]);
+        return attachToTurn(index, { kind: "message", entry: attached }, event.at, !event.message.auto);
       }
     }
     return limit([...items, { kind: "message", id, at: event.at, message: event.message, ...(item.envelope ? { envelope: item.envelope } : {}) }]);
@@ -246,7 +284,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
       if (index < 0) return limit([...items, finish(newTurn())]);
       const active = items[index] as Turn;
       const finalTextOnly = active.steps.length === 1 && active.steps[0]?.kind === "say" && active.steps[0].text.trim() === text.trim();
-      if (active.continuation && !active.plan && (!active.steps.length || finalTextOnly) && !active.messages?.length) {
+      if (active.continuation && !active.plan && (!active.steps.length || finalTextOnly) && !hasAttachments(active)) {
         const previousIndex = items.findLastIndex(
           (entry, i) =>
             i < index && entry.kind === "turn" && entry.agent === agent && entry.segment === "closed" && (entry.rootId ?? entry.id) === active.rootId,
