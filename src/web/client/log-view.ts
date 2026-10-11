@@ -212,6 +212,18 @@ export function createLogView(ctx: ClientContext) {
     }
     for (const id of ctx.AGENT_IDS) if (!visibleItems.some(item => item.kind === "starting" && item.agent === id)) ctx.store.startingAt.delete(id);
     const keep = new Set(visibleItems.map(i => i.id));
+    const anchor = (() => {
+      if (stick) return undefined;
+      const ids = new Map([...ctx.store.rendered].filter(([id]) => keep.has(id)).map(([id, entry]) => [entry.node, id]));
+      const bounds = ctx.log.getBoundingClientRect();
+      for (const child of ctx.log.children) {
+        const id = ids.get(child as HTMLElement);
+        if (!id) continue;
+        const rect = child.getBoundingClientRect();
+        if (rect.bottom > bounds.top && rect.top < bounds.bottom) return { id, top: rect.top };
+      }
+      return undefined;
+    })();
     for (const [id, entry] of ctx.store.rendered) {
       if (!keep.has(id)) {
         entry.node.remove();
@@ -271,7 +283,13 @@ export function createLogView(ctx: ClientContext) {
     }
     for (const node of updatedMarkdown) enhanceMarkdown(node);
     if (stick) scrollToBottom();
-    else syncNewer();
+    else {
+      if (anchor) {
+        const node = ctx.store.rendered.get(anchor.id)?.node;
+        if (node?.isConnected) ctx.log.scrollTop += node.getBoundingClientRect().top - anchor.top;
+      }
+      syncNewer();
+    }
     renderWorking();
     ctx.syncSharedUnread();
   };
