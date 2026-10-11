@@ -234,6 +234,7 @@ describe("ログの表示行", () => {
     const card = formatTimelineItem(message, labels, false);
     expect(card.color).toBe("#4b6fa5");
     expect(cardLines(card, 30)[0]?.backgroundColor).toBe("#3c3025");
+    expect(formatTimelineItem({ ...message, message: { ...message.message, type: "ANSWER" } }, labels, false).tag).toBe("ANSWER · T-1");
   });
   it("通知・エラー・コマンド出力の見出しには背景を付けない", () => {
     const items: TimelineItem[] = [

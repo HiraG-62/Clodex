@@ -24,15 +24,19 @@ const specLines = (spec: string, changes: readonly string[] | undefined): string
 
 const specInstruction = (m: AgentMessage): string[] => {
   if (!m.spec) return [];
-  return [m.type === "RESULT" ? UPDATED_SPEC_INSTRUCTION : SPEC_INSTRUCTION];
+  return [m.type === "ANSWER" ? UPDATED_SPEC_INSTRUCTION : SPEC_INSTRUCTION];
 };
 
 const replyInstruction = (m: AgentMessage): string[] =>
   REQUEST_TYPES.has(m.type)
     ? [
         // 他の連携手段（skill や CLI）と取り違えないよう、MCP tool であることを明示する
-        `Reply with the ${SEND_MESSAGE_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server (not a shell command): to="${m.from}", type="RESULT", taskId="${m.taskId}", replyTo="${m.id}".`,
-        "Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.",
+        `Reply with the ${SEND_MESSAGE_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server (not a shell command): to="${m.from}", type="${m.type === "QUESTION" ? "ANSWER" : "RESULT"}", taskId="${m.taskId}", replyTo="${m.id}".`,
+        ...(m.type === "QUESTION"
+          ? []
+          : [
+              "Send RESULT when the requested work is complete. Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.",
+            ]),
         BODY_FORMAT,
       ]
     : ["No reply is required."];

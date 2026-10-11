@@ -34,7 +34,7 @@ describe("buildEnvelope", () => {
         "refresh token の race condition をレビュー",
         "",
         'Reply with the send_message tool of the "clodex" MCP server (not a shell command): to="claude", type="RESULT", taskId="AUTH-142", replyTo="msg_1a2b3c4d".',
-        "Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.",
+        "Send RESULT when the requested work is complete. Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.",
         "Write body in Markdown: a one-line summary first, then bullet points. Do not write one long paragraph.",
       ].join("\n"),
     );
@@ -45,7 +45,7 @@ describe("buildEnvelope", () => {
     const envelope = buildEnvelope({ ...rest, type: "QUESTION" });
     expect(envelope).not.toContain("Commit:");
     expect(envelope).not.toContain("Files:");
-    expect(envelope).toContain('type="RESULT"');
+    expect(envelope).toContain('type="ANSWER"');
   });
 
   it("RESULT は status・replyTo・issues を含み、返信を求めない", () => {
@@ -104,8 +104,8 @@ it("specChanges は Spec 行の直後に書き、空なら変更なしと書く"
   expect(buildEnvelope({ ...base, spec: "docs/specs/T.md" })).not.toContain("since you last received it");
 });
 
-it("RESULT の spec には、更新した設計書に続きの作業で従う指示を添える", () => {
-  const text = buildEnvelope({ ...base, type: "RESULT", replyTo: "msg_q", spec: "docs/specs/T.md" });
+it("ANSWER の spec には、更新した設計書に続きの作業で従う指示を添える", () => {
+  const text = buildEnvelope({ ...base, type: "ANSWER", replyTo: "msg_q", spec: "docs/specs/T.md" });
   expect(text).toContain("Spec: docs/specs/T.md");
   expect(text).toContain(`${base.body}
 

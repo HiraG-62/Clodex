@@ -206,7 +206,7 @@ Clodex が行うのは、見えるようにすることと、hard limit で止�
 |---|---|---|
 | 作業を頼む message のターンが失敗したときの再送 | 1 回だけ | §11 配送ルール |
 | 再送も失敗したとき、送信元に自分で進めるよう伝える | 依頼ごとに 1 回 | §11 配送ルール |
-| Agent が `send_message` を使わずに返した依頼の結果を、依頼元へ届ける（自動 `RESULT`） | 依頼ごとに 1 回 | §11 配送ルール |
+| Agent が `send_message` を使わずに返した依頼の結果を、依頼元へ届ける（自動 `RESULT` / `ANSWER`） | 依頼ごとに 1 回 | §11 配送ルール |
 | 利用枠のリセット後に、上限で止まっていた作業の続きを頼む | 止まるごとに 1 回 | §14 |
 | Hub の再起動後に、中断したターンの続きを頼む | 再起動ごとに 1 回 | §18 |
 
@@ -763,7 +763,8 @@ Formal message channel を別に持つ。
 | `QUESTION` | 相手 Agent への質問 | 任意 |
 | `REVIEW_REQUEST` | レビュー依頼 | 任意 |
 | `DELEGATE` | 実装・調査の委譲 | 任意 |
-| `RESULT` | 依頼への結果返却 | 必須 |
+| `ANSWER` | `QUESTION` への回答 | 必須（`QUESTION` の ID） |
+| `RESULT` | 依頼（`DELEGATE` / `REVIEW_REQUEST`）の作業を終えたときの結果返却 | 必須 |
 | `ISSUE` | 問題の報告 | 任意 |
 | `ACK` | 受領のみの通知 | 必須 |
 
@@ -779,10 +780,10 @@ Agent が指定するフィールド:
 | `type` | ✓ | Message Types のいずれか |
 | `taskId` | ✓ | Task ID |
 | `body` | ✓ | 依頼内容・質問・結果の要約（自然文、最大 4,000 文字。§3.3 Minimal Context） |
-| `replyTo` | RESULT / ACK で必須 | 返信元の message ID |
+| `replyTo` | ANSWER / RESULT / ACK で必須 | 返信元の message ID。`ANSWER` は自分が受けた `QUESTION` の ID でなければ拒否する。`RESULT` で `QUESTION` に返したら拒否する（`ANSWER` を使うよう伝える） |
 | `commit` | | 参照する commit hash |
 | `files` | | 参照する file path（project root からの相対パス） |
-| `spec` | | `DELEGATE` / `REVIEW_REQUEST` / `RESULT` のみ。依頼の仕様を書いた設計書の path（project root からの相対パス）。`RESULT` では、`QUESTION` に答えるために更新した設計書を渡す。送信時に通常ファイルとして存在しなければ拒否する（project root の外も拒否） |
+| `spec` | | `DELEGATE` / `REVIEW_REQUEST` / `ANSWER` / `RESULT` のみ。依頼の仕様を書いた設計書の path（project root からの相対パス）。`ANSWER` では、`QUESTION` に答えるために更新した設計書を渡す。送信時に通常ファイルとして存在しなければ拒否する（project root の外も拒否） |
 | `status` | | RESULT のみ。`approved` / `changes_requested` / `done` / `failed` |
 | `issues` | | RESULT / ISSUE のみ。`{ file, line?, severity, summary }` の配列。severity は `low` / `medium` / `high` / `critical` |
 
@@ -795,7 +796,7 @@ Coordinator が付与するフィールド（Agent の自己申告は使わな�
 | `repository` | project root（§7） |
 | `createdAt` | ISO 8601 |
 | `specChanges` | `spec` があり、宛先に同じ設計書を前に渡しているときだけ付ける。前回から変わった節の見出し（下記 Spec の差分）。変わっていなければ空配列 |
-| `auto` | Coordinator が依頼の最終応答から作った `RESULT` にだけ付ける（§12 配送ルール） |
+| `auto` | Coordinator が依頼の最終応答から作った `RESULT` / `ANSWER` にだけ付ける（§12 配送ルール） |
 
 例:
 
@@ -840,6 +841,7 @@ Coordinator が付与するフィールド（Agent の自己申告は使わな�
 ```
 
 - `interrupt`（省略可、boolean）: 宛先が送信元からの message を処理中なら、そのターンに足す（§28 v0.3 C）。それ以外は通常どおり配送する
+- `ANSWER` は `interrupt` の指定によらず、宛先（質問した Agent）が作業中なら、何のターンでもそのターンに足す。質問した後も作業を続けている Agent に、ターンの終わりを待たせずに回答を届けるため。作業中でなければ通常どおり配送する
 
 ---
 
@@ -887,17 +889,17 @@ MCP message を受け取った後、
 - Agent の起動中に届いた配送は、起動の完了を待ってから送る。起動の要求が重なっても起動は 1 回だけ
 - `ACK` は記録のみで宛先に配送しない（ACK の往復で Agent を起こさない。§25）
 - 送信元への tool 応答は受理結果（message ID）だけを返す。返信は送信元の現在のターンが終わった後、新しいターンとして届く
-- 起動や送信に失敗したら Event Bus に `error` を出し、mailbox は次の項目へ進む。人の入力・`/compact`・`RESULT`・`ISSUE` は再送しない
+- 起動や送信に失敗したら Event Bus に `error` を出し、mailbox は次の項目へ進む。人の入力・`/compact`・`ANSWER`・`RESULT`・`ISSUE` は再送しない
 - 配送の途中で例外が出たら（送信先のプロセスへの書き込みの失敗など）、その Agent の `error` を出す。待たずに走らせた配送の失敗も黙って捨てない
 - 作業を頼む message（`DELEGATE`・`REVIEW_REQUEST`・`QUESTION`）は、配送したターンが失敗（`failed`。混雑や API のエラー）したら 30 秒待って、同じ envelope をもう一度だけ宛先の mailbox に積む。取り消し（`/interrupt`・`/cancel`）と停止（mailbox を閉じた）は失敗に数えない。宛先が利用枠の上限で待っているときも送り直さない（リセット後に続きを送るため。§利用枠の可視化と通知）
   - もう一度失敗したら、送信元の mailbox に「宛先に届かなかった。送り直さずに自分で進める」という指示（英語。message の type・ID・宛先・エラーの 1 行目）を積み、画面に notice（「{to} への {type} が 2 回失敗。{from} が自分で進める」）を出す。`DELEGATE` は自分で実装し、`REVIEW_REQUEST` は自分で確かめ、`QUESTION` は自分で判断して進める
   - 待っている間に Hub が止まったら、再試行はしない（未配送分としても残らない）
   - 再送の envelope には `[Clodex] Retry: your previous attempt at this message failed partway. Check the current state of the files before continuing; do not redo finished work.` の 1 行を添える（前回のターンが途中まで作業していても、やり直しで二重に作業しないように）
-- 依頼系の message（`DELEGATE`・`REVIEW_REQUEST`・`QUESTION`）を配送したターンが完了（`completed`）したのに、宛先の Agent がそのターンの間に送信元へ formal message を 1 つも送らなかったら、Coordinator がそのターンの最終応答を `RESULT` として送信元へ届ける（Agent が `send_message` を使わずに普通の返答で報告して終えても、依頼元が結果を受け取れるように）
-  - `from` は宛先の Agent、`to` は依頼の送信元、`taskId` は依頼と同じ、`replyTo` は依頼の message ID、`status` は `done`、`body` は最終応答（`MAX_BODY_LENGTH` を超えたら切り詰め、末尾に `…`）。最終応答が空なら送らない
+- 依頼系の message（`DELEGATE`・`REVIEW_REQUEST`・`QUESTION`）を配送したターンが完了（`completed`）したのに、宛先の Agent がそのターンの間に送信元へ formal message を 1 つも送らなかったら、Coordinator がそのターンの最終応答を `RESULT`（`QUESTION` なら `ANSWER`）として送信元へ届ける（Agent が `send_message` を使わずに普通の返答で報告して終えても、依頼元が結果を受け取れるように）
+  - `from` は宛先の Agent、`to` は依頼の送信元、`taskId` は依頼と同じ、`replyTo` は依頼の message ID、`status` は `done`（`ANSWER` には付けない）、`body` は最終応答（`MAX_BODY_LENGTH` を超えたら切り詰め、末尾に `…`）。最終応答が空なら送らない
   - Coordinator が作ったことを示す `auto: true` を付ける（Coordinator が付与するフィールド。Agent の入力では受け付けない）。envelope には `Auto: the recipient ended its turn without send_message; this is its final reply.` の 1 行を添える。画面の message の行にも自動で届けたことが分かる印を出す
-  - そのターンの間に宛先が送信元へ `RESULT`・`QUESTION`・`ISSUE` などを送っていれば、やり取りが続いているので作らない。ターンが `failed`・`interrupted` のとき、割り込み（`interrupt`）で実行中のターンに足した依頼、宛先が利用枠の上限で待っているときも作らない
-  - Budget は通常の `RESULT` と同じく数える（親は依頼の message）。上限を超えるなら作らず、人に `error` を出す
+  - そのターンの間に宛先が送信元へ `ANSWER`・`RESULT`・`QUESTION`・`ISSUE` などを送っていれば、やり取りが続いているので作らない。ターンが `failed`・`interrupted` のとき、割り込み（`interrupt`）で実行中のターンに足した依頼、宛先が利用枠の上限で待っているときも作らない
+  - Budget は通常の `RESULT` / `ANSWER` と同じく数える（親は依頼の message）。上限を超えるなら作らず、人に `error` を出す
 - `/new`・`/resume` で Agent を止める間は、その Agent の mailbox の配送を止める。止めている間に届いた項目は捨てず、切り替え後の session に配送する
 - Coordinator の停止時は、先に全 mailbox を閉じてから Agent を止める（停止中に Agent を再起動しない）。未配送分と作業中だったことは、閉じる前の状態として保存してあり、次の起動で戻す（§18 Hub の再起動からの復旧）
 
@@ -947,9 +949,10 @@ Write body in Markdown: a one-line summary first, then bullet points. Do not wri
 
 - 依頼系（`QUESTION` / `REVIEW_REQUEST` / `DELEGATE`）には返信方法を指示する。返信の body の書式（Markdown で 1 行の要約 → 箇条書き。長い 1 段落にしない）も添え、Agent ごとに書き方がばらつかないようにする
 - 末尾に、人が読む文章の言語（下記 Language）を 1 行で添える。長い会話でも依頼のたびに思い出させる
-- `RESULT` / `ISSUE` には返信を求めない（返信の連鎖を作らない）
+- `ANSWER` / `RESULT` / `ISSUE` には返信を求めない（返信の連鎖を作らない）
+- `QUESTION` の返信方法は `type="ANSWER"`。`DELEGATE` / `REVIEW_REQUEST` は `type="RESULT"` で、作業を終えたときに送るよう添える
 - 会話履歴は envelope に含めない。Agent B は必要に応じて `read_conversation` で同じ会話の本文を読むか、Repository を読む
-- `spec` があれば `Spec:` 行と「作業の前に読んで従う。コードと食い違う・曖昧なら推測せず QUESTION で聞く」の 1 行を添える。`RESULT` では「回答に合わせて更新した設計書を読み、続きの作業で従う」の 1 行にする
+- `spec` があれば `Spec:` 行と「作業の前に読んで従う。コードと食い違う・曖昧なら推測せず QUESTION で聞く」の 1 行を添える。`ANSWER` では「回答に合わせて更新した設計書を読み、続きの作業で従う」の 1 行にする
 - `specChanges` があれば `Spec:` 行の直後に書く。空なら `Spec:` 行に `(unchanged since you last received it)` を付け、空でなければ `Spec changes since you last received it:` に続けて節の見出しを 1 行ずつ並べる
 
 ## Spec（設計書）
@@ -958,7 +961,7 @@ Write body in Markdown: a one-line summary first, then bullet points. Do not wri
 
 - 既定の置き場所は `docs/specs/<taskId>.md`。project の CLAUDE.md / AGENTS.md や役割で別の場所を指示してもよい
 - `DELEGATE` / `REVIEW_REQUEST` は設計書を書いて `spec` を付けるのを基本にする。body だけで済ませるのは、数行で説明しきれる簡単な依頼だけ
-- `QUESTION` に答えるために設計書を直したら、`RESULT` の `spec` で渡す。`files` に載せるより、読んで従うものだと確実に伝わる
+- `QUESTION` に答えるために設計書を直したら、`ANSWER` の `spec` で渡す。`files` に載せるより、読んで従うものだと確実に伝わる
 - 設計書の作成・更新・コミットは送信元の Agent が行う。Coordinator は存在を確かめるだけで中身は見ない
 - 設計書で実装の範囲（触ってよいファイル）を書くときは、生成コマンド（ビルド・コード生成・辞書の更新など）が書き直すファイルも含める。生成コマンドが書き直すファイルの更新は、書いていなくても既定で許す。役割の定型文でこの方針を伝える（範囲の確認だけの QUESTION の往復を減らすため）
 - 役割の定型文（§13 Roles）でこの方針を伝える
@@ -1038,7 +1041,7 @@ AGENTS.md → Codex
 - 役割の空文字は未設定として扱う（ひな形のままでも、役割が無いのと同じ）
 - UTF-8（BOM の有無は問わない。Windows PowerShell 5.1 は BOM 付きで書く）
 - 優先順位: 起動オプション > project の設定 > ユーザーの設定 > 既定値（primary: `claude`、roles: なし）
-- Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」「権限は人が `/permission` で変えるので、拒否されたらそう伝えること」「依頼を受けたら、作業に入る前に何をするかを 1〜2 文で書くこと」「`send_message` の body は Markdown で 1 行の要約 → 箇条書きで書くこと」「依頼（`DELEGATE` / `REVIEW_REQUEST`）は基本的に設計書を書いて `spec` で渡し、body だけにするのは数行で済む簡単な依頼に限ること。QUESTION に答えるために設計書を直したら RESULT の `spec` で渡すこと（上の Spec）」「人が読む文章の言語（下記 Language）」を伝える
+- Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」「権限は人が `/permission` で変えるので、拒否されたらそう伝えること」「依頼を受けたら、作業に入る前に何をするかを 1〜2 文で書くこと」「`send_message` の body は Markdown で 1 行の要約 → 箇条書きで書くこと」「依頼（`DELEGATE` / `REVIEW_REQUEST`）は基本的に設計書を書いて `spec` で渡し、body だけにするのは数行で済む簡単な依頼に限ること。QUESTION には ANSWER で答え、設計書を直したら ANSWER の `spec` で渡すこと（上の Spec）。RESULT は依頼の作業を終えたときに使うこと」「人が読む文章の言語（下記 Language）」を伝える
 - 役割が無い Agent には、相手の Agent がいることだけを伝える
 - **プリセット**: よくある分担の役割の文章を、選ぶだけで設定できるようにする（役割が空のままだと分業が起きず、初めて使う人に価値が伝わらないため）。文章を選ぶのは人なので、分け方を固定しない原則（§3.1）とは矛盾しない
   - `design-review`（設計・レビュー・コミットは Claude、実装は Codex）、`codex-design`（設計・レビューは Codex、実装・コミットは Claude。Codex は `edit` ではコミットできないため）、`implement-review`（設計・実装・コミットは Claude、レビューは Codex）の 3 つ。文章は表示言語（§13 Language）で選ぶ
@@ -1075,7 +1078,7 @@ Agent 同士が無限に会話しないよう hard limit を持つ。
 
 - 人間の入力によるターン中に送った依頼は深さ 1
 - 依頼（`QUESTION` / `REVIEW_REQUEST` / `DELEGATE`）を処理中に送った依頼は、処理中の依頼の深さ + 1
-- 結果（`RESULT` / `ISSUE`）を処理中に送った依頼は、処理中の message と同じ深さ（2 回目のレビュー依頼など、同じ階層での継続）
+- 結果（`ANSWER` / `RESULT` / `ISSUE`）を処理中に送った依頼は、処理中の message と同じ深さ（2 回目のレビュー依頼など、同じ階層での継続）
 - 依頼以外の message の深さは、処理中の message と同じ（無ければ 1）
 
 上限を超える message は受理せず、送信元へ tool エラーで理由を返し、Event Bus に `error` を出す。エラー文では「上限に達したので人間に報告する」よう Agent に促す。人に見せる `error` には変え方を添える（例: `maxMessagesPerChain (8) に到達（/limits messages <n>）`）。
@@ -1397,7 +1400,7 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
 - Agent がターンの中で formal message（`ACK` を除く）を送ったら、その message はそのターンの枠の本文として出し、ログに別の項目として並べない（「依頼しました」の最終応答と message の行が二重に並ばないように）
   - 枠の本文は message のカード（送信元 → 宛先・種類・taskId・本文・spec・関連ファイル・指摘・相手に渡した全文）。複数送ったら送った順に並べる
   - そのターンの最終応答は、畳んである「作業」の最後に発言として移す（本文には出さない）。方針は今どおり
-  - Coordinator がターンの最終応答から作った自動の `RESULT`（`auto`）も、元のターンの枠の本文にする（最終応答と同じ内容が二重に並ばないように）
+  - Coordinator がターンの最終応答から作った自動の `RESULT` / `ANSWER`（`auto`）も、元のターンの枠の本文にする（最終応答と同じ内容が二重に並ばないように）
   - 送ったターンがログに無いとき（再起動後の復旧で配送し直した message など）は、今どおり別の項目として並べる
   - 作業中のターンで message を送ったら、そこでターンの枠を区切る。そこまでの枠（方針・作業・message のカード）は、その時点のログの末尾に固定し（状態は出さない）、続きの作業は新しい枠として一番下で続ける。作業中の枠は一番下に置くので、区切らないと、送った質問や依頼が、後から届いた相手の回答より下に出てしまうため
     - 続きの枠の見出しは Agent 名と状態だけ（方針は出さない。最初の発言は作業として並べる）
@@ -2036,7 +2039,7 @@ D3 の詳細（Tauri GUI。Windows）:
     - Agent のエラー: 「エラー: <1 行目>」/ "Error: <first line>"
     - Agent に関係しない通知（利用枠の偏りなどの `notice`）は、本文をその文のままにし、`（Agent 名）` を付けない
   - 今の会話は、今どおり「どの Agent も作業中でなく配送待ちも無い」状態になったときに、最後に終わったターンで 1 回だけ出す。裏の会話・ほかの project は、ターンが終わるたびに出す
-  - Agent 同士のやり取りの途中のターンでは、ターンの終わりの通知を出さない。途中のターンは、相手からの依頼（`DELEGATE`・`QUESTION`・`REVIEW_REQUEST`）を処理したターンと、ターンの中で相手に formal message を送ったターン（Coordinator が最終応答から作る自動の `RESULT` を含む）。結果は相手の Agent に渡るだけで、人が見る必要が無いため。相手の `RESULT` を受けて人に報告して終えるターンと、人への質問（`ask_user`）は今どおり出す
+  - Agent 同士のやり取りの途中のターンでは、ターンの終わりの通知を出さない。途中のターンは、相手からの依頼（`DELEGATE`・`QUESTION`・`REVIEW_REQUEST`）を処理したターンと、ターンの中で相手に formal message を送ったターン（Coordinator が最終応答から作る自動の `RESULT` / `ANSWER` を含む）。結果は相手の Agent に渡るだけで、人が見る必要が無いため。相手の `RESULT` を受けて人に報告して終えるターン（`ANSWER` を受けて作業を続け、message を送らずに終えたターンも）と、人への質問（`ask_user`）は今どおり出す
     - Coordinator がターンの終わりの event に途中のターンの印（例: `handoff: true`）を付け、Hub は印のあるターンで通知を作らない。今の会話で最後に終わったターンが途中のターンなら、その回は出さない
   - 画面の feed の読み込み（再生）では出さない
 - **通知**: Tauri の中の Web UI が、ウィンドウが見えていないかフォーカスが無いときに、Windows の通知を出す（`tauri-plugin-notification`）。ブラウザの Web UI では出さない

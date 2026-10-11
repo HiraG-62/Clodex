@@ -135,7 +135,7 @@ describe("Hub recovery", () => {
     if (!formal.ok) throw new Error("formal message was rejected");
     const followup = second.workspace.current.coordinator.receiveMessage("claude", {
       to: "codex",
-      type: "RESULT",
+      type: "ANSWER",
       taskId: "recovery",
       body: "done",
       replyTo: formal.message.id,

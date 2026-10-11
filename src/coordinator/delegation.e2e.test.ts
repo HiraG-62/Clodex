@@ -111,7 +111,7 @@ describe.runIf(process.env.CLODEX_E2E === "1")("Delegation (real CLI)", () => {
   );
 
   it(
-    "Codex → Claude の QUESTION に Claude が RESULT を返し、Codex が受け取る",
+    "Codex → Claude の QUESTION に Claude が ANSWER を返し、Codex が受け取る",
     async () => {
       const { coordinator, messages } = await setup();
       await coordinator.sendToAgent(
@@ -122,9 +122,9 @@ describe.runIf(process.env.CLODEX_E2E === "1")("Delegation (real CLI)", () => {
 
       const question = await waitFor(() => messages.find(m => m.from === "codex" && m.type === "QUESTION"));
       const reply = await waitFor(() => messages.find(m => m.from === "claude" && m.replyTo === question.id));
-      expect(reply).toMatchObject({ to: "codex", type: "RESULT", taskId: "E2E-2" });
+      expect(reply).toMatchObject({ to: "codex", type: "ANSWER", taskId: "E2E-2" });
 
-      const codexTurn = await coordinator.sendToAgent("codex", "Reply with exactly: RECEIVED if you got a RESULT message from claude, otherwise NONE.");
+      const codexTurn = await coordinator.sendToAgent("codex", "Reply with exactly: RECEIVED if you got an ANSWER message from claude, otherwise NONE.");
       expect(codexTurn.text).toContain("RECEIVED");
     },
     E2E_TIMEOUT_MS,

@@ -57,6 +57,13 @@ describe("createMessage", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("ANSWER は replyTo と spec を持てる", () => {
+    expect(createMessage({ to: "codex", type: "ANSWER", taskId: "T-1", body: "回答", replyTo: "msg_q", spec: "docs/specs/T.md" }, context)).toMatchObject({
+      ok: true,
+      message: { type: "ANSWER", replyTo: "msg_q", spec: "docs/specs/T.md" },
+    });
+  });
+
   it.each([
     ["必須フィールドの欠落", { to: "codex", type: "QUESTION", taskId: "T-1" }, /body/],
     ["未知の type", { ...reviewRequest, type: "CHAT" }, /type/],
@@ -65,6 +72,9 @@ describe("createMessage", () => {
     ["空の taskId", { ...reviewRequest, taskId: "" }, /taskId/],
     ["長すぎる body", { ...reviewRequest, body: "x".repeat(MAX_BODY_LENGTH + 1) }, /body/],
     ["replyTo のない RESULT", { to: "codex", type: "RESULT", taskId: "T-1", body: "done" }, /replyTo/],
+    ["replyTo のない ANSWER", { to: "codex", type: "ANSWER", taskId: "T-1", body: "回答" }, /replyTo/],
+    ["ANSWER の status", { to: "codex", type: "ANSWER", taskId: "T-1", body: "回答", replyTo: "msg_q", status: "done" }, /status/],
+    ["ANSWER の issues", { to: "codex", type: "ANSWER", taskId: "T-1", body: "回答", replyTo: "msg_q", issues: [] }, /issues/],
     ["replyTo のない ACK", { to: "codex", type: "ACK", taskId: "T-1", body: "ok" }, /replyTo/],
     ["RESULT 以外の status", { ...reviewRequest, status: "approved" }, /status/],
     ["RESULT / ISSUE 以外の issues", { ...reviewRequest, issues: [] }, /issues/],
@@ -95,7 +105,7 @@ describe("createMessage", () => {
 });
 
 describe("spec の schema", () => {
-  it.each(["DELEGATE", "REVIEW_REQUEST", "RESULT"])("%s で spec を保持する", type => {
+  it.each(["DELEGATE", "REVIEW_REQUEST", "RESULT", "ANSWER"])("%s で spec を保持する", type => {
     expect(createMessage({ ...reviewRequest, type, replyTo: "msg_x", spec: "docs/specs/T.md" }, context)).toMatchObject({
       ok: true,
       message: { spec: "docs/specs/T.md" },

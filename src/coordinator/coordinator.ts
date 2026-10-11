@@ -89,6 +89,7 @@ export interface CoordinatorOptions {
   // 起動のたびに呼ぶ（/role で変えた役割を次の起動に反映する。DESIGN.md §28 E）
   instructions?: (agent: AgentId) => string | undefined;
   createMessageId?: () => string;
+  knownMessages?: readonly AgentMessage[];
   limits?: BudgetLimits;
   settings?: Partial<Record<AgentId, AgentStartSettings>>;
   // 人が読む文章の言語。Task envelope に添える（DESIGN.md §13 Language）
@@ -116,6 +117,7 @@ export class Coordinator {
   private readonly workRecorder = new WorkRecorder();
   private readonly deliveryNotes: DeliveryNotes;
   private readonly repliedRequests = new Set<string>();
+  private readonly messages = new Map<string, AgentMessage>();
   private readonly handoffTurns: Partial<Record<AgentId, boolean>> = {};
   // 宛先ごと・設計書の実パスごとに、前回渡した中身（DESIGN.md §13 Spec の差分）
   private readonly specSnapshots = new Map<string, string>();
@@ -174,6 +176,7 @@ export class Coordinator {
             id,
           );
         } else {
+          this.messages.set(item.message.id, item.message);
           this.budget.restore(item.message);
           this.detach(this.deliver(item.message), item.message.to);
         }
@@ -187,6 +190,7 @@ export class Coordinator {
   constructor(private readonly options: CoordinatorOptions) {
     const { agents, bus, mcpUrlFor, instructions, limits, settings } = options;
     this.deliveryNotes = new DeliveryNotes(options.soloReleased, options.consumeSoloReleased);
+    for (const message of options.knownMessages ?? []) this.messages.set(message.id, message);
     this.budget = new BudgetManager(limits);
     this.usage = new UsageMonitor(bus, { ...DEFAULT_USAGE_ALERT, ...options.usageAlert });
     for (const id of AGENT_IDS) {
@@ -327,6 +331,10 @@ export class Coordinator {
     });
     if (!result.ok) return result;
     const { message } = result;
+    const repliedTo = message.replyTo ? this.messages.get(message.replyTo) : undefined;
+    if (message.type === "ANSWER" && (repliedTo?.type !== "QUESTION" || repliedTo.to !== from || repliedTo.from !== message.to))
+      return { ok: false, error: "replyTo: ANSWER must reply to a QUESTION received from the recipient" };
+    if (message.type === "RESULT" && repliedTo?.type === "QUESTION") return { ok: false, error: 'replyTo: reply to a QUESTION with type="ANSWER"' };
     let specSnapshot: { key: string; content: string } | undefined;
     if (message.spec !== undefined) {
       const specPath = resolveSpecFile(projectRoot, message.spec);
@@ -347,6 +355,7 @@ export class Coordinator {
     if (parent && RETRIED_TYPES.has(parent.type) && message.to === parent.from) this.repliedRequests.add(parent.id);
     if (message.type !== "ACK" && this.handoffTurns[from] !== undefined) this.handoffTurns[from] = true;
     if (specSnapshot) this.specSnapshots.set(specSnapshot.key, specSnapshot.content);
+    this.messages.set(message.id, message);
     bus.publish({ kind: "message", message });
     // ACK は記録のみ。配送して Agent を起こさない（DESIGN.md §12, §25）
     if (message.type !== "ACK") this.detach(this.deliver(message), message.to);
@@ -357,12 +366,13 @@ export class Coordinator {
   private async deliver(message: AgentMessage, attempt = 1): Promise<void> {
     const envelope = `${attempt > 1 ? `${RETRY_NOTE}\n` : ""}${buildEnvelope(message, this.language)}`;
     const mailbox = this.mailboxes[message.to];
-    const steerable = message.interrupt && mailbox.current?.from === message.from;
+    const steerable =
+      (message.type === "ANSWER" && this.options.agents[message.to].status === "busy") || (message.interrupt && mailbox.current?.from === message.from);
     if (steerable && (await this.steerWithNotice(message.to, envelope, message.id))) return;
     const result = await mailbox.enqueue(envelope, { message });
     const replied = this.repliedRequests.delete(message.id);
     if (RETRIED_TYPES.has(message.type) && result.status === "completed" && result.text.trim() && !replied && !mailbox.isClosed && !mailbox.holding)
-      this.autoResult(message, result.text);
+      this.autoReply(message, result.text);
     // 上限で待っている宛先は、リセット後に続きを送るので送り直さない
     if (result.status !== "failed" || !RETRIED_TYPES.has(message.type) || mailbox.isClosed || mailbox.holding) return;
     if (attempt < MAX_DELIVERY_ATTEMPTS) {
@@ -377,10 +387,18 @@ export class Coordinator {
     this.detach(sender.enqueue(handoffFallback(message, error), { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, suffix: this.reminder }), message.from);
   }
 
-  private autoResult(request: AgentMessage, text: string): void {
+  private autoReply(request: AgentMessage, text: string): void {
     const body = text.length > MAX_BODY_LENGTH ? `${text.slice(0, MAX_BODY_LENGTH - 1)}…` : text;
+    const answer = request.type === "QUESTION";
     const created = createMessage(
-      { to: request.from, type: "RESULT", taskId: request.taskId, replyTo: request.id, status: "done", body },
+      {
+        to: request.from,
+        type: answer ? "ANSWER" : "RESULT",
+        taskId: request.taskId,
+        replyTo: request.id,
+        ...(answer ? {} : { status: "done" as const }),
+        body,
+      },
       { from: request.to, repository: this.options.projectRoot, ...(this.options.createMessageId ? { createId: this.options.createMessageId } : {}) },
     );
     if (!created.ok) return;
@@ -390,6 +408,7 @@ export class Coordinator {
       this.options.bus.publish({ kind: "agent", agent: request.to, event: { type: "error", message: humanBudgetError(budgetError) } });
       return;
     }
+    this.messages.set(message.id, message);
     this.options.bus.publish({ kind: "message", message });
     this.detach(this.deliver(message), message.to);
   }

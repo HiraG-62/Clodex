@@ -178,6 +178,88 @@ describe("人の判断と作業の引き継ぎ", () => {
 });
 
 describe("自動 RESULT", () => {
+  it("QUESTION の完了時は status のない自動 ANSWER を返す", async () => {
+    const { codex, events, coordinator } = setup();
+    const question = coordinator.receiveMessage("claude", { to: "codex", type: "QUESTION", taskId: "T", body: "質問" });
+    expect(question.ok).toBe(true);
+    if (!question.ok) return;
+    await flush();
+    codex.completeTurn({ status: "completed", text: "回答" });
+    await flush();
+    const answer = events.flatMap(event => (event.kind === "message" && event.message.auto ? [event.message] : []));
+    expect(answer).toMatchObject([{ type: "ANSWER", replyTo: question.message.id, body: "回答", auto: true }]);
+    expect(answer[0]).not.toHaveProperty("status");
+  });
+
+  it("QUESTION への RESULT と、QUESTION 以外への ANSWER を拒否する", () => {
+    const { coordinator } = setup();
+    const question = coordinator.receiveMessage("claude", { to: "codex", type: "QUESTION", taskId: "T", body: "質問" });
+    const delegate = coordinator.receiveMessage("claude", { to: "codex", type: "DELEGATE", taskId: "D", body: "依頼" });
+    if (!question.ok || !delegate.ok) throw new Error("message creation failed");
+    expect(coordinator.receiveMessage("codex", { to: "claude", type: "RESULT", taskId: "T", replyTo: question.message.id, body: "回答" })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('reply to a QUESTION with type="ANSWER"'),
+    });
+    expect(coordinator.receiveMessage("codex", { to: "claude", type: "ANSWER", taskId: "D", replyTo: delegate.message.id, body: "回答" }).ok).toBe(false);
+    expect(coordinator.receiveMessage("codex", { to: "claude", type: "ANSWER", taskId: "T", replyTo: "unknown", body: "回答" }).ok).toBe(false);
+    expect(coordinator.receiveMessage("codex", { to: "claude", type: "ANSWER", taskId: "T", replyTo: question.message.id, body: "回答" }).ok).toBe(true);
+  });
+
+  it("保存済みの QUESTION にも ANSWER を返せる", () => {
+    const { claude, codex } = setup();
+    const coordinator = new Coordinator({
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex },
+      bus: new EventBus(),
+      mcpUrlFor,
+      knownMessages: [
+        {
+          id: "msg_saved",
+          from: "claude",
+          to: "codex",
+          type: "QUESTION",
+          taskId: "T",
+          body: "質問",
+          repository: PROJECT_ROOT,
+          createdAt: NOW,
+        },
+      ],
+    });
+    expect(coordinator.receiveMessage("codex", { to: "claude", type: "ANSWER", taskId: "T", replyTo: "msg_saved", body: "回答" }).ok).toBe(true);
+  });
+
+  it("ANSWER は作業中の相手へ割り込み、待機中の相手には通常配送する", async () => {
+    const { claude, codex, coordinator } = setup();
+    void coordinator.sendToAgent("claude", "作業中");
+    await flush();
+    const question = coordinator.receiveMessage("claude", { to: "codex", type: "QUESTION", taskId: "T", body: "質問" });
+    if (!question.ok) throw new Error("message creation failed");
+    await flush();
+    expect(coordinator.receiveMessage("codex", { to: "claude", type: "ANSWER", taskId: "T", replyTo: question.message.id, body: "回答" }).ok).toBe(true);
+    await flush();
+    expect(claude.steered).toHaveLength(1);
+    expect(claude.steered[0]).toContain("Type: ANSWER");
+    codex.completeTurn({ status: "completed", text: "回答" });
+    claude.completeTurn();
+    await flush();
+  });
+
+  it("ANSWER を受けたターンの終了は途中扱いせず、手動 ANSWER の後に自動返信を作らない", async () => {
+    const { claude, codex, events, coordinator } = setup();
+    const question = coordinator.receiveMessage("codex", { to: "claude", type: "QUESTION", taskId: "T", body: "質問" });
+    if (!question.ok) throw new Error("message creation failed");
+    await flush();
+    expect(coordinator.receiveMessage("claude", { to: "codex", type: "ANSWER", taskId: "T", replyTo: question.message.id, body: "回答" }).ok).toBe(true);
+    claude.completeTurn({ status: "completed", text: "回答" });
+    await flush();
+    expect(codex.sent[0]).toContain("Type: ANSWER");
+    codex.emit({ type: "turn_started" });
+    codex.emit({ type: "turn", result: { status: "completed", text: "続き" } });
+    expect(events.some(event => event.kind === "agent" && event.event.type === "turn" && event.agent === "codex" && event.handoff)).toBe(false);
+    expect(events.some(event => event.kind === "message" && event.message.auto)).toBe(false);
+    codex.completeTurn({ status: "completed", text: "続き" });
+  });
+
   it("依頼先が返事を送らず完了したら最終応答を依頼元へ届ける", async () => {
     const { claude, codex, events, coordinator } = setup();
     const request = coordinator.receiveMessage("claude", { ...reviewRequest, type: "DELEGATE" });
@@ -863,6 +945,18 @@ describe("Coordinator", () => {
       await flush();
       await flush();
       expect(codex.sent).toHaveLength(1);
+      expect(claude.sent).toHaveLength(1);
+    });
+
+    it("ANSWER の配送に失敗しても再送しない", async () => {
+      const { claude, coordinator } = setupRetry();
+      const question = coordinator.receiveMessage("claude", { to: "codex", type: "QUESTION", taskId: "T", body: "質問" });
+      if (!question.ok) throw new Error("message creation failed");
+      expect(coordinator.receiveMessage("codex", { to: "claude", type: "ANSWER", taskId: "T", replyTo: question.message.id, body: "回答" }).ok).toBe(true);
+      await flush();
+      claude.completeTurn({ status: "failed", text: "boom" });
+      await flush();
+      await flush();
       expect(claude.sent).toHaveLength(1);
     });
   });

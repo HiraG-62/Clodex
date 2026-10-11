@@ -27,7 +27,8 @@ const SUBAGENT_NOTE =
 const SPEC_NOTE =
   "For DELEGATE / REVIEW_REQUEST, write the design document first (default: docs/specs/<taskId>.md) and set spec to its path. " +
   "Keep body to a summary. Use body alone only for simple requests that can be fully explained in a few lines. " +
-  "When you update the design document to answer a QUESTION, set spec on the RESULT. " +
+  "Answer a QUESTION with ANSWER. When you update the design document to answer a QUESTION, set spec on the ANSWER. " +
+  "Use RESULT when delegated work is complete. " +
   "In the spec, include the files that generation commands (build, codegen, dictionary updates) rewrite in the files the implementer may change. " +
   "Updating files rewritten by generation commands is allowed by default.";
 

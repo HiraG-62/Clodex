@@ -89,7 +89,7 @@ describe.runIf(process.env.CLODEX_E2E === "1")("v0.1 acceptance (real clodex pro
           'body="What does average.ts return for an empty array? Answer briefly.", files=["average.ts"]. Then end your turn.',
       );
       await waitForOutput(/\[MESSAGE\] codex -> claude QUESTION task=ACC-2/);
-      await waitForOutput(/\[MESSAGE\] claude -> codex RESULT task=ACC-2/);
+      await waitForOutput(/\[MESSAGE\] claude -> codex ANSWER task=ACC-2/);
 
       // 11. ユーザーが Agent を interrupt できる（キュー済みの配送が終わるのを待ってから長いターンを始める）
       send("@claude Reply with exactly: READY");

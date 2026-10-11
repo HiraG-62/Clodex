@@ -13,7 +13,7 @@ const msg = (from: AgentId, type: MessageType, extra: Partial<AgentMessage> = {}
   body: "x",
   repository: "C:\\dev\\app",
   createdAt: "2026-10-05T07:00:00.000Z",
-  ...(type === "RESULT" || type === "ACK" ? { replyTo: "msg_prev" } : {}),
+  ...(["ANSWER", "RESULT", "ACK"].includes(type) ? { replyTo: "msg_prev" } : {}),
   ...extra,
 });
 
@@ -69,7 +69,7 @@ describe("BudgetManager", () => {
     const budget = new BudgetManager({ ...LIMITS, maxMessagesPerChain: 10 });
     const q1 = msg("claude", "QUESTION");
     budget.admit(q1, undefined);
-    const a1 = msg("codex", "RESULT");
+    const a1 = msg("codex", "ANSWER");
     budget.admit(a1, q1);
     const d1 = msg("claude", "DELEGATE");
     expect(budget.admit(d1, a1)).toBeUndefined();

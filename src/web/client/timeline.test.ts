@@ -30,12 +30,12 @@ const human = (name: "claude" | "codex", text: string): Extract<FeedItem, { type
   event: { kind: "human", agent: name, text, at: AT },
 });
 const output = (text: string): Extract<FeedItem, { type: "output" }> => ({ type: "output", seq: ++seq, text });
-const formal = (from: "claude" | "codex", body: string, auto = false): FeedItem => {
+const formal = (from: "claude" | "codex", body: string, auto = false, type: AgentMessage["type"] = "DELEGATE"): FeedItem => {
   const message: AgentMessage = {
     id: `msg_${++seq}`,
     from,
     to: from === "claude" ? "codex" : "claude",
-    type: "DELEGATE",
+    type,
     taskId: "T",
     body,
     repository: "C:\\app",
@@ -696,23 +696,23 @@ describe("message で区切るターン", () => {
     }
   });
 
-  it("回答を RESULT で返しても、自動の RESULT でも、質問 → 回答 → 続きの作業中の順に並ぶ", () => {
+  it("ANSWER で返しても、自動の ANSWER でも、質問 → 回答 → 続きの作業中の順に並ぶ", () => {
     for (const reply of [
       [
         agent("codex", { type: "turn_started" }),
-        formal("codex", "回答"),
+        formal("codex", "回答", false, "ANSWER"),
         agent("codex", { type: "turn", result: { status: "completed", text: "返しました" } }),
       ],
       [
         agent("codex", { type: "turn_started" }),
         agent("codex", { type: "turn", result: { status: "completed", text: "回答" } }),
-        formal("codex", "回答", true),
+        formal("codex", "回答", true, "ANSWER"),
       ],
     ]) {
       const timeline = run([agent("claude", { type: "turn_started" }), formal("claude", "質問"), ...reply]);
       expect(withWorkingTurnsLast(timeline)).toMatchObject([
         { kind: "turn", agent: "claude", segment: "closed", messages: [{ message: { body: "質問" } }] },
-        { kind: "turn", agent: "codex", messages: [{ message: { body: "回答" } }] },
+        { kind: "turn", agent: "codex", messages: [{ message: { type: "ANSWER", body: "回答" } }] },
         { kind: "turn", agent: "claude", status: "working", continuation: true },
       ]);
     }

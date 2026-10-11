@@ -177,7 +177,8 @@ export const openProject = async ({
   const createRuntime = async (conversation: Conversation): Promise<ConversationRuntime> => {
     const bus = new EventBus();
     const transcript = new ConversationTranscript(transcriptPath(statePath, conversation.id));
-    transcript.seed(feedStore.load(conversation.id));
+    const savedFeed = feedStore.load(conversation.id);
+    transcript.seed(savedFeed);
     bus.subscribe(event => transcript.append(event));
     const workDir = conversation.workDir ?? projectRoot;
     await sandbox.allowWorktree(workDir);
@@ -193,6 +194,7 @@ export const openProject = async ({
       permissionLocked: () => sandbox.enabled,
       canStart: () => sandbox.usable,
       bus,
+      knownMessages: savedFeed.flatMap(item => (item.type === "event" && item.event.kind === "message" ? [item.event.message] : [])),
       modelCatalog: () => catalog,
       mcpUrlFor: agent => mcp.urlFor(agent),
       settings: resolveStartSettings({

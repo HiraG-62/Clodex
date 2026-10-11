@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { AGENT_IDS, type AgentId } from "../agents/agent-adapter.js";
 
-export const MESSAGE_TYPES = ["QUESTION", "REVIEW_REQUEST", "DELEGATE", "RESULT", "ISSUE", "ACK"] as const;
+export const MESSAGE_TYPES = ["QUESTION", "REVIEW_REQUEST", "DELEGATE", "ANSWER", "RESULT", "ISSUE", "ACK"] as const;
 export const RESULT_STATUSES = ["approved", "changes_requested", "done", "failed"] as const;
 export const ISSUE_SEVERITIES = ["low", "medium", "high", "critical"] as const;
 
@@ -12,7 +12,7 @@ export const MAX_BODY_LENGTH = 4_000;
 const MESSAGE_ID_PREFIX = "msg_";
 const MESSAGE_ID_RANDOM_LENGTH = 8;
 
-const TYPES_REQUIRING_REPLY_TO = new Set<MessageType>(["RESULT", "ACK"]);
+const TYPES_REQUIRING_REPLY_TO = new Set<MessageType>(["ANSWER", "RESULT", "ACK"]);
 const TYPES_ALLOWING_ISSUES = new Set<MessageType>(["RESULT", "ISSUE"]);
 
 const issueSchema = z.object({
@@ -25,7 +25,7 @@ const issueSchema = z.object({
 // MCP tool send_message の入力 schema としても使う（refinement を含まない素の shape）
 export const sendMessageShape = {
   to: z.enum(AGENT_IDS).describe("Recipient agent"),
-  type: z.enum(MESSAGE_TYPES).describe("Message type. RESULT and ACK require replyTo"),
+  type: z.enum(MESSAGE_TYPES).describe("ANSWER replies to a QUESTION; RESULT reports completed delegated work. ANSWER, RESULT and ACK require replyTo"),
   taskId: z.string().min(1).describe("Task ID"),
   body: z.string().min(1).max(MAX_BODY_LENGTH).describe("Request, question, or result summary. Reference commit/files instead of pasting large content"),
   replyTo: z.string().min(1).optional().describe("ID of the message this replies to"),
@@ -36,7 +36,7 @@ export const sendMessageShape = {
     .optional()
     .describe(
       "Path (relative to the project root) of the design document for this request. Write the design there first; keep body short. " +
-        "On a RESULT, the design document you updated to answer a QUESTION",
+        "On an ANSWER, the design document you updated to answer a QUESTION",
     ),
   files: z.array(z.string().min(1)).optional().describe("File paths relative to the project root"),
   status: z.enum(RESULT_STATUSES).optional().describe("RESULT only"),
@@ -50,10 +50,10 @@ export const sendMessageShape = {
     ),
 };
 
-const TYPES_ALLOWING_SPEC = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST", "RESULT"]);
+const TYPES_ALLOWING_SPEC = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST", "RESULT", "ANSWER"]);
 const sendMessageSchema = z.object(sendMessageShape).superRefine((input, ctx) => {
   if (input.spec !== undefined && !TYPES_ALLOWING_SPEC.has(input.type)) {
-    ctx.addIssue({ code: "custom", path: ["spec"], message: "allowed only for DELEGATE, REVIEW_REQUEST or RESULT" });
+    ctx.addIssue({ code: "custom", path: ["spec"], message: "allowed only for DELEGATE, REVIEW_REQUEST, RESULT or ANSWER" });
   }
 });
 
