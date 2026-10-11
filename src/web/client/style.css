@@ -173,7 +173,7 @@
   .refs { display: flex; flex-wrap: wrap; gap: 4px 10px; }
   .ref { font: 12px/1.4 var(--font-mono); color: var(--fg-2); overflow-wrap: anywhere; border: 0; background: none; padding: 0; text-align: left; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
   .image-previews { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; min-width: 0; }
-  .entry .image-previews { grid-column: 2; }
+  .entry > .image-previews { grid-column: 2; }
   .image-previews:empty { display: none; }
   .image-preview { max-width: 100%; min-width: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--sunken); }
   .image-preview { cursor: zoom-in; }
