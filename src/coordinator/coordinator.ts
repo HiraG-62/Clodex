@@ -58,6 +58,7 @@ export const RECOVERY_CONTINUE = "[Clodex] Clodex restarted and your previous tu
 export type SoloMode = "free" | AgentId;
 const SOLO_REMINDER = "[Clodex] Solo mode: do not use send_message. Do all the work yourself.";
 const SOLO_REJECTED = "solo mode: the other agent is not available. Do the work yourself.";
+const STEER_IMAGE_INSTRUCTION = "[Clodex] Attached images (read them with your tools):";
 // 作業を頼む message は、配送したターンが失敗したら一度だけ送り直し、それでも失敗したら送信元に引き取らせる（DESIGN.md §12 配送ルール）
 const RETRIED_TYPES: ReadonlySet<AgentMessage["type"]> = new Set(["DELEGATE", "REVIEW_REQUEST", "QUESTION"]);
 const DEFAULT_RETRY_DELAY_MS = 30_000;
@@ -508,6 +509,29 @@ export class Coordinator {
         text: message.body,
       })),
     );
+  }
+
+  async steerQueued(id: string): Promise<{ ok: true } | { ok: false; reason: "missing" | "idle" | "holding" | "rejected"; agent?: AgentId }> {
+    const input = this.pendingInputs().find(item => item.id === id);
+    const message = this.pendingMessages().find(item => item.id === id);
+    const target = input ?? message;
+    if (!target) return { ok: false, reason: "missing" };
+    const mailbox = this.mailboxes[target.agent];
+    if (mailbox.holding) return { ok: false, reason: "holding", agent: target.agent };
+    if (this.options.agents[target.agent].status !== "busy") return { ok: false, reason: "idle", agent: target.agent };
+    const steerId = input ? randomUUID() : id;
+    try {
+      const sent = await mailbox.steerQueued(id, queued => {
+        const images = queued.images?.length ? `\n\n${STEER_IMAGE_INSTRUCTION}\n${queued.images.join("\n")}` : "";
+        const text = queued.message ? buildEnvelope({ ...queued.message, interrupt: true }, this.language) : `${queued.text}${queued.suffix ?? ""}${images}`;
+        return this.steerWithNotice(target.agent, text, steerId);
+      });
+      if (!sent) return { ok: false, reason: "rejected", agent: target.agent };
+      if (input) this.options.bus.publish({ kind: "steered", inputId: id, steerId });
+      return { ok: true };
+    } catch {
+      return { ok: false, reason: "rejected", agent: target.agent };
+    }
   }
 
   // ID 省略時は最後に送った配送待ちの入力。取り消せなければ undefined

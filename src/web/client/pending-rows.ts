@@ -9,12 +9,13 @@ export type PendingRow = {
   holdTime?: string;
   from?: AgentId;
   type?: PendingMessage["type"];
+  canSteer: boolean;
 };
 
 export function pendingRows(
   inputs: readonly { id: string; agent: AgentId; text: string }[],
   messages: readonly PendingMessage[],
-  agents: readonly { id: AgentId; holdUntil?: string }[],
+  agents: readonly { id: AgentId; status?: string; holdUntil?: string }[],
   referencesSeparator: string,
   now: Date = new Date(),
 ): PendingRow[] {
@@ -26,6 +27,10 @@ export function pendingRows(
     const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
     return date.toDateString() === now.toDateString() ? time : `${date.getMonth() + 1}/${date.getDate()} ${time}`;
   };
+  const canSteer = (agent: AgentId): boolean => {
+    const state = agents.find(item => item.id === agent);
+    return state?.status === "busy" && !state.holdUntil;
+  };
   return [
     ...inputs.map(
       (input): PendingRow => ({
@@ -34,6 +39,7 @@ export function pendingRows(
         agent: input.agent,
         text: input.text.split(referencesSeparator)[0] ?? input.text,
         holdTime: holdTime(input.agent),
+        canSteer: canSteer(input.agent),
       }),
     ),
     ...messages.map(
@@ -45,6 +51,7 @@ export function pendingRows(
         type: message.type,
         text: message.text.split(/\r?\n/, 1)[0] ?? "",
         holdTime: holdTime(message.agent),
+        canSteer: canSteer(message.agent),
       }),
     ),
   ];

@@ -565,6 +565,18 @@ describe("applyFeedItem", () => {
 });
 
 describe("applyFeedItem の割り込み", () => {
+  it("送信待ちの発言を増やさず割り込みに変え、届いた印を付ける", () => {
+    const sent: FeedItem = { type: "event", seq: 900, event: { kind: "human", agent: "codex", inputId: "in2", text: "修正", at: AT } };
+    const steered: FeedItem = { type: "event", seq: 901, event: { kind: "steered", inputId: "in2", steerId: "s-1", at: AT } };
+    const delivered: FeedItem = {
+      type: "event",
+      seq: 902,
+      event: { kind: "agent", agent: "codex", event: { type: "steer_delivered", steerId: "s-1" }, at: AT },
+    };
+    const result = run([sent, steered, delivered]);
+    expect(result).toMatchObject([{ kind: "human", text: "修正", steer: true, steerId: "s-1", delivered: true }]);
+    expect(result).toHaveLength(1);
+  });
   it("人間の steer の入力に印を付ける", () => {
     const item: FeedItem = { type: "event", seq: 900, event: { kind: "human", agent: "codex", text: "fix", steer: true, at: AT } };
     expect(applyFeedItem([], item)).toMatchObject([{ kind: "human", text: "fix", steer: true }]);

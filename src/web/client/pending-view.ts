@@ -15,11 +15,11 @@ export function createPendingView(ctx: ClientContext) {
     list.replaceChildren(
       ...rows.map(queued => {
         const row = ctx.el("li");
-        const action = (label: string, run: (button: HTMLButtonElement) => void) => {
+        const action = (label: string, command: string, run: (button: HTMLButtonElement) => void) => {
           const button = ctx.el("button", "", label) as HTMLButtonElement;
           button.type = "button";
           button.addEventListener("click", () => run(button));
-          button.dataset.command = `/cancel ${queued.id}`;
+          button.dataset.command = command;
           return button;
         };
         row.append(
@@ -43,6 +43,7 @@ export function createPendingView(ctx: ClientContext) {
           row.append(
             action(
               ctx.t("web.pending.edit"),
+              `/cancel ${queued.id}`,
               button =>
                 void ctx.send(`/cancel ${queued.id}`, button).then(sent => {
                   if (!sent) return;
@@ -54,7 +55,12 @@ export function createPendingView(ctx: ClientContext) {
                 }),
             ),
           );
-        row.append(action(ctx.t("web.pending.cancel"), button => void ctx.send(`/cancel ${queued.id}`, button)));
+        const steer = action(ctx.t("web.pending.steer"), `/steer ${queued.id}`, button => void ctx.send(`/steer ${queued.id}`, button));
+        steer.disabled = !queued.canSteer;
+        row.append(
+          steer,
+          action(ctx.t("web.pending.cancel"), `/cancel ${queued.id}`, button => void ctx.send(`/cancel ${queued.id}`, button)),
+        );
         return row;
       }),
     );

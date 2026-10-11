@@ -466,6 +466,7 @@ Internal command（v0.1）:
 | command | 内容 |
 |---|---|
 | `/interrupt [claude\|codex]` | 指定 Agent（省略時は全 Agent と実行中の `!command`）の実行中ターンを interrupt する。Agent 指定時、キュー済みの message はそのまま配送される。省略時は Agent 間のやり取りも止める: 配送待ちの formal message を破棄し、処理中・破棄した message の chain を閉じる（以後その chain の `send_message` は拒否）。人間の配送待ちの入力は残す |
+| `/steer <id>` | 配送待ちの人間の入力か formal message を、宛先の Agent の実行中のターンに割り込みで足す（§28 v0.3 C）。Web UI は送信待ちの一覧に「割り込み」を出す |
 | `/cancel [id]` | まだ配送していない人間の入力か、相手の Agent からの message を取り消す（省略時は最後に送った人間の入力）。配送済みは取り消せない（`/interrupt` を使う）。Web UI は送信待ちの一覧に「編集」「取り消し」を出す（編集は取り消して本文を入力欄に戻す。message は「取り消し」だけ） |
 | `/status` | 各 Agent の状態と session ID。停止中は次の起動で使う session（/new 後の新規なら表示しない）。配送待ちの人間の入力（ID・送り先・本文） |
 | `/verbose` | terminal の詳細表示を切り替える（§17） |
@@ -1883,6 +1884,9 @@ dogfooding で出た要望を 4 段階で入れる。小さく確実なものか
 
 - Adapter の `steer(text)`: 実行中のターンに指示を足す。Claude は実行中に stdin へ user message をもう 1 行、Codex は `turn/steer`（`expectedTurnId` = 実行中の turn）。どちらも新しいターンにはならず、実行中の tool / command の区切りで取り込まれる。足せなかった（実行中でない、Codex の turn ID が未確定、`activeTurnNotSteerable` 等）ら false を返す
 - 人間: `@claude! <text>` / `@codex! <text>`。その Agent が実行中なら steer し、そうでなければ（steer できなければ）通常の送信としてキューに積む。人間の入力の event に `steer: true` を付け、画面は「割り込み」と出す
+- 送信待ちから: `/steer <id>`（Web UI は送信待ちの一覧の各行の「割り込み」。人間の入力・formal message の両方）。配送待ちの項目を mailbox から外し、宛先の実行中のターンに steer する。人間の入力は `@<agent>!` と同じ扱い（ログの発言に「割り込み」と届いた印を付ける。新しい発言は足さず、送ったときの発言を割り込みに変える）、formal message は `interrupt: true` と同じ扱い（Task envelope に `Interrupt: yes`、画面に「割り込み」）
+  - 宛先が実行中でない・steer できなかったら、項目は送信待ちの元の位置に残し、`toast`（warn）で「{agent} は作業中でない」などと知らせる（失敗の理由に合わせて短く）。利用枠の上限で待っている宛先も steer しない
+  - 成功の知らせは出さない（ログの発言の「割り込み」で分かる）
 - Agent: `send_message` の `interrupt: true`。宛先が**送信元からの message を処理中**のときだけ steer し（送信元が頼んだ作業の修正）、それ以外は通常どおりキューに積む。Budget の数え方は通常の message と同じ。Task envelope に `Interrupt: yes` を入れ、画面は「割り込み」と出す
 - tool の説明と定型文で「完了を待つと手戻りになる修正のときだけ `interrupt: true` にする」と伝える
 

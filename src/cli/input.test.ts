@@ -104,6 +104,12 @@ describe("parseInput", () => {
     expect(parseInput("/cancel in3", "claude")).toEqual({ kind: "cancel", id: "in3" });
     expect(parseInput("/cancel a b", "claude").kind).toBe("invalid");
   });
+  it("/steer は送信待ちの ID を要求する", () => {
+    expect(parseInput("/steer in3", "claude")).toEqual({ kind: "steerQueued", id: "in3" });
+    expect(parseInput("/steer msg_1", "claude")).toEqual({ kind: "steerQueued", id: "msg_1" });
+    expect(parseInput("/steer", "claude").kind).toBe("invalid");
+    expect(parseInput("/steer in1 in2", "claude").kind).toBe("invalid");
+  });
 
   it("行頭の @ が Agent でなければファイルの参照として primary に送る", () => {
     expect(parseInput("@src/a.ts を見て", "codex")).toEqual({ kind: "send", agent: "codex", text: "@src/a.ts を見て" });

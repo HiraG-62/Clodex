@@ -40,6 +40,17 @@ export const advanceTerminalFeed = (state: TerminalFeed, feed: FeedItem, expande
       ),
     };
   }
+  if (feed.event.kind === "steered") {
+    const steered = feed.event;
+    return {
+      ...state,
+      completed: state.completed.map(entry =>
+        entry.item.kind === "human" && entry.item.inputId === steered.inputId
+          ? { ...entry, item: { ...entry.item, steer: true, steerId: steered.steerId, queued: false } }
+          : entry,
+      ),
+    };
+  }
   const next = applyFeedItem(state.timeline, feed);
   return {
     timeline: next.filter(item => item.kind === "turn" && item.status === "working"),

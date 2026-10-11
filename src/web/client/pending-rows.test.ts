@@ -14,8 +14,8 @@ it("人間の入力と Agent 間メッセージを行にし、待機中の宛先
       now,
     ),
   ).toEqual([
-    { kind: "input", id: "in1", agent: "codex", text: "確認", holdTime: "11:05" },
-    { kind: "message", id: "msg_1", agent: "codex", from: "claude", type: "DELEGATE", text: "実装", holdTime: "11:05" },
+    { kind: "input", id: "in1", agent: "codex", text: "確認", holdTime: "11:05", canSteer: false },
+    { kind: "message", id: "msg_1", agent: "codex", from: "claude", type: "DELEGATE", text: "実装", holdTime: "11:05", canSteer: false },
   ]);
   expect(
     pendingRows(
@@ -26,4 +26,11 @@ it("人間の入力と Agent 間メッセージを行にし、待機中の宛先
       now,
     )[0]?.holdTime,
   ).toBe("10/10 01:30");
+});
+
+it("割り込みは宛先が作業中で上限待機中でない行だけ使える", () => {
+  const input = [{ id: "in1", agent: "codex" as const, text: "入力" }];
+  expect(pendingRows(input, [], [{ id: "codex", status: "busy" }], "x")[0]?.canSteer).toBe(true);
+  expect(pendingRows(input, [], [{ id: "codex", status: "idle" }], "x")[0]?.canSteer).toBe(false);
+  expect(pendingRows(input, [], [{ id: "codex", status: "busy", holdUntil: new Date().toISOString() }], "x")[0]?.canSteer).toBe(false);
 });

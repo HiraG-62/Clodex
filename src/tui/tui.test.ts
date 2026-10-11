@@ -149,7 +149,7 @@ describe("TuiApp", () => {
     await waitFor(() => {
       expect(app.lastFrame()).toContain("Claude · 作業中");
       expect(app.lastFrame()).toContain("方針を確認");
-      expect(app.lastFrame()).toContain("/status");
+      expect(app.lastFrame()).toContain("/steer");
     });
   });
 

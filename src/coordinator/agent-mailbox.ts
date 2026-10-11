@@ -25,6 +25,14 @@ export interface EnqueueOptions {
   context?: true;
 }
 
+export interface QueuedSend {
+  text: string;
+  message: AgentMessage | undefined;
+  images?: readonly string[];
+  suffix?: string;
+  context?: true;
+}
+
 // 上限で止まったときに配送を止めて待つ（DESIGN.md 上限での停止と自動再開）
 export interface LimitHold {
   resumeAt: number;
@@ -43,6 +51,7 @@ export class AgentMailbox {
   // 配送中のターンが処理している message。Budget の chain 追跡に使う（DESIGN.md §14）
   current: AgentMessage | undefined;
   private activeSend = false;
+  private steering = false;
   private holdTimer: ReturnType<typeof setTimeout> | undefined;
   private resumeAt: number | undefined;
 
@@ -147,6 +156,38 @@ export class AgentMailbox {
     this.onChange();
     this.resolveIdleIfDone();
     return item.message ?? item.text;
+  }
+
+  async steerQueued(id: string, steer: (item: QueuedSend) => Promise<boolean>): Promise<boolean> {
+    if (this.closed || this.holding || this.steering) return false;
+    const index = this.queue.findIndex(item => item.inputId === id || item.message?.id === id);
+    if (index < 0) return false;
+    const wasPaused = this.paused;
+    this.paused = true;
+    this.steering = true;
+    const [item] = this.queue.splice(index, 1);
+    if (!item) {
+      this.paused = wasPaused;
+      this.steering = false;
+      return false;
+    }
+    try {
+      const sent = await steer(item);
+      if (sent) item.resolve({ status: "completed", text: "" });
+      else if (!this.closed) this.queue.splice(Math.min(index, this.queue.length), 0, item);
+      else item.resolve(CLOSED_RESULT);
+      return sent;
+    } catch (error) {
+      if (!this.closed) this.queue.splice(Math.min(index, this.queue.length), 0, item);
+      else item.resolve(CLOSED_RESULT);
+      throw error;
+    } finally {
+      this.paused = wasPaused;
+      this.steering = false;
+      this.onChange();
+      if (!this.paused) void this.drain();
+      this.resolveIdleIfDone();
+    }
   }
 
   // 配送待ちの formal message を破棄して返す（/interrupt。人間の入力は残す）

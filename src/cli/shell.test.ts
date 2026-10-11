@@ -154,6 +154,12 @@ class FakeCoordinator implements ShellCoordinator {
     this.canceled.push(id);
     return this.pending.find(p => p.id === (id ?? "in2")) ?? this.messages.find(message => message.id === id);
   }
+  steerQueuedResult: { ok: true } | { ok: false; reason: "missing" | "idle" | "holding" | "rejected"; agent?: AgentId } = { ok: true };
+  readonly queuedSteers: string[] = [];
+  async steerQueued(id: string) {
+    this.queuedSteers.push(id);
+    return this.steerQueuedResult;
+  }
 
   readonly switched: SavedSessions[] = [];
   readonly switchTargets: Array<readonly AgentId[] | undefined> = [];
@@ -603,6 +609,21 @@ describe("createShell", () => {
     expect(coordinator.canceled).toEqual([undefined, "in9"]);
     expect(printed).toEqual(["nothing to cancel: in9"]);
     expect(notified).toEqual(["canceled: in2 -> codex"]);
+  });
+
+  it("/steer は成功時は無音、失敗時だけ warn toast を出す", async () => {
+    const { coordinator, printed, notified, levels, shell } = setup();
+    await shell.handleLine("/steer in2");
+    expect(coordinator.queuedSteers).toEqual(["in2"]);
+    expect(printed).toEqual([]);
+    expect(notified).toEqual([]);
+    coordinator.steerQueuedResult = { ok: false, reason: "idle", agent: "codex" };
+    await shell.handleLine("/steer in2");
+    expect(notified).toEqual(["codex is not working"]);
+    expect(levels).toEqual(["warn"]);
+    coordinator.steerQueuedResult = { ok: false, reason: "missing" };
+    await shell.handleLine("/steer missing");
+    expect(notified.at(-1)).toBe("not queued: missing");
   });
 
   it("/interrupt を Coordinator に渡し、Agent 指定なしなら実行中の command も止める", async () => {

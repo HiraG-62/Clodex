@@ -146,6 +146,7 @@ export function createInputAssist(
           break;
         }
         case "cancel":
+        case "steer":
           if (index === 0)
             values = [
               ...state.pendingInputs.map(({ id }) => ({ value: id, detail: labels.queued })),

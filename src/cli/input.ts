@@ -39,6 +39,7 @@ export type ShellCommand =
   | { kind: "compact"; agent?: AgentId }
   | { kind: "answer"; id: string; text: string }
   | { kind: "cancel"; id?: string }
+  | { kind: "steerQueued"; id: string }
   | { kind: "rename"; title: string; index?: number }
   | { kind: "solo"; mode?: SoloMode }
   | { kind: "delete"; index: number }
@@ -216,6 +217,8 @@ const parseCommand = (name: string, arg: string, primary: AgentId): ShellCommand
     case "cancel":
       if (!arg) return { kind: "cancel" };
       return /^\S+$/.test(arg) ? { kind: "cancel", id: arg } : usage("/cancel [id]");
+    case "steer":
+      return /^\S+$/.test(arg) && arg.length > 0 ? { kind: "steerQueued", id: arg } : usage("/steer <id>");
     case "resume":
       if (!arg) return { kind: "resume" };
       return isConversationNumber(arg) ? { kind: "resume", index: Number(arg) } : usage("/resume [number]");

@@ -8,6 +8,7 @@ export type CoordinatorEventInput =
   | { kind: "message"; message: AgentMessage }
   | { kind: "human"; agent: AgentId; text: string; inputId?: string; steer?: boolean; steerId?: string } // steer: 実行中のターンに足した
   | { kind: "canceled"; id: string }
+  | { kind: "steered"; inputId: string; steerId: string }
   | { kind: "question"; id: string; agent: AgentId; questions: UserQuestion[] }
   | { kind: "answer"; id: string; agent: AgentId; answers: string[][] }
   | { kind: "notice"; text: string; limitHold?: { agent: AgentId; time: string } };

@@ -1316,6 +1316,69 @@ describe("Coordinator の取り消しと割り込み", () => {
 });
 
 describe("Coordinator の割り込み（steer）", () => {
+  it("画像付きの送信待ちは画像パスを Agent にだけ添えて割り込ませる", async () => {
+    const { codex, events, coordinator } = setup();
+    void coordinator.sendToAgent("codex", "作業中");
+    await flush();
+    const image = "C:\\Users\\Horry\\Pictures\\sample.png";
+    void coordinator.sendToAgent("codex", "画像を確認", [image], true);
+    expect(coordinator.pendingInputs()).toEqual([{ id: "in2", agent: "codex", text: "画像を確認" }]);
+    expect(await coordinator.steerQueued("in2")).toEqual({ ok: true });
+    expect(codex.steered[0]).toContain("read_conversation");
+    expect(codex.steered[0]).toContain(`[Clodex] Attached images (read them with your tools):\n${image}`);
+    expect(events).toContainEqual(expect.objectContaining({ kind: "human", inputId: "in2", text: "画像を確認" }));
+    expect(events.some(event => event.kind === "human" && event.text.includes(image))).toBe(false);
+    codex.completeTurn();
+  });
+  it("送信待ちの人間の入力を実行中ターンへ移し、発言を増やさない", async () => {
+    const { codex, events, coordinator } = setup();
+    void coordinator.sendToAgent("codex", "作業中");
+    await flush();
+    void coordinator.sendToAgent("codex", "急ぎの修正");
+    expect(coordinator.pendingInputs()).toMatchObject([{ id: "in2" }]);
+    expect(await coordinator.steerQueued("in2")).toEqual({ ok: true });
+    expect(coordinator.pendingInputs()).toEqual([]);
+    expect(codex.steered).toEqual(["急ぎの修正"]);
+    expect(events.filter(event => event.kind === "human" && event.text === "急ぎの修正")).toHaveLength(1);
+    expect(events).toContainEqual(expect.objectContaining({ kind: "steered", inputId: "in2", steerId: codex.steerIds[0] }));
+    codex.completeTurn();
+    await flush();
+    expect(codex.sent).toEqual(["作業中"]);
+  });
+
+  it("送信待ちの formal message を Interrupt: yes 付きで割り込ませる", async () => {
+    const { codex, coordinator } = setup();
+    void coordinator.sendToAgent("codex", "作業中");
+    await flush();
+    const created = coordinator.receiveMessage("claude", { to: "codex", type: "DELEGATE", taskId: "T", body: "修正" });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(await coordinator.steerQueued(created.message.id)).toEqual({ ok: true });
+    expect(coordinator.pendingMessages()).toEqual([]);
+    expect(codex.steered[0]).toContain("Interrupt: yes");
+    codex.completeTurn();
+    await flush();
+    expect(codex.sent).toEqual(["作業中"]);
+  });
+
+  it("宛先が作業中でない場合、上限待機中、steer が失敗した場合は元の順番を保つ", async () => {
+    const { codex, coordinator } = setup();
+    coordinator["mailboxes"].codex.pause();
+    void coordinator.sendToAgent("codex", "先頭");
+    void coordinator.sendToAgent("codex", "次");
+    void coordinator.sendToAgent("codex", "最後");
+    expect(await coordinator.steerQueued("in1")).toMatchObject({ ok: false, reason: "idle" });
+    coordinator["mailboxes"].codex.resume();
+    await flush();
+    codex.steer = async () => false;
+    expect(await coordinator.steerQueued("in2")).toMatchObject({ ok: false, reason: "rejected" });
+    expect(coordinator.pendingInputs().map(input => input.id)).toEqual(["in2", "in3"]);
+    coordinator["mailboxes"].codex.holdForLimit({ resumeAt: Date.now() + 60_000, text: "続き" });
+    expect(await coordinator.steerQueued("in2")).toMatchObject({ ok: false, reason: "holding" });
+    expect(coordinator.pendingInputs().map(input => input.id)).toEqual(["in2", "in3"]);
+    coordinator["mailboxes"].codex.releaseHold();
+    codex.completeTurn();
+  });
   it("/context の割り込みでは内部指示を Agent にだけ渡す", async () => {
     const { codex, events, coordinator } = setup();
     void coordinator.sendToAgent("codex", "作業中");

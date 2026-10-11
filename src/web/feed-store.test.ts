@@ -16,6 +16,12 @@ describe("feedDirPath", () => {
 });
 
 describe("FeedStore", () => {
+  it("送信待ちからの割り込み event を保存して再生する", () => {
+    const store = new FeedStore(makeDir());
+    const item: HistoryItem = { type: "event", seq: 2, event: { kind: "steered", inputId: "in1", steerId: "s-1", at: "now" } };
+    store.append("a", item);
+    expect(store.load("a")).toEqual([item]);
+  });
   it("取り消した入力と formal message を保存した feed から削除する", () => {
     const store = new FeedStore(makeDir());
     store.append("a", { type: "event", seq: 1, event: { kind: "human", agent: "codex", inputId: "in1", text: "取り消す", at: "now" } });

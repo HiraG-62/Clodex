@@ -183,6 +183,10 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
     return limit([...items, { kind: "message", id, at: event.at, message: event.message, ...(item.envelope ? { envelope: item.envelope } : {}) }]);
   }
   if (event.kind === "canceled") return items;
+  if (event.kind === "steered")
+    return items.map(entry =>
+      entry.kind === "human" && entry.inputId === event.inputId ? { ...entry, steer: true, steerId: event.steerId, queued: false } : entry,
+    );
 
   const { agent, event: agentEvent, at } = event;
   if (agentEvent.type === "steer_delivered") {

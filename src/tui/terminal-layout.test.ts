@@ -46,6 +46,16 @@ it("コマンド入力の枠を緑にして上辺にラベルを置き、! を�
 });
 
 describe("advanceTerminalFeed", () => {
+  it("送信待ちからの割り込みは元の発言に印を付ける", () => {
+    const input = advanceTerminalFeed(
+      { timeline: [], completed: [] },
+      { type: "event", seq: 1, event: { kind: "human", agent: "codex", inputId: "in1", text: "修正", at: "now" } },
+      false,
+    );
+    const next = advanceTerminalFeed(input, { type: "event", seq: 2, event: { kind: "steered", inputId: "in1", steerId: "s-1", at: "now" } }, false);
+    expect(next.completed).toMatchObject([{ item: { kind: "human", inputId: "in1", steer: true, steerId: "s-1" } }]);
+    expect(next.completed).toHaveLength(1);
+  });
   it("完了した項目だけを一度 Static へ送り、作業中は残す", () => {
     const start = advanceTerminalFeed(
       { timeline: [], completed: [] },

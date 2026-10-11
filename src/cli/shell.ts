@@ -48,6 +48,7 @@ export interface ShellCoordinator {
   pendingQuestions(): PendingQuestion[];
   answer(id: string, answers: unknown): string | undefined;
   cancelInput(id?: string): PendingInput | PendingMessage | undefined;
+  steerQueued(id: string): Promise<{ ok: true } | { ok: false; reason: "missing" | "idle" | "holding" | "rejected"; agent?: AgentId }>;
   status(): AgentState[];
   // 作業中のターンも配送待ちも無い（solo の切り替えの条件）
   idle(): boolean;
@@ -487,6 +488,20 @@ export const createShell = ({
     else print(t("shell.nothingToCancel", { id: command.id ? `: ${command.id}` : "" }));
     return "continue";
   };
+  const handleSteerQueued = async (command: CommandOf<"steerQueued">): Promise<ShellOutcome> => {
+    const result = await coordinator().steerQueued(command.id);
+    if (result.ok) return "continue";
+    const message =
+      result.reason === "missing"
+        ? t("shell.steerMissing", { id: command.id })
+        : result.reason === "idle"
+          ? t("shell.steerIdle", { agent: result.agent ?? "" })
+          : result.reason === "holding"
+            ? t("shell.steerHolding", { agent: result.agent ?? "" })
+            : t("shell.steerRejected");
+    notify(message, "warn");
+    return "continue";
+  };
   const handleNew = async (command: CommandOf<"new">): Promise<ShellOutcome> => {
     await startFresh(command.agent, command.worktree === true);
     return "continue";
@@ -659,6 +674,7 @@ export const createShell = ({
     tab: { requiresCurrent: false, run: handleTab },
     role: { requiresCurrent: true, run: handleRole },
     cancel: { requiresCurrent: true, run: handleCancel },
+    steerQueued: { requiresCurrent: true, run: handleSteerQueued },
     new: { requiresCurrent: true, run: handleNew },
     worktree: { requiresCurrent: true, run: handleWorktree },
     compact: { requiresCurrent: true, run: handleCompact },

@@ -69,6 +69,7 @@ const entryOf = (event: CoordinatorEvent): ConversationEntry | undefined => {
     }
     case "notice":
     case "canceled":
+    case "steered":
       return undefined;
   }
 };
