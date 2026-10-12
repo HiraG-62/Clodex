@@ -40,6 +40,11 @@ describe("saveUserLanguage", () => {
 });
 
 describe("loadConfig", () => {
+  it("threadTokenWarn は数か Agent ごとの数を読む", () => {
+    expect(loadConfig(setup({ user: { threadTokenWarn: 150000 } })).threadTokenWarn).toBe(150000);
+    expect(loadConfig(setup({ project: { threadTokenWarn: { codex: 200000 } } })).threadTokenWarn).toEqual({ codex: 200000 });
+    expect(() => loadConfig(setup({ user: { threadTokenWarn: { unknown: 100 } } }))).toThrow(/threadTokenWarn/);
+  });
   it("freshThread を読み、project の設定でキーごと上書きする", () => {
     const paths = setup({
       user: { freshThread: { DELEGATE: true, REVIEW_REQUEST: true } },

@@ -125,6 +125,7 @@ class FakeCoordinator implements ShellCoordinator {
         weeklyResetsAt: new Date(2026, 9, 9, 10, 0).getTime() / 1000,
         contextTokens: 85400,
         contextWindow: 200000,
+        inputTotal: 1234000,
       },
     },
     { id: "codex", status: "stopped", sessionId: undefined, permission: "full", models: [], usage: {}, subagents: [], backgroundTasks: [] },
@@ -714,9 +715,11 @@ describe("createShell", () => {
       "claude: idle, permission edit, model haiku, effort high (session s-claude)",
       "  usage: 5h 12% (resets 22:30), 7d 50% (pace -20, resets 10/09 10:00)",
       "  context: 85k / 200k tokens (43%)",
+      "  input total: 1.2M",
       "codex: stopped, permission full, model default, effort default",
       "  usage: unknown",
       "  context: unknown",
+      "  input total: unknown",
       "queued: in2 -> codex: queued",
     ]);
   });

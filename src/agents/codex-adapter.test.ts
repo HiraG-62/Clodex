@@ -485,13 +485,13 @@ describe("CodexAdapter", () => {
         threadId: THREAD_ID,
         turnId: TURN_ID,
         tokenUsage: {
-          total: { totalTokens: 90000 },
+          total: { totalTokens: 90000, inputTokens: 87000, cachedInputTokens: 30000 },
           last: { totalTokens: 30000 },
           modelContextWindow: 258000,
         },
       },
     });
-    expect(events).toContainEqual({ type: "context", tokens: 30000, window: 258000 });
+    expect(events).toContainEqual({ type: "context", tokens: 30000, window: 258000, inputTotal: 87000 });
   });
 
   it("account/rateLimits/updated を正規化して流す", async () => {

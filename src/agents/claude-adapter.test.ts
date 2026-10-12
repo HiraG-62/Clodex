@@ -469,6 +469,27 @@ describe("ClaudeAdapter", () => {
     expect(events).toContainEqual({ type: "context", tokens: 21550, window: 200000 });
   });
 
+  it("result の入力 usage を session ごとに累計する", async () => {
+    const { adapter, proc, spawner, events } = await setup();
+    const first = adapter.send("one");
+    proc.emit(init());
+    proc.emit({ type: "assistant", message: { content: [], usage: { input_tokens: 100 } } });
+    proc.emit({ ...result("one"), usage: { input_tokens: 100, cache_creation_input_tokens: 200, cache_read_input_tokens: 300 } });
+    await first;
+    expect(events).toContainEqual({ type: "context", tokens: 100, inputTotal: 600 });
+    const second = adapter.send("two");
+    proc.emit({ type: "assistant", message: { content: [], usage: { input_tokens: 50 } } });
+    proc.emit({ ...result("two"), usage: { input_tokens: 50, cache_read_input_tokens: 100 } });
+    await second;
+    expect(events).toContainEqual({ type: "context", tokens: 50, inputTotal: 750 });
+    await adapter.stop();
+    await adapter.start({ cwd: "C:\\dev\\app", resumeSessionId: "next-session" });
+    const third = adapter.send("three");
+    spawner.last.emit({ ...result("three"), usage: { input_tokens: 25 } });
+    await third;
+    expect(events).toContainEqual({ type: "input_total", total: 25 });
+  });
+
   it("rate_limit_event を % に正規化して流す", async () => {
     const { proc, events } = await setup();
     proc.emit({

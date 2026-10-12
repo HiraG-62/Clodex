@@ -6,6 +6,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { slashCommands } from "../cli/commands.js";
 import { getLanguage, setLanguage, t } from "../i18n/i18n.js";
 import { createInputAssist } from "../web/client/input-assist.js";
+import { formatTokens } from "../web/client/token-format.js";
 import { buildLimitState, type HistoryItem, isCanceledHistoryItem, type WebState } from "../web/web-feed.js";
 import type { FeedClient } from "./feed-client.js";
 import {
@@ -184,6 +185,7 @@ const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed
         agent.usage.fiveHourPercent === undefined ? "" : `${t("web.gauge.fiveHour")} ${agent.usage.fiveHourPercent}%`,
         agent.usage.weeklyPercent === undefined ? "" : `${t("web.gauge.weekly")} ${agent.usage.weeklyPercent}%`,
         agent.usage.weeklyPace === undefined ? "" : t("web.gauge.pace", { pace: agent.usage.weeklyPace }),
+        agent.usage.inputTotal === undefined ? "" : `${t("web.gauge.inputTotal")} ${formatTokens(agent.usage.inputTotal)}`,
       ]
         .filter(Boolean)
         .join(" · ");

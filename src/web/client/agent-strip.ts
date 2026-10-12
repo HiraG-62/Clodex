@@ -19,7 +19,7 @@ export function createAgentStrip(ctx: ClientContext) {
     node.append(ctx.el("span", "k", label), ctx.el("span", `v mono${over ? " over" : ""}`, value));
     node.querySelector<HTMLElement>(".v")!.prepend(ctx.el("span", "gauge-reset", reset));
     node.querySelector<HTMLElement>(".v")!.dataset.compact = percent === undefined ? "—" : `${Math.round(percent)}%`;
-    const track = ctx.el("span", `track ${agent}`);
+    const track = ctx.el("span", `track ${agent}${over && labelId === "ctx" ? " over" : ""}`);
     const fill = ctx.el("i");
     fill.style.width = `${Math.max(0, Math.min(100, percent ?? 0))}%`;
     track.append(fill);
@@ -58,6 +58,7 @@ export function createAgentStrip(ctx: ClientContext) {
     val.replaceChildren(ctx.el("span", "gauge-reset", reset), document.createTextNode(value));
     val.dataset.compact = percent === undefined ? "—" : `${Math.round(percent)}%`;
     val.classList.toggle("over", over);
+    track.classList.toggle("over", over && labelId === "ctx");
     track.querySelector<HTMLElement>("i")!.style.width = `${Math.max(0, Math.min(100, percent ?? 0))}%`;
     let marker = track.querySelector<HTMLElement>(".tick");
     if (tick === undefined) {
@@ -110,12 +111,26 @@ export function createAgentStrip(ctx: ClientContext) {
         label: ctx.t("web.gauge.context"),
         value: contextValue,
         percent: usage.contextTokens && usage.contextWindow ? (usage.contextTokens / usage.contextWindow) * ctx.PERCENT : 0,
-        over: false,
+        over: usage.contextWarning === true,
         tick: undefined,
         reset: "",
       },
     ];
   };
+
+  const detailValues = (usage: AgentState["usage"]) => [
+    ...gaugeValues(usage),
+    {
+      shortLabel: ctx.t("web.gauge.inputTotal"),
+      labelId: "inputTotal",
+      label: ctx.t("web.gauge.inputTotal"),
+      value: usage.inputTotal === undefined ? "—" : ctx.kTokens(usage.inputTotal),
+      percent: undefined,
+      over: false,
+      tick: undefined,
+      reset: "",
+    },
+  ];
 
   // Agent パネル: 設定の要約、利用枠、操作。権限・model・effort はペンアイコンかチップから開くポップアップで変える
   const agentControls = (agent: AgentState) => {
@@ -178,7 +193,12 @@ export function createAgentStrip(ctx: ClientContext) {
     const gauges = gaugeValues(agent.usage).map(g => gauge(g.label, g.shortLabel, g.labelId, g.value, g.percent, agent.id, g.over, g.tick, g.reset));
     const minis = ctx.el("div", "mini-gauges");
     minis.append(...gauges);
-    wrap.append(chips, minis);
+    const inputTotal = ctx.el("div", "input-total mobile-only");
+    const updateInputTotal = (current: AgentState) => {
+      inputTotal.textContent = `${ctx.t("web.gauge.inputTotal")} ${current.usage.inputTotal === undefined ? "—" : ctx.kTokens(current.usage.inputTotal)}`;
+    };
+    updateInputTotal(agent);
+    wrap.append(chips, minis, inputTotal);
     const links = ctx.el("div", "links");
     const action = (name: string, label: string, run: () => void, cls = "", disabled = false) => {
       const button = ctx.iconButton(name, label, cls);
@@ -206,6 +226,7 @@ export function createAgentStrip(ctx: ClientContext) {
     ctx.store.controlUpdaters.set(wrap, current => {
       updateChips(current);
       updateSubagentDetails(current);
+      updateInputTotal(current);
       currentStatus.className = `state mobile-only ${current.status === "busy" ? "working" : current.status}`;
       currentStatus.textContent = ctx.t(ctx.STATUS_LABEL[current.status]);
       gaugeValues(current.usage).forEach((g, index) => {
@@ -266,17 +287,17 @@ export function createAgentStrip(ctx: ClientContext) {
   const syncUsageDetails = (container: HTMLElement, agent: AgentState) => {
     if (container.dataset.agent !== agent.id) {
       container.replaceChildren(
-        ...gaugeValues(agent.usage).map(g => gauge(g.label, g.shortLabel, g.labelId, g.value, g.percent, agent.id, g.over, g.tick, g.reset)),
+        ...detailValues(agent.usage).map(g => gauge(g.label, g.shortLabel, g.labelId, g.value, g.percent, agent.id, g.over, g.tick, g.reset)),
       );
       container.dataset.agent = agent.id;
     }
-    gaugeValues(agent.usage).forEach((g, index) => {
+    detailValues(agent.usage).forEach((g, index) => {
       const node = container.children[index] as HTMLElement;
       const value =
         g.labelId === "ctx" && agent.usage.contextWindow && agent.usage.contextTokens !== undefined ? `${g.value} · ${Math.round(g.percent ?? 0)}%` : g.value;
       syncGauge(node, g.label, g.shortLabel, g.labelId, value, g.percent, g.over, g.tick, g.reset);
       node.querySelector<HTMLElement>(".k")!.textContent = g.shortLabel;
-      node.querySelector<HTMLElement>(".track")!.hidden = g.value === "—";
+      node.querySelector<HTMLElement>(".track")!.hidden = g.value === "—" || g.labelId === "inputTotal";
       node.querySelector<HTMLElement>(".gauge-reset")!.hidden = g.value === "—";
     });
   };

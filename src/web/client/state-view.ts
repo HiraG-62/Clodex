@@ -99,7 +99,7 @@ export function createStateView(ctx: ClientContext) {
         }
         const ring = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         ring.setAttribute("viewBox", "0 0 24 24");
-        ring.setAttribute("class", "ring");
+        ring.setAttribute("class", `ring${agent.usage.contextWarning ? " over" : ""}`);
         ring.setAttribute("aria-hidden", "true");
         const percent = agent.usage.contextWindow
           ? Math.min(ctx.PERCENT, Math.max(0, ((agent.usage.contextTokens ?? 0) / agent.usage.contextWindow) * ctx.PERCENT))

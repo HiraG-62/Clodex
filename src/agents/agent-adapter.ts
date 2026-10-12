@@ -50,7 +50,8 @@ export type AgentEvent =
   | { type: "turn_started" }
   | { type: "turn"; result: TurnResult }
   | { type: "rate_limit"; fiveHour?: RateLimitWindow; weekly?: RateLimitWindow }
-  | { type: "context"; tokens: number; window?: number }
+  | { type: "context"; tokens: number; window?: number; inputTotal?: number }
+  | { type: "input_total"; total: number }
   | { type: "compacted" }
   | { type: "subagents"; running: SubagentState[] }
   | { type: "background_tasks"; running: BackgroundTaskState[] }

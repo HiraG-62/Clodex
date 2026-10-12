@@ -88,6 +88,7 @@
   .track { grid-column: 1 / -1; height: 2px; background: var(--line); position: relative; }
   .track > i { position: absolute; inset: 0 auto 0 0; background: var(--fg); }
   .track.claude > i { background: var(--claude); } .track.codex > i { background: var(--codex); }
+  .track.over > i { background: var(--warn); }
   .track .tick { position: absolute; top: -3px; width: 1px; height: 8px; background: var(--muted); }
   .eyebrow { font-size: 11px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin: 14px 0 6px; }
   .seg { display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
@@ -682,6 +683,7 @@
     .ring circle { fill: none; stroke-width: 2.6; }
     .ring .bg { stroke: var(--line-strong); } .ring .fg { stroke: var(--agent); stroke-linecap: round; }
     .apill[data-state="stopped"] .ring .fg { stroke: var(--muted); }
+    .apill .ring.over .fg { stroke: var(--warn); }
     .log { padding: 0 14px 64px; }
     .entry { grid-template-columns: 20px minmax(0, 1fr); gap: 6px 8px; padding: 14px 0; }
     .entry > :not(.mark):not(.head), .entry.question > :not(.mark):not(.head) { grid-column: 1 / -1; }

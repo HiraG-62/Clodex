@@ -19,6 +19,8 @@ export interface UsageSnapshot {
   weeklyResetsAt?: number; // epoch 秒
   contextTokens?: number;
   contextWindow?: number;
+  inputTotal?: number;
+  contextWarning?: boolean;
 }
 
 interface ContextSize {
@@ -29,6 +31,8 @@ interface ContextSize {
 const WEEK_SECONDS = 7 * 24 * 60 * 60;
 const PERCENT = 100;
 const MS_PER_SECOND = 1000;
+const TOKENS_PER_K = 1000;
+export type ThreadTokenWarn = number | Partial<Record<AgentId, number>>;
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 
@@ -58,6 +62,9 @@ export const limitResetAt = (snapshot: UsageSnapshot): number | undefined => {
 export class UsageMonitor {
   private readonly windows = new Map<AgentId, Windows>();
   private readonly contexts = new Map<AgentId, ContextSize>();
+  private readonly inputTotals = new Map<AgentId, number>();
+  private readonly sessions = new Map<AgentId, string>();
+  private readonly warnedSessions = new Set<AgentId>();
   // 同じ枠（reset 時刻）では 1 回だけ通知する
   private readonly notified = new Set<string>();
 
@@ -65,15 +72,24 @@ export class UsageMonitor {
     private readonly bus: EventBus,
     private readonly alert: UsageAlert = DEFAULT_USAGE_ALERT,
     private readonly now: () => Date = () => new Date(),
+    private readonly threadTokenWarn?: ThreadTokenWarn,
   ) {
     bus.subscribe(event => {
       if (event.kind !== "agent") return;
       const { agent, event: agentEvent } = event;
       // session が変わったら前のコンテキストの大きさは当てはまらない
-      if (agentEvent.type === "session" || agentEvent.type === "compacted") this.contexts.delete(agent);
+      if (agentEvent.type === "session" && this.sessions.get(agent) !== agentEvent.sessionId) {
+        this.sessions.set(agent, agentEvent.sessionId);
+        this.clearContext(agent);
+        if (agent === "claude") this.inputTotals.set(agent, 0);
+      }
+      if (agentEvent.type === "compacted") this.contexts.delete(agent);
       if (agentEvent.type === "context") {
         this.contexts.set(agent, { tokens: agentEvent.tokens, ...(agentEvent.window ? { window: agentEvent.window } : {}) });
+        if (agentEvent.inputTotal !== undefined) this.inputTotals.set(agent, agentEvent.inputTotal);
+        this.checkThreadTokens(agent, agentEvent.tokens);
       }
+      if (agentEvent.type === "input_total") this.inputTotals.set(agent, agentEvent.total);
       if (agentEvent.type !== "rate_limit") return;
       const { fiveHour, weekly } = agentEvent;
       const current = this.windows.get(event.agent) ?? {};
@@ -84,6 +100,8 @@ export class UsageMonitor {
 
   clearContext(agent: AgentId): void {
     this.contexts.delete(agent);
+    this.inputTotals.delete(agent);
+    this.warnedSessions.delete(agent);
   }
 
   snapshot(agent: AgentId): UsageSnapshot {
@@ -97,13 +115,30 @@ export class UsageMonitor {
       ...(fiveHour && { fiveHourPercent: fiveHour.usedPercent, fiveHourResetsAt: fiveHour.resetsAt }),
       ...(weekly && { weeklyPercent: weekly.usedPercent, weeklyPace: weeklyPace(weekly, nowSeconds), weeklyResetsAt: weekly.resetsAt }),
       ...this.contextOf(agent),
+      ...(this.inputTotals.has(agent) ? { inputTotal: this.inputTotals.get(agent)! } : {}),
     };
   }
 
-  private contextOf(agent: AgentId): Pick<UsageSnapshot, "contextTokens" | "contextWindow"> {
+  private contextOf(agent: AgentId): Pick<UsageSnapshot, "contextTokens" | "contextWindow" | "contextWarning"> {
     const context = this.contexts.get(agent);
     if (!context) return {};
-    return { contextTokens: context.tokens, ...(context.window ? { contextWindow: context.window } : {}) };
+    const threshold = this.tokenThreshold(agent);
+    return {
+      contextTokens: context.tokens,
+      ...(context.window ? { contextWindow: context.window } : {}),
+      ...(threshold !== undefined ? { contextWarning: context.tokens > threshold } : {}),
+    };
+  }
+
+  private tokenThreshold(agent: AgentId): number | undefined {
+    return typeof this.threadTokenWarn === "number" ? this.threadTokenWarn : this.threadTokenWarn?.[agent];
+  }
+
+  private checkThreadTokens(agent: AgentId, tokens: number): void {
+    const threshold = this.tokenThreshold(agent);
+    if (threshold === undefined || tokens <= threshold || this.warnedSessions.has(agent)) return;
+    this.warnedSessions.add(agent);
+    this.bus.publish({ kind: "notice", level: "warn", text: t("notice.threadTokenWarn", { agent, tokens: `${Math.round(threshold / TOKENS_PER_K)}k` }) });
   }
 
   private nowSeconds(): number {

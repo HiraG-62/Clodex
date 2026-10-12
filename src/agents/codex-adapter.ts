@@ -74,7 +74,7 @@ interface CodexItem {
 interface CodexNotificationParams {
   threadId?: string;
   item?: CodexItem;
-  tokenUsage?: { last?: { totalTokens?: number }; modelContextWindow?: number | null };
+  tokenUsage?: { last?: { totalTokens?: number }; total?: { inputTokens?: number }; modelContextWindow?: number | null };
   turn?: { id?: string; status?: string; error?: { message?: string } | null };
   rateLimits?: CodexRateLimits;
   message?: string;
@@ -287,7 +287,8 @@ export class CodexAdapter extends BaseAgentAdapter {
         const tokens = params.tokenUsage?.last?.totalTokens;
         if (tokens === undefined) return;
         const window = params.tokenUsage?.modelContextWindow;
-        this.emit({ type: "context", tokens, ...(window ? { window } : {}) });
+        const inputTotal = params.tokenUsage?.total?.inputTokens;
+        this.emit({ type: "context", tokens, ...(window ? { window } : {}), ...(inputTotal !== undefined ? { inputTotal } : {}) });
         return;
       }
       case "turn/completed": {

@@ -2,6 +2,7 @@ import type { AgentId, AgentStatus, TurnResult } from "../../agents/agent-adapte
 import type { MessageKey } from "../../i18n/messages.js";
 import type { SendKey } from "./send-key.js";
 import type { ClientContext } from "./store.js";
+import { formatTokens } from "./token-format.js";
 
 export function createDom(ctx: ClientContext) {
   type Theme = (typeof ctx.THEMES)[number];
@@ -50,7 +51,6 @@ export function createDom(ctx: ClientContext) {
   const SETTING_TIMEOUT_MS = 5_000;
   const INTERRUPT_RETRY_MS = 5_000;
   const TOAST_EXIT_MS = 150;
-  const TOKENS_PER_K = 1000;
   const MS_PER_SECOND = 1000;
   const SECONDS_PER_MINUTE = 60;
   const PERCENT = 100;
@@ -103,7 +103,7 @@ export function createDom(ctx: ClientContext) {
     const d = new Date(iso);
     return `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${clock(iso)}`;
   };
-  const kTokens = (n: number) => `${Math.round(n / TOKENS_PER_K)}k`;
+  const kTokens = formatTokens;
   const storage = {
     get: (key: string) => {
       try {

@@ -10,7 +10,7 @@ const now = () => new Date(NOW_SECONDS * 1000);
 // 週の経過率 elapsed（0〜1）になる reset 時刻
 const weeklyResetsAt = (elapsed: number) => NOW_SECONDS + Math.round((1 - elapsed) * 7 * DAY_SECONDS);
 
-const setup = (alert = DEFAULT_USAGE_ALERT) => {
+const setup = (alert = DEFAULT_USAGE_ALERT, threadTokenWarn?: number | { claude?: number; codex?: number }) => {
   const bus = new EventBus(now);
   const notices: string[] = [];
   const levels: Array<"warn" | undefined> = [];
@@ -20,7 +20,7 @@ const setup = (alert = DEFAULT_USAGE_ALERT) => {
       levels.push(e.level);
     }
   });
-  const monitor = new UsageMonitor(bus, alert, now);
+  const monitor = new UsageMonitor(bus, alert, now, threadTokenWarn);
   const report = (agent: "claude" | "codex", weekly?: RateLimitWindow, fiveHour?: RateLimitWindow) =>
     bus.publish({ kind: "agent", agent, event: { type: "rate_limit", ...(weekly && { weekly }), ...(fiveHour && { fiveHour }) } });
   return { bus, notices, levels, monitor, report };
@@ -100,7 +100,7 @@ describe("UsageMonitor", () => {
     bus.publish({ kind: "agent", agent: "claude", event: { type: "context", tokens: 85000, window: 200000 } });
     expect(monitor.snapshot("claude")).toEqual({ contextTokens: 85000, contextWindow: 200000 });
     bus.publish({ kind: "agent", agent: "claude", event: { type: "session", sessionId: "new" } });
-    expect(monitor.snapshot("claude")).toEqual({});
+    expect(monitor.snapshot("claude")).toEqual({ inputTotal: 0 });
   });
 
   it("compacted でコンテキストの大きさを unknown に戻す", () => {
@@ -121,5 +121,45 @@ describe("UsageMonitor", () => {
     const { monitor, bus } = setup();
     bus.publish({ kind: "agent", agent: "claude", event: { type: "text", text: "x" } });
     expect(monitor.snapshot("claude")).toEqual({});
+  });
+
+  it("累計入力を保持し、compact では残し、新しい session でリセットする", () => {
+    const { monitor, bus } = setup();
+    bus.publish({ kind: "agent", agent: "claude", event: { type: "session", sessionId: "first" } });
+    bus.publish({ kind: "agent", agent: "claude", event: { type: "context", tokens: 30000, inputTotal: 45000 } });
+    bus.publish({ kind: "agent", agent: "claude", event: { type: "compacted" } });
+    expect(monitor.snapshot("claude")).toEqual({ inputTotal: 45000 });
+    bus.publish({ kind: "agent", agent: "claude", event: { type: "session", sessionId: "second" } });
+    expect(monitor.snapshot("claude")).toEqual({ inputTotal: 0 });
+    bus.publish({ kind: "agent", agent: "codex", event: { type: "session", sessionId: "new" } });
+    expect(monitor.snapshot("codex")).toEqual({});
+  });
+
+  it("コンテキストが閾値を超えた session に一度だけ警告する", () => {
+    const { bus, monitor, notices, levels } = setup(DEFAULT_USAGE_ALERT, 150000);
+    const context = (tokens: number) => bus.publish({ kind: "agent", agent: "codex", event: { type: "context", tokens, inputTotal: 900000 } });
+    bus.publish({ kind: "agent", agent: "codex", event: { type: "session", sessionId: "first" } });
+    context(150000);
+    expect(notices).toHaveLength(0);
+    context(151000);
+    context(180000);
+    expect(notices).toHaveLength(1);
+    expect(levels).toEqual(["warn"]);
+    expect(monitor.snapshot("codex")).toMatchObject({ inputTotal: 900000, contextWarning: true });
+    bus.publish({ kind: "agent", agent: "codex", event: { type: "session", sessionId: "second" } });
+    context(160000);
+    expect(notices).toHaveLength(2);
+  });
+
+  it("Agent ごとの閾値と未設定の Agent を区別する", () => {
+    const { bus, notices, monitor } = setup(DEFAULT_USAGE_ALERT, { claude: 100000 });
+    bus.publish({ kind: "agent", agent: "codex", event: { type: "context", tokens: 200000, inputTotal: 300000 } });
+    bus.publish({ kind: "agent", agent: "claude", event: { type: "context", tokens: 110000, inputTotal: 120000 } });
+    expect(notices).toHaveLength(1);
+    expect(monitor.snapshot("codex").contextWarning).toBeUndefined();
+    expect(monitor.snapshot("claude").contextWarning).toBe(true);
+    const withoutConfig = setup();
+    withoutConfig.bus.publish({ kind: "agent", agent: "claude", event: { type: "context", tokens: 900000 } });
+    expect(withoutConfig.notices).toEqual([]);
   });
 });

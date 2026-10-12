@@ -46,6 +46,8 @@ const describeAgentEvent = (event: AgentEvent): string => {
       return "steer delivered";
     case "context":
       return `context ${event.tokens} tokens${event.window ? ` / ${event.window}` : ""}`;
+    case "input_total":
+      return `input total ${event.total} tokens`;
     case "exit":
       return `exited (code ${event.code})`;
     case "error":

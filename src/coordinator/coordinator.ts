@@ -26,7 +26,7 @@ import { type BudgetLimits, BudgetManager, humanBudgetError } from "./budget-man
 import { DeliveryNotes, OTHER_AGENT } from "./delivery-notes.js";
 import type { EventBus } from "./event-bus.js";
 import { QuestionStore } from "./question-store.js";
-import { DEFAULT_USAGE_ALERT, limitResetAt, type UsageAlert, UsageMonitor, type UsageSnapshot } from "./usage-monitor.js";
+import { DEFAULT_USAGE_ALERT, limitResetAt, type ThreadTokenWarn, type UsageAlert, UsageMonitor, type UsageSnapshot } from "./usage-monitor.js";
 import { WorkRecorder } from "./work-recorder.js";
 
 // 起動時の Agent の設定（DESIGN.md §9 Agent の設定の保存）
@@ -96,6 +96,7 @@ export interface CoordinatorOptions {
   // 人が読む文章の言語。Task envelope に添える（DESIGN.md §13 Language）
   language?: Language | (() => Language);
   usageAlert?: Partial<UsageAlert>;
+  threadTokenWarn?: ThreadTokenWarn;
   modelCatalog?: () => ModelCatalog;
   // clodex --resume: 各 Agent の最初の起動で継続する session（DESIGN.md §18）
   resumeSessionIds?: Partial<Record<AgentId, string>>;
@@ -194,7 +195,7 @@ export class Coordinator {
     this.deliveryNotes = new DeliveryNotes(options.soloReleased, options.consumeSoloReleased);
     for (const message of options.knownMessages ?? []) this.messages.set(message.id, message);
     this.budget = new BudgetManager(limits);
-    this.usage = new UsageMonitor(bus, { ...DEFAULT_USAGE_ALERT, ...options.usageAlert });
+    this.usage = new UsageMonitor(bus, { ...DEFAULT_USAGE_ALERT, ...options.usageAlert }, undefined, options.threadTokenWarn);
     for (const id of AGENT_IDS) {
       agents[id].onEvent(event => {
         if (event.type === "turn_started") {

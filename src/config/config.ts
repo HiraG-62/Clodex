@@ -28,6 +28,9 @@ const configSchema = z.strictObject({
   roles: z.strictObject({ claude: role.optional(), codex: role.optional() }).optional(),
   freshThread: z.strictObject({ DELEGATE: z.boolean().optional(), REVIEW_REQUEST: z.boolean().optional() }).optional(),
   usageHints: z.strictObject({ claude: z.boolean().optional(), codex: z.boolean().optional() }).optional(),
+  threadTokenWarn: z
+    .union([z.number().int().positive(), z.strictObject({ claude: z.number().int().positive().optional(), codex: z.number().int().positive().optional() })])
+    .optional(),
   limits: z
     .strictObject({
       maxMessagesPerChain: nonNegativeInt.optional(),

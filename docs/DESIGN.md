@@ -1047,6 +1047,7 @@ AGENTS.md → Codex
 - `worktree.setup` は `/new worktree` の直後に worktree で実行する command（§28 D1）
 - `freshThread` は `send_message` の `fresh` の type ごとの既定（§12「新しい session で届ける」）
 - `usageHints` は使用量を減らす作法を Agent ごとに ON にする（下記。既定は両方 OFF）
+- `threadTokenWarn` は、Agent のコンテキストの大きさがこれを超えたら警告する token 数（§14「session の大きさ」）。既定は無し（警告しない）。数か Agent ごとの数（`{ "claude": 150000, "codex": 150000 }`）
 - `updateChannel`（`stable` / `dev`、既定 `stable`）は GUI の更新の取得先（§28 GUI の自動更新）。GUI はユーザーの設定だけを読む
 - `~/.clodex/config.json` が無ければ、起動時に役割を空にしたひな形を作る（`{ "roles": { "claude": "", "codex": "" } }`）。役割の文章は書かない（書くのは人）。既にあれば触らない。作れなくても起動は続ける
 - 役割の空文字は未設定として扱う（ひな形のままでも、役割が無いのと同じ）
@@ -1117,6 +1118,9 @@ Agent Adapter の `rate_limit` event（Claude: `rate_limit_event`、Codex: `acco
 - **週のペース超過** = 週の使用率 − 週の経過率（経過率は reset 時刻と週の長さ 7 日から計算）。正なら使いすぎ、負なら余裕あり
 - `/status` に、各 Agent の 5 時間枠の使用率と週のペース超過、コンテキストの大きさ、現在の primary を表示する。まだ受け取っていない値は `unknown`
 - コンテキストの大きさは、その Agent の session が変わったとき（`session` event、`/new`、`/resume`）と compact したとき（`compacted` event）に unknown に戻す
+- **session の大きさ**: Agent ごとに、今の session の累計の入力 token（キャッシュから読んだ分を含む）を持つ。コンテキストの大きさと合わせて、Web UI の利用状況（ポップオーバーと右の列）、スマホの Agent のシート、TUI の下の行、`/status` に出す
+  - Codex は `thread/tokenUsage/updated` の `total`、Claude はターンの結果の usage（入力・キャッシュの作成・読み取り）を足していく。session が変わったら 0 から数え直す。Hub を再起動したら Claude は 0 から（Codex は届いた `total` を使う）
+  - `threadTokenWarn` を設定していれば、コンテキストの大きさがそれを超えたら、その session で 1 回だけ warn の `toast`（「{agent} の文脈が {tokens} を超過。/new {agent} を検討」）を出し、Agent のカードのコンテキストのゲージを警告の色にする。session が変わったら再び警告できる
 - Clodex の起動時に、model の一覧と同じ短命のプロセスで両 Agent の利用状況も取得し、Agent の Lazy Start を待たずに表示する（docs/spikes/model-list.md）。ターンを送らないので利用枠を消費しない。取得は Hub で 1 回、全 project の UsageMonitor に `rate_limit` event と同じ形で渡す（通知の判定も同じ経路）
   - Claude: `control_request` の `get_usage` の `rate_limits.five_hour` / `seven_day`。`utilization` は 0〜100 の percent、`resets_at` は ISO 8601 の文字列（`rate_limit_event` の比率・epoch 秒とは形式が違うので変換する）
   - Codex: `account/rateLimits/read` の `rateLimits.primary` / `secondary`（`windowDurationMins` で 5 時間・週を見分ける。今の Adapter と同じ変換）

@@ -93,6 +93,7 @@ interface ClaudeEvent {
   apiKeySource?: string;
   error_status?: number;
   message?: { content?: ContentBlock[]; usage?: MessageUsage };
+  usage?: MessageUsage;
   modelUsage?: Record<string, { contextWindow?: number }>;
   result?: string;
   is_error?: boolean;
@@ -112,6 +113,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
   private readonly undeliveredSteers = new Map<string, string>();
   // 最後の API 呼び出しの usage。今のコンテキストの大きさとして使う（DESIGN.md §9）
   private lastUsage: MessageUsage | undefined;
+  private inputTotal = 0;
   private settingTurn: SettingKind | undefined;
   private subagents: SubagentState[] = [];
   private backgroundTasks: BackgroundTaskState[] = [];
@@ -127,7 +129,9 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     const { cwd, resumeSessionId, mcpUrl, instructions } = options;
     if (this.status !== "stopped") throw new Error(`claude is ${this.status}`);
     // session ID を Coordinator 側で決めておくと、最初のターン前から resume 用 ID が確定する
-    this.sessionId = resumeSessionId ?? this.createId();
+    const sessionId = resumeSessionId ?? this.createId();
+    if (this.sessionId !== sessionId) this.inputTotal = 0;
+    this.sessionId = sessionId;
     this.launchPermission = this.permission;
     const args = [
       ...STREAM_ARGS,
@@ -304,13 +308,19 @@ export class ClaudeAdapter extends BaseAgentAdapter {
   }
 
   private emitContext(event: ClaudeEvent): void {
+    if (event.usage) {
+      this.inputTotal += (event.usage.input_tokens ?? 0) + (event.usage.cache_creation_input_tokens ?? 0) + (event.usage.cache_read_input_tokens ?? 0);
+    }
     const usage = this.lastUsage;
     this.lastUsage = undefined;
-    if (!usage) return;
+    if (!usage) {
+      if (event.usage) this.emit({ type: "input_total", total: this.inputTotal });
+      return;
+    }
     const tokens = (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.output_tokens ?? 0);
     const windows = Object.values(event.modelUsage ?? {}).map(m => m.contextWindow ?? 0);
     const window = windows.length ? Math.max(...windows) : 0;
-    this.emit({ type: "context", tokens, ...(window ? { window } : {}) });
+    this.emit({ type: "context", tokens, ...(window ? { window } : {}), ...(event.usage ? { inputTotal: this.inputTotal } : {}) });
   }
 
   private handleAssistant(event: ClaudeEvent): void {

@@ -218,6 +218,7 @@ export const openProject = async ({
         }),
       limits: effectiveLimits(),
       ...(config.usageAlert ? { usageAlert: config.usageAlert } : {}),
+      ...(config.threadTokenWarn !== undefined ? { threadTokenWarn: config.threadTokenWarn } : {}),
       resumeSessionIds: conversation.sessions,
       solo: () => history.soloOf(conversation.id),
       soloReleased: agent => history.soloReleasedOf(conversation.id, agent),

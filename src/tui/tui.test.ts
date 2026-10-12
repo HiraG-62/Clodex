@@ -69,7 +69,7 @@ describe("TuiApp", () => {
             sessionId: "s",
             permission: "edit",
             models: [],
-            usage: {},
+            usage: { inputTotal: 1234000 },
             subagents: [
               { id: "a", description: "調査" },
               { id: "b", description: "実装" },
@@ -95,6 +95,7 @@ describe("TuiApp", () => {
       },
     });
     await waitFor(() => expect(app.lastFrame()).toContain("待機中 · sub 2 · bg 1"));
+    expect(app.lastFrame()).toContain("累計入力 1.2M");
   });
 
   it("送信待ちの件数に Agent 間メッセージを含める", async () => {

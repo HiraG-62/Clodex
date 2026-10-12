@@ -14,6 +14,7 @@ import type { MessageKey } from "../i18n/messages.js";
 import type { ProcessManager } from "../process/process-manager.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
 import type { PendingQuestion } from "../protocol/questions.js";
+import { formatTokens } from "../web/client/token-format.js";
 import { commandResultMessage } from "./command-result.js";
 import type { CommandResult } from "./command-runner.js";
 import { commandUsage, slashCommands } from "./commands.js";
@@ -177,9 +178,8 @@ const formatUsage = ({ fiveHourPercent, fiveHourResetsAt, weeklyPercent, weeklyP
   return t("shell.usage", { parts: parts.length ? parts.join(", ") : t("shell.unknown") });
 };
 
-const TOKENS_PER_K = 1000;
 const PERCENT = 100;
-const kTokens = (n: number) => `${Math.round(n / TOKENS_PER_K)}k`;
+const kTokens = formatTokens;
 
 const formatContext = ({ contextTokens, contextWindow }: UsageSnapshot): string => {
   if (contextTokens === undefined) return t("shell.context", { value: t("shell.unknown") });
@@ -187,6 +187,9 @@ const formatContext = ({ contextTokens, contextWindow }: UsageSnapshot): string 
   const percent = Math.round((contextTokens / contextWindow) * PERCENT);
   return t("shell.context", { value: t("shell.contextWindow", { tokens: kTokens(contextTokens), window: kTokens(contextWindow), percent }) });
 };
+
+const formatInputTotal = ({ inputTotal }: UsageSnapshot): string =>
+  t("shell.inputTotal", { value: inputTotal === undefined ? t("shell.unknown") : kTokens(inputTotal) });
 
 const agentsOf = (c: Conversation) => (Object.keys(c.sessions) as AgentId[]).sort().join(", ");
 const titleOf = (c: Conversation) => `"${c.title ?? t("shell.untitled")}"`;
@@ -390,6 +393,7 @@ export const createShell = ({
       );
       print(formatUsage(usage));
       print(formatContext(usage));
+      print(formatInputTotal(usage));
     }
     for (const input of coordinator().pendingInputs()) print(t("shell.queued", { id: input.id, agent: input.agent, text: input.text }));
     for (const message of coordinator().pendingMessages())
