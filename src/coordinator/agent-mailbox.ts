@@ -14,6 +14,7 @@ interface QueueItem {
   images?: readonly string[]; // 人間の入力に添えた画像（実パス）
   suffix?: string; // 配送するときだけ本文の末尾に足す（送信待ちの表示には出さない）
   context?: true;
+  fresh?: true;
   resolve: (result: TurnResult) => void;
 }
 
@@ -23,6 +24,7 @@ export interface EnqueueOptions {
   images?: readonly string[];
   suffix?: string;
   context?: true;
+  fresh?: true;
 }
 
 export interface QueuedSend {
@@ -65,10 +67,11 @@ export class AgentMailbox {
     // 送ったターンが失敗したときに呼ぶ。上限で止まったなら再開の時刻と続きの指示を返す
     private readonly limitHold: () => LimitHold | undefined = () => undefined,
     private readonly deliveryNote: () => string = () => "",
+    private readonly onFreshSession: () => void = () => {},
   ) {}
 
   // 失敗しても reject せず failed の TurnResult を返す（呼び出し側は待たずに投げてよい）
-  enqueue(text: string, { message, inputId, images, suffix, context }: EnqueueOptions = {}): Promise<TurnResult> {
+  enqueue(text: string, { message, inputId, images, suffix, context, fresh }: EnqueueOptions = {}): Promise<TurnResult> {
     if (this.closed) return Promise.resolve(CLOSED_RESULT);
     return this.push({
       kind: "send",
@@ -78,6 +81,7 @@ export class AgentMailbox {
       ...(images?.length ? { images } : {}),
       ...(suffix ? { suffix } : {}),
       ...(context ? { context } : {}),
+      ...(fresh ? { fresh } : {}),
     });
   }
 
@@ -274,7 +278,7 @@ export class AgentMailbox {
               ? await this.compact()
               : item.kind === "model" || item.kind === "effort"
                 ? await this.setting(item.kind, item.text)
-                : await this.deliver(`${item.text}${item.suffix ?? ""}`, item.images);
+                : await this.deliver(`${item.text}${item.suffix ?? ""}`, item.images, item.fresh);
           item.resolve(result);
           const hold = item.kind === "send" && result.status === "failed" ? this.limitHold() : undefined;
           if (hold) this.hold(hold);
@@ -302,8 +306,13 @@ export class AgentMailbox {
     }
   }
 
-  private async deliver(text: string, images?: readonly string[]): Promise<TurnResult> {
+  private async deliver(text: string, images?: readonly string[], fresh?: true): Promise<TurnResult> {
     try {
+      if (fresh && this.sessionId) {
+        await this.agent.stop();
+        this.onFreshSession();
+        this.switchSession(undefined);
+      }
       await this.ensureRunning();
       return await this.agent.send(`${text}${this.deliveryNote()}`, images);
     } catch (error) {

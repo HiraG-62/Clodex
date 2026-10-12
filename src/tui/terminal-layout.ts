@@ -206,6 +206,7 @@ export interface TerminalLabels {
   output: string;
   steer: string;
   auto: string;
+  fresh: string;
 }
 export interface TerminalCard {
   kind: TimelineItem["kind"];
@@ -536,9 +537,17 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
     };
   if (item.kind === "turn") {
     const attachments = item.attachmentOrder?.flatMap(attached => {
-      if (attached.kind === "message") return item.messages?.filter(entry => entry.message.id === attached.id).map(entry => entry.message.body) ?? [];
+      if (attached.kind === "message")
+        return (
+          item.messages
+            ?.filter(entry => entry.message.id === attached.id)
+            .map(entry => (entry.message.fresh ? `${labels.fresh}\n${entry.message.body}` : entry.message.body)) ?? []
+        );
       return item.questions?.filter(entry => entry.id === attached.id).map(questionBody) ?? [];
-    }) ?? [...(item.messages ?? []).map(entry => entry.message.body), ...(item.questions ?? []).map(questionBody)];
+    }) ?? [
+      ...(item.messages ?? []).map(entry => (entry.message.fresh ? `${labels.fresh}\n${entry.message.body}` : entry.message.body)),
+      ...(item.questions ?? []).map(questionBody),
+    ];
     const steps = [
       ...item.steps.map(step => (step.kind === "say" ? step.text : `${step.name}: ${step.input}`)),
       ...(attachments.length && item.text ? [item.text] : []),
@@ -565,7 +574,7 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
       color: MESSAGE_COLORS[item.message.type],
       headerBackgroundColor: agentHeaderColor(item.message.from),
       title: `${agentName(item.message.from)} → ${agentName(item.message.to)}`,
-      tag: `${item.message.type} · ${item.message.taskId}${item.message.auto ? ` · ${labels.auto}` : ""}`,
+      tag: `${item.message.type} · ${item.message.taskId}${item.message.auto ? ` · ${labels.auto}` : ""}${item.message.fresh ? ` · ${labels.fresh}` : ""}`,
       body: item.message.body,
     };
   if (item.kind === "human")

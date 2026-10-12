@@ -40,6 +40,18 @@ describe("saveUserLanguage", () => {
 });
 
 describe("loadConfig", () => {
+  it("freshThread を読み、project の設定でキーごと上書きする", () => {
+    const paths = setup({
+      user: { freshThread: { DELEGATE: true, REVIEW_REQUEST: true } },
+      project: { freshThread: { DELEGATE: false } },
+    });
+    expect(loadConfig(paths).freshThread).toEqual({ DELEGATE: false });
+    expect(() => loadConfig(setup({ user: { freshThread: { QUESTION: true } } }))).toThrow(/freshThread/);
+  });
+  it("usageHints は Agent ごとの boolean で、project の設定が全体を上書きする", () => {
+    expect(loadConfig(setup({ user: { usageHints: { codex: true } }, project: { usageHints: { claude: true } } })).usageHints).toEqual({ claude: true });
+    expect(() => loadConfig(setup({ user: { usageHints: { claude: "on" } } }))).toThrow(/usageHints/);
+  });
   it("設定ファイルが無ければ空の設定", () => {
     expect(loadConfig(setup())).toEqual({});
   });

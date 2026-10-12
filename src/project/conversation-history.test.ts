@@ -158,6 +158,17 @@ describe("ConversationHistory", () => {
     expect(new ConversationHistory(path, { resumeLatest: true }).currentSessions).toEqual({ claude: "c-1" });
   });
 
+  it("裏の会話の session を指定して外しても今の会話は変えない", () => {
+    const { history, path, session } = setup();
+    session("codex", "old");
+    const firstId = history.currentId;
+    history.startNew();
+    session("codex", "current");
+    history.clearSession("codex", firstId);
+    expect(history.currentSessions).toEqual({ codex: "current" });
+    expect(new ConversationHistory(path, { resumeLatest: false }).list().find(c => c.id === firstId)?.sessions).toEqual({});
+  });
+
   it(`最大 ${MAX_CONVERSATIONS} 件まで残す`, () => {
     const path = makePath();
     for (let i = 0; i < MAX_CONVERSATIONS + 3; i++) setup(path, false, i * 10).session("claude", `c-${i}`);

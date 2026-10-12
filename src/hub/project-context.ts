@@ -208,7 +208,14 @@ export const openProject = async ({
         models: args.models,
         ...(config.permission ? { configPermission: config.permission } : {}),
       }),
-      instructions: id => buildRoleInstructions(id, config.roles, { language: typeof language === "function" ? language() : language, artifactsDir }),
+      ...(config.freshThread ? { freshThread: config.freshThread } : {}),
+      clearSession: agent => history.clearSession(agent, conversation.id),
+      instructions: id =>
+        buildRoleInstructions(id, config.roles, {
+          language: typeof language === "function" ? language() : language,
+          artifactsDir,
+          usageHints: config.usageHints?.[id] === true,
+        }),
       limits: effectiveLimits(),
       ...(config.usageAlert ? { usageAlert: config.usageAlert } : {}),
       resumeSessionIds: conversation.sessions,

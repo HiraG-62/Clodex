@@ -174,9 +174,11 @@ export class ConversationHistory {
   }
 
   // /new <agent>: その Agent の session を今の会話から外して保存する（再起動しても古い session に戻らない）
-  clearSession(agent: AgentId): void {
-    const { [agent]: _removed, ...rest } = this.currentConversation.sessions;
-    this.update({ sessions: rest });
+  clearSession(agent: AgentId, conversationId = this.currentConversation.id): void {
+    const conversation = this.find(conversationId);
+    if (!conversation) return;
+    const { [agent]: _removed, ...rest } = conversation.sessions;
+    this.updateConversation(conversationId, { sessions: rest });
   }
 
   clearAllSessions(): void {

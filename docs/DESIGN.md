@@ -842,6 +842,7 @@ Coordinator が付与するフィールド（Agent の自己申告は使わな�
 ```
 
 - `interrupt`（省略可、boolean）: 宛先が送信元からの message を処理中なら、そのターンに足す（§28 v0.3 C）。それ以外は通常どおり配送する
+- `fresh`（省略可、boolean）: `DELEGATE` / `REVIEW_REQUEST` のみ（ほかの type は拒否する）。`true` なら、宛先の session を新しくしてから届ける（下記 §12「新しい session で届ける」）。省略時は設定の `freshThread` の既定（無ければ `false`）。`interrupt` と両方 `true` なら拒否する（新しい session には割り込めない）
 - `ANSWER` は `interrupt` の指定によらず、宛先（質問した Agent）が作業中なら、何のターンでもそのターンに足す。質問した後も作業を続けている Agent に、ターンの終わりを待たせずに回答を届けるため。作業中でなければ通常どおり配送する
 
 ---
@@ -901,6 +902,13 @@ MCP message を受け取った後、
   - Coordinator が作ったことを示す `auto: true` を付ける（Coordinator が付与するフィールド。Agent の入力では受け付けない）。envelope には `Auto: the recipient ended its turn without send_message; this is its final reply.` の 1 行を添える。画面の message の行にも自動で届けたことが分かる印を出す
   - そのターンの間に宛先が送信元へ `ANSWER`・`RESULT`・`QUESTION`・`ISSUE` などを送っていれば、やり取りが続いているので作らない。ターンが `failed`・`interrupted` のとき、割り込み（`interrupt`）で実行中のターンに足した依頼、宛先が利用枠の上限で待っているときも作らない
   - Budget は通常の `RESULT` / `ANSWER` と同じく数える（親は依頼の message）。上限を超えるなら作らず、人に `error` を出す
+- **新しい session で届ける**（`fresh`）: 長いタスクを 1 つの session で受け続けると、コンテキストが上限近くに張り付き、tool の呼び出しのたびに大量の token を送り直す（Codex で 3 日・DELEGATE 155 回の 1 本の thread が使用量の 76% を占めた例がある）。新しいタスクを渡すときに、送る側が宛先の session を新しくできるようにする
+  - `fresh` の message を mailbox が配送する番になったら、宛先の Agent に `/new <agent>` と同じことをしてから（今の session を会話から外して保存し、プロセスを止める）、新しい session を起動して envelope を送る。届くまでの順番は今どおり（作業中なら今のターンの後）
+  - 実際に新しくするのは配送の時点で、宛先の session がすでにある（一度でも起動している）ときだけ
+  - 設定の `freshThread`（`{ "DELEGATE": true, "REVIEW_REQUEST": false }` のような type ごとの既定。キーは `DELEGATE` / `REVIEW_REQUEST` のみ）で既定を決められる。message の `fresh` が設定より優先する。Coordinator は受け付けたときに既定を当てはめ、message の `fresh` に結果を入れる（画面と復旧で同じ値を使う）
+  - 画面: message のカードに「新しい session」の印を出す（Web UI と TUI。`auto`・割り込みの印と同じ置き方）。コンテキストの大きさは今どおり session の変更で unknown に戻る
+  - 新しい session には前の作業の記憶が無い。envelope と設計書（`spec`）だけで作業できるよう、送る側が書く（役割の定型文で伝える: 「新しいタスクを頼むときは fresh を使ってよい。fresh の依頼は前の作業の記憶が無い相手に届く」）。`fresh` と `freshThread` は宛先の Agent を問わない（役割が入れ替わっても同じに使える）。既定は今どおり OFF
+  - 新しくすると、宛先の Agent の裏の subagent・background task も止まる
 - `/new`・`/resume` で Agent を止める間は、その Agent の mailbox の配送を止める。止めている間に届いた項目は捨てず、切り替え後の session に配送する
 - Coordinator の停止時は、先に全 mailbox を閉じてから Agent を止める（停止中に Agent を再起動しない）。未配送分と作業中だったことは、閉じる前の状態として保存してあり、次の起動で戻す（§18 Hub の再起動からの復旧）
 
@@ -1037,6 +1045,8 @@ AGENTS.md → Codex
 
 - `permission` は起動時の権限レベル（§9 Permission）。両 Agent に同じレベルを使う
 - `worktree.setup` は `/new worktree` の直後に worktree で実行する command（§28 D1）
+- `freshThread` は `send_message` の `fresh` の type ごとの既定（§12「新しい session で届ける」）
+- `usageHints` は使用量を減らす作法を Agent ごとに ON にする（下記。既定は両方 OFF）
 - `updateChannel`（`stable` / `dev`、既定 `stable`）は GUI の更新の取得先（§28 GUI の自動更新）。GUI はユーザーの設定だけを読む
 - `~/.clodex/config.json` が無ければ、起動時に役割を空にしたひな形を作る（`{ "roles": { "claude": "", "codex": "" } }`）。役割の文章は書かない（書くのは人）。既にあれば触らない。作れなくても起動は続ける
 - 役割の空文字は未設定として扱う（ひな形のままでも、役割が無いのと同じ）
@@ -1044,6 +1054,11 @@ AGENTS.md → Codex
 - 優先順位: 起動オプション > project の設定 > ユーザーの設定 > 既定値（primary: `claude`、roles: なし）
 - Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」「権限は人が `/permission` で変えるので、拒否されたらそう伝えること」「依頼を受けたら、作業に入る前に何をするかを 1〜2 文で書くこと」「`send_message` の body は Markdown で 1 行の要約 → 箇条書きで書くこと」「依頼（`DELEGATE` / `REVIEW_REQUEST`）は基本的に設計書を書いて `spec` で渡し、body だけにするのは数行で済む簡単な依頼に限ること。QUESTION には ANSWER で答え、設計書を直したら ANSWER の `spec` で渡すこと（上の Spec）。RESULT は依頼の作業を終えたときに使うこと」「人が読む文章の言語（下記 Language）」を伝える
 - 役割が無い Agent には、相手の Agent がいることだけを伝える
+- **使用量を減らす作法**（`usageHints`）: 待ち方とファイルの読み方の作法を定型文に足す（英語）。tool の呼び出しのたびにコンテキスト全体を送り直すので、呼び出しの回数がそのまま使用量になるため。役割の分け方は人によって違う（Claude が実装する運用もある）ので、Agent ごとに人が設定で ON にする。既定は両方 OFF
+  - 設定: `"usageHints": { "claude": false, "codex": false }`。反映は次に始める session から（system prompt に入るため）
+  - 共通: 小刻みにポーリングしない（`sleep` で待つ・subagent の完了を細かく確かめる、を繰り返さない）。ファイルは関係する範囲をまとめて読む。数十行ずつ読まない
+  - Codex: 長いコマンド（テスト・ビルド）は `yield_time_ms` を十分長くして、1 回の呼び出しで終わるまで待つ。`wait`・`write_stdin` で細かくポーリングしない
+  - Claude: 長いコマンドは Bash の `timeout` を十分長くして（最大 600000ms）、1 回の呼び出しで終わるまで待つ。`run_in_background` にしたコマンドを `sleep` や出力の読み直しで細かく確かめない
 - **プリセット**: よくある分担の役割の文章を、選ぶだけで設定できるようにする（役割が空のままだと分業が起きず、初めて使う人に価値が伝わらないため）。文章を選ぶのは人なので、分け方を固定しない原則（§3.1）とは矛盾しない
   - `design-review`（設計・レビュー・コミットは Claude、実装は Codex）、`codex-design`（設計・レビューは Codex、実装・コミットは Claude。Codex は `edit` ではコミットできないため）、`implement-review`（設計・実装・コミットは Claude、レビューは Codex）の 3 つ。文章は表示言語（§13 Language）で選ぶ
   - `/role preset <name>` で両 Agent の役割をまとめて project の `.clodex.json` に保存する（`/role` と同じく、反映は Agent の次の起動から）。`/role preset` だけなら一覧を出す

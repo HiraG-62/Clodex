@@ -32,6 +32,129 @@ const setup = (projectRoot = PROJECT_ROOT) => {
 
 const reviewRequest = { to: "codex", type: "REVIEW_REQUEST", taskId: "T-1", body: "review please", files: ["a.ts"] };
 
+describe("fresh の配送", () => {
+  const freshSetup = (freshThread?: { DELEGATE?: boolean; REVIEW_REQUEST?: boolean }) => {
+    const claude = new FakeAgentAdapter("claude");
+    const codex = new FakeAgentAdapter("codex");
+    const bus = new EventBus();
+    const clearSession = vi.fn();
+    const coordinator = new Coordinator({
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex },
+      bus,
+      mcpUrlFor,
+      clearSession,
+      ...(freshThread ? { freshThread } : {}),
+    });
+    return { claude, codex, bus, clearSession, coordinator };
+  };
+
+  it("前の session があれば配送時に外して新規起動する", async () => {
+    const { codex, clearSession, coordinator } = freshSetup();
+    codex.sessionId = "old";
+    codex.status = "idle";
+    expect(coordinator.receiveMessage("claude", { to: "codex", type: "DELEGATE", taskId: "T", body: "実装", fresh: true })).toMatchObject({
+      ok: true,
+      message: { fresh: true },
+    });
+    await flush();
+    expect(clearSession).toHaveBeenCalledExactlyOnceWith("codex");
+    expect(codex.starts).toHaveLength(1);
+    expect(codex.starts[0]).not.toHaveProperty("resumeSessionId");
+    expect(codex.sent[0]).toContain("実装");
+    codex.completeTurn();
+  });
+
+  it("作業中なら今のターン後に切り替え、session が無ければ止めない", async () => {
+    const { codex, clearSession, coordinator } = freshSetup();
+    void coordinator.sendToAgent("codex", "作業中");
+    await flush();
+    coordinator.receiveMessage("claude", { to: "codex", type: "REVIEW_REQUEST", taskId: "T", body: "確認", fresh: true });
+    expect(codex.starts).toHaveLength(1);
+    expect(clearSession).not.toHaveBeenCalled();
+    codex.completeTurn();
+    await flush();
+    expect(clearSession).toHaveBeenCalledOnce();
+    expect(codex.starts).toHaveLength(2);
+    expect(codex.starts[1]).not.toHaveProperty("resumeSessionId");
+    codex.completeTurn();
+
+    const next = freshSetup();
+    next.coordinator.receiveMessage("claude", { to: "codex", type: "DELEGATE", taskId: "T", body: "新規", fresh: true });
+    await flush();
+    expect(next.clearSession).not.toHaveBeenCalled();
+    expect(next.codex.starts).toHaveLength(1);
+    next.codex.completeTurn();
+  });
+
+  it("設定の既定を適用し、明示した false は優先する", async () => {
+    const { codex, bus, clearSession, coordinator } = freshSetup({ DELEGATE: true });
+    const messages: Array<{ fresh?: boolean }> = [];
+    bus.subscribe(event => {
+      if (event.kind === "message") messages.push(event.message);
+    });
+    codex.sessionId = "old";
+    codex.status = "idle";
+    coordinator.receiveMessage("claude", { to: "codex", type: "DELEGATE", taskId: "T1", body: "継続", fresh: false });
+    await flush();
+    expect(messages[0]).not.toHaveProperty("fresh");
+    expect(clearSession).not.toHaveBeenCalled();
+    codex.completeTurn();
+    await flush();
+    coordinator.receiveMessage("claude", { to: "codex", type: "DELEGATE", taskId: "T2", body: "新規" });
+    await flush();
+    expect(messages.find(message => "taskId" in message && message.taskId === "T2")).toMatchObject({ fresh: true });
+    expect(clearSession).toHaveBeenCalledOnce();
+    codex.completeTurn();
+  });
+
+  it("設定で fresh になった割り込み依頼は steer せず、配送待ちのまま新規 session に送る", async () => {
+    const { codex, coordinator } = freshSetup({ DELEGATE: true });
+    coordinator.receiveMessage("claude", { to: "codex", type: "DELEGATE", taskId: "T1", body: "先の依頼" });
+    await flush();
+    const created = coordinator.receiveMessage("claude", { to: "codex", type: "DELEGATE", taskId: "T2", body: "次の依頼", interrupt: true });
+    expect(created).toMatchObject({ ok: true, message: { fresh: true, interrupt: true } });
+    if (!created.ok) return;
+    expect(await coordinator.steerQueued(created.message.id)).toMatchObject({ ok: false, reason: "rejected" });
+    expect(codex.steered).toEqual([]);
+    codex.completeTurn();
+    await flush();
+    expect(codex.sent.at(-1)).toContain("次の依頼");
+    expect(codex.sent.at(-1)).not.toContain("Interrupt: yes");
+    expect(codex.starts).toHaveLength(2);
+    codex.completeTurn();
+  });
+
+  it("配送待ちの fresh は復旧後も新しい session に届く", async () => {
+    const first = freshSetup();
+    void first.coordinator.sendToAgent("codex", "先の作業");
+    await flush();
+    first.coordinator.receiveMessage("claude", { to: "codex", type: "DELEGATE", taskId: "T", body: "復旧後の依頼", fresh: true });
+    const recovery = first.coordinator.recoveryState();
+    expect(recovery.queue.codex).toMatchObject([{ kind: "message", message: { fresh: true } }]);
+    const codex = new FakeAgentAdapter("codex");
+    const clearSession = vi.fn();
+    const resumed = new Coordinator({
+      projectRoot: PROJECT_ROOT,
+      agents: { claude: new FakeAgentAdapter("claude"), codex },
+      bus: new EventBus(),
+      mcpUrlFor,
+      resumeSessionIds: { codex: "old" },
+      clearSession,
+    });
+    resumed.restore(recovery);
+    await flush();
+    expect(codex.starts[0]).toMatchObject({ resumeSessionId: "old" });
+    codex.completeTurn();
+    await flush();
+    expect(clearSession).toHaveBeenCalledOnce();
+    expect(codex.starts[1]).not.toHaveProperty("resumeSessionId");
+    expect(codex.sent.at(-1)).toContain("復旧後の依頼");
+    codex.completeTurn();
+    first.codex.completeTurn();
+  });
+});
+
 describe("Agent 間の途中のターン", () => {
   const turnEvents = (events: CoordinatorEvent[]) =>
     events.filter((event): event is Extract<CoordinatorEvent, { kind: "agent" }> => event.kind === "agent" && event.event.type === "turn");

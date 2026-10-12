@@ -255,7 +255,8 @@ export function createLogItem(ctx: ClientContext) {
     };
     if (message.status) route.append(ctx.el("span", "kind", ctx.t(statusKeys[message.status])));
     if (message.auto) route.append(ctx.el("span", "kind", ctx.t("web.message.auto")));
-    if (message.interrupt) route.append(ctx.el("span", "kind steer", ctx.t("web.steer")));
+    if (message.fresh) route.append(ctx.el("span", "kind", ctx.t("web.message.fresh")));
+    if (message.interrupt && !message.fresh) route.append(ctx.el("span", "kind steer", ctx.t("web.steer")));
     route.append(ctx.el("span", "task mono", `${message.taskId} · ${ctx.clock(item.at)}`));
     const text = ctx.el("div", "text md");
     text.innerHTML = renderMarkdown(message.body);

@@ -14,6 +14,7 @@ const MESSAGE_ID_RANDOM_LENGTH = 8;
 
 const TYPES_REQUIRING_REPLY_TO = new Set<MessageType>(["ANSWER", "RESULT", "ACK"]);
 const TYPES_ALLOWING_ISSUES = new Set<MessageType>(["RESULT", "ISSUE"]);
+const TYPES_ALLOWING_FRESH = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST"]);
 
 const issueSchema = z.object({
   file: z.string().min(1),
@@ -48,12 +49,24 @@ export const sendMessageShape = {
       "Deliver into the recipient's running turn when it is working on your request. " +
         "Use only for corrections that would otherwise waste the recipient's work",
     ),
+  fresh: z
+    .boolean()
+    .optional()
+    .describe(
+      "Start the recipient in a new session before delivering (DELEGATE / REVIEW_REQUEST only). Use for a new task that does not need the recipient's earlier context.",
+    ),
 };
 
 const TYPES_ALLOWING_SPEC = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST", "RESULT", "ANSWER"]);
 const sendMessageSchema = z.object(sendMessageShape).superRefine((input, ctx) => {
   if (input.spec !== undefined && !TYPES_ALLOWING_SPEC.has(input.type)) {
     ctx.addIssue({ code: "custom", path: ["spec"], message: "allowed only for DELEGATE, REVIEW_REQUEST, RESULT or ANSWER" });
+  }
+  if (input.fresh === true && !TYPES_ALLOWING_FRESH.has(input.type)) {
+    ctx.addIssue({ code: "custom", path: ["fresh"], message: "allowed only for DELEGATE or REVIEW_REQUEST" });
+  }
+  if (input.fresh === true && input.interrupt === true) {
+    ctx.addIssue({ code: "custom", path: ["fresh"], message: "cannot be combined with interrupt" });
   }
 });
 

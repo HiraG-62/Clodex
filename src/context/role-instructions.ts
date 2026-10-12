@@ -19,6 +19,14 @@ const PERMISSION_NOTE = "The human cannot approve tool permissions interactively
 // 指示してから完了するまで何も見えない状態を避ける（DESIGN.md §17 ログの「方針」）
 // 割り込みは手戻りを防ぐときだけ（DESIGN.md §28 v0.3 C）
 const INTERRUPT_NOTE = "Set interrupt: true on send_message only for corrections to work the peer is doing for you that would otherwise be wasted.";
+const FRESH_NOTE =
+  "You may use fresh: true when sending a new task. The recipient starts without its earlier context, so make the envelope and spec sufficient to do the work.";
+const USAGE_NOTE =
+  "Do not poll in small steps with repeated sleep or by checking subagents again and again. Read the relevant range of a file at once, not a few dozen lines at a time.";
+const CODEX_USAGE_NOTE = "Run long commands (tests, builds) with a long enough yield_time_ms to finish in one call. Do not poll with wait or write_stdin.";
+const CLAUDE_USAGE_NOTE =
+  "Run long commands with a long enough Bash timeout (up to 600000 ms) to finish in one call. " +
+  "Do not check run_in_background commands again and again with sleep or by re-reading their output.";
 // 公式の subagent でコンテキストを分ける・並列にする（DESIGN.md §28 v0.3 C）
 const SUBAGENT_NOTE =
   "Use your built-in sub-agents for work that can run in parallel independently, and for work that is better done " +
@@ -58,9 +66,14 @@ const artifactsNote = (dir: string) =>
 export interface RoleInstructionOptions {
   language?: Language;
   artifactsDir?: string;
+  usageHints?: boolean;
 }
 
-export const buildRoleInstructions = (agent: AgentId, roles: RolesConfig | undefined, { language, artifactsDir }: RoleInstructionOptions = {}): string => {
+export const buildRoleInstructions = (
+  agent: AgentId,
+  roles: RolesConfig | undefined,
+  { language, artifactsDir, usageHints }: RoleInstructionOptions = {},
+): string => {
   const peer = peerOf(agent);
   return [
     header(agent, peer),
@@ -72,6 +85,8 @@ export const buildRoleInstructions = (agent: AgentId, roles: RolesConfig | undef
     SPEC_NOTE,
     BODY_FORMAT,
     INTERRUPT_NOTE,
+    FRESH_NOTE,
+    ...(usageHints ? [USAGE_NOTE, agent === "codex" ? CODEX_USAGE_NOTE : CLAUDE_USAGE_NOTE] : []),
     SUBAGENT_NOTE,
     ...(artifactsDir ? [artifactsNote(artifactsDir)] : []),
     ...(language ? [languageDirective(language)] : []),

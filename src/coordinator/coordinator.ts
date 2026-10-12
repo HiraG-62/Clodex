@@ -91,6 +91,8 @@ export interface CoordinatorOptions {
   knownMessages?: readonly AgentMessage[];
   limits?: BudgetLimits;
   settings?: Partial<Record<AgentId, AgentStartSettings>>;
+  freshThread?: Partial<Record<"DELEGATE" | "REVIEW_REQUEST", boolean>>;
+  clearSession?: (agent: AgentId) => void;
   // 人が読む文章の言語。Task envelope に添える（DESIGN.md §13 Language）
   language?: Language | (() => Language);
   usageAlert?: Partial<UsageAlert>;
@@ -248,6 +250,10 @@ export class Coordinator {
           return hold;
         },
         () => this.deliveryNotes.take(id),
+        () => {
+          this.options.clearSession?.(id);
+          this.usage.clearContext(id);
+        },
       );
     };
     this.mailboxes = { claude: createMailbox("claude"), codex: createMailbox("codex") };
@@ -337,6 +343,9 @@ export class Coordinator {
     });
     if (!result.ok) return result;
     const { message } = result;
+    const fresh = message.fresh ?? (message.type === "DELEGATE" || message.type === "REVIEW_REQUEST" ? this.options.freshThread?.[message.type] : undefined);
+    if (fresh) message.fresh = true;
+    else delete message.fresh;
     const repliedTo = message.replyTo ? this.messages.get(message.replyTo) : undefined;
     if (message.type === "ANSWER" && (repliedTo?.type !== "QUESTION" || repliedTo.to !== from || repliedTo.from !== message.to))
       return { ok: false, error: "replyTo: ANSWER must reply to a QUESTION received from the recipient" };
@@ -374,8 +383,8 @@ export class Coordinator {
     const mailbox = this.mailboxes[message.to];
     const steerable =
       (message.type === "ANSWER" && this.options.agents[message.to].status === "busy") || (message.interrupt && mailbox.current?.from === message.from);
-    if (steerable && (await this.steerWithNotice(message.to, envelope, message.id))) return;
-    const result = await mailbox.enqueue(envelope, { message });
+    if (!message.fresh && steerable && (await this.steerWithNotice(message.to, envelope, message.id))) return;
+    const result = await mailbox.enqueue(envelope, { message, ...(message.fresh && attempt === 1 ? { fresh: true } : {}) });
     const replied = this.repliedRequests.delete(message.id);
     if (RETRIED_TYPES.has(message.type) && result.status === "completed" && result.text.trim() && !replied && !mailbox.isClosed && !mailbox.holding)
       this.autoReply(message, result.text);
@@ -524,6 +533,8 @@ export class Coordinator {
     const target = input ?? message;
     if (!target) return { ok: false, reason: "missing" };
     const mailbox = this.mailboxes[target.agent];
+    if (message && mailbox.pendingMessages.some(pending => pending.id === message.id && pending.fresh))
+      return { ok: false, reason: "rejected", agent: target.agent };
     if (mailbox.holding) return { ok: false, reason: "holding", agent: target.agent };
     if (this.options.agents[target.agent].status !== "busy") return { ok: false, reason: "idle", agent: target.agent };
     const steerId = input ? randomUUID() : id;

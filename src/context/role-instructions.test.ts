@@ -89,6 +89,26 @@ it("send_message の body の書式を伝える", () => {
   expect(buildRoleInstructions("codex", undefined)).toContain("Write body in Markdown");
 });
 
+it("fresh の使い方は両 Agent に、使用量の作法は設定で有効にした Agent にだけ伝える", () => {
+  const claude = buildRoleInstructions("claude", undefined);
+  const codex = buildRoleInstructions("codex", undefined);
+  for (const instruction of [claude, codex]) {
+    expect(instruction).toContain("fresh: true");
+    expect(instruction).toContain("earlier context");
+  }
+  expect(codex).not.toContain("yield_time_ms");
+  expect(claude).not.toContain("yield_time_ms");
+  const codexOn = buildRoleInstructions("codex", undefined, { usageHints: true });
+  expect(codexOn).toContain("yield_time_ms");
+  expect(codexOn).toContain("Do not poll in small steps");
+  expect(codexOn).toContain("Read the relevant range of a file at once");
+  expect(codexOn).not.toContain("run_in_background");
+  const claudeOn = buildRoleInstructions("claude", undefined, { usageHints: true });
+  expect(claudeOn).toContain("Bash timeout");
+  expect(claudeOn).toContain("run_in_background");
+  expect(claudeOn).not.toContain("yield_time_ms");
+});
+
 it.each(["claude", "codex"] as const)("%s に人への質問は ask_user を使いターンを終えるよう指示する", agent => {
   expect(buildRoleInstructions(agent, undefined)).toContain(
     'When you need a decision from the human, ask with the ask_user tool of the "clodex" MCP server instead of writing the question in your reply, then end your turn.',

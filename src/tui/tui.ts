@@ -168,6 +168,7 @@ const labels = (): TerminalLabels => ({
   output: t("tui.output"),
   steer: t("web.steer"),
   auto: t("web.message.auto"),
+  fresh: t("web.message.fresh"),
 });
 
 const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed; now: number }) => {

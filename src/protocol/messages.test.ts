@@ -18,6 +18,18 @@ const reviewRequest = {
 };
 
 describe("createMessage", () => {
+  it.each(["DELEGATE", "REVIEW_REQUEST"] as const)("%s は fresh を受け付ける", type => {
+    expect(createMessage({ ...reviewRequest, type, fresh: true }, context)).toMatchObject({ ok: true, message: { fresh: true } });
+  });
+  it.each(["QUESTION", "ANSWER", "RESULT", "ISSUE", "ACK"] as const)("%s の fresh: true を拒否する", type => {
+    expect(createMessage({ ...reviewRequest, type, replyTo: "msg_x", fresh: true }, context)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("fresh"),
+    });
+  });
+  it("fresh と interrupt を同時には指定できない", () => {
+    expect(createMessage({ ...reviewRequest, fresh: true, interrupt: true }, context)).toMatchObject({ ok: false, error: expect.stringContaining("fresh") });
+  });
   it("Agent の入力に id / from / repository / createdAt を付けて message を作る", () => {
     expect(createMessage(reviewRequest, context)).toEqual({
       ok: true,

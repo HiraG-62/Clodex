@@ -26,6 +26,8 @@ const configSchema = z.strictObject({
   permission: z.enum(PERMISSION_LEVELS).optional(),
   updateChannel: z.enum(UPDATE_CHANNELS).optional(),
   roles: z.strictObject({ claude: role.optional(), codex: role.optional() }).optional(),
+  freshThread: z.strictObject({ DELEGATE: z.boolean().optional(), REVIEW_REQUEST: z.boolean().optional() }).optional(),
+  usageHints: z.strictObject({ claude: z.boolean().optional(), codex: z.boolean().optional() }).optional(),
   limits: z
     .strictObject({
       maxMessagesPerChain: nonNegativeInt.optional(),
