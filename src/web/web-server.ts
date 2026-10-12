@@ -35,6 +35,7 @@ const HTTP = {
 export interface WebServerOptions {
   port: number;
   token: string;
+  rotateToken?: () => string;
   feed: WebFeed;
   page: WebPage;
   onInput: (line: string) => Promise<void>;
@@ -80,6 +81,7 @@ const cookieToken = (req: IncomingMessage) =>
     ?.split(";")
     .map(c => c.trim().split("="))
     .find(([name]) => name === COOKIE_NAME)?.[1];
+const tokenCookie = (token: string) => `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${COOKIE_MAX_AGE_SECONDS}`;
 
 // 上限を超えたら読み捨てて最後まで受け取る（413 を返せるよう接続は切らない）。
 // UTF-8 がチャンクの境目で分かれても化けないよう、バイト列をつなげてからデコードする
@@ -137,8 +139,8 @@ const parseGuiUpdate = (body: string): GuiUpdate | undefined => {
 
 const sendItem = (res: ServerResponse, item: FeedItem) => res.write(`data: ${JSON.stringify(item)}\n\n`);
 
-const sendJson = (res: ServerResponse, value: unknown) => {
-  res.writeHead(HTTP.ok, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+const sendJson = (res: ServerResponse, value: unknown, headers: Record<string, string> = {}) => {
+  res.writeHead(HTTP.ok, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers });
   res.end(JSON.stringify(value));
 };
 
@@ -151,6 +153,7 @@ const sendPreview = (res: ServerResponse, result: PreviewResult) => {
 export const startWebServer = async ({
   port,
   token,
+  rotateToken,
   feed,
   page,
   onInput,
@@ -162,6 +165,13 @@ export const startWebServer = async ({
   push,
 }: WebServerOptions): Promise<WebServerHandle> => {
   const getConnection = connect ?? (() => queryTailscale(port));
+  const connectionResult = async () => {
+    const connection = await getConnection();
+    if (connection.state !== "ready") return connection.state === "noServe" ? { state: "noServe", command: `tailscale serve --bg ${port}` } : connection;
+    const remoteUrl = `${connection.url}?token=${encodeURIComponent(token)}`;
+    const qrSvg = await QRCode.toString(remoteUrl, { type: "svg", width: 240, margin: 2 });
+    return { state: "ready", url: remoteUrl, qrSvg };
+  };
   const streams = new Set<ServerResponse>();
   // GUI の中の画面の接続（DESIGN.md §28 Web UI の設定からの更新）
   let guiStream: ServerResponse | undefined;
@@ -265,7 +275,7 @@ export const startWebServer = async ({
       if (!sameToken(queryToken, token)) return void res.writeHead(HTTP.unauthorized).end();
       res.writeHead(HTTP.found, {
         location: "/",
-        "set-cookie": `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${COOKIE_MAX_AGE_SECONDS}`,
+        "set-cookie": tokenCookie(token),
       });
       return void res.end();
     }
@@ -312,18 +322,25 @@ export const startWebServer = async ({
       return handlePush(req, res, url.pathname, push);
     }
     if (req.method === "GET" && url.pathname === "/api/state") return sendJson(res, feed.latestState() ?? null);
-    if (req.method === "GET" && url.pathname === "/api/connect") {
+    if ((req.method === "GET" && url.pathname === "/api/connect") || (req.method === "POST" && url.pathname === "/api/connect/rotate")) {
+      let rotated = false;
       try {
-        const connection = await getConnection();
-        if (connection.state === "ready") {
-          const remoteUrl = `${connection.url}?token=${encodeURIComponent(token)}`;
-          const qrSvg = await QRCode.toString(remoteUrl, { type: "svg", width: 240, margin: 2 });
-          return sendJson(res, { state: "ready", url: remoteUrl, qrSvg });
+        if (req.method === "POST") {
+          if (!rotateToken) return void res.writeHead(HTTP.conflict).end();
+          token = rotateToken();
+          rotated = true;
+          for (const stream of streams) stream.end();
+          return sendJson(res, await connectionResult(), {
+            "set-cookie": tokenCookie(token),
+          });
         }
-        if (connection.state === "noServe") return sendJson(res, { state: "noServe", command: `tailscale serve --bg ${port}` });
-        return sendJson(res, connection);
+        return sendJson(res, await connectionResult());
       } catch (error) {
-        res.writeHead(HTTP.serverError, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        res.writeHead(HTTP.serverError, {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "no-store",
+          ...(rotated ? { "set-cookie": tokenCookie(token) } : {}),
+        });
         return void res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
       }
     }

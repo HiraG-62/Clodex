@@ -21,11 +21,11 @@ const renameWithRetry = (source: string, destination: string): void => {
 };
 
 // 一時ファイルに書いてから置き換える。書き込み途中で落ちても元のファイルを壊さない
-export const writeFileAtomic = (path: string, content: string): void => {
+export const writeFileAtomic = (path: string, content: string, mode?: number): void => {
   mkdirSync(dirname(path), { recursive: true });
   const tempPath = `${path}.${randomUUID()}.tmp`;
   try {
-    writeFileSync(tempPath, content);
+    writeFileSync(tempPath, content, mode === undefined ? undefined : { mode });
     renameWithRetry(tempPath, path);
   } catch (error) {
     try {

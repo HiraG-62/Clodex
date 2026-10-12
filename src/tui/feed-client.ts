@@ -3,7 +3,7 @@ import type { HubLock } from "../hub/hub-lock.js";
 import type { FeedItem, HistoryPage, WebFeed } from "../web/web-feed.js";
 
 export interface FeedClient {
-  connect(onItem: (item: FeedItem) => void, onConnectionChange?: (connected: boolean) => void): Promise<() => void>;
+  connect(onItem: (item: FeedItem) => void, onConnectionChange?: (connected: boolean) => void, onError?: (error: Error) => void): Promise<() => void>;
   send(line: string): Promise<void>;
   files(): Promise<string[]>;
   history(before: number): Promise<HistoryPage>;
@@ -21,17 +21,33 @@ export const createLocalFeedClient = (feed: WebFeed, send: (line: string) => Pro
   history: async before => feed.before(before),
 });
 
-export const createRemoteFeedClient = (lock: HubLock, token: string): FeedClient => {
+class HttpStatusError extends Error {
+  constructor(
+    path: string,
+    readonly status: number,
+  ) {
+    super(`${path}: HTTP ${status}`);
+  }
+}
+
+const UNAUTHORIZED = 401;
+
+export const createRemoteFeedClient = (lock: HubLock, initialToken: string, reloadToken?: () => string): FeedClient => {
   const RETRY_INITIAL_MS = 1000;
   const RETRY_MAX_MS = 30000;
-  const headers = { cookie: `clodex_token=${token}` };
+  let token = initialToken;
   const request = async (path: string, init: RequestInit = {}) => {
-    const response = await fetch(new URL(path, lock.url), { ...init, headers: { ...headers, ...init.headers } });
-    if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
+    const send = () => fetch(new URL(path, lock.url), { ...init, headers: { cookie: `clodex_token=${token}`, ...init.headers } });
+    let response = await send();
+    if (response.status === UNAUTHORIZED && reloadToken) {
+      token = reloadToken();
+      response = await send();
+    }
+    if (!response.ok) throw new HttpStatusError(path, response.status);
     return response;
   };
   return {
-    connect: async (onItem, onConnectionChange) => {
+    connect: async (onItem, onConnectionChange, onError) => {
       const controller = new AbortController();
       let retryDelay = RETRY_INITIAL_MS;
       let wake: (() => void) | undefined;
@@ -100,6 +116,10 @@ export const createRemoteFeedClient = (lock: HubLock, token: string): FeedClient
             reader = await openStream();
           } catch (error) {
             if (!controller.signal.aborted) console.error(error);
+            if (error instanceof HttpStatusError && error.status === UNAUTHORIZED) {
+              onError?.(error);
+              break;
+            }
             reader = undefined;
           }
         }

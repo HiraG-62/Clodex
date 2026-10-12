@@ -35,6 +35,82 @@ describe("createLocalFeedClient", () => {
 });
 
 describe("createRemoteFeedClient", () => {
+  it("SSE の切断後に 401 なら新しい token で接続し直す", async () => {
+    vi.useFakeTimers();
+    const cookies: string[] = [];
+    const fetchMock = vi.fn(async (_url: URL, init: RequestInit) => {
+      cookies.push((init.headers as Record<string, string>).cookie ?? "");
+      if (cookies.length === 2) return new Response(null, { status: 401 });
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.close();
+          },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const reload = vi.fn(() => "new-token");
+    const client = createRemoteFeedClient({ pid: 1, port: 4319, url: "http://127.0.0.1:4319" }, "old-token", reload);
+    const stop = await client.connect(() => {});
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(cookies).toEqual(["clodex_token=old-token", "clodex_token=old-token", "clodex_token=new-token"]);
+    expect(reload).toHaveBeenCalledOnce();
+    stop();
+  });
+
+  it("再読込後も SSE が 401 ならエラーを知らせて再試行を止める", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const fetchMock = vi.fn(async () => {
+      calls++;
+      if (calls > 1) return new Response(null, { status: 401 });
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.close();
+          },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const errors: string[] = [];
+    const client = createRemoteFeedClient({ pid: 1, port: 4319, url: "http://127.0.0.1:4319" }, "old-token", () => "new-token");
+    const stop = await client.connect(
+      () => {},
+      undefined,
+      error => errors.push(error.message),
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(errors).toEqual(["/events: HTTP 401"]);
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    stop();
+  });
+
+  it("401 で token を読み直して 1 回だけつなぎ直す", async () => {
+    const cookies: string[] = [];
+    const fetchMock = vi.fn(async (_url: URL, init: RequestInit) => {
+      cookies.push((init.headers as Record<string, string>).cookie ?? "");
+      return new Response(cookies.length === 1 ? null : '["src/a.ts"]', { status: cookies.length === 1 ? 401 : 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const reload = vi.fn(() => "new-token");
+    const client = createRemoteFeedClient({ pid: 1, port: 4319, url: "http://127.0.0.1:4319" }, "old-token", reload);
+    expect(await client.files()).toEqual(["src/a.ts"]);
+    expect(cookies).toEqual(["clodex_token=old-token", "clodex_token=new-token"]);
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it("再読込後も 401 なら追加の再接続をしない", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 401 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const reload = vi.fn(() => "new-token");
+    const client = createRemoteFeedClient({ pid: 1, port: 4319, url: "http://127.0.0.1:4319" }, "old-token", reload);
+    await expect(client.files()).rejects.toThrow("HTTP 401");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(reload).toHaveBeenCalledOnce();
+  });
   it("stream 終了後は間隔を伸ばして再接続し、stop 後は再接続しない", async () => {
     vi.useFakeTimers();
     let streams = 0;

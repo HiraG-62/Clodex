@@ -33,7 +33,7 @@ afterEach(async () => {
   server = undefined;
 });
 
-const setup = async (onInput?: (line: string) => Promise<void>, connect?: () => Promise<ConnectionStatus>) => {
+const setup = async (onInput?: (line: string) => Promise<void>, connect?: () => Promise<ConnectionStatus>, rotateToken?: () => string) => {
   const feed = new WebFeed();
   const inputs: string[] = [];
   const errors: unknown[] = [];
@@ -44,6 +44,7 @@ const setup = async (onInput?: (line: string) => Promise<void>, connect?: () => 
     page: PAGE,
     onInput: onInput ?? (async line => void inputs.push(line)),
     connect,
+    rotateToken,
     onError: e => errors.push(e),
     listFiles: async () => ["README.md", "src/a.ts"],
     preview: {
@@ -138,6 +139,42 @@ describe("startWebServer", () => {
     expect(value.state).toBe("ready");
     expect(value.url).toBe(`https://desktop.example.ts.net/?token=${TOKEN}`);
     expect(value.qrSvg).toContain("<svg");
+  });
+
+  it("再発行で古い cookie と URL を失効し、SSE を閉じる", async () => {
+    const next = "b".repeat(64);
+    const { base } = await setup(
+      undefined,
+      async () => ({ state: "ready", url: "https://desktop.example.ts.net/" }),
+      () => next,
+    );
+    expect((await fetch(`${base}/api/connect/rotate`, { method: "POST" })).status).toBe(401);
+    const stream = await fetch(`${base}/events`, { headers: { cookie: COOKIE } });
+    const reader = stream.body!.getReader();
+    await reader.read();
+    const response = await fetch(`${base}/api/connect/rotate`, { method: "POST", headers: { cookie: COOKIE } });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("set-cookie")).toContain(`clodex_token=${next}`);
+    expect((await response.json()) as { url: string }).toMatchObject({ url: `https://desktop.example.ts.net/?token=${next}` });
+    expect((await reader.read()).done).toBe(true);
+    expect((await fetch(`${base}/`, { headers: { cookie: COOKIE } })).status).toBe(401);
+    expect((await fetch(`${base}/?token=${TOKEN}`, { redirect: "manual" })).status).toBe(401);
+    expect((await fetch(`${base}/`, { headers: { cookie: `clodex_token=${next}` } })).status).toBe(200);
+  });
+
+  it("接続情報の取得が失敗しても再発行した cookie を返す", async () => {
+    const next = "b".repeat(64);
+    const { base } = await setup(
+      undefined,
+      async () => {
+        throw new Error("connection failed");
+      },
+      () => next,
+    );
+    const response = await fetch(`${base}/api/connect/rotate`, { method: "POST", headers: { cookie: COOKIE } });
+    expect(response.status).toBe(500);
+    expect(response.headers.get("set-cookie")).toContain(`clodex_token=${next}`);
+    expect((await fetch(`${base}/`, { headers: { cookie: `clodex_token=${next}` } })).status).toBe(200);
   });
 
   it("/?token= で開くと HttpOnly cookie を設定して / へ移動する", async () => {

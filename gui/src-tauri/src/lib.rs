@@ -111,12 +111,15 @@ struct OwnedHub {
 impl OwnedHub {
     fn stop(mut self) {
         let body = br#"{"line":"/exit"}"#;
+        let token = fs::read_to_string(self.home.join(".clodex/web-token"))
+            .map(|value| value.trim().to_owned())
+            .unwrap_or(self.token.clone());
         let address = SocketAddrV4::new(Ipv4Addr::LOCALHOST, self.port);
         if let Ok(mut stream) = TcpStream::connect_timeout(&address.into(), POLL_INTERVAL) {
             let _ = stream.set_write_timeout(Some(POLL_INTERVAL));
             let request = format!(
                 "POST /api/input HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: clodex_token={}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                self.token,
+                token,
                 body.len()
             );
             let _ = stream.write_all(request.as_bytes());
@@ -216,9 +219,48 @@ fn live_hub(home: &Path) -> Option<HubLock> {
     Some(lock)
 }
 
+fn token_url(base: &str, token: &str) -> Result<tauri::Url, String> {
+    let mut url = tauri::Url::parse(base).map_err(|error| error.to_string())?;
+    url.query_pairs_mut().append_pair("token", token);
+    Ok(url)
+}
+
+#[tauri::command]
+fn reopen_with_current_token(app: tauri::AppHandle) -> Result<(), String> {
+    let home = home_dir().map_err(|error| error.to_string())?;
+    let lock = live_hub(&home).ok_or("Hub が見つかりません")?;
+    let token = fs::read_to_string(home.join(".clodex/web-token"))
+        .map_err(|error| error.to_string())?
+        .trim()
+        .to_owned();
+    let url = token_url(&lock.url, &token)?;
+    if let Some(owned) = app
+        .state::<SharedHub>()
+        .lock()
+        .map_err(|error| error.to_string())?
+        .as_mut()
+    {
+        owned.token = token;
+    }
+    app.get_webview_window(MAIN_WINDOW)
+        .ok_or("画面が見つかりません")?
+        .navigate(url)
+        .map_err(|error| error.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn token_url_uses_new_token() {
+        assert_eq!(
+            token_url("http://127.0.0.1:4319", "new-token")
+                .unwrap()
+                .as_str(),
+            "http://127.0.0.1:4319/?token=new-token"
+        );
+    }
 
     #[test]
     fn previous_failure_is_reported_once() {
@@ -327,7 +369,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![update::check_update, update::install_update])
+        .invoke_handler(tauri::generate_handler![update::check_update, update::install_update, reopen_with_current_token])
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(window_state_flags())

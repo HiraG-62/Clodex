@@ -42,6 +42,7 @@ export interface SharedStore {
     | "agentSettings"
     | "settings"
     | "mobileConnect"
+    | "tokenConfirm"
     | "conversations"
     | "conversationMenu"
     | "projects"
@@ -65,6 +66,7 @@ export interface SharedStore {
   guiVersion: string | undefined;
   pushId: string | undefined;
   reloading: boolean;
+  tokenRotating: boolean;
   files: string[];
   fileSet: Set<string>;
   filesLoadedAt: number;

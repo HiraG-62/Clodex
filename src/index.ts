@@ -40,7 +40,7 @@ import { PushService } from "./web/push.js";
 import { buildLimitState, DEFAULT_RECENT_ITEMS, type FeedItem, WebFeed } from "./web/web-feed.js";
 import { buildWebPage } from "./web/web-page.js";
 import { startWebServer, type WebServerHandle } from "./web/web-server.js";
-import { loadOrCreateWebToken, webTokenPath } from "./web/web-token.js";
+import { loadOrCreateWebToken, rotateWebToken, webTokenPath } from "./web/web-token.js";
 import { connectWebFeed, historyItemOf } from "./web/web-ui.js";
 
 const PROMPT = "clodex> ";
@@ -84,7 +84,7 @@ const connectToHub = async (args: CliArgs, cwd: string, homeDir: string, interac
     process.exitCode = 1;
     return true;
   }
-  const client = createRemoteFeedClient(liveHub, token);
+  const client = createRemoteFeedClient(liveHub, token, () => readFileSync(webTokenPath(homeDir), "utf8").trim());
   const { commands, ignored } = hubCommands(args, cwd);
   for (const command of commands) await client.send(command);
   if (ignored.length) process.stderr.write(`${t("start.hubIgnored", { options: ignored.join(" ") })}\n`);
@@ -123,6 +123,7 @@ const startWeb = async ({
   const web = await startWebServer({
     port: configuredPort ?? DEFAULT_WEB_PORT,
     token: loadOrCreateWebToken(homeDir),
+    rotateToken: () => rotateWebToken(homeDir),
     feed,
     page: buildWebPage(language()),
     onInput,

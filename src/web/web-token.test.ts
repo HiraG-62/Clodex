@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadOrCreateWebToken, webTokenPath } from "./web-token.js";
+import { loadOrCreateWebToken, rotateWebToken, webTokenPath } from "./web-token.js";
 
 describe("loadOrCreateWebToken", () => {
   it("無ければ 32 桁の token を作って保存し、次回は同じ token を返す", () => {
@@ -19,4 +19,13 @@ describe("loadOrCreateWebToken", () => {
     writeFileSync(webTokenPath(home), "short");
     expect(loadOrCreateWebToken(home)).toMatch(/^[0-9a-f]{64}$/);
   });
+});
+
+it("再発行すると新しい token へ置き換える", () => {
+  const home = mkdtempSync(join(tmpdir(), "clodex-token-"));
+  const previous = loadOrCreateWebToken(home);
+  const next = rotateWebToken(home);
+  expect(next).toMatch(/^[0-9a-f]{64}$/);
+  expect(next).not.toBe(previous);
+  expect(readFileSync(webTokenPath(home), "utf8").trim()).toBe(next);
 });

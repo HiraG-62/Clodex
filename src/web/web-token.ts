@@ -2,11 +2,18 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { writeFileAtomic } from "../project/atomic-write.js";
 
 const TOKEN_BYTES = 32;
 const TOKEN_PATTERN = /^[0-9a-f]{64}$/;
 
 export const webTokenPath = (homeDir: string): string => join(homeDir, ".clodex", "web-token");
+
+export const rotateWebToken = (homeDir: string): string => {
+  const token = randomBytes(TOKEN_BYTES).toString("hex");
+  writeFileAtomic(webTokenPath(homeDir), `${token}\n`, 0o600);
+  return token;
+};
 
 export const loadOrCreateWebToken = (homeDir: string): string => {
   const path = webTokenPath(homeDir);

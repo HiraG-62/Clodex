@@ -1337,10 +1337,15 @@ PC で動いている `clodex` を、スマホ等のブラウザから GUI で�
 - **認証**: 起動をまたいで同じ token を使う（`~/.clodex/web-token`、初回に生成）。`/?token=<token>` で開くと HttpOnly cookie を設定し、以後は cookie で認証する。token が無い・違うリクエストは 401
 - 依存パッケージを増やさない（`node:http` と SSE のみ。画面も外部の JS ライブラリを使わない）。例外は Hub 側で QR コードを作る `qrcode` と、同梱のフォント
 - **スマホからの接続の案内**: 設定の Clodex の節に「スマホ」の行を置き、開くとスマホで読み取る QR コードと接続の URL（`?token=` 付き）を出す。URL はコピーできる
-  - URL は tailscale の CLI（PATH に無ければ `C:\Program Files\Tailscale	ailscale.exe`）から求める。`tailscale status --json` の `Self.DNSName` と、`tailscale serve status --json` の `Web` のうち、Hub のポートへ proxy している `/` の handler の HTTPS の入口（例: `https://<name>.<tailnet>.ts.net/`）。パス付きの handler（`/clodex` など）は、画面がルートからの絶対パスを使うので使えない（`serve` 未設定と同じ扱い）
+  - URL は tailscale の CLI（PATH に無ければ `C:\Program Files\Tailscale\tailscale.exe`）から求める。`tailscale status --json` の `Self.DNSName` と、`tailscale serve status --json` の `Web` のうち、Hub のポートへ proxy している `/` の handler の HTTPS の入口（例: `https://<name>.<tailnet>.ts.net/`）。パス付きの handler（`/clodex` など）は、画面がルートからの絶対パスを使うので使えない（`serve` 未設定と同じ扱い）
   - 状態は 4 つ: 接続できる / `serve` が Hub のポートに向いていない（`tailscale serve --bg <port>` を出してコピーできるようにする）/ tailscale が止まっている / tailscale が無い。文言は短く（「serve 未設定」「Tailscale 停止中」「Tailscale 未導入」）
   - API: `GET /api/connect`（token 認証）が状態・URL・QR コードの SVG を返す。QR コードは Hub が `qrcode` パッケージで作る。開くたびに tailscale に問い合わせる（キャッシュしない）
   - token を含むので、出すのは認証済みの画面だけ。`/api/connect` を token なしで返さない
+- **token の再発行**: URL が漏れたときに、前の URL と、それで入った端末の cookie を使えなくする。設定の「スマホ」の行に「再発行」を置く（押すと確認を出す: 「今の URL とログイン中の端末は使えなくなる」。押せるのは認証済みの画面だけ）
+  - API: `POST /api/connect/rotate`（token 認証）。新しい token を作って `~/.clodex/web-token` に書き（一時ファイル経由）、Hub が以後の認証に使う token を入れ替える。前の token の cookie と `?token=` は 401 にする
+  - 今つながっている feed（SSE）はすべて閉じる（前の token で入った端末を残さない）。再発行した画面には、応答で新しい token の cookie を付ける（その画面はそのまま使える）。応答は `GET /api/connect` と同じ（新しい URL と QR コード）
+  - ほかの画面は再接続で 401 になる。Web UI は「新しい URL で開き直す」状態（再接続を繰り返さない）を出す。GUI の中の Web UI は、GUI に `~/.clodex/web-token` を読み直してページを開き直させる（GUI の command）。TUI は 401 を受けたら `~/.clodex/web-token` を読み直して 1 回だけつなぎ直す（同じ PC のファイルを読めるため）
+  - Web Push の購読は token と別なので消さない
 
 ### feed（`/events`）
 

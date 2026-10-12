@@ -313,6 +313,11 @@ export const TuiApp = ({
           if (!connected) receivedVersion = false;
           setReconnecting(!connected);
         },
+        error => {
+          if (closed) return;
+          setReconnecting(false);
+          setNotice(String(error));
+        },
       )
       .then(stop => {
         if (closed) stop();

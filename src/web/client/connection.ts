@@ -15,6 +15,16 @@ import {
   withStartingTurns,
 } from "./timeline.js";
 
+const UNAUTHORIZED = 401;
+
+export const tokenExpired = async (request: () => Promise<Response>): Promise<boolean> => {
+  try {
+    return (await request()).status === UNAUTHORIZED;
+  } catch {
+    return false;
+  }
+};
+
 export function createConnection(ctx: ClientContext) {
   // ---- 接続 ----
   // 指定しないと Tauri の通知は無音になる
@@ -41,6 +51,7 @@ export function createConnection(ctx: ClientContext) {
     }
   };
   const conn = ctx.$("#conn");
+  let probingToken = false;
   const commitReplay = () => {
     if (!ctx.store.replaying) return;
     const merged = mergeReplayHistory(ctx.store.history, ctx.store.incomingHistory);
@@ -224,6 +235,23 @@ export function createConnection(ctx: ClientContext) {
       ctx.$("#conn-label").textContent = closed ? ctx.t("web.conn.closed") : ctx.t("web.conn.lost");
       ctx.$("#reload").hidden = !closed;
       ctx.$("#conn-spinner").hidden = closed;
+      if (ctx.store.tokenRotating || probingToken) return;
+      probingToken = true;
+      void tokenExpired(() => fetch("/api/state", { cache: "no-store" })).then(async expired => {
+        probingToken = false;
+        if (!expired || ctx.store.tokenRotating || events.readyState === EventSource.OPEN) return;
+        events.close();
+        try {
+          if (ctx.tauriApi?.core?.invoke) {
+            await ctx.tauriApi.core.invoke<void>("reopen_with_current_token");
+            return;
+          }
+        } catch {}
+        conn.hidden = false;
+        ctx.$("#conn-label").textContent = ctx.t("web.conn.expired");
+        ctx.$("#reload").hidden = true;
+        ctx.$("#conn-spinner").hidden = true;
+      });
     };
   };
   // GUI の中の画面は、GUI の版を添えてつなぐ（Hub が更新の依頼をこの接続へ送る）

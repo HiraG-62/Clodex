@@ -16,6 +16,7 @@ export function createStoreInit(ctx: ClientContext) {
   ctx.store.pendingDeadlines = {};
   ctx.store.settingRequests = new Map<string, symbol>();
   ctx.store.reloading = false;
+  ctx.store.tokenRotating = false;
   ctx.store.pendingRequests = new Set<string>();
   ctx.store.interrupting = new Set<AgentId>();
   ctx.store.interruptAttempts = new Map<AgentId, symbol>();

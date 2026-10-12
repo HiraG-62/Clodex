@@ -626,7 +626,14 @@
   .settings-card > .setting + .setting, .settings-card > .limits-settings { border-top: 1px solid var(--line); }
   .settings-card > .setting:not(.limits-settings) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px; align-items: center; min-height: 44px; padding: 2px 0; }
   .settings-card > .setting > .eyebrow { margin: 0; color: var(--fg); font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; }
-  .mobile-connect-setting > .icon-btn { width: 44px; height: 44px; justify-self: end; }
+  .mobile-connect-actions { display: flex; align-items: center; justify-self: end; gap: 4px; }
+  .mobile-connect-actions > .icon-btn { width: 44px; height: 44px; }
+  .mobile-connect-reissue { min-height: 32px; padding: 0 8px; border: 0; background: transparent; color: var(--fg-2); font-size: 12px; cursor: pointer; }
+  .mobile-connect-confirm { padding: 12px 0; }
+  .mobile-connect-confirm p { margin: 0 0 20px; }
+  .mobile-connect-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .mobile-connect-confirm-actions .btn { min-height: 44px; }
+  .mobile-connect-confirm-actions .primary { background: var(--invert-bg); color: var(--invert-fg); }
   .mobile-connect-body { display: grid; justify-items: center; gap: 14px; padding: 20px 0 10px; }
   .mobile-connect-qr { width: 240px; height: 240px; padding: 8px; border-radius: 8px; background: white; }
   .mobile-connect-qr svg { display: block; width: 100%; height: 100%; }
