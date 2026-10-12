@@ -16,7 +16,7 @@ Claude Code と Codex CLI を、Windows ネイティブ環境で 1 つのプロ�
 Clodex がやらないこと:
 
 - Agent の作業内容を AI で計画・分配すること（分担は人が役割で決める）
-- 自動マージ・自動の worktree 運用・コンフリクト解決
+- 自動マージ・コンフリクト解決・worktree の削除（worktree を作るのは人の指示か、Agent が並列の依頼で指定したときだけ）
 - Agent の出力の自動翻訳
 
 ## 2. 仕組み
@@ -28,13 +28,14 @@ Clodex がやらないこと:
         │
        会話 ── Coordinator ──┬── claude（Claude Code）
                  │           └── codex（Codex CLI）
-                 └── MCP server（send_message / ask_user）
+                 └── MCP server（send_message / ask_user / read_conversation）
 ```
 
 - **project**: Agent が作業するディレクトリ。`clodex` を実行した場所の git のルート（`--project` や `/project` で変えられる）
 - **会話**: project の中の 1 つの作業の流れ。`/new` で新しく始め、`/resume` で戻れる。`/new worktree` は会話用の git worktree（`<project の隣>/<project 名>-<短い ID>`、ブランチ `clodex/<短い ID>`）を作り、そこで作業する
 - **Lazy Start**: Agent は必要になるまで起動しない。依頼が届いた時点で起動し、以前の session があれば続きから再開する
-- **mailbox**: 各 Agent への入力（人の入力と相手からの message）は順番に 1 つずつ届く。作業中のターンには割り込まない（割り込みは明示したときだけ）
+- **mailbox**: 各 Agent への入力（人の入力と相手からの message）は順番に 1 つずつ届く。作業中のターンには割り込まない（割り込みは明示したとき・`QUESTION` への回答（`ANSWER`）・送信待ちの「割り込み」だけ）
+- **既存の会話を worktree に移す**: `/worktree` で、今の会話用の worktree を作って移す。Agent は今の session のまま新しい場所で続ける。未コミットの変更は持ち込まない
 
 ## 3. Agent 同士のやり取り
 
@@ -45,12 +46,27 @@ Clodex がやらないこと:
 | `DELEGATE` | 実装・調査の委譲 |
 | `REVIEW_REQUEST` | レビュー依頼 |
 | `QUESTION` | 相手への質問 |
-| `RESULT` | 依頼への結果（`status`: `approved` / `changes_requested` / `done` / `failed`、`issues` で指摘を返せる） |
+| `ANSWER` | `QUESTION` への回答。質問した側が作業中なら、そのターンに割り込んで届く |
+| `RESULT` | 依頼（`DELEGATE` / `REVIEW_REQUEST`）の作業を終えたときの結果（`status`: `approved` / `changes_requested` / `done` / `failed`、`issues` で指摘を返せる） |
 | `ISSUE` | 問題の報告 |
 
 - 依頼の詳細は body（最大 4,000 文字の要約）ではなく、**設計書**（既定 `docs/specs/<taskId>.md`）に書いて `spec` で渡す。設計書の作成・コミットは依頼する側が行う
 - 受け取った側には、依頼に加えて、リポジトリのパス・commit・ファイル・設計書のパスだけが渡る。会話の履歴は渡らないので、必要な情報はリポジトリから読む
 - 人に判断を求めるときは MCP tool `ask_user` を使う（選択肢つきの質問として画面に出る）
+- 受け取った側が `send_message` を使わずにターンを終えたら、Clodex が最終応答を自動で `RESULT`（`QUESTION` なら `ANSWER`）として返す
+
+### 依頼ごとのオプション
+
+送る側の Agent が `send_message` に付ける。
+
+| オプション | 効果 |
+|---|---|
+| `interrupt` | 宛先が自分の依頼を処理中なら、実行中のターンに足す（頼んだ作業の修正） |
+| `fresh` | 宛先を新しい session にしてから届ける（`DELEGATE` / `REVIEW_REQUEST`）。長い session ではコンテキストが大きくなり、tool の呼び出しのたびに送り直す token が増えるため、新しいタスクに使う。受け手は前の作業を覚えていないので、依頼と設計書だけで作業できるように書く |
+| `parallel` | 宛先が作業中なら、宛先だけが動く子の会話を作って並列に受けさせる（`DELEGATE` / `REVIEW_REQUEST`）。子の結果と質問は元の会話の送り手に届く。同じファイルに触れるなら `worktree: true` も付ける |
+
+- `fresh` は `.clodex.json` の `freshThread` で、依頼の種類ごとに既定を決められる
+- 子の会話は会話の一覧に出ない。元の会話の message のカードの「並列」から開く。結果を返し終えたら Agent が止まり、元の会話を消すと一緒に消える。worktree のマージ・削除は人が行う
 
 ### 上限
 
@@ -71,7 +87,11 @@ Clodex は Agent の起動時に、次の内容を system prompt に追加する
 - 人への質問は `ask_user` を使うこと
 - 依頼を受けたら、作業の前に何をするかを 1〜2 文で書くこと
 - 権限が拒否されたら、人に `/permission` を案内すること
+- QUESTION には ANSWER で答え、RESULT は依頼の作業を終えたときに使うこと
+- 新しいタスクには `fresh`、相手が作業中で独立した依頼には `parallel` を使ってよいこと
+- 人に見せたいファイルは、最終応答に `[名前](<フルパス>)` で書くこと（Web UI の「資料」に出る）
 - 人が読む文章の言語（`language` の設定、無ければ OS のロケール）
+- `usageHints` で ON にした Agent にだけ、待ち方・ファイルの読み方の作法（長いコマンドは 1 回の呼び出しで終わるまで待つ、細かくポーリングしない、ファイルはまとめて読む）
 
 また、Agent のプロセスには環境変数 `CLODEX_AGENT=claude|codex` が付く。hook や skill で「Clodex の配下で動いているか」を判定できる（例: 単体で使うときの委譲用 plugin を Clodex の配下では無効にする）。
 
@@ -121,6 +141,9 @@ CLAUDE.md に書くとよいこと:
 | `worktree.setup` | `/new worktree` で作った worktree で最初に実行するコマンド。git が持たない依存関係（`node_modules` など）を入れる |
 | `limits` | 3 の上限 |
 | `language` | 人が読む文章の言語（`ja` / `en`） |
+| `freshThread` | 3 の `fresh` の、依頼の種類ごとの既定（例: `{ "DELEGATE": true }`）。既定は OFF |
+| `usageHints` | 4 の作法を伝える Agent（例: `{ "codex": true }`）。既定は両方 OFF。実装を受け持つ Agent に付けるとよい |
+| `threadTokenWarn` | コンテキストがこの token 数を超えたら警告し、`/new <agent>` を勧める（数か `{ "claude": n, "codex": n }`）。既定は警告しない |
 
 `/role` で役割を変えると `.clodex.json` に保存される。
 
@@ -131,6 +154,17 @@ CLAUDE.md に書くとよいこと:
 | `design-review` | 設計・レビュー・コミットは Claude、実装は Codex（上の例と同じ） |
 | `codex-design` | 設計・レビューは Codex、実装・コミットは Claude |
 | `implement-review` | 設計・実装・コミットは Claude、レビューは Codex |
+
+### 使用量を抑える
+
+1 つの session に依頼を送り続けると、コンテキストが上限近くに張り付き、tool の呼び出しのたびに大量の token を送り直す（Codex の 1 本の thread が 3 日で全体の使用量の 76% を占めた例がある）。実装を任せる運用では、次の設定から始めるとよい。
+
+```json
+{ "freshThread": { "DELEGATE": true }, "usageHints": { "codex": true }, "threadTokenWarn": 150000 }
+```
+
+- 役割の文章に「メインは待機し、作業はサブエージェントで」と書かない。親が subagent の完了を待ち続け、同じコンテキストを二重に読む。作業中の相手への独立した依頼は `parallel` で送らせる
+- 設定を変えたら、Agent を `/new` で始め直す（作法と案内は新しく始める session から入る）
 
 ### 設計書の置き場所
 
@@ -157,6 +191,7 @@ CLAUDE.md に書くとよいこと:
 3. 役割を決める。プリセットから選ぶ（`/role preset <name>`）か、`.clodex.json` に `roles` を書く（全プロジェクト共通でよければ `~/.clodex/config.json` に書く）。worktree を使うなら `worktree.setup` も書く
 4. プロジェクトのディレクトリで `clodex` を実行する（GUI ならフォルダを選ぶ）
 5. 最初は小さな依頼で、分担・テストの実行・コミットの流れが役割どおりに動くかを確かめる
+6. 長く使うなら、5 の「使用量を抑える」の設定を入れる
 
 ## 8. CLAUDE.md の雛形
 

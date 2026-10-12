@@ -43,7 +43,7 @@ shim のパスは実際のリポジトリの場所に置き換える。ソース
 
 GUI を起動するか、project のディレクトリで `clodex` を実行する。`clodex` は TUI を開き、Hub が動いていれば接続する。`clodex serve` は画面なしで Hub と Web UI を起動し、`clodex --web` は TUI と Web UI を起動する。
 
-`/project [path]` で project を切り替える。GUI ではフォルダを選べる。`/new` は新しい会話、`/new worktree` は worktree の会話を作る。`/resume [番号]` で会話の一覧表示・切り替えができる。詳しくは [DESIGN.md §6](docs/DESIGN.md#6-project-と-workspace)・[§18](docs/DESIGN.md#18-persistence)。
+`/project [path]` で project を切り替える。GUI ではフォルダを選べる。`/new` は新しい会話、`/new worktree` は worktree の会話を作る。`/worktree` は今の会話を新しい worktree に移す（Agent は今の session のまま続ける）。`/resume [番号]` で会話の一覧表示・切り替えができる。詳しくは [DESIGN.md §6](docs/DESIGN.md#6-project-と-workspace)・[§18](docs/DESIGN.md#18-persistence)。
 
 ## 入力
 
@@ -58,9 +58,10 @@ GUI を起動するか、project のディレクトリで `clodex` を実行す�
 | `!& command` | background process を起動。Ctrl+C や `/interrupt` では止まらない |
 | `/processes [番号]` / `/kill <番号>` | background process の一覧・出力表示 / 停止 |
 | `/interrupt [agent]` / Ctrl+C | 実行中のターンや `!command` を中断 |
-| `/cancel [id]` | 未配送の人間の入力を取り消す |
+| `/cancel [id]` | 未配送の人間の入力か Agent 間の message を取り消す |
+| `/steer <id>` | 未配送の入力・message を、宛先の実行中のターンに割り込ませる（Web UI は送信待ちの「割り込み」） |
 | `/project [path]` / `/primary <agent>` / `/role [agent] [text]` | project・通常入力の送り先・役割を変更 |
-| `/new [worktree\|agent]` / `/resume [番号]` | 会話の作成・切り替え |
+| `/new [worktree\|agent]` / `/worktree` / `/resume [番号]` | 会話の作成・今の会話を worktree に移す・切り替え |
 | `/rename <title>` / `/delete <番号>` / `/pin <番号>` | 会話の名前・削除・ピン止め |
 | `/permission [agent] <level>` / `/model <agent> <model>` / `/effort [agent] <level>` | Agent の権限・model・reasoning effort を変更 |
 | `/compact [agent]` / `/status` / `/verbose` | コンテキストの圧縮・状態の表示・詳細表示の切り替え |
@@ -74,7 +75,7 @@ GUI を起動するか、project のディレクトリで `clodex` を実行す�
 
 ## 設定ファイル
 
-`~/.clodex/config.json` は全 project の既定値、project root の `.clodex.json` はその project の設定。project 側の値がトップレベルのキー単位で上書きする。設定できるキーは `roles`、`primary`、`permission`、`language`、`limits`、`web`、`usageAlert`、`worktree`、`sandbox`、`updateChannel`。`worktree.setup`（例: `"pnpm install"`）は `/new worktree` で作った worktree で最初に実行する command。
+`~/.clodex/config.json` は全 project の既定値、project root の `.clodex.json` はその project の設定。project 側の値がトップレベルのキー単位で上書きする。設定できるキーは `roles`、`primary`、`permission`、`language`、`limits`、`web`、`usageAlert`、`worktree`、`sandbox`、`updateChannel`、`freshThread`、`usageHints`、`threadTokenWarn`。`worktree.setup`（例: `"pnpm install"`）は worktree を作った直後（`/new worktree`・`/worktree`）に実行する command。
 
 ```json
 {
@@ -84,6 +85,16 @@ GUI を起動するか、project のディレクトリで `clodex` を実行す�
   }
 }
 ```
+
+使用量を抑える設定（どれも既定は OFF。役割の分け方によらず、Agent ごとに選べる）:
+
+| キー | 内容 |
+|---|---|
+| `freshThread` | 依頼の種類ごとに、宛先を新しい session にしてから届ける既定（例: `{ "DELEGATE": true }`）。Agent は `send_message` の `fresh` で依頼ごとにも選べる |
+| `usageHints` | 待ち方・ファイルの読み方の作法を伝える Agent（例: `{ "codex": true }`）。tool の呼び出しの回数を減らす |
+| `threadTokenWarn` | コンテキストがこの token 数を超えたら警告し、`/new <agent>` を勧める（数か `{ "claude": n, "codex": n }`） |
+
+session の累計の入力 token は、Agent の利用状況・`/status`・TUI にいつも出る。詳細は [GUIDE.md §3](docs/GUIDE.md#3-agent-同士のやり取り)。
 
 `/role` で project の役割を書き換えられる。役割の詳細は [DESIGN.md §13 Roles](docs/DESIGN.md#rolesv02)、権限は [§9 Permission](docs/DESIGN.md#permission)、利用枠の通知は [§14](docs/DESIGN.md#14-budget-manager)。
 
@@ -95,7 +106,7 @@ Hub の Web UI は PC の `127.0.0.1` だけで待ち受ける。PC とスマホ
 tailscale serve --bg 4319
 ```
 
-スマホでは初回に `https://<PC名>.<tailnet>.ts.net/?token=<token>` を開く。`<token>` には PC の `~/.clodex/web-token` に保存された値を入れる。以後は cookie で接続できる。Hub が動いている間だけつながるため、GUI から使う場合はトレイに残す。接続の詳細は [DESIGN.md §17 Web UI](docs/DESIGN.md#web-uiv02)。
+スマホでは初回に `https://<PC名>.<tailnet>.ts.net/?token=<token>` を開く。`<token>` には PC の `~/.clodex/web-token` に保存された値を入れる。PC の Web UI の設定に、この URL と QR コードが出る。以後は cookie で接続できる。Hub が動いている間だけつながるため、GUI から使う場合はトレイに残す。接続の詳細は [DESIGN.md §17 Web UI](docs/DESIGN.md#web-uiv02)。
 
 ## 保存されるもの
 
@@ -107,6 +118,7 @@ tailscale serve --bg 4319
 pnpm test         # ユニットテスト
 pnpm test:spikes  # spikes/ の実測のテスト
 pnpm typecheck
+pnpm lint         # biome の lint と format の確認（pnpm format で直す）
 pnpm build
 ```
 

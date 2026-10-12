@@ -466,6 +466,10 @@ Internal command（v0.1）:
 | command | 内容 |
 |---|---|
 | `/interrupt [claude\|codex]` | 指定 Agent（省略時は全 Agent と実行中の `!command`）の実行中ターンを interrupt する。Agent 指定時、キュー済みの message はそのまま配送される。省略時は Agent 間のやり取りも止める: 配送待ちの formal message を破棄し、処理中・破棄した message の chain を閉じる（以後その chain の `send_message` は拒否）。人間の配送待ちの入力は残す |
+| `/answer <id> <json>` | Agent の質問（`ask_user`）に答える。画面の回答のボタンもこれを送る（§12 人への質問） |
+| `/project [path\|pin <path>\|remove <path>]` | project を開く・切り替える・ピン止め・一覧から外す（§28 D2） |
+| `/role [agent] [text] \| preset [name]` | 役割の表示・変更・プリセットの適用（§13 Roles） |
+| `/tab [unpin] <id> <project root>` | タブの会話へ切り替える・タブを外す（§28 D2a のタブ） |
 | `/steer <id>` | 配送待ちの人間の入力か formal message を、宛先の Agent の実行中のターンに割り込みで足す（§28 v0.3 C）。Web UI は送信待ちの一覧に「割り込み」を出す |
 | `/cancel [id]` | まだ配送していない人間の入力か、相手の Agent からの message を取り消す（省略時は最後に送った人間の入力）。配送済みは取り消せない（`/interrupt` を使う）。Web UI は送信待ちの一覧に「編集」「取り消し」を出す（編集は取り消して本文を入力欄に戻す。message は「取り消し」だけ） |
 | `/status` | 各 Agent の状態と session ID。停止中は次の起動で使う session（/new 後の新規なら表示しない）。配送待ちの人間の入力（ID・送り先・本文） |
