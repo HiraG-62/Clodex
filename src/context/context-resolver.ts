@@ -5,7 +5,7 @@ import type { AgentMessage, Issue, MessageType } from "../protocol/messages.js";
 import { type Language, languageDirective } from "./language.js";
 
 // 返信を求める依頼系。RESULT / ISSUE には返信を求めず、返信の連鎖を作らない
-const REQUEST_TYPES = new Set<MessageType>(["QUESTION", "REVIEW_REQUEST", "DELEGATE"]);
+const REQUEST_TYPES = new Set<MessageType>(["QUESTION", "REVIEW_REQUEST", "DELEGATE", "FIX"]);
 
 const SPEC_INSTRUCTION =
   "Read the spec before you start and follow it. If the spec conflicts with the code or is unclear, ask with a QUESTION instead of guessing.";
@@ -31,11 +31,13 @@ const replyInstruction = (m: AgentMessage): string[] =>
   REQUEST_TYPES.has(m.type)
     ? [
         // 他の連携手段（skill や CLI）と取り違えないよう、MCP tool であることを明示する
-        `Reply with the ${SEND_MESSAGE_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server (not a shell command): to="${m.from}", type="${m.type === "QUESTION" ? "ANSWER" : "RESULT"}", taskId="${m.taskId}", replyTo="${m.id}".`,
+        `Reply with the ${SEND_MESSAGE_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server (not a shell command): to="${m.from}", type="${m.type === "QUESTION" ? "ANSWER" : "RESULT"}", taskId="${m.taskId}", replyTo="${m.type === "FIX" ? m.replyTo : m.id}".`,
         ...(m.type === "QUESTION"
           ? []
           : [
-              "Send RESULT when the requested work is complete. Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.",
+              m.type === "FIX"
+                ? "Send RESULT once when the corrected work is complete. Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits."
+                : "Send RESULT when the requested work is complete. Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.",
             ]),
         BODY_FORMAT,
       ]

@@ -13,7 +13,7 @@ const msg = (from: AgentId, type: MessageType, extra: Partial<AgentMessage> = {}
   body: "x",
   repository: "C:\\dev\\app",
   createdAt: "2026-10-05T07:00:00.000Z",
-  ...(["ANSWER", "RESULT", "ACK"].includes(type) ? { replyTo: "msg_prev" } : {}),
+  ...(["FIX", "ANSWER", "RESULT", "ACK"].includes(type) ? { replyTo: "msg_prev" } : {}),
   ...extra,
 });
 
@@ -21,6 +21,13 @@ const msg = (from: AgentId, type: MessageType, extra: Partial<AgentMessage> = {}
 const LIMITS = { maxMessagesPerChain: 4, maxReviewRoundsPerChain: 2, maxDelegationsPerChain: 2, maxDelegationDepth: 2 };
 
 describe("BudgetManager", () => {
+  it("FIX は同じ chain の message に数え、委譲数は増やさない", () => {
+    const budget = new BudgetManager({ maxMessagesPerChain: 2, maxReviewRoundsPerChain: 1, maxDelegationsPerChain: 1, maxDelegationDepth: 1 });
+    const request = msg("claude", "DELEGATE");
+    expect(budget.admit(request, undefined)).toBeUndefined();
+    expect(budget.admit(msg("claude", "FIX", { replyTo: request.id }), request)).toBeUndefined();
+    expect(budget.admit(msg("codex", "RESULT", { replyTo: request.id }), request)).toMatch(/maxMessagesPerChain/);
+  });
   it("復元した message を新しい chain の根にして、そのターンからの送信を受理する", () => {
     const budget = new BudgetManager({ maxMessagesPerChain: 2, maxReviewRoundsPerChain: 1, maxDelegationsPerChain: 2, maxDelegationDepth: 2 });
     const parent = msg("claude", "REVIEW_REQUEST");

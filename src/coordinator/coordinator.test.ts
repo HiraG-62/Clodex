@@ -108,20 +108,35 @@ describe("fresh の配送", () => {
     codex.completeTurn();
   });
 
-  it("設定で fresh になった割り込み依頼は steer せず、配送待ちのまま新規 session に送る", async () => {
+  it("interrupt: true の依頼には freshThread の既定を当てず steer する", async () => {
     const { codex, coordinator } = freshSetup({ DELEGATE: true });
     coordinator.receiveMessage("claude", { to: "codex", type: "DELEGATE", taskId: "T1", body: "先の依頼" });
     await flush();
     const created = coordinator.receiveMessage("claude", { to: "codex", type: "DELEGATE", taskId: "T2", body: "次の依頼", interrupt: true });
-    expect(created).toMatchObject({ ok: true, message: { fresh: true, interrupt: true } });
+    expect(created).toMatchObject({ ok: true, message: { interrupt: true } });
     if (!created.ok) return;
-    expect(await coordinator.steerQueued(created.message.id)).toMatchObject({ ok: false, reason: "rejected" });
-    expect(codex.steered).toEqual([]);
+    expect(created.message).not.toHaveProperty("fresh");
+    await flush();
+    expect(codex.steered).toHaveLength(1);
+    expect(codex.steered[0]).toContain("次の依頼");
     codex.completeTurn();
     await flush();
-    expect(codex.sent.at(-1)).toContain("次の依頼");
-    expect(codex.sent.at(-1)).not.toContain("Interrupt: yes");
-    expect(codex.starts).toHaveLength(2);
+    expect(codex.starts).toHaveLength(1);
+  });
+
+  it("FIX は freshThread の既定を使わず元の依頼のターンに割り込む", async () => {
+    const { codex, coordinator } = freshSetup({ DELEGATE: true });
+    const request = coordinator.receiveMessage("claude", { to: "codex", type: "DELEGATE", taskId: "T", body: "元の依頼", fresh: false });
+    expect(request.ok).toBe(true);
+    if (!request.ok) return;
+    await flush();
+    const fix = coordinator.receiveMessage("claude", { to: "codex", type: "FIX", taskId: "T", body: "訂正", replyTo: request.message.id });
+    expect(fix).toMatchObject({ ok: true, message: { interrupt: true } });
+    if (!fix.ok) return;
+    expect(fix.message).not.toHaveProperty("fresh");
+    await flush();
+    expect(codex.steered).toHaveLength(1);
+    expect(codex.starts).toHaveLength(1);
     codex.completeTurn();
   });
 
@@ -301,6 +316,22 @@ describe("人の判断と作業の引き継ぎ", () => {
 });
 
 describe("自動 RESULT", () => {
+  it("FIX のターンを完了すると元の依頼への自動 RESULT を返す", async () => {
+    const { codex, events, coordinator } = setup();
+    const request = coordinator.receiveMessage("claude", reviewRequest);
+    expect(request.ok).toBe(true);
+    if (!request.ok) return;
+    await flush();
+    codex.completeTurn({ status: "completed", text: "初回の結果" });
+    await flush();
+    const fix = coordinator.receiveMessage("claude", { to: "codex", type: "FIX", taskId: "T-1", replyTo: request.message.id, body: "訂正" });
+    expect(fix.ok).toBe(true);
+    await flush();
+    codex.completeTurn({ status: "completed", text: "訂正後の結果" });
+    await flush();
+    const auto = events.flatMap(event => (event.kind === "message" && event.message.auto ? [event.message] : []));
+    expect(auto.at(-1)).toMatchObject({ type: "RESULT", replyTo: request.message.id, body: "訂正後の結果" });
+  });
   it("QUESTION の完了時は status のない自動 ANSWER を返す", async () => {
     const { codex, events, coordinator } = setup();
     const question = coordinator.receiveMessage("claude", { to: "codex", type: "QUESTION", taskId: "T", body: "質問" });
@@ -1690,6 +1721,58 @@ describe("Coordinator の割り込み（steer）", () => {
     coordinator.receiveMessage("codex", { to: "claude", type: "QUESTION", taskId: "T-1", body: "?", interrupt: true });
     await flush();
     expect(claude.steered).toEqual([]);
+  });
+});
+
+describe("FIX の配送", () => {
+  it("自分が送った依頼以外への訂正を拒否する", () => {
+    const { coordinator } = setup();
+    const request = coordinator.receiveMessage("codex", { to: "claude", type: "DELEGATE", taskId: "T", body: "依頼" });
+    expect(request.ok).toBe(true);
+    if (!request.ok) return;
+    expect(coordinator.receiveMessage("claude", { to: "codex", type: "FIX", taskId: "T", replyTo: request.message.id, body: "訂正" })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("replyTo"),
+    });
+    expect(coordinator.receiveMessage("claude", { to: "codex", type: "FIX", taskId: "T", replyTo: "missing", body: "訂正" }).ok).toBe(false);
+    const question = coordinator.receiveMessage("claude", { to: "codex", type: "QUESTION", taskId: "Q", body: "質問" });
+    expect(question.ok).toBe(true);
+    if (question.ok)
+      expect(coordinator.receiveMessage("claude", { to: "codex", type: "FIX", taskId: "Q", replyTo: question.message.id, body: "訂正" }).ok).toBe(false);
+  });
+
+  it("元の依頼を処理中なら interrupt 指定なしでも steer する", async () => {
+    const { codex, events, coordinator } = setup();
+    const request = coordinator.receiveMessage("claude", reviewRequest);
+    expect(request.ok).toBe(true);
+    if (!request.ok) return;
+    await flush();
+    const fix = coordinator.receiveMessage("claude", { to: "codex", type: "FIX", taskId: "T-1", replyTo: request.message.id, body: "訂正" });
+    expect(fix.ok).toBe(true);
+    await flush();
+    expect(codex.steered).toHaveLength(1);
+    expect(codex.steered[0]).toContain("Interrupt: yes");
+    expect(codex.steered[0]).toContain("訂正");
+    codex.completeTurn({ status: "completed", text: "完了" });
+    await flush();
+    expect(events.filter(event => event.kind === "message" && event.message.auto)).toHaveLength(1);
+  });
+
+  it("元の依頼が終わっていれば今の session に配送する", async () => {
+    const { codex, coordinator } = setup();
+    const request = coordinator.receiveMessage("claude", reviewRequest);
+    expect(request.ok).toBe(true);
+    if (!request.ok) return;
+    await flush();
+    codex.completeTurn();
+    await flush();
+    const starts = codex.starts.length;
+    const fix = coordinator.receiveMessage("claude", { to: "codex", type: "FIX", taskId: "T-1", replyTo: request.message.id, body: "訂正" });
+    expect(fix).toMatchObject({ ok: true });
+    await flush();
+    expect(codex.starts).toHaveLength(starts);
+    expect(codex.sent.at(-1)).toContain("訂正");
+    codex.completeTurn();
   });
 });
 

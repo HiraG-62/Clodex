@@ -16,6 +16,12 @@ const base: AgentMessage = {
 };
 
 describe("buildEnvelope", () => {
+  it("FIX は元の依頼への RESULT を一度だけ求める", () => {
+    const envelope = buildEnvelope({ ...base, type: "FIX", replyTo: "msg_original", spec: "docs/specs/T.md" });
+    expect(envelope).toContain('type="RESULT", taskId="AUTH-142", replyTo="msg_original"');
+    expect(envelope).toContain("Send RESULT once when the corrected work is complete");
+    expect(envelope).toContain("Read the spec before you start");
+  });
   it("自動 RESULT の印を Status の後に出す", () => {
     const envelope = buildEnvelope({ ...base, type: "RESULT", replyTo: "msg_prev", status: "done", auto: true });
     expect(envelope).toContain("Status: done\nAuto: the recipient ended its turn without send_message; this is its final reply.\n");

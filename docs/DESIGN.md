@@ -768,6 +768,7 @@ Formal message channel を別に持つ。
 | `QUESTION` | 相手 Agent への質問 | 任意 |
 | `REVIEW_REQUEST` | レビュー依頼 | 任意 |
 | `DELEGATE` | 実装・調査の委譲 | 任意 |
+| `FIX` | 送った依頼（`DELEGATE` / `REVIEW_REQUEST`）の訂正・追加の指示。宛先がその依頼を処理中なら実行中のターンに足す | 必須（訂正する依頼の ID） |
 | `ANSWER` | `QUESTION` への回答 | 必須（`QUESTION` の ID） |
 | `RESULT` | 依頼（`DELEGATE` / `REVIEW_REQUEST`）の作業を終えたときの結果返却 | 必須 |
 | `ISSUE` | 問題の報告 | 任意 |
@@ -785,10 +786,10 @@ Agent が指定するフィールド:
 | `type` | ✓ | Message Types のいずれか |
 | `taskId` | ✓ | Task ID |
 | `body` | ✓ | 依頼内容・質問・結果の要約（自然文、最大 4,000 文字。§3.3 Minimal Context） |
-| `replyTo` | ANSWER / RESULT / ACK で必須 | 返信元の message ID。`ANSWER` は自分が受けた `QUESTION` の ID でなければ拒否する。`RESULT` で `QUESTION` に返したら拒否する（`ANSWER` を使うよう伝える） |
+| `replyTo` | FIX / ANSWER / RESULT / ACK で必須 | 返信元の message ID。`FIX` は自分が送った `DELEGATE` / `REVIEW_REQUEST` の ID でなければ拒否する。`ANSWER` は自分が受けた `QUESTION` の ID でなければ拒否する。`RESULT` で `QUESTION` に返したら拒否する（`ANSWER` を使うよう伝える） |
 | `commit` | | 参照する commit hash |
 | `files` | | 参照する file path（project root からの相対パス） |
-| `spec` | | `DELEGATE` / `REVIEW_REQUEST` / `ANSWER` / `RESULT` のみ。依頼の仕様を書いた設計書の path（project root からの相対パス）。`ANSWER` では、`QUESTION` に答えるために更新した設計書を渡す。送信時に通常ファイルとして存在しなければ拒否する（project root の外も拒否） |
+| `spec` | | `DELEGATE` / `REVIEW_REQUEST` / `FIX` / `ANSWER` / `RESULT` のみ。依頼の仕様を書いた設計書の path（project root からの相対パス）。`ANSWER` では、`QUESTION` に答えるために更新した設計書を渡す。送信時に通常ファイルとして存在しなければ拒否する（project root の外も拒否） |
 | `status` | | RESULT のみ。`approved` / `changes_requested` / `done` / `failed` |
 | `issues` | | RESULT / ISSUE のみ。`{ file, line?, severity, summary }` の配列。severity は `low` / `medium` / `high` / `critical` |
 
@@ -849,6 +850,8 @@ Coordinator が付与するフィールド（Agent の自己申告は使わな�
 - `parallel`（省略可、boolean）: `DELEGATE` / `REVIEW_REQUEST` のみ。宛先が作業中（実行中のターンか配送待ちがある）なら、子の会話を立ててそこで受けさせる（§28 D1「子の会話で並列に受ける」）。作業中でなければ通常どおり配送する。`interrupt`・`fresh` と両方 `true` なら拒否する（子の会話は常に新しい session）
 - `worktree`（省略可、boolean）: `parallel` のときだけ。子の会話を新しい worktree で作業させる（同じファイルに触る危険の判断は送る側が行う）
 - `fresh`（省略可、boolean）: `DELEGATE` / `REVIEW_REQUEST` のみ（ほかの type は拒否する）。`true` なら、宛先の session を新しくしてから届ける（下記 §12「新しい session で届ける」）。省略時は設定の `freshThread` の既定（無ければ `false`）。`interrupt` と両方 `true` なら拒否する（新しい session には割り込めない）
+- `FIX` は `interrupt` の指定によらず、宛先が訂正する依頼（`replyTo`）を処理中なら、そのターンに足す。処理中でなければ（まだ配送待ち・もう終えた）、今の session に通常どおり配送する（`fresh` にはしない。前の作業を覚えている session で受けるため）。`fresh`・`parallel` は付けられない
+- 設定の `freshThread` の既定は、`interrupt: true` の message には当てない（割り込みたい依頼が新しい session に回らないように）
 - `ANSWER` は `interrupt` の指定によらず、宛先（質問した Agent）が作業中なら、何のターンでもそのターンに足す。質問した後も作業を続けている Agent に、ターンの終わりを待たせずに回答を届けるため。作業中でなければ通常どおり配送する
 
 ---
@@ -965,6 +968,7 @@ Write body in Markdown: a one-line summary first, then bullet points. Do not wri
 - 依頼系（`QUESTION` / `REVIEW_REQUEST` / `DELEGATE`）には返信方法を指示する。返信の body の書式（Markdown で 1 行の要約 → 箇条書き。長い 1 段落にしない）も添え、Agent ごとに書き方がばらつかないようにする
 - 末尾に、人が読む文章の言語（下記 Language）を 1 行で添える。長い会話でも依頼のたびに思い出させる
 - `ANSWER` / `RESULT` / `ISSUE` には返信を求めない（返信の連鎖を作らない）
+- `FIX` の返信方法は、訂正した依頼への `RESULT`（`replyTo` は元の依頼の ID）。作業を終えたときに 1 つ送る
 - `QUESTION` の返信方法は `type="ANSWER"`。`DELEGATE` / `REVIEW_REQUEST` は `type="RESULT"` で、作業を終えたときに送るよう添える
 - 会話履歴は envelope に含めない。Agent B は必要に応じて `read_conversation` で同じ会話の本文を読むか、Repository を読む
 - `spec` があれば `Spec:` 行と「作業の前に読んで従う。コードと食い違う・曖昧なら推測せず QUESTION で聞く」の 1 行を添える。`ANSWER` では「回答に合わせて更新した設計書を読み、続きの作業で従う」の 1 行にする

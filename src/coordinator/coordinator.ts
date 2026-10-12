@@ -60,7 +60,7 @@ const SOLO_REMINDER = "[Clodex] Solo mode: do not use send_message. Do all the w
 const SOLO_REJECTED = "solo mode: the other agent is not available. Do the work yourself.";
 const STEER_IMAGE_INSTRUCTION = "[Clodex] Attached images (read them with your tools):";
 // 作業を頼む message は、配送したターンが失敗したら一度だけ送り直し、それでも失敗したら送信元に引き取らせる（DESIGN.md §12 配送ルール）
-const RETRIED_TYPES: ReadonlySet<AgentMessage["type"]> = new Set(["DELEGATE", "REVIEW_REQUEST", "QUESTION"]);
+const RETRIED_TYPES: ReadonlySet<AgentMessage["type"]> = new Set(["DELEGATE", "REVIEW_REQUEST", "QUESTION", "FIX"]);
 const DEFAULT_RETRY_DELAY_MS = 30_000;
 const DEFAULT_LIMIT_RESUME_MARGIN_MS = 60_000;
 const MS_PER_SECOND = 1000;
@@ -486,14 +486,24 @@ export class Coordinator {
     const fresh =
       message.thread && message.parallel
         ? false
-        : (message.fresh ?? (message.type === "DELEGATE" || message.type === "REVIEW_REQUEST" ? this.options.freshThread?.[message.type] : undefined));
+        : (message.fresh ??
+          (!message.interrupt && (message.type === "DELEGATE" || message.type === "REVIEW_REQUEST") ? this.options.freshThread?.[message.type] : undefined));
     if (fresh) message.fresh = true;
     else delete message.fresh;
     const repliedTo = message.replyTo ? this.messages.get(message.replyTo) : undefined;
     if (repliedTo?.thread && !message.thread) message.thread = repliedTo.thread;
     if (message.type === "ANSWER" && (repliedTo?.type !== "QUESTION" || repliedTo.to !== message.from || repliedTo.from !== message.to))
       return { ok: false, error: "replyTo: ANSWER must reply to a QUESTION received from the recipient" };
+    if (
+      message.type === "FIX" &&
+      ((repliedTo?.type !== "DELEGATE" && repliedTo?.type !== "REVIEW_REQUEST") || repliedTo.from !== message.from || repliedTo.to !== message.to)
+    )
+      return { ok: false, error: "replyTo: FIX must correct a DELEGATE or REVIEW_REQUEST you sent to the recipient" };
     if (message.type === "RESULT" && repliedTo?.type === "QUESTION") return { ok: false, error: 'replyTo: reply to a QUESTION with type="ANSWER"' };
+    if (message.type === "FIX") {
+      if (this.mailboxes[message.to].current?.id === message.replyTo) message.interrupt = true;
+      else delete message.interrupt;
+    }
     let specSnapshot: { key: string; content: string } | undefined;
     if (message.spec !== undefined) {
       const specPath = resolveSpecFile(message.repository, message.spec);
@@ -504,7 +514,7 @@ export class Coordinator {
     }
 
     // 送信元が処理中の message を親として chain を決める（DESIGN.md §14）
-    const parent = parentOverride ?? this.mailboxes[message.from].current;
+    const parent = parentOverride ?? (message.type === "FIX" ? repliedTo : this.mailboxes[message.from].current);
     const budgetError = this.budget.admit(message, parent);
     if (budgetError) {
       bus.publish({ kind: "agent", agent: message.from, event: { type: "error", message: humanBudgetError(budgetError) } });
@@ -529,10 +539,13 @@ export class Coordinator {
       await this.options.deliverToThread(message.thread, message);
       return;
     }
-    const envelope = `${attempt > 1 ? `${RETRY_NOTE}\n` : ""}${buildEnvelope(message, this.language)}`;
     const mailbox = this.mailboxes[message.to];
+    const fixesCurrentRequest = message.type === "FIX" && mailbox.current?.id === message.replyTo;
     const steerable =
-      (message.type === "ANSWER" && this.options.agents[message.to].status === "busy") || (message.interrupt && mailbox.current?.from === message.from);
+      (message.type === "ANSWER" && this.options.agents[message.to].status === "busy") ||
+      fixesCurrentRequest ||
+      (message.type !== "FIX" && message.interrupt && mailbox.current?.from === message.from);
+    const envelope = `${attempt > 1 ? `${RETRY_NOTE}\n` : ""}${buildEnvelope(fixesCurrentRequest ? { ...message, interrupt: true } : message, this.language)}`;
     if (!message.fresh && steerable && (await this.steerWithNotice(message.to, envelope, message.id))) return;
     const result = await mailbox.enqueue(envelope, { message, ...(message.fresh && attempt === 1 ? { fresh: true } : {}) });
     const replied = this.repliedRequests.delete(message.id);
@@ -568,7 +581,7 @@ export class Coordinator {
         to: request.from,
         type: answer ? "ANSWER" : "RESULT",
         taskId: request.taskId,
-        replyTo: request.id,
+        replyTo: request.type === "FIX" ? request.replyTo : request.id,
         ...(answer ? {} : { status: "done" as const }),
         body,
       },

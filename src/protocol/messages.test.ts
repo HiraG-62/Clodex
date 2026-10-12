@@ -18,6 +18,18 @@ const reviewRequest = {
 };
 
 describe("createMessage", () => {
+  it("FIX は元の依頼と参照情報を受け付ける", () => {
+    expect(createMessage({ ...reviewRequest, type: "FIX", replyTo: "msg_original", spec: "docs/specs/T.md", interrupt: true }, context)).toMatchObject({
+      ok: true,
+      message: { type: "FIX", replyTo: "msg_original", spec: "docs/specs/T.md", interrupt: true },
+    });
+  });
+  it.each([{ replyTo: undefined }, { fresh: true }, { parallel: true }, { worktree: true }, { status: "done" }, { issues: [] }])(
+    "FIX の不正なフィールドを拒否する: %j",
+    fields => {
+      expect(createMessage({ ...reviewRequest, type: "FIX", replyTo: "msg_original", ...fields }, context)).toMatchObject({ ok: false });
+    },
+  );
   it.each(["DELEGATE", "REVIEW_REQUEST"] as const)("%s は parallel と worktree を受け付ける", type => {
     expect(createMessage({ ...reviewRequest, type, parallel: true, worktree: true }, context)).toMatchObject({
       ok: true,

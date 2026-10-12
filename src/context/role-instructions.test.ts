@@ -65,7 +65,9 @@ describe("buildRoleInstructions の方針と言語", () => {
 describe("buildRoleInstructions の割り込みと subagent", () => {
   it("interrupt の使いどころと subagent の使いどころを伝える", () => {
     const text = buildRoleInstructions("codex", undefined);
-    expect(text).toMatch(/interrupt: true/);
+    expect(text).toMatch(/FIX/);
+    expect(text).toMatch(/replyTo/);
+    expect(text).toMatch(/DELEGATE/);
     expect(text).toMatch(/sub-agents/);
   });
 });

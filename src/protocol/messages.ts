@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { AGENT_IDS, type AgentId } from "../agents/agent-adapter.js";
 
-export const MESSAGE_TYPES = ["QUESTION", "REVIEW_REQUEST", "DELEGATE", "ANSWER", "RESULT", "ISSUE", "ACK"] as const;
+export const MESSAGE_TYPES = ["QUESTION", "REVIEW_REQUEST", "DELEGATE", "FIX", "ANSWER", "RESULT", "ISSUE", "ACK"] as const;
 export const RESULT_STATUSES = ["approved", "changes_requested", "done", "failed"] as const;
 export const ISSUE_SEVERITIES = ["low", "medium", "high", "critical"] as const;
 
@@ -12,7 +12,7 @@ export const MAX_BODY_LENGTH = 4_000;
 const MESSAGE_ID_PREFIX = "msg_";
 const MESSAGE_ID_RANDOM_LENGTH = 8;
 
-const TYPES_REQUIRING_REPLY_TO = new Set<MessageType>(["ANSWER", "RESULT", "ACK"]);
+const TYPES_REQUIRING_REPLY_TO = new Set<MessageType>(["FIX", "ANSWER", "RESULT", "ACK"]);
 const TYPES_ALLOWING_ISSUES = new Set<MessageType>(["RESULT", "ISSUE"]);
 const TYPES_ALLOWING_FRESH = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST"]);
 
@@ -26,7 +26,11 @@ const issueSchema = z.object({
 // MCP tool send_message の入力 schema としても使う（refinement を含まない素の shape）
 export const sendMessageShape = {
   to: z.enum(AGENT_IDS).describe("Recipient agent"),
-  type: z.enum(MESSAGE_TYPES).describe("ANSWER replies to a QUESTION; RESULT reports completed delegated work. ANSWER, RESULT and ACK require replyTo"),
+  type: z
+    .enum(MESSAGE_TYPES)
+    .describe(
+      "FIX corrects or adds to a DELEGATE / REVIEW_REQUEST you sent (replyTo = that request). Delivered into the recipient's running turn when it is working on it. ANSWER replies to a QUESTION; RESULT reports completed delegated work. FIX, ANSWER, RESULT and ACK require replyTo",
+    ),
   taskId: z.string().min(1).describe("Task ID"),
   body: z.string().min(1).max(MAX_BODY_LENGTH).describe("Request, question, or result summary. Reference commit/files instead of pasting large content"),
   replyTo: z.string().min(1).optional().describe("ID of the message this replies to"),
@@ -64,10 +68,15 @@ export const sendMessageShape = {
   worktree: z.boolean().optional().describe("Create the parallel conversation in a new git worktree"),
 };
 
-const TYPES_ALLOWING_SPEC = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST", "RESULT", "ANSWER"]);
+const TYPES_ALLOWING_SPEC = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST", "FIX", "RESULT", "ANSWER"]);
 const sendMessageSchema = z.object(sendMessageShape).superRefine((input, ctx) => {
+  if (input.type === "FIX") {
+    for (const field of ["fresh", "parallel", "worktree"] as const) {
+      if (input[field] !== undefined) ctx.addIssue({ code: "custom", path: [field], message: "not allowed for FIX" });
+    }
+  }
   if (input.spec !== undefined && !TYPES_ALLOWING_SPEC.has(input.type)) {
-    ctx.addIssue({ code: "custom", path: ["spec"], message: "allowed only for DELEGATE, REVIEW_REQUEST, RESULT or ANSWER" });
+    ctx.addIssue({ code: "custom", path: ["spec"], message: "allowed only for DELEGATE, REVIEW_REQUEST, FIX, RESULT or ANSWER" });
   }
   if (input.fresh === true && !TYPES_ALLOWING_FRESH.has(input.type)) {
     ctx.addIssue({ code: "custom", path: ["fresh"], message: "allowed only for DELEGATE or REVIEW_REQUEST" });
