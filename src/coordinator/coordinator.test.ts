@@ -1776,6 +1776,118 @@ describe("FIX の配送", () => {
   });
 });
 
+describe("続きの message", () => {
+  it.each(["ADD", "NOTE", "CANCEL"] as const)("%s は送信元の依頼だけを参照できる", type => {
+    const { coordinator } = setup();
+    const request = coordinator.receiveMessage("codex", { to: "claude", type: "DELEGATE", taskId: "T", body: "依頼" });
+    if (!request.ok) throw new Error("依頼の作成失敗");
+    expect(coordinator.receiveMessage("claude", { to: "codex", type, taskId: "T", replyTo: request.message.id, body: "続き" }).ok).toBe(false);
+  });
+
+  it.each(["ADD", "NOTE", "CANCEL"] as const)("%s は元の依頼の実行中に steer する", async type => {
+    const { codex, coordinator } = setup();
+    const request = coordinator.receiveMessage("claude", reviewRequest);
+    if (!request.ok) throw new Error("依頼の作成失敗");
+    await flush();
+    const followup = coordinator.receiveMessage("claude", { to: "codex", type, taskId: "T-1", replyTo: request.message.id, body: "続き" });
+    expect(followup).toMatchObject({ ok: true, message: { interrupt: true } });
+    await flush();
+    expect(codex.steered).toHaveLength(1);
+    expect(codex.steered[0]).toContain(`Type: ${type}`);
+    codex.completeTurn({ status: "completed", text: "" });
+  });
+
+  it.each(["ADD", "NOTE"] as const)("%s は依頼後に今の session へ配送する", async type => {
+    const { codex, events, coordinator } = setup();
+    const request = coordinator.receiveMessage("claude", reviewRequest);
+    if (!request.ok) throw new Error("依頼の作成失敗");
+    await flush();
+    codex.completeTurn({ status: "completed", text: "" });
+    await flush();
+    const starts = codex.starts.length;
+    expect(coordinator.receiveMessage("claude", { to: "codex", type, taskId: "T-1", replyTo: request.message.id, body: "続き" }).ok).toBe(true);
+    await flush();
+    expect(codex.starts).toHaveLength(starts);
+    expect(codex.sent.at(-1)).toContain(`Type: ${type}`);
+    codex.completeTurn({ status: "completed", text: "完了" });
+    await flush();
+    const auto = events.flatMap(event => (event.kind === "message" && event.message.auto ? [event.message] : []));
+    expect(auto).toHaveLength(type === "ADD" ? 1 : 0);
+    if (type === "ADD") expect(auto[0]).toMatchObject({ type: "RESULT", replyTo: request.message.id });
+  });
+
+  it("CANCEL は配送待ちの依頼を外して宛先へ届けない", async () => {
+    const { codex, coordinator } = setup();
+    coordinator["mailboxes"].codex.pause();
+    const request = coordinator.receiveMessage("claude", reviewRequest);
+    if (!request.ok) throw new Error("依頼の作成失敗");
+    await flush();
+    expect(coordinator.pendingMessages()).toHaveLength(1);
+    expect(coordinator.receiveMessage("claude", { to: "codex", type: "CANCEL", taskId: "T-1", replyTo: request.message.id, body: "取りやめ" }).ok).toBe(true);
+    expect(coordinator.pendingMessages()).toEqual([]);
+    coordinator["mailboxes"].codex.resume();
+    await flush();
+    expect(codex.sent).toEqual([]);
+  });
+
+  it("CANCEL は終わった依頼を拒否する", async () => {
+    const { codex, coordinator } = setup();
+    const request = coordinator.receiveMessage("claude", reviewRequest);
+    if (!request.ok) throw new Error("依頼の作成失敗");
+    await flush();
+    codex.completeTurn({ status: "completed", text: "" });
+    await flush();
+    expect(coordinator.receiveMessage("claude", { to: "codex", type: "CANCEL", taskId: "T-1", replyTo: request.message.id, body: "取りやめ" })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("already finished"),
+    });
+  });
+
+  it("CANCEL の割り込み後に元のターンが終わっても自動 RESULT を作らない", async () => {
+    const { codex, events, coordinator } = setup();
+    const request = coordinator.receiveMessage("claude", reviewRequest);
+    if (!request.ok) throw new Error("依頼の作成失敗");
+    await flush();
+    expect(
+      coordinator.receiveMessage("claude", {
+        to: "codex",
+        type: "CANCEL",
+        taskId: "T-1",
+        replyTo: request.message.id,
+        body: "取りやめ",
+      }).ok,
+    ).toBe(true);
+    await flush();
+    codex.completeTurn({ status: "completed", text: "途中まで作業した" });
+    await flush();
+    expect(events.filter(event => event.kind === "message" && event.message.auto)).toEqual([]);
+  });
+
+  it("子へ転送された CANCEL は配送待ちの依頼を外す", async () => {
+    const { codex, coordinator } = setup();
+    coordinator["mailboxes"].codex.pause();
+    const request = {
+      id: "msg_parallel",
+      from: "claude" as const,
+      to: "codex" as const,
+      type: "DELEGATE" as const,
+      taskId: "P",
+      body: "依頼",
+      repository: PROJECT_ROOT,
+      createdAt: NOW,
+    };
+    const delivery = coordinator.receiveForwardedMessage(request);
+    await flush();
+    expect(coordinator.requestState(request.id, "codex")).toBe("queued");
+    await coordinator.receiveForwardedMessage({ ...request, id: "msg_cancel", type: "CANCEL", replyTo: request.id, body: "取りやめ" });
+    await delivery;
+    expect(coordinator.requestState(request.id, "codex")).toBe("finished");
+    coordinator["mailboxes"].codex.resume();
+    await flush();
+    expect(codex.sent).toEqual([]);
+  });
+});
+
 describe("Coordinator の画像", () => {
   it("人間の入力に添えた画像を Agent に渡す", async () => {
     const { codex, coordinator } = setup();

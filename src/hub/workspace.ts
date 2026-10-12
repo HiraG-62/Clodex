@@ -3,7 +3,8 @@
 import { randomUUID } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import type { Coordinator } from "../coordinator/coordinator.js";
+import type { AgentId } from "../agents/agent-adapter.js";
+import type { Coordinator, RequestState } from "../coordinator/coordinator.js";
 import type { CoordinatorEvent, EventBus } from "../coordinator/event-bus.js";
 import type { Conversation, ConversationHistory } from "../project/conversation-history.js";
 import { inside } from "../project/path-scope.js";
@@ -159,6 +160,10 @@ export class Workspace {
       copyFileSync(source, target);
     }
     await runtime.coordinator.receiveForwardedMessage({ ...message, repository: runtime.workDir });
+  }
+
+  threadRequestState(thread: string, requestId: string, to: AgentId): RequestState {
+    return this.runtimes.get(thread)?.coordinator.requestState(requestId, to) ?? "finished";
   }
 
   async discardParallel(thread: string): Promise<void> {

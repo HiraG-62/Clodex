@@ -201,6 +201,7 @@ export const openProject = async ({
       startParallel: message => workspace!.startParallel(conversation.id, message),
       discardParallel: thread => workspace!.discardParallel(thread),
       deliverToThread: (thread, message) => workspace!.deliverToThread(thread, message),
+      threadRequestState: (thread, requestId, to) => workspace!.threadRequestState(thread, requestId, to),
       ...(conversation.parent
         ? {
             parallelParent: { from: conversation.parent.from, to: conversation.parent.to, messageId: conversation.parent.messageId },

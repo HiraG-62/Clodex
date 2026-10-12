@@ -16,6 +16,17 @@ const base: AgentMessage = {
 };
 
 describe("buildEnvelope", () => {
+  it("ADD は元の依頼への RESULT、NOTE は返信不要、CANCEL は中止結果を求める", () => {
+    const followup = { ...base, replyTo: "msg_original" };
+    const add = buildEnvelope({ ...followup, type: "ADD" });
+    expect(add).toContain('type="RESULT", taskId="AUTH-142", replyTo="msg_original"');
+    expect(add).toContain("Send RESULT once when the corrected work is complete");
+    const note = buildEnvelope({ ...followup, type: "NOTE" });
+    expect(note).toContain("No reply is required. Take this into account in the current work.");
+    const cancel = buildEnvelope({ ...followup, type: "CANCEL" });
+    expect(cancel).toContain('Reply with RESULT, status="canceled", replyTo="msg_original"');
+    expect(cancel).toContain("Stop working on this request now");
+  });
   it("FIX は元の依頼への RESULT を一度だけ求める", () => {
     const envelope = buildEnvelope({ ...base, type: "FIX", replyTo: "msg_original", spec: "docs/specs/T.md" });
     expect(envelope).toContain('type="RESULT", taskId="AUTH-142", replyTo="msg_original"');

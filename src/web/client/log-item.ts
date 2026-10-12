@@ -258,6 +258,7 @@ export function createLogItem(ctx: ClientContext) {
       changes_requested: "web.message.status.changesRequested",
       done: "web.message.status.done",
       failed: "web.message.status.failed",
+      canceled: "web.message.status.canceled",
     };
     if (message.status) route.append(ctx.el("span", "kind", ctx.t(statusKeys[message.status])));
     if (message.auto) route.append(ctx.el("span", "kind", ctx.t("web.message.auto")));

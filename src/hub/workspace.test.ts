@@ -44,6 +44,7 @@ const setup = (
       retryDelayMs: 0,
       startParallel: message => workspace.startParallel(conversation.id, message),
       deliverToThread: (thread, message) => workspace.deliverToThread(thread, message),
+      threadRequestState: (thread, requestId, to) => workspace.threadRequestState(thread, requestId, to),
       ...(conversation.parent
         ? {
             parallelParent: { from: conversation.parent.from, to: conversation.parent.to, messageId: conversation.parent.messageId },
@@ -94,6 +95,51 @@ const setup = (
 };
 
 describe("Workspace", () => {
+  it("並列の依頼への ADD・NOTE・CANCEL を子の作業中のターンへ届ける", async () => {
+    const { workspace, created } = setup();
+    await workspace.init();
+    const parent = workspace.current;
+    void parent.coordinator.sendToAgent("codex", "元の作業");
+    await flush();
+    const request = await parent.coordinator.receiveMessageFromTool("claude", {
+      to: "codex",
+      type: "DELEGATE",
+      taskId: "P-1",
+      body: "並列の依頼",
+      parallel: true,
+    });
+    if (!request.ok) throw new Error("依頼の作成失敗");
+    await flush();
+    const child = created.find(runtime => runtime.conversationId === request.message.thread)!;
+    const childMessages: AgentMessage[] = [];
+    child.bus.subscribe(event => {
+      if (event.kind === "message") childMessages.push(event.message);
+    });
+    for (const type of ["ADD", "NOTE", "CANCEL"] as const) {
+      const result = await parent.coordinator.receiveMessageFromTool("claude", {
+        to: "codex",
+        type,
+        taskId: "P-1",
+        replyTo: request.message.id,
+        body: `${type} の本文`,
+      });
+      expect(result).toMatchObject({ ok: true, message: { thread: request.message.thread, interrupt: true } });
+      await flush();
+      expect(child.codex.steered.at(-1)).toContain(`Type: ${type}`);
+    }
+    child.codex.completeTurn({ status: "completed", text: "途中までの作業" });
+    await flush();
+    expect(childMessages.filter(message => message.auto)).toEqual([]);
+    expect(
+      await parent.coordinator.receiveMessageFromTool("claude", {
+        to: "codex",
+        type: "CANCEL",
+        taskId: "P-1",
+        replyTo: request.message.id,
+        body: "中止",
+      }),
+    ).toMatchObject({ ok: false, error: expect.stringContaining("already finished") });
+  });
   it("作業中への parallel は子の会話の新しい session に届き、今の会話を変えない", async () => {
     const { workspace, history, created } = setup();
     await workspace.init();

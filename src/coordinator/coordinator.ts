@@ -19,7 +19,7 @@ import { changedSections } from "../context/spec-sections.js";
 import { t } from "../i18n/i18n.js";
 import type { ConversationRecovery } from "../project/recovery-store.js";
 import { resolveSpecFile } from "../project/spec-file.js";
-import { type AgentMessage, type CreateMessageResult, createMessage, MAX_BODY_LENGTH } from "../protocol/messages.js";
+import { type AgentMessage, type CreateMessageResult, createMessage, FOLLOWUP_TYPES, MAX_BODY_LENGTH } from "../protocol/messages.js";
 import type { AskUserResult, PendingQuestion } from "../protocol/questions.js";
 import { AgentMailbox } from "./agent-mailbox.js";
 import { type BudgetLimits, BudgetManager, humanBudgetError } from "./budget-manager.js";
@@ -60,7 +60,8 @@ const SOLO_REMINDER = "[Clodex] Solo mode: do not use send_message. Do all the w
 const SOLO_REJECTED = "solo mode: the other agent is not available. Do the work yourself.";
 const STEER_IMAGE_INSTRUCTION = "[Clodex] Attached images (read them with your tools):";
 // 作業を頼む message は、配送したターンが失敗したら一度だけ送り直し、それでも失敗したら送信元に引き取らせる（DESIGN.md §12 配送ルール）
-const RETRIED_TYPES: ReadonlySet<AgentMessage["type"]> = new Set(["DELEGATE", "REVIEW_REQUEST", "QUESTION", "FIX"]);
+const RETRIED_TYPES: ReadonlySet<AgentMessage["type"]> = new Set(["DELEGATE", "REVIEW_REQUEST", "QUESTION", "FIX", "ADD"]);
+export type RequestState = "active" | "queued" | "finished";
 const DEFAULT_RETRY_DELAY_MS = 30_000;
 const DEFAULT_LIMIT_RESUME_MARGIN_MS = 60_000;
 const MS_PER_SECOND = 1000;
@@ -95,6 +96,7 @@ export interface CoordinatorOptions {
   startParallel?: (message: AgentMessage) => Promise<{ thread: string } | { error: string }>;
   discardParallel?: (thread: string) => Promise<void>;
   deliverToThread?: (thread: string, message: AgentMessage) => Promise<void>;
+  threadRequestState?: (thread: string, requestId: string, to: AgentId) => RequestState;
   forwardToParent?: (message: AgentMessage) => CreateMessageResult;
   forwardFailureToParent?: (message: AgentMessage, error: string) => void;
   parallelParent?: { from: AgentId; to: AgentId; messageId: string };
@@ -415,7 +417,16 @@ export class Coordinator {
   async receiveForwardedMessage(message: AgentMessage): Promise<void> {
     this.messages.set(message.id, message);
     this.options.bus.publish({ kind: "message", message });
+    if (message.type === "CANCEL" && this.mailboxes[message.to].cancel(message.replyTo ?? "")) return;
+    if (message.type === "CANCEL" && message.replyTo && this.requestState(message.replyTo, message.to) === "active") this.repliedRequests.add(message.replyTo);
     await this.deliver(message);
+  }
+
+  requestState(requestId: string, to: AgentId): RequestState {
+    const mailbox = this.mailboxes[to];
+    if (mailbox.current?.id === requestId) return "active";
+    if (mailbox.pendingMessages.some(message => message.id === requestId)) return "queued";
+    return "finished";
   }
 
   private forwardChildMessage(result: Extract<CreateMessageResult, { ok: true }>): CreateMessageResult {
@@ -495,13 +506,20 @@ export class Coordinator {
     if (message.type === "ANSWER" && (repliedTo?.type !== "QUESTION" || repliedTo.to !== message.from || repliedTo.from !== message.to))
       return { ok: false, error: "replyTo: ANSWER must reply to a QUESTION received from the recipient" };
     if (
-      message.type === "FIX" &&
+      FOLLOWUP_TYPES.has(message.type) &&
       ((repliedTo?.type !== "DELEGATE" && repliedTo?.type !== "REVIEW_REQUEST") || repliedTo.from !== message.from || repliedTo.to !== message.to)
     )
-      return { ok: false, error: "replyTo: FIX must correct a DELEGATE or REVIEW_REQUEST you sent to the recipient" };
+      return { ok: false, error: `replyTo: ${message.type} must refer to a DELEGATE or REVIEW_REQUEST you sent to the recipient` };
     if (message.type === "RESULT" && repliedTo?.type === "QUESTION") return { ok: false, error: 'replyTo: reply to a QUESTION with type="ANSWER"' };
-    if (message.type === "FIX") {
-      if (this.mailboxes[message.to].current?.id === message.replyTo) message.interrupt = true;
+    const requestState =
+      FOLLOWUP_TYPES.has(message.type) && message.replyTo
+        ? message.thread && this.options.threadRequestState
+          ? this.options.threadRequestState(message.thread, message.replyTo, message.to)
+          : this.requestState(message.replyTo, message.to)
+        : undefined;
+    if (message.type === "CANCEL" && requestState === "finished") return { ok: false, error: "replyTo: the request is already finished" };
+    if (FOLLOWUP_TYPES.has(message.type)) {
+      if (requestState === "active") message.interrupt = true;
       else delete message.interrupt;
     }
     let specSnapshot: { key: string; content: string } | undefined;
@@ -514,7 +532,7 @@ export class Coordinator {
     }
 
     // 送信元が処理中の message を親として chain を決める（DESIGN.md §14）
-    const parent = parentOverride ?? (message.type === "FIX" ? repliedTo : this.mailboxes[message.from].current);
+    const parent = parentOverride ?? (FOLLOWUP_TYPES.has(message.type) ? repliedTo : this.mailboxes[message.from].current);
     const budgetError = this.budget.admit(message, parent);
     if (budgetError) {
       bus.publish({ kind: "agent", agent: message.from, event: { type: "error", message: humanBudgetError(budgetError) } });
@@ -522,6 +540,7 @@ export class Coordinator {
     }
 
     if (parent && RETRIED_TYPES.has(parent.type) && message.to === parent.from) this.repliedRequests.add(parent.id);
+    if (message.type === "CANCEL" && requestState === "active" && message.replyTo && !message.thread) this.repliedRequests.add(message.replyTo);
     if (!forwarded && message.type !== "ACK" && this.handoffTurns[message.from] !== undefined) this.handoffTurns[message.from] = true;
     if (specSnapshot) this.specSnapshots.set(specSnapshot.key, specSnapshot.content);
     this.messages.set(message.id, message);
@@ -529,7 +548,8 @@ export class Coordinator {
       this.threadSenders.set(message.thread, message.from);
     bus.publish({ kind: "message", message });
     // ACK は記録のみ。配送して Agent を起こさない（DESIGN.md §12, §25）
-    if (message.type !== "ACK") this.detach(this.deliver(message), message.to);
+    if (message.type === "CANCEL" && requestState === "queued" && !message.thread) this.mailboxes[message.to].cancel(message.replyTo ?? "");
+    else if (message.type !== "ACK") this.detach(this.deliver(message), message.to);
     return result;
   }
 
@@ -540,12 +560,13 @@ export class Coordinator {
       return;
     }
     const mailbox = this.mailboxes[message.to];
-    const fixesCurrentRequest = message.type === "FIX" && mailbox.current?.id === message.replyTo;
+    const followsCurrentRequest = FOLLOWUP_TYPES.has(message.type) && mailbox.current?.id === message.replyTo;
     const steerable =
       (message.type === "ANSWER" && this.options.agents[message.to].status === "busy") ||
-      fixesCurrentRequest ||
-      (message.type !== "FIX" && message.interrupt && mailbox.current?.from === message.from);
-    const envelope = `${attempt > 1 ? `${RETRY_NOTE}\n` : ""}${buildEnvelope(fixesCurrentRequest ? { ...message, interrupt: true } : message, this.language)}`;
+      followsCurrentRequest ||
+      (!FOLLOWUP_TYPES.has(message.type) && message.interrupt && mailbox.current?.from === message.from);
+    const envelope = `${attempt > 1 ? `${RETRY_NOTE}\n` : ""}${buildEnvelope(followsCurrentRequest ? { ...message, interrupt: true } : message, this.language)}`;
+    if (message.type === "CANCEL" && !followsCurrentRequest) return;
     if (!message.fresh && steerable && (await this.steerWithNotice(message.to, envelope, message.id))) return;
     const result = await mailbox.enqueue(envelope, { message, ...(message.fresh && attempt === 1 ? { fresh: true } : {}) });
     const replied = this.repliedRequests.delete(message.id);
@@ -581,7 +602,7 @@ export class Coordinator {
         to: request.from,
         type: answer ? "ANSWER" : "RESULT",
         taskId: request.taskId,
-        replyTo: request.type === "FIX" ? request.replyTo : request.id,
+        replyTo: request.type === "FIX" || request.type === "ADD" ? request.replyTo : request.id,
         ...(answer ? {} : { status: "done" as const }),
         body,
       },

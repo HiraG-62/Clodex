@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { AGENT_IDS, type AgentId } from "../agents/agent-adapter.js";
 
-export const MESSAGE_TYPES = ["QUESTION", "REVIEW_REQUEST", "DELEGATE", "FIX", "ANSWER", "RESULT", "ISSUE", "ACK"] as const;
-export const RESULT_STATUSES = ["approved", "changes_requested", "done", "failed"] as const;
+export const MESSAGE_TYPES = ["QUESTION", "REVIEW_REQUEST", "DELEGATE", "FIX", "ADD", "NOTE", "CANCEL", "ANSWER", "RESULT", "ISSUE", "ACK"] as const;
+export const RESULT_STATUSES = ["approved", "changes_requested", "done", "failed", "canceled"] as const;
 export const ISSUE_SEVERITIES = ["low", "medium", "high", "critical"] as const;
 
 // Minimal Context（DESIGN.md §3.3）: 本文は要約に留め、詳細は commit / files で参照させる
@@ -12,7 +12,8 @@ export const MAX_BODY_LENGTH = 4_000;
 const MESSAGE_ID_PREFIX = "msg_";
 const MESSAGE_ID_RANDOM_LENGTH = 8;
 
-const TYPES_REQUIRING_REPLY_TO = new Set<MessageType>(["FIX", "ANSWER", "RESULT", "ACK"]);
+export const FOLLOWUP_TYPES: ReadonlySet<MessageType> = new Set(["FIX", "ADD", "NOTE", "CANCEL"]);
+const TYPES_REQUIRING_REPLY_TO = new Set<MessageType>([...FOLLOWUP_TYPES, "ANSWER", "RESULT", "ACK"]);
 const TYPES_ALLOWING_ISSUES = new Set<MessageType>(["RESULT", "ISSUE"]);
 const TYPES_ALLOWING_FRESH = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST"]);
 
@@ -29,7 +30,7 @@ export const sendMessageShape = {
   type: z
     .enum(MESSAGE_TYPES)
     .describe(
-      "FIX corrects or adds to a DELEGATE / REVIEW_REQUEST you sent (replyTo = that request). Delivered into the recipient's running turn when it is working on it. ANSWER replies to a QUESTION; RESULT reports completed delegated work. FIX, ANSWER, RESULT and ACK require replyTo",
+      "FIX corrects, ADD adds requirements to, NOTE informs about, CANCEL withdraws a DELEGATE / REVIEW_REQUEST you sent (replyTo = that request). Delivered into the recipient's running turn when it is working on it. ANSWER replies to a QUESTION; RESULT reports completed delegated work. Follow-ups, ANSWER, RESULT and ACK require replyTo",
     ),
   taskId: z.string().min(1).describe("Task ID"),
   body: z.string().min(1).max(MAX_BODY_LENGTH).describe("Request, question, or result summary. Reference commit/files instead of pasting large content"),
@@ -68,15 +69,15 @@ export const sendMessageShape = {
   worktree: z.boolean().optional().describe("Create the parallel conversation in a new git worktree"),
 };
 
-const TYPES_ALLOWING_SPEC = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST", "FIX", "RESULT", "ANSWER"]);
+const TYPES_ALLOWING_SPEC = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST", "FIX", "ADD", "NOTE", "RESULT", "ANSWER"]);
 const sendMessageSchema = z.object(sendMessageShape).superRefine((input, ctx) => {
-  if (input.type === "FIX") {
+  if (FOLLOWUP_TYPES.has(input.type)) {
     for (const field of ["fresh", "parallel", "worktree"] as const) {
-      if (input[field] !== undefined) ctx.addIssue({ code: "custom", path: [field], message: "not allowed for FIX" });
+      if (input[field] !== undefined) ctx.addIssue({ code: "custom", path: [field], message: `not allowed for ${input.type}` });
     }
   }
   if (input.spec !== undefined && !TYPES_ALLOWING_SPEC.has(input.type)) {
-    ctx.addIssue({ code: "custom", path: ["spec"], message: "allowed only for DELEGATE, REVIEW_REQUEST, FIX, RESULT or ANSWER" });
+    ctx.addIssue({ code: "custom", path: ["spec"], message: "allowed only for DELEGATE, REVIEW_REQUEST, FIX, ADD, NOTE, RESULT or ANSWER" });
   }
   if (input.fresh === true && !TYPES_ALLOWING_FRESH.has(input.type)) {
     ctx.addIssue({ code: "custom", path: ["fresh"], message: "allowed only for DELEGATE or REVIEW_REQUEST" });

@@ -18,6 +18,27 @@ const reviewRequest = {
 };
 
 describe("createMessage", () => {
+  it.each(["ADD", "NOTE", "CANCEL"] as const)("%s は元の依頼を指定して送れる", type => {
+    expect(createMessage({ ...reviewRequest, type, replyTo: "msg_original" }, context)).toMatchObject({
+      ok: true,
+      message: { type, replyTo: "msg_original" },
+    });
+  });
+  it.each(["FIX", "ADD", "NOTE", "CANCEL"] as const)("%s は replyTo と利用可能なフィールドを検証する", type => {
+    expect(createMessage({ ...reviewRequest, type }, context).ok).toBe(false);
+    for (const fields of [{ fresh: true }, { parallel: true }, { worktree: true }, { status: "done" }, { issues: [] }])
+      expect(createMessage({ ...reviewRequest, type, replyTo: "msg_original", ...fields }, context).ok).toBe(false);
+  });
+  it.each(["ADD", "NOTE"] as const)("%s は spec を受け付ける", type => {
+    expect(createMessage({ ...reviewRequest, type, replyTo: "msg_original", spec: "docs/specs/T.md" }, context).ok).toBe(true);
+  });
+  it("CANCEL の spec は拒否し、RESULT の canceled は受け付ける", () => {
+    expect(createMessage({ ...reviewRequest, type: "CANCEL", replyTo: "msg_original", spec: "docs/specs/T.md" }, context).ok).toBe(false);
+    expect(createMessage({ ...reviewRequest, type: "RESULT", replyTo: "msg_original", status: "canceled" }, context)).toMatchObject({
+      ok: true,
+      message: { status: "canceled" },
+    });
+  });
   it("FIX は元の依頼と参照情報を受け付ける", () => {
     expect(createMessage({ ...reviewRequest, type: "FIX", replyTo: "msg_original", spec: "docs/specs/T.md", interrupt: true }, context)).toMatchObject({
       ok: true,
