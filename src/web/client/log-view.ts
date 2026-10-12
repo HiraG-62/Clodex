@@ -243,6 +243,11 @@ export function createLogView(ctx: ClientContext) {
     }
     for (const id of ctx.AGENT_IDS) if (!visibleItems.some(item => item.kind === "starting" && item.agent === id)) ctx.store.startingAt.delete(id);
     const keep = new Set(visibleItems.map(i => i.id));
+    const openedKeep = new Set(keep);
+    for (const item of visibleItems) {
+      if (item.kind === "message") openedKeep.add(`refs:${item.id}`);
+      if (item.kind === "turn") for (const message of item.messages ?? []) openedKeep.add(`refs:${message.message.id}`);
+    }
     const anchor = (() => {
       if (stick) return undefined;
       const ids = new Map([...ctx.store.rendered].filter(([id]) => keep.has(id)).map(([id, entry]) => [entry.node, id]));
@@ -261,7 +266,7 @@ export function createLogView(ctx: ClientContext) {
         ctx.store.rendered.delete(id);
       }
     }
-    discardMissingOpened(ctx.store.opened, keep);
+    discardMissingOpened(ctx.store.opened, openedKeep);
     let previous: HTMLElement | undefined;
     const updatedMarkdown: HTMLElement[] = [];
     for (const item of visibleItems) {

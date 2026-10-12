@@ -6,6 +6,12 @@ import { renderMarkdown } from "./markdown.js";
 import type { ClientContext } from "./store.js";
 import type { TimelineItem } from "./timeline.js";
 
+const VISIBLE_REFERENCE_FILES = 3;
+
+export function splitReferenceFiles(files: readonly string[]): { visible: string[]; hidden: string[] } {
+  return { visible: files.slice(0, VISIBLE_REFERENCE_FILES), hidden: files.slice(VISIBLE_REFERENCE_FILES) };
+}
+
 export function createLogItem(ctx: ClientContext) {
   // ---- ログの描画 ----
   const details = (id: string, summary: string, body: HTMLElement, cls: string) => {
@@ -285,11 +291,23 @@ export function createLogItem(ctx: ClientContext) {
         ref.addEventListener("click", () => void ctx.openViewer(spec));
         refs.append(ref);
       }
-      for (const file of message.files ?? []) {
+      const fileRef = (file: string) => {
         const ref = ctx.el("button", "ref", file) as HTMLButtonElement;
         ref.type = "button";
         ref.addEventListener("click", () => void ctx.openViewer(file));
-        refs.append(ref);
+        return ref;
+      };
+      const { visible, hidden } = splitReferenceFiles(message.files ?? []);
+      for (const file of visible) refs.append(fileRef(file));
+      if (hidden.length) {
+        const key = `refs:${item.id}`;
+        const more = ctx.el("details", "refs-more") as HTMLDetailsElement;
+        more.open = ctx.store.opened.get(key) ?? false;
+        const extra = ctx.el("div", "refs");
+        for (const file of hidden) extra.append(fileRef(file));
+        more.append(ctx.el("summary", "", ctx.t("web.message.moreFiles", { count: hidden.length })), extra);
+        more.addEventListener("toggle", () => ctx.store.opened.set(key, more.open));
+        refs.append(more);
       }
       node.append(refs);
     }
