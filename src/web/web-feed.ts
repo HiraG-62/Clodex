@@ -37,6 +37,7 @@ export interface WebState {
   agents: AgentState[];
   // activity: 動いている会話の状態（無ければ保存のみ。DESIGN.md §28 D1）
   conversations: Array<Conversation & { current: boolean; activity?: ConversationActivity }>;
+  parallelChildren?: Array<Pick<Conversation, "id" | "title">>;
   // 配送待ちの人間の入力（取り消し・編集の対象）
   pendingInputs: PendingInput[];
   pendingMessages: PendingMessage[];

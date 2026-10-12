@@ -842,6 +842,8 @@ Coordinator が付与するフィールド（Agent の自己申告は使わな�
 ```
 
 - `interrupt`（省略可、boolean）: 宛先が送信元からの message を処理中なら、そのターンに足す（§28 v0.3 C）。それ以外は通常どおり配送する
+- `parallel`（省略可、boolean）: `DELEGATE` / `REVIEW_REQUEST` のみ。宛先が作業中（実行中のターンか配送待ちがある）なら、子の会話を立ててそこで受けさせる（§28 D1「子の会話で並列に受ける」）。作業中でなければ通常どおり配送する。`interrupt`・`fresh` と両方 `true` なら拒否する（子の会話は常に新しい session）
+- `worktree`（省略可、boolean）: `parallel` のときだけ。子の会話を新しい worktree で作業させる（同じファイルに触る危険の判断は送る側が行う）
 - `fresh`（省略可、boolean）: `DELEGATE` / `REVIEW_REQUEST` のみ（ほかの type は拒否する）。`true` なら、宛先の session を新しくしてから届ける（下記 §12「新しい session で届ける」）。省略時は設定の `freshThread` の既定（無ければ `false`）。`interrupt` と両方 `true` なら拒否する（新しい session には割り込めない）
 - `ANSWER` は `interrupt` の指定によらず、宛先（質問した Agent）が作業中なら、何のターンでもそのターンに足す。質問した後も作業を続けている Agent に、ターンの終わりを待たせずに回答を届けるため。作業中でなければ通常どおり配送する
 
@@ -2006,6 +2008,16 @@ D1 の詳細（1 つのプロセスの中の複数の会話）:
 - 設定ファイルの `worktree.setup`（例: `"pnpm install"`）があれば、worktree を作って切り替えた直後（`/worktree` で移した直後も）に、その worktree で `!command` と同じように実行する。git が持たない依存関係（`node_modules` など）が無いと、worktree でテストが通らないため。出力は `!command` と同じに表示し、Ctrl+C や `/interrupt` で止められる。終わるのは待たない
 - 同じ作業場所で別の会話の Agent が作業中のときに入力したら、`/new worktree` を勧める `toast` を出す（止めはしない）
 - Web UI の会話の一覧に、各会話の状態（作業中・待機中・停止中）と worktree の印を出す
+- **子の会話で並列に受ける**（`send_message` の `parallel`）: 作業中の Agent に独立した依頼を渡すとき、ロール文で「メインは待機し、作業はサブエージェントで」と書くと、親が subagent の完了を待ち続けて同じコンテキストを二重に読む。Clodex が同じ Agent を別の会話で動かし、並列に受けさせる
+  - 受け付けたとき宛先が作業中なら、同じ project に子の会話を作る（今の会話は切り替えない）。子の会話の履歴に親（会話 ID・依頼の message ID・送信元・宛先）を記録する。作業場所は、`worktree: true` なら新しい worktree（`/new worktree` と同じ名前の付け方）、そうでなければ親の会話と同じ作業場所。名前は「{taskId}（並列）」
+  - 子の会話の runtime を作り、宛先の Agent を新しい session で起動して、依頼の envelope を届ける（Task envelope に `Parallel: yes (a separate conversation; your other work continues elsewhere)` の 1 行）
+  - 子の会話の Agent が相手の Agent に送る formal message（`QUESTION`・`RESULT`・`ISSUE` など）と自動の `RESULT` / `ANSWER` は、子の会話の相手の Agent ではなく、親の会話の送信元へ届ける。親の会話では message に `thread`（子の会話 ID）を付けて出し、画面は message のカードに「並列: {子の会話名}」の印（押すと子の会話へ切り替える）を出す
+  - 親の会話から `thread` のある message への返信（`ANSWER` など。`replyTo` で判定）は、子の会話の宛先へ届ける。子の会話の相手の Agent は起動しない
+  - Budget は親の会話の chain で数える（子の会話から届いた message は、親の依頼の chain の続き）
+  - 子の会話は会話の一覧に出さない。親の会話の message のカードの「並列」の印から開く（開いている間はタブに出してよい）。保存する会話の上限（20 件）に数えない。親の会話を消したら、子の会話も一緒に消す。worktree のマージ・削除は人が行う
+  - 片付け: 子の会話の宛先が、親の依頼への `RESULT`（自動の `RESULT` を含む。`replyTo` が親の依頼の message）を送り、そのターンが終わって子の会話に配送待ちが無くなったら、子の会話の Agent を止める（runtime は残す。止めた後に親から返信が来たり、人が子の会話に入力したりしたら、今どおり resume して起動する）。並列の依頼のたびに Agent のプロセスが残り続けないように
+  - 人は子の会話を開いて、その Agent に直接入力してもよい
+
 - 入力行は届いた順に処理する（会話の切り替えや worktree の作成を待ってから次の行へ）
 - Web UI は PWA の manifest（`/manifest.webmanifest`）とアイコン（`/icon.svg`）を token なしで返す（秘密を含まない）
 - iPhone のホーム画面用に `apple-touch-icon`（`/apple-touch-icon.png`。180px の PNG）も token なしで返す（iOS は SVG のアイコンを使わない）

@@ -351,6 +351,147 @@ describe("自動 RESULT", () => {
     expect(coordinator.receiveMessage("codex", { to: "claude", type: "ANSWER", taskId: "T", replyTo: "msg_saved", body: "回答" }).ok).toBe(true);
   });
 
+  it("復旧後も子の QUESTION への ANSWER を子の会話へ届ける", async () => {
+    const { claude, codex } = setup();
+    const deliverToThread = vi.fn().mockResolvedValue(undefined);
+    const coordinator = new Coordinator({
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex },
+      bus: new EventBus(),
+      mcpUrlFor,
+      deliverToThread,
+      knownMessages: [
+        {
+          id: "msg_parallel",
+          from: "claude",
+          to: "codex",
+          type: "DELEGATE",
+          taskId: "T",
+          body: "依頼",
+          repository: PROJECT_ROOT,
+          createdAt: NOW,
+          parallel: true,
+          thread: "child-1",
+        },
+        {
+          id: "msg_question",
+          from: "codex",
+          to: "claude",
+          type: "QUESTION",
+          taskId: "T",
+          body: "質問",
+          repository: PROJECT_ROOT,
+          createdAt: NOW,
+          thread: "child-1",
+        },
+      ],
+    });
+    const answer = await coordinator.receiveMessageFromTool("claude", {
+      to: "codex",
+      type: "ANSWER",
+      taskId: "T",
+      replyTo: "msg_question",
+      body: "回答",
+    });
+    expect(answer).toMatchObject({ ok: true, message: { thread: "child-1" } });
+    await flush();
+    expect(deliverToThread).toHaveBeenCalledWith("child-1", expect.objectContaining({ type: "ANSWER", body: "回答" }));
+  });
+
+  it("子の復旧後は親から届いた ANSWER を自分自身へ転送しない", async () => {
+    const { claude, codex } = setup();
+    const deliverToThread = vi.fn();
+    const coordinator = new Coordinator({
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex },
+      bus: new EventBus(),
+      mcpUrlFor,
+      parallelParent: { from: "claude", to: "codex", messageId: "msg_parallel" },
+      deliverToThread,
+      knownMessages: [
+        {
+          id: "msg_parallel",
+          from: "claude",
+          to: "codex",
+          type: "DELEGATE",
+          taskId: "T",
+          body: "依頼",
+          repository: PROJECT_ROOT,
+          createdAt: NOW,
+          parallel: true,
+          thread: "child-1",
+        },
+      ],
+    });
+    const delivery = coordinator.receiveForwardedMessage({
+      id: "msg_answer",
+      from: "claude",
+      to: "codex",
+      type: "ANSWER",
+      taskId: "T",
+      replyTo: "msg_question",
+      body: "回答",
+      repository: PROJECT_ROOT,
+      createdAt: NOW,
+      thread: "child-1",
+    });
+    await flush();
+    expect(deliverToThread).not.toHaveBeenCalled();
+    expect(codex.sent[0]).toContain("回答");
+    codex.completeTurn();
+    await delivery;
+  });
+
+  it("子だけで始めた依頼の配送失敗は子の送信元へ返す", async () => {
+    const { claude, codex } = setup();
+    const forwardFailureToParent = vi.fn();
+    const coordinator = new Coordinator({
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex },
+      bus: new EventBus(),
+      mcpUrlFor,
+      retryDelayMs: 0,
+      parallelParent: { from: "claude", to: "codex", messageId: "msg_parallel" },
+      forwardFailureToParent,
+    });
+    const local = await coordinator.receiveMessageFromTool("claude", { to: "codex", type: "DELEGATE", taskId: "LOCAL", body: "子の作業" });
+    expect(local.ok).toBe(true);
+    await flush();
+    codex.completeTurn({ status: "failed", text: "失敗" });
+    await flush();
+    await flush();
+    codex.completeTurn({ status: "failed", text: "失敗" });
+    await flush();
+    await flush();
+    expect(forwardFailureToParent).not.toHaveBeenCalled();
+    expect(claude.sent[0]).toContain("Do not send it again");
+    claude.completeTurn();
+  });
+
+  it("feed の履歴は Budget に数えず返信を受け付ける", async () => {
+    const { claude, codex } = setup();
+    const coordinator = new Coordinator({
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex },
+      bus: new EventBus(),
+      mcpUrlFor,
+      limits: { maxMessagesPerChain: 1, maxReviewRoundsPerChain: 1, maxDelegationsPerChain: 1, maxDelegationDepth: 1 },
+      knownMessages: [
+        {
+          id: "msg_saved",
+          from: "claude",
+          to: "codex",
+          type: "QUESTION",
+          taskId: "T",
+          body: "質問",
+          repository: PROJECT_ROOT,
+          createdAt: NOW,
+        },
+      ],
+    });
+    expect(coordinator.receiveMessage("codex", { to: "claude", type: "ANSWER", taskId: "T", replyTo: "msg_saved", body: "回答" }).ok).toBe(true);
+  });
+
   it("ANSWER は作業中の相手へ割り込み、待機中の相手には通常配送する", async () => {
     const { claude, codex, coordinator } = setup();
     void coordinator.sendToAgent("claude", "作業中");

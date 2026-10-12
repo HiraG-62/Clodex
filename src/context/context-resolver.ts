@@ -47,6 +47,7 @@ export const buildEnvelope = (m: AgentMessage, language?: Language): string => {
   if (m.replyTo) lines.push(`Reply-To: ${m.replyTo}`);
   if (m.status) lines.push(`Status: ${m.status}`);
   if (m.auto) lines.push("Auto: the recipient ended its turn without send_message; this is its final reply.");
+  if (m.parallel && m.thread) lines.push("Parallel: yes (a separate conversation; your other work continues elsewhere)");
   if (m.interrupt && !m.fresh) lines.push("Interrupt: yes");
   lines.push(`Repository: ${m.repository}`);
   if (m.commit) lines.push(`Commit: ${m.commit}`);

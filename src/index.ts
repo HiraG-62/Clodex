@@ -462,7 +462,7 @@ const main = async (): Promise<void> => {
             const activity = project.workspace.activity(conversation.id);
             return { ...conversation, ...(activity ? { activity } : {}) };
           };
-          return { conversations: project.history.list().map(withActivity), current: withActivity(project.history.current) };
+          return { conversations: project.history.visibleList().map(withActivity), current: withActivity(project.history.current) };
         }),
         primary: shell.getPrimary(),
         roles: context?.config.roles ?? {},
@@ -473,10 +473,15 @@ const main = async (): Promise<void> => {
         pendingMessages: runtime?.coordinator.pendingMessages() ?? [],
         processes: processes.list().map(({ id, command, status }) => ({ id, command, status })),
         conversations:
-          context?.history.list().map(conversation => {
+          context?.history.stateList().map(conversation => {
             const activity = context.workspace.activity(conversation.id);
             return { ...conversation, current: conversation.id === context.history.currentId, ...(activity ? { activity } : {}) };
           }) ?? [],
+        parallelChildren:
+          context?.history
+            .list()
+            .filter(conversation => conversation.parent)
+            .map(({ id, title }) => ({ id, title })) ?? [],
       };
     },
     () => language,

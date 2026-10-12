@@ -1,12 +1,16 @@
 // 1 つの project の会話ごとに Coordinator を持ち、複数の会話を並列に動かす（DESIGN.md §28 D1）。
 // 人が見ている会話（今の会話）は 1 つ。会話を切り替えても、前の会話の Agent は止めない
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import type { Coordinator } from "../coordinator/coordinator.js";
 import type { CoordinatorEvent, EventBus } from "../coordinator/event-bus.js";
 import type { Conversation, ConversationHistory } from "../project/conversation-history.js";
+import { inside } from "../project/path-scope.js";
 import type { ConversationRecovery, RecoveryState } from "../project/recovery-store.js";
+import { resolveSpecFile } from "../project/spec-file.js";
 import type { Worktree, WorktreeResult } from "../project/worktree.js";
+import type { AgentMessage, CreateMessageResult } from "../protocol/messages.js";
 import type { NotificationInput } from "./notify-format.js";
 
 // 会話 1 つ分の実行環境（Event Bus・Coordinator・Agent・MCP server 等）
@@ -47,10 +51,26 @@ export class Workspace {
   private readonly toolUse = new Map<string, Partial<Record<"claude" | "codex", boolean>>>();
   private readonly pendingFailure = new Map<string, ReturnType<typeof setTimeout>>();
 
-  constructor(private readonly options: WorkspaceOptions) {}
+  constructor(private readonly options: WorkspaceOptions) {
+    options.history.onRemove(id => {
+      const runtime = this.runtimes.get(id);
+      if (!runtime) return;
+      this.detach.get(id)?.();
+      this.detach.delete(id);
+      this.runtimes.delete(id);
+      void runtime.close().catch(error =>
+        this.options.notifyAgent({
+          kind: "error",
+          projectRoot: this.options.projectRoot,
+          line: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    });
+  }
 
   async init(): Promise<void> {
     await this.ensure(this.options.history.current);
+    for (const child of this.options.history.list().filter(conversation => conversation.parent)) await this.ensure(child);
   }
 
   // 今の会話の runtime。init 後と、切り替え（switchTo / startNew）の完了後は必ずある
@@ -85,6 +105,69 @@ export class Workspace {
 
   allRuntimes(): ConversationRuntime[] {
     return [...this.runtimes.values()];
+  }
+
+  async startParallel(parentId: string, message: AgentMessage): Promise<{ thread: string } | { error: string }> {
+    const id = randomUUID();
+    let place: Pick<Conversation, "workDir" | "branch"> = {};
+    if (message.worktree) {
+      const created = await this.options.createWorktree(this.options.projectRoot, id);
+      if (!created.ok) return { error: created.error };
+      place = created.worktree;
+    } else {
+      const parent = this.options.history.list().find(conversation => conversation.id === parentId) ?? this.options.history.current;
+      if (parent.workDir) place = { workDir: parent.workDir, ...(parent.branch ? { branch: parent.branch } : {}) };
+    }
+    const child = this.options.history.createChild(
+      id,
+      `${message.taskId}（並列）`,
+      { conversationId: parentId, messageId: message.id, from: message.from, to: message.to },
+      place,
+    );
+    try {
+      await this.ensure(child);
+      return { thread: id };
+    } catch (error) {
+      this.options.history.remove(id);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  forwardToParent(child: Conversation, message: AgentMessage): CreateMessageResult {
+    const parent = child.parent;
+    const runtime = parent ? this.runtimes.get(parent.conversationId) : undefined;
+    return runtime && parent
+      ? runtime.coordinator.receiveChildMessage(message, child.id, parent.messageId)
+      : { ok: false, error: "parallel: parent conversation is unavailable" };
+  }
+
+  forwardFailureToParent(child: Conversation, message: AgentMessage, error: string): void {
+    const parent = child.parent;
+    const runtime = parent ? this.runtimes.get(parent.conversationId) : undefined;
+    if (!runtime) throw new Error("parallel: parent conversation is unavailable");
+    runtime.coordinator.reportDeliveryFailure(message, error);
+  }
+
+  async deliverToThread(thread: string, message: AgentMessage): Promise<void> {
+    const runtime = this.runtimes.get(thread);
+    if (!runtime) throw new Error(`parallel: conversation ${thread} is unavailable`);
+    if (message.spec && message.repository !== runtime.workDir) {
+      const source = resolveSpecFile(message.repository, message.spec);
+      const target = resolve(runtime.workDir, message.spec.replace(/\\/g, "/"));
+      if (!source || !inside(resolve(runtime.workDir), target)) throw new Error(`parallel: spec ${message.spec} is unavailable`);
+      mkdirSync(dirname(target), { recursive: true });
+      copyFileSync(source, target);
+    }
+    await runtime.coordinator.receiveForwardedMessage({ ...message, repository: runtime.workDir });
+  }
+
+  async discardParallel(thread: string): Promise<void> {
+    const runtime = this.runtimes.get(thread);
+    this.detach.get(thread)?.();
+    this.detach.delete(thread);
+    this.runtimes.delete(thread);
+    if (runtime) await runtime.close();
+    this.options.history.remove(thread);
   }
 
   recoveryConversations(): Record<string, ConversationRecovery> {
@@ -185,7 +268,7 @@ export class Workspace {
     this.notifySwitch(this.current);
     await Promise.all(
       this.allRuntimes()
-        .filter(runtime => existsSync(runtime.workDir))
+        .filter(runtime => existsSync(runtime.workDir) && !conversations.find(item => item.id === runtime.conversationId)?.parent)
         .map(runtime => runtime.coordinator.start()),
     );
   }
@@ -195,6 +278,10 @@ export class Workspace {
   }
 
   private async ensure(conversation: Conversation): Promise<ConversationRuntime> {
+    if (conversation.parent && !this.runtimes.has(conversation.parent.conversationId)) {
+      const parent = this.options.history.list().find(entry => entry.id === conversation.parent?.conversationId) ?? this.options.history.current;
+      if (parent.id !== conversation.id) await this.ensure(parent);
+    }
     const existing = this.runtimes.get(conversation.id);
     if (existing) return existing;
     let creating = this.creating.get(conversation.id);

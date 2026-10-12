@@ -21,6 +21,9 @@ const PERMISSION_NOTE = "The human cannot approve tool permissions interactively
 const INTERRUPT_NOTE = "Set interrupt: true on send_message only for corrections to work the peer is doing for you that would otherwise be wasted.";
 const FRESH_NOTE =
   "You may use fresh: true when sending a new task. The recipient starts without its earlier context, so make the envelope and spec sufficient to do the work.";
+const PARALLEL_NOTE =
+  "If the peer is busy and a request is independent of its current work, you may use parallel: true. " +
+  "If it touches the same files, set worktree: true or wait until the peer finishes.";
 const USAGE_NOTE =
   "Do not poll in small steps with repeated sleep or by checking subagents again and again. Read the relevant range of a file at once, not a few dozen lines at a time.";
 const CODEX_USAGE_NOTE = "Run long commands (tests, builds) with a long enough yield_time_ms to finish in one call. Do not poll with wait or write_stdin.";
@@ -86,6 +89,7 @@ export const buildRoleInstructions = (
     BODY_FORMAT,
     INTERRUPT_NOTE,
     FRESH_NOTE,
+    PARALLEL_NOTE,
     ...(usageHints ? [USAGE_NOTE, agent === "codex" ? CODEX_USAGE_NOTE : CLAUDE_USAGE_NOTE] : []),
     SUBAGENT_NOTE,
     ...(artifactsDir ? [artifactsNote(artifactsDir)] : []),

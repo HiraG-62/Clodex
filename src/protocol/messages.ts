@@ -55,6 +55,13 @@ export const sendMessageShape = {
     .describe(
       "Start the recipient in a new session before delivering (DELEGATE / REVIEW_REQUEST only). Use for a new task that does not need the recipient's earlier context.",
     ),
+  parallel: z
+    .boolean()
+    .optional()
+    .describe(
+      "When the recipient is busy, run this request in a separate conversation of the same agent so it works in parallel. The recipient starts without its earlier context.",
+    ),
+  worktree: z.boolean().optional().describe("Create the parallel conversation in a new git worktree"),
 };
 
 const TYPES_ALLOWING_SPEC = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST", "RESULT", "ANSWER"]);
@@ -67,6 +74,15 @@ const sendMessageSchema = z.object(sendMessageShape).superRefine((input, ctx) =>
   }
   if (input.fresh === true && input.interrupt === true) {
     ctx.addIssue({ code: "custom", path: ["fresh"], message: "cannot be combined with interrupt" });
+  }
+  if (input.parallel === true && !TYPES_ALLOWING_FRESH.has(input.type)) {
+    ctx.addIssue({ code: "custom", path: ["parallel"], message: "allowed only for DELEGATE or REVIEW_REQUEST" });
+  }
+  if (input.parallel === true && (input.interrupt === true || input.fresh === true)) {
+    ctx.addIssue({ code: "custom", path: ["parallel"], message: "cannot be combined with interrupt or fresh" });
+  }
+  if (input.worktree === true && input.parallel !== true) {
+    ctx.addIssue({ code: "custom", path: ["worktree"], message: "requires parallel: true" });
   }
 });
 
@@ -81,6 +97,7 @@ export interface AgentMessage extends SendMessageInput {
   createdAt: string;
   specChanges?: string[];
   auto?: true;
+  thread?: string;
 }
 
 export interface MessageContext {

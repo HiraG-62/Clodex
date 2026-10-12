@@ -18,6 +18,26 @@ const reviewRequest = {
 };
 
 describe("createMessage", () => {
+  it.each(["DELEGATE", "REVIEW_REQUEST"] as const)("%s は parallel と worktree を受け付ける", type => {
+    expect(createMessage({ ...reviewRequest, type, parallel: true, worktree: true }, context)).toMatchObject({
+      ok: true,
+      message: { parallel: true, worktree: true },
+    });
+  });
+  it.each(["QUESTION", "ANSWER", "RESULT", "ISSUE", "ACK"] as const)("%s の parallel を拒否する", type => {
+    expect(createMessage({ ...reviewRequest, type, replyTo: "msg_x", parallel: true }, context)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("parallel"),
+    });
+  });
+  it.each([{ worktree: true }, { parallel: true, fresh: true }, { parallel: true, interrupt: true }])("parallel の併用条件を検証する: %j", fields => {
+    expect(createMessage({ ...reviewRequest, ...fields }, context)).toMatchObject({ ok: false });
+  });
+  it("thread は Agent の入力から保持しない", () => {
+    const result = createMessage({ ...reviewRequest, thread: "fake" }, context);
+    expect(result).toMatchObject({ ok: true });
+    if (result.ok) expect(result.message).not.toHaveProperty("thread");
+  });
   it.each(["DELEGATE", "REVIEW_REQUEST"] as const)("%s は fresh を受け付ける", type => {
     expect(createMessage({ ...reviewRequest, type, fresh: true }, context)).toMatchObject({ ok: true, message: { fresh: true } });
   });

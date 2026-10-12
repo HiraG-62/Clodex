@@ -22,7 +22,7 @@ const TOOL_DESCRIPTION =
   "The reply, if any, arrives as a new message after your current turn ends. " +
   "Set interrupt only to correct work the recipient is doing for you.";
 
-export type SendMessageHandler = (from: AgentId, input: unknown) => CreateMessageResult;
+export type SendMessageHandler = (from: AgentId, input: unknown) => CreateMessageResult | Promise<CreateMessageResult>;
 
 export interface McpHandlers {
   sendMessage: SendMessageHandler;
@@ -41,7 +41,7 @@ const acceptedText = ({ id, to }: { id: string; to: AgentId }) =>
 const buildMcpServer = (from: AgentId, handler: McpHandlers): McpServer => {
   const server = new McpServer({ name: COORDINATOR_MCP_SERVER, version: SERVER_VERSION });
   server.registerTool(SEND_MESSAGE_TOOL, { description: TOOL_DESCRIPTION, inputSchema: sendMessageShape }, async args => {
-    const result = handler.sendMessage(from, args);
+    const result = await handler.sendMessage(from, args);
     return result.ok
       ? { content: [{ type: "text", text: acceptedText(result.message) }] }
       : { content: [{ type: "text", text: `Rejected: ${result.error}` }], isError: true };

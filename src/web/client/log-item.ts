@@ -256,6 +256,20 @@ export function createLogItem(ctx: ClientContext) {
     if (message.status) route.append(ctx.el("span", "kind", ctx.t(statusKeys[message.status])));
     if (message.auto) route.append(ctx.el("span", "kind", ctx.t("web.message.auto")));
     if (message.fresh) route.append(ctx.el("span", "kind", ctx.t("web.message.fresh")));
+    if (message.thread) {
+      const state = ctx.store.state;
+      const child = state?.parallelChildren?.find(conversation => conversation.id === message.thread);
+      const label = ctx.t("web.message.parallel", { title: child?.title ?? message.taskId });
+      const projectRoot = state?.projects?.find(project => project.current)?.projectRoot;
+      if (child && projectRoot) {
+        const command = `/tab ${message.thread} ${projectRoot}`;
+        const link = ctx.el("button", "kind parallel-link", label) as HTMLButtonElement;
+        link.type = "button";
+        link.dataset.command = command;
+        link.addEventListener("click", () => void ctx.send(command, link));
+        route.append(link);
+      } else route.append(ctx.el("span", "kind", label));
+    }
     if (message.interrupt && !message.fresh) route.append(ctx.el("span", "kind steer", ctx.t("web.steer")));
     route.append(ctx.el("span", "task mono", `${message.taskId} · ${ctx.clock(item.at)}`));
     const text = ctx.el("div", "text md");

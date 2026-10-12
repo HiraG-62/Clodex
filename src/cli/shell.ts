@@ -222,14 +222,16 @@ export const createShell = ({
   let primary = initialPrimary;
   const history = typeof historySource === "function" ? historySource : () => historySource;
   const targets = (agent: AgentId | undefined): readonly AgentId[] => (agent ? [agent] : AGENT_IDS);
-
-  const listConversations = () => {
+  const visibleConversations = () =>
     history()
       .list()
-      .forEach((c, i) => {
-        const current = c.id === history().currentId ? t("shell.current") : "";
-        print(`${i + 1}) ${shortTime(c.updatedAt)}  ${agentsOf(c)}  ${titleOf(c)}${current}`);
-      });
+      .filter(conversation => !conversation.parent);
+
+  const listConversations = () => {
+    visibleConversations().forEach((c, i) => {
+      const current = c.id === history().currentId ? t("shell.current") : "";
+      print(`${i + 1}) ${shortTime(c.updatedAt)}  ${agentsOf(c)}  ${titleOf(c)}${current}`);
+    });
     print(t("shell.resumeHint"));
   };
 
@@ -261,7 +263,7 @@ export const createShell = ({
   };
 
   const pickConversation = (index: number) => {
-    const picked = history().list()[index - 1];
+    const picked = visibleConversations()[index - 1];
     if (!picked) print(t("shell.noConversation", { index }));
     return picked;
   };

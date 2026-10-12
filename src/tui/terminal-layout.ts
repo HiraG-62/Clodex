@@ -207,6 +207,7 @@ export interface TerminalLabels {
   steer: string;
   auto: string;
   fresh: string;
+  parallel: string;
 }
 export interface TerminalCard {
   kind: TimelineItem["kind"];
@@ -541,11 +542,13 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
         return (
           item.messages
             ?.filter(entry => entry.message.id === attached.id)
-            .map(entry => (entry.message.fresh ? `${labels.fresh}\n${entry.message.body}` : entry.message.body)) ?? []
+            .map(entry => `${entry.message.thread ? `${labels.parallel}\n` : ""}${entry.message.fresh ? `${labels.fresh}\n` : ""}${entry.message.body}`) ?? []
         );
       return item.questions?.filter(entry => entry.id === attached.id).map(questionBody) ?? [];
     }) ?? [
-      ...(item.messages ?? []).map(entry => (entry.message.fresh ? `${labels.fresh}\n${entry.message.body}` : entry.message.body)),
+      ...(item.messages ?? []).map(
+        entry => `${entry.message.thread ? `${labels.parallel}\n` : ""}${entry.message.fresh ? `${labels.fresh}\n` : ""}${entry.message.body}`,
+      ),
       ...(item.questions ?? []).map(questionBody),
     ];
     const steps = [
@@ -574,7 +577,7 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
       color: MESSAGE_COLORS[item.message.type],
       headerBackgroundColor: agentHeaderColor(item.message.from),
       title: `${agentName(item.message.from)} → ${agentName(item.message.to)}`,
-      tag: `${item.message.type} · ${item.message.taskId}${item.message.auto ? ` · ${labels.auto}` : ""}${item.message.fresh ? ` · ${labels.fresh}` : ""}`,
+      tag: `${item.message.type} · ${item.message.taskId}${item.message.auto ? ` · ${labels.auto}` : ""}${item.message.fresh ? ` · ${labels.fresh}` : ""}${item.message.thread ? ` · ${labels.parallel}` : ""}`,
       body: item.message.body,
     };
   if (item.kind === "human")

@@ -847,6 +847,21 @@ describe("createShell", () => {
       "/resume <number> to switch",
     ]);
   });
+  it("/resume の一覧と番号から子の会話を外す", async () => {
+    const { history, printed, shell } = setup();
+    history.conversations.push({
+      id: "child",
+      startedAt: at(32),
+      updatedAt: at(32),
+      title: "P-1（並列）",
+      sessions: { codex: "c-child" },
+      parent: { conversationId: "conv-new", messageId: "msg_1", from: "claude", to: "codex" },
+    });
+    await shell.handleLine("/resume");
+    expect(printed.some(line => line.includes('"P-1（並列）"'))).toBe(false);
+    await shell.handleLine("/resume 2");
+    expect(history.currentId).toBe("conv-old");
+  });
 
   it("/resume <番号> は会話を切り替え、前の会話の Agent は止めない", async () => {
     const { coordinator, history, printed, notified, shell } = setup();

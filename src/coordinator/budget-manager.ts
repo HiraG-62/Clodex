@@ -76,13 +76,23 @@ export class BudgetManager {
   }
 
   restore(message: AgentMessage): void {
-    if (message.type === "ACK") return;
-    this.meta.set(message.id, { chainId: message.id, depth: 1 });
-    this.chains.set(message.id, {
-      messages: 1,
-      reviewRounds: message.type === "REVIEW_REQUEST" ? 1 : 0,
-      delegations: DELEGATION_TYPES.has(message.type) ? 1 : 0,
+    if (message.type === "ACK" || this.meta.has(message.id)) return;
+    const chainId = message.id;
+    const usage = this.chains.get(chainId) ?? EMPTY_USAGE;
+    this.meta.set(message.id, { chainId, depth: 1 });
+    this.chains.set(chainId, {
+      messages: usage.messages + 1,
+      reviewRounds: usage.reviewRounds + (message.type === "REVIEW_REQUEST" ? 1 : 0),
+      delegations: usage.delegations + (DELEGATION_TYPES.has(message.type) ? 1 : 0),
     });
+  }
+
+  preview(message: AgentMessage, parent: AgentMessage | undefined): string | undefined {
+    const copy = new BudgetManager(this.limits);
+    for (const [id, meta] of this.meta) copy.meta.set(id, meta);
+    for (const [id, usage] of this.chains) copy.chains.set(id, { ...usage });
+    for (const id of this.closed) copy.closed.add(id);
+    return copy.admit(message, parent);
   }
 
   // parent: 送信元 Agent が処理中の message（人間の入力によるターンなら undefined）

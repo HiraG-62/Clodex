@@ -36,6 +36,7 @@ const labels = {
   steer: "割り込み",
   auto: "自動",
   fresh: "新しい session",
+  parallel: "並列",
 };
 
 it("コマンド入力の枠を緑にして上辺にラベルを置き、! を消すと戻す", () => {
@@ -173,6 +174,7 @@ describe("formatTimelineItem", () => {
     expect(formatTimelineItem(message, labels, false)).toMatchObject({ title: "Claude → Codex", tag: "DELEGATE · T-1", body: "実装して" });
     expect(formatTimelineItem({ ...message, message: { ...message.message, auto: true } }, labels, false).tag).toBe("DELEGATE · T-1 · 自動");
     expect(formatTimelineItem({ ...message, message: { ...message.message, fresh: true } }, labels, false).tag).toContain("新しい session");
+    expect(formatTimelineItem({ ...message, message: { ...message.message, thread: "child" } }, labels, false).tag).toContain("並列");
     expect(
       formatTimelineItem(
         { ...turn, messages: [{ message: { ...message.message, fresh: true } }], attachmentOrder: [{ kind: "message", id: "x" }] },

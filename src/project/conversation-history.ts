@@ -24,6 +24,7 @@ const conversationSchema = z.strictObject({
   // worktree で作業する会話の作業場所とブランチ（DESIGN.md §28 D1）
   workDir: z.string().min(1).optional(),
   branch: z.string().min(1).optional(),
+  parent: z.strictObject({ conversationId: z.string().min(1), messageId: z.string().min(1), from: z.enum(AGENT_IDS), to: z.enum(AGENT_IDS) }).optional(),
   sessions: sessionsSchema,
   // DESIGN.md §11 Solo
   solo: z.union([z.literal("free"), z.enum(AGENT_IDS)]).optional(),
@@ -55,9 +56,16 @@ export const loadConversations = (path: string): Conversation[] => {
 const isWorthSaving = (c: Conversation) => Boolean(c.title || c.workDir || c.solo || c.soloReleased?.length || c.sessions.claude || c.sessions.codex);
 const byNewest = (a: Conversation, b: Conversation) => b.updatedAt.localeCompare(a.updatedAt);
 // ピン止めした会話は先頭に並べ、最大件数の枠に数えない
-const arrange = (conversations: Conversation[]): Conversation[] => {
+const arrange = (conversations: Conversation[], protectedParentId?: string): Conversation[] => {
   const saved = conversations.sort(byNewest);
-  return [...saved.filter(c => c.pinned), ...saved.filter(c => !c.pinned).slice(0, MAX_CONVERSATIONS)];
+  const roots = saved.filter(c => !c.parent);
+  const pinned = roots.filter(c => c.pinned);
+  const recent = roots.filter(c => !c.pinned).slice(0, MAX_CONVERSATIONS);
+  const protectedParent = roots.find(c => c.id === protectedParentId);
+  if (protectedParent && !pinned.includes(protectedParent) && !recent.includes(protectedParent)) recent[recent.length - 1] = protectedParent;
+  const kept = [...pinned, ...recent];
+  const rootIds = new Set(kept.map(c => c.id));
+  return [...kept, ...saved.filter(c => c.parent && rootIds.has(c.parent.conversationId))];
 };
 
 export interface ConversationHistoryOptions {
@@ -81,7 +89,8 @@ export class ConversationHistory {
   ) {
     this.now = now;
     this.createId = createId;
-    this.conversations = arrange(loadConversations(path));
+    const saved = loadConversations(path);
+    this.conversations = arrange(saved, saved.find(conversation => conversation.id === resumeId)?.parent?.conversationId);
     const latest = this.conversations[0];
     this.currentConversation =
       resumeId !== undefined
@@ -96,6 +105,17 @@ export class ConversationHistory {
     this.currentConversation = { ...this.emptyConversation(), ...place };
     if (place.workDir) this.save(list => list);
     this.notifySwitch();
+  }
+
+  createChild(id: string, title: string, parent: NonNullable<Conversation["parent"]>, place: Pick<Conversation, "workDir" | "branch"> = {}): Conversation {
+    const startedAt = this.now().toISOString();
+    const child: Conversation = { id, title: title.slice(0, TITLE_LENGTH), startedAt, updatedAt: startedAt, sessions: {}, parent, ...place };
+    this.save(list => [
+      ...list,
+      ...(parent.conversationId === this.currentId && !list.some(c => c.id === this.currentId) ? [this.currentConversation] : []),
+      child,
+    ]);
+    return child;
   }
 
   moveCurrentToWorktree(worktree: Worktree): void {
@@ -162,10 +182,10 @@ export class ConversationHistory {
 
   // /delete: 今の会話以外を削除する。削除できなければ理由を返す
   remove(id: string): string | undefined {
-    if (id === this.currentConversation.id) return t("reject.deleteCurrent");
+    if (id === this.currentConversation.id || this.currentConversation.parent?.conversationId === id) return t("reject.deleteCurrent");
     if (!this.conversations.some(c => c.id === id)) return t("reject.notFound");
-    this.save(list => list.filter(c => c.id !== id));
-    for (const listener of this.removeListeners) listener(id);
+    const removed = this.conversations.filter(c => c.id === id || c.parent?.conversationId === id).map(c => c.id);
+    this.save(list => list.filter(c => !removed.includes(c.id)));
     return undefined;
   }
 
@@ -206,6 +226,15 @@ export class ConversationHistory {
 
   list(): Conversation[] {
     return [...this.conversations];
+  }
+
+  visibleList(): Conversation[] {
+    return this.conversations.filter(conversation => !conversation.parent);
+  }
+
+  stateList(): Conversation[] {
+    const visible = this.visibleList();
+    return this.currentConversation.parent ? [...visible, this.currentConversation] : visible;
   }
 
   // 選んだ会話を今の会話にする。以後の session と入力はそちらに記録する
@@ -253,7 +282,15 @@ export class ConversationHistory {
     const saved = loadConversations(this.path);
     const others = saved.filter(c => c.id !== this.currentConversation.id);
     const current = isWorthSaving(this.currentConversation) || saved.some(c => c.id === this.currentConversation.id) ? [this.currentConversation] : [];
-    this.conversations = arrange(edit([...current, ...others]));
+    const edited = edit([...current, ...others]);
+    this.conversations = arrange(edited, this.currentConversation.parent?.conversationId);
     writeFileAtomic(this.path, `${JSON.stringify({ conversations: this.conversations }, null, 2)}\n`);
+    const kept = new Set(this.conversations.map(conversation => conversation.id));
+    const editedIds = new Set(edited.map(conversation => conversation.id));
+    // 上限から落ちただけの普通の会話は、裏で作業中かもしれないので runtime を閉じない（子の会話だけ閉じる）
+    for (const removed of saved) {
+      if (kept.has(removed.id) || (editedIds.has(removed.id) && !removed.parent)) continue;
+      for (const listener of this.removeListeners) listener(removed.id);
+    }
   }
 }

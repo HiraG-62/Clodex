@@ -34,4 +34,33 @@ describe("buildTabs", () => {
     ]);
     expect(buildTabs(projects)).toHaveLength(2);
   });
+  it("子のタブには親の会話名を入れる", () => {
+    const tabs = buildTabs(
+      [
+        {
+          projectRoot: "C:\\one",
+          conversations: [
+            { id: "parent", title: "親" },
+            { id: "child", title: "作業（並列）", pinned: true, parent: { conversationId: "parent" } },
+          ],
+        },
+      ],
+      { projectRoot: "C:\\one", conversation: { id: "child", title: "作業（並列）", parent: { conversationId: "parent" } } },
+    );
+    expect(tabs[0]).toMatchObject({ conversationId: "child", parentTitle: "親" });
+    expect(
+      buildTabs(
+        [
+          {
+            projectRoot: "C:\\one",
+            conversations: [
+              { id: "parent", title: "親" },
+              { id: "child", pinned: true, parent: { conversationId: "parent" } },
+            ],
+          },
+        ],
+        { projectRoot: "C:\\one", conversation: { id: "parent", title: "親" } },
+      ).map(tab => tab.conversationId),
+    ).toEqual(["parent"]);
+  });
 });

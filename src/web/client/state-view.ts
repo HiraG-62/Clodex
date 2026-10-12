@@ -40,15 +40,17 @@ export function createStateView(ctx: ClientContext) {
         const main = ctx.el("button", "tab-main") as HTMLButtonElement;
         main.type = "button";
         main.title = `${name} · ${title}`;
+        if (tab.parentTitle !== undefined) main.title += ` · ${ctx.t("web.conv.parallelParent", { title: tab.parentTitle })}`;
         main.setAttribute("aria-label", main.title);
         main.append(ctx.el("span", "tab-project", name), ctx.el("span", "tab-title", title));
+        if (tab.parentTitle !== undefined) main.append(ctx.el("span", "tab-parallel", ctx.t("web.conv.parallel")));
         if (tab.activity === "busy") main.append(ctx.el("span", "tab-busy"));
         main.disabled = tab.current;
         const command = `/tab ${tab.conversationId} ${tab.projectRoot}`;
         main.dataset.command = command;
         main.addEventListener("click", () => void ctx.send(command, main));
         row.append(main);
-        const number = ctx.store.state?.conversations.findIndex(conversation => conversation.id === tab.conversationId) ?? -1;
+        const number = ctx.store.state?.conversations.findIndex(conversation => conversation.id === tab.conversationId && !conversation.parent) ?? -1;
         if (tab.pinned || number >= 0) {
           const action = ctx.iconButton(tab.pinned ? "x" : "pin", ctx.t(tab.pinned ? "web.conv.unpin" : "web.conv.pin"), "tab-action");
           action.type = "button";

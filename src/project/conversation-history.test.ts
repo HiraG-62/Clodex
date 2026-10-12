@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EventBus } from "../coordinator/event-bus.js";
-import { ConversationHistory, conversationStatePath, MAX_CONVERSATIONS } from "./conversation-history.js";
+import { ConversationHistory, conversationStatePath, loadConversations, MAX_CONVERSATIONS } from "./conversation-history.js";
 
 const HOME = "C:\\home";
 const makePath = () => join(mkdtempSync(join(tmpdir(), "clodex-history-")), "nested", "state.json");
@@ -312,5 +312,70 @@ describe("ConversationHistory の複数の会話（DESIGN.md §28 D1）", () => 
     history.startNew({ workDir: "C:devapp-1a2b", branch: "clodex/1a2b" });
     expect(history.current).toMatchObject({ workDir: "C:devapp-1a2b", branch: "clodex/1a2b" });
     expect(new ConversationHistory(path, { resumeLatest: true }).current).toMatchObject({ workDir: "C:devapp-1a2b" });
+  });
+  it("子の会話を今の会話を切り替えずに保存し、親と作業場所を保持する", () => {
+    const { history, path } = setup();
+    const currentId = history.currentId;
+    const parent = { conversationId: currentId, messageId: "msg_1", from: "claude" as const, to: "codex" as const };
+    const child = history.createChild("child-id", "TASK（並列）", parent, { workDir: "C:\\dev\\app-child", branch: "clodex/child" });
+    expect(history.currentId).toBe(currentId);
+    expect(child).toMatchObject({ id: "child-id", title: "TASK（並列）", parent, sessions: {}, workDir: "C:\\dev\\app-child" });
+    expect(new ConversationHistory(path, { resumeLatest: false }).list()).toContainEqual(child);
+  });
+
+  it("子の会話は一覧と保存上限に数えず、親の削除で一緒に消す", () => {
+    const { history, human, path } = setup();
+    human("親");
+    const parentId = history.currentId;
+    const parent = { conversationId: parentId, messageId: "msg_1", from: "claude" as const, to: "codex" as const };
+    for (let i = 0; i < MAX_CONVERSATIONS + 2; i++) history.createChild(`child-${i}`, `子 ${i}`, parent);
+    expect(history.list().filter(conversation => conversation.parent)).toHaveLength(MAX_CONVERSATIONS + 2);
+    expect(history.visibleList().map(conversation => conversation.id)).toEqual([parentId]);
+    history.switchTo("child-0");
+    expect(history.stateList().map(conversation => conversation.id)).toEqual([parentId, "child-0"]);
+    history.switchTo(parentId);
+    history.startNew();
+    human("次の親");
+    const removed: string[] = [];
+    history.onRemove(id => removed.push(id));
+    expect(history.remove(parentId)).toBeUndefined();
+    expect(removed).toContain(parentId);
+    expect(removed.filter(id => id.startsWith("child-"))).toHaveLength(MAX_CONVERSATIONS + 2);
+    expect(new ConversationHistory(path, { resumeLatest: false }).list().filter(conversation => conversation.parent)).toHaveLength(0);
+  });
+
+  it("今の会話が子なら保存上限でも親を残す", () => {
+    const { history, human, path } = setup();
+    human("親");
+    const parentId = history.currentId;
+    const child = history.createChild("child-active", "子", { conversationId: parentId, messageId: "msg_1", from: "claude", to: "codex" });
+    history.switchTo(child.id);
+    const roots = Array.from({ length: MAX_CONVERSATIONS + 2 }, (_, index) => ({
+      id: `new-${index}`,
+      startedAt: new Date(Date.UTC(2026, 9, 6, 0, index)).toISOString(),
+      updatedAt: new Date(Date.UTC(2026, 9, 6, 0, index)).toISOString(),
+      title: `新しい親 ${index}`,
+      sessions: {},
+    }));
+    writeFileSync(path, JSON.stringify({ conversations: [...loadConversations(path), ...roots] }));
+    history.rename("子の更新");
+    expect(history.list().some(conversation => conversation.id === parentId)).toBe(true);
+    expect(history.list().some(conversation => conversation.id === child.id)).toBe(true);
+    expect(history.visibleList()).toHaveLength(MAX_CONVERSATIONS);
+  });
+
+  it("保存上限から親と子が落ちるとき子の削除を通知する", () => {
+    const { history, human } = setup();
+    human("古い親");
+    const parentId = history.currentId;
+    history.createChild("child-pruned", "子", { conversationId: parentId, messageId: "msg_1", from: "claude", to: "codex" });
+    const removed: string[] = [];
+    history.onRemove(id => removed.push(id));
+    for (let index = 0; index < MAX_CONVERSATIONS + 2; index++) {
+      history.startNew();
+      human(`新しい親 ${index}`);
+    }
+    expect(history.list().some(conversation => conversation.id === "child-pruned")).toBe(false);
+    expect(removed).toContain("child-pruned");
   });
 });

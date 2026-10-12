@@ -81,6 +81,13 @@ export function createPendingView(ctx: ClientContext) {
       const branch = conversation.branch ? ` · ⎇ ${conversation.branch}` : "";
       const meta = `${activity}${ctx.shortDate(conversation.updatedAt)} · ${Object.keys(conversation.sessions).join(", ") || "—"}${branch}`;
       const title = ctx.el("span", "t", conversation.title ?? ctx.t("web.conv.untitled"));
+      const parent = conversation.parent && ctx.store.state?.conversations.find(entry => entry.id === conversation.parent?.conversationId);
+      if (conversation.parent) {
+        const label = ctx.t("web.conv.parallelParent", { title: parent?.title ?? ctx.t("web.conv.untitled") });
+        const parallel = ctx.el("span", "conv-parallel", label);
+        parallel.title = label;
+        title.append(parallel);
+      }
       if (conversation.pinned) {
         const pin = ctx.el("span", "conv-pinned");
         pin.append(ctx.icon("pin"));
@@ -90,17 +97,20 @@ export function createPendingView(ctx: ClientContext) {
       }
       button.append(title, ctx.el("span", "m", meta));
       button.disabled = conversation.current;
-      button.dataset.command = `/resume ${index + 1}`;
-      button.addEventListener("click", () => {
-        void ctx.send(`/resume ${index + 1}`, button).then(ok => {
-          if (ok) ctx.closeSheet();
+      row.append(button);
+      if (!conversation.parent) {
+        button.dataset.command = `/resume ${index + 1}`;
+        button.addEventListener("click", () => {
+          void ctx.send(`/resume ${index + 1}`, button).then(ok => {
+            if (ok) ctx.closeSheet();
+          });
         });
-      });
-      const menu = ctx.iconButton("ellipsis", ctx.t("web.conv.menu"), "conv-menu");
-      menu.type = "button";
-      menu.setAttribute("aria-label", ctx.t("web.conv.menu"));
-      menu.addEventListener("click", () => ctx.openConversationMenu(conversation, index + 1));
-      row.append(button, menu);
+        const menu = ctx.iconButton("ellipsis", ctx.t("web.conv.menu"), "conv-menu");
+        menu.type = "button";
+        menu.setAttribute("aria-label", ctx.t("web.conv.menu"));
+        menu.addEventListener("click", () => ctx.openConversationMenu(conversation, index + 1));
+        row.append(menu);
+      }
       return row;
     });
     if (!nodes.length) nodes.push(ctx.el("p", "muted small", ctx.t("web.conv.empty")));

@@ -92,6 +92,12 @@ export interface CoordinatorOptions {
   limits?: BudgetLimits;
   settings?: Partial<Record<AgentId, AgentStartSettings>>;
   freshThread?: Partial<Record<"DELEGATE" | "REVIEW_REQUEST", boolean>>;
+  startParallel?: (message: AgentMessage) => Promise<{ thread: string } | { error: string }>;
+  discardParallel?: (thread: string) => Promise<void>;
+  deliverToThread?: (thread: string, message: AgentMessage) => Promise<void>;
+  forwardToParent?: (message: AgentMessage) => CreateMessageResult;
+  forwardFailureToParent?: (message: AgentMessage, error: string) => void;
+  parallelParent?: { from: AgentId; to: AgentId; messageId: string };
   clearSession?: (agent: AgentId) => void;
   // 人が読む文章の言語。Task envelope に添える（DESIGN.md §13 Language）
   language?: Language | (() => Language);
@@ -120,7 +126,10 @@ export class Coordinator {
   private readonly deliveryNotes: DeliveryNotes;
   private readonly repliedRequests = new Set<string>();
   private readonly messages = new Map<string, AgentMessage>();
+  private readonly threadSenders = new Map<string, AgentId>();
   private readonly handoffTurns: Partial<Record<AgentId, boolean>> = {};
+  private parallelResultPending = false;
+  private parallelStopWaiting = false;
   // 宛先ごと・設計書の実パスごとに、前回渡した中身（DESIGN.md §13 Spec の差分）
   private readonly specSnapshots = new Map<string, string>();
   private readonly liveUsage = new Set<AgentId>();
@@ -193,8 +202,13 @@ export class Coordinator {
   constructor(private readonly options: CoordinatorOptions) {
     const { agents, bus, mcpUrlFor, instructions, limits, settings } = options;
     this.deliveryNotes = new DeliveryNotes(options.soloReleased, options.consumeSoloReleased);
-    for (const message of options.knownMessages ?? []) this.messages.set(message.id, message);
     this.budget = new BudgetManager(limits);
+    for (const message of options.knownMessages ?? []) {
+      this.messages.set(message.id, message);
+      if (!options.parallelParent && message.parallel && message.thread && !this.threadSenders.has(message.thread)) {
+        this.threadSenders.set(message.thread, message.from);
+      }
+    }
     this.usage = new UsageMonitor(bus, { ...DEFAULT_USAGE_ALERT, ...options.usageAlert }, undefined, options.threadTokenWarn);
     for (const id of AGENT_IDS) {
       agents[id].onEvent(event => {
@@ -211,13 +225,18 @@ export class Coordinator {
         const handoff = event.type === "turn" && this.handoffTurns[id] === true;
         if (event.type === "turn") delete this.handoffTurns[id];
         bus.publish({ kind: "agent", agent: id, event, ...(handoff ? { handoff: true } : {}) });
-        if (event.type !== "turn" || event.result.status !== "failed") return;
-        const mailbox = this.mailboxes?.[id];
-        if (!mailbox || mailbox.activeSending || mailbox.holding || mailbox.isClosed) return;
-        const hold = this.limitHold(id);
-        if (hold) {
-          this.enterLimitHold(id, hold);
-          mailbox.holdForLimit(hold);
+        if (event.type === "turn") {
+          if (event.result.status === "failed") {
+            const mailbox = this.mailboxes?.[id];
+            if (mailbox && !mailbox.activeSending && !mailbox.holding && !mailbox.isClosed) {
+              const hold = this.limitHold(id);
+              if (hold) {
+                this.enterLimitHold(id, hold);
+                mailbox.holdForLimit(hold);
+              }
+            }
+          }
+          if (id === this.options.parallelParent?.to) this.maybeStopParallelAgent();
         }
       });
       // 起動前なので値を保持するだけ（次の起動時に使われる）
@@ -335,7 +354,7 @@ export class Coordinator {
 
   // MCP の send_message から呼ばれる。検証・記録・配送を行い、受理結果を送信元へ返す
   receiveMessage(from: AgentId, input: unknown): CreateMessageResult {
-    const { projectRoot, bus, createMessageId } = this.options;
+    const { projectRoot, createMessageId } = this.options;
     if (this.options.solo?.()) return { ok: false, error: SOLO_REJECTED };
     const result = createMessage(input, {
       from,
@@ -343,17 +362,141 @@ export class Coordinator {
       ...(createMessageId ? { createId: createMessageId } : {}),
     });
     if (!result.ok) return result;
+    if (this.options.parallelParent && (result.message.parallel || result.message.worktree))
+      return { ok: false, error: "parallel: unavailable in a child conversation" };
+    return this.acceptMessage(result);
+  }
+
+  async receiveMessageFromTool(from: AgentId, input: unknown): Promise<CreateMessageResult> {
+    if (this.options.solo?.()) return { ok: false, error: SOLO_REJECTED };
+    const result = createMessage(input, {
+      from,
+      repository: this.options.projectRoot,
+      ...(this.options.createMessageId ? { createId: this.options.createMessageId } : {}),
+    });
+    if (!result.ok) return result;
     const { message } = result;
-    const fresh = message.fresh ?? (message.type === "DELEGATE" || message.type === "REVIEW_REQUEST" ? this.options.freshThread?.[message.type] : undefined);
+    if (this.options.parallelParent && (message.parallel || message.worktree)) return { ok: false, error: "parallel: unavailable in a child conversation" };
+    if (
+      this.options.forwardToParent &&
+      from === this.options.parallelParent?.to &&
+      message.to === this.options.parallelParent.from &&
+      this.isParallelRequestChain(message)
+    )
+      return this.forwardChildMessage(result);
+    const mailbox = this.mailboxes[message.to];
+    if (message.parallel && (this.options.agents[message.to].status === "busy" || !mailbox.isIdle)) {
+      if (!this.options.startParallel) return { ok: false, error: "parallel: unavailable" };
+      const budgetError = this.budget.preview(message, this.mailboxes[from].current);
+      if (budgetError) return { ok: false, error: budgetError };
+      let prepared: { thread: string } | { error: string };
+      try {
+        prepared = await this.options.startParallel(message);
+      } catch (error) {
+        prepared = { error: error instanceof Error ? error.message : String(error) };
+      }
+      if ("error" in prepared)
+        return { ok: false, error: `parallel: ${prepared.error.split(/\r?\n/, 1)[0]}. Remove worktree or wait for the recipient to finish` };
+      message.thread = prepared.thread;
+      const accepted = this.acceptMessage(result);
+      if (!accepted.ok) await this.options.discardParallel?.(prepared.thread);
+      return accepted;
+    }
+    return this.acceptMessage(result);
+  }
+
+  receiveChildMessage(message: AgentMessage, thread: string, parentMessageId: string): CreateMessageResult {
+    const parent = this.messages.get(message.replyTo ?? "") ?? this.messages.get(parentMessageId);
+    if (!parent) return { ok: false, error: "parallel: parent request is missing" };
+    message.thread = thread;
+    return this.acceptMessage({ ok: true, message }, parent, true);
+  }
+
+  async receiveForwardedMessage(message: AgentMessage): Promise<void> {
+    this.messages.set(message.id, message);
+    this.options.bus.publish({ kind: "message", message });
+    await this.deliver(message);
+  }
+
+  private forwardChildMessage(result: Extract<CreateMessageResult, { ok: true }>): CreateMessageResult {
+    const forwarded = this.options.forwardToParent?.(result.message);
+    if (!forwarded?.ok) return forwarded ?? { ok: false, error: "parallel: parent conversation is unavailable" };
+    this.messages.set(result.message.id, result.message);
+    this.options.bus.publish({ kind: "message", message: result.message });
+    const current = this.mailboxes[result.message.from].current;
+    if (current && RETRIED_TYPES.has(current.type) && result.message.to === current.from) this.repliedRequests.add(current.id);
+    if (result.message.type !== "ACK" && this.handoffTurns[result.message.from] !== undefined) this.handoffTurns[result.message.from] = true;
+    if (result.message.type === "RESULT" && result.message.replyTo === this.options.parallelParent?.messageId) {
+      this.parallelResultPending = true;
+      this.maybeStopParallelAgent();
+    }
+    return result;
+  }
+
+  private isParallelRequestChain(message: AgentMessage): boolean {
+    const rootId = this.options.parallelParent?.messageId;
+    if (!rootId) return false;
+    const rootThread = this.messages.get(rootId)?.thread;
+    const visited = new Set<string>();
+    let parent = message.replyTo ? this.messages.get(message.replyTo) : this.mailboxes[message.from].current;
+    while (parent && !visited.has(parent.id)) {
+      if (parent.id === rootId || (rootThread && parent.thread === rootThread)) return true;
+      visited.add(parent.id);
+      parent = parent.replyTo ? this.messages.get(parent.replyTo) : undefined;
+    }
+    return false;
+  }
+
+  private isParentDelivery(message: AgentMessage): boolean {
+    const parent = this.options.parallelParent;
+    if (!parent || message.from !== parent.from) return false;
+    if (message.id === parent.messageId) return true;
+    const thread = this.messages.get(parent.messageId)?.thread;
+    return thread !== undefined && message.thread === thread;
+  }
+
+  private maybeStopParallelAgent(): void {
+    const target = this.options.parallelParent?.to;
+    if (!target || !this.parallelResultPending || this.parallelStopWaiting || this.options.agents[target].status === "busy") return;
+    this.parallelStopWaiting = true;
+    const mailbox = this.mailboxes[target];
+    if (mailbox.holding) {
+      this.parallelStopWaiting = false;
+      return;
+    }
+    this.detach(
+      mailbox.whenIdle().then(async () => {
+        this.parallelStopWaiting = false;
+        if (!this.parallelResultPending || !mailbox.isIdle || mailbox.holding || this.options.agents[target].status === "busy") return;
+        mailbox.pause();
+        try {
+          this.parallelResultPending = false;
+          await this.options.agents[target].stop();
+        } finally {
+          mailbox.resume();
+        }
+      }),
+      target,
+    );
+  }
+
+  private acceptMessage(result: Extract<CreateMessageResult, { ok: true }>, parentOverride?: AgentMessage, forwarded = false): CreateMessageResult {
+    const { bus } = this.options;
+    const { message } = result;
+    const fresh =
+      message.thread && message.parallel
+        ? false
+        : (message.fresh ?? (message.type === "DELEGATE" || message.type === "REVIEW_REQUEST" ? this.options.freshThread?.[message.type] : undefined));
     if (fresh) message.fresh = true;
     else delete message.fresh;
     const repliedTo = message.replyTo ? this.messages.get(message.replyTo) : undefined;
-    if (message.type === "ANSWER" && (repliedTo?.type !== "QUESTION" || repliedTo.to !== from || repliedTo.from !== message.to))
+    if (repliedTo?.thread && !message.thread) message.thread = repliedTo.thread;
+    if (message.type === "ANSWER" && (repliedTo?.type !== "QUESTION" || repliedTo.to !== message.from || repliedTo.from !== message.to))
       return { ok: false, error: "replyTo: ANSWER must reply to a QUESTION received from the recipient" };
     if (message.type === "RESULT" && repliedTo?.type === "QUESTION") return { ok: false, error: 'replyTo: reply to a QUESTION with type="ANSWER"' };
     let specSnapshot: { key: string; content: string } | undefined;
     if (message.spec !== undefined) {
-      const specPath = resolveSpecFile(projectRoot, message.spec);
+      const specPath = resolveSpecFile(message.repository, message.spec);
       if (!specPath) return { ok: false, error: "spec: must be a relative path to an existing regular file inside the project root" };
       specSnapshot = { key: `${message.to}\0${specPath}`, content: readFileSync(specPath, "utf8") };
       const previous = this.specSnapshots.get(specSnapshot.key);
@@ -361,17 +504,19 @@ export class Coordinator {
     }
 
     // 送信元が処理中の message を親として chain を決める（DESIGN.md §14）
-    const parent = this.mailboxes[from].current;
+    const parent = parentOverride ?? this.mailboxes[message.from].current;
     const budgetError = this.budget.admit(message, parent);
     if (budgetError) {
-      bus.publish({ kind: "agent", agent: from, event: { type: "error", message: humanBudgetError(budgetError) } });
+      bus.publish({ kind: "agent", agent: message.from, event: { type: "error", message: humanBudgetError(budgetError) } });
       return { ok: false, error: budgetError };
     }
 
     if (parent && RETRIED_TYPES.has(parent.type) && message.to === parent.from) this.repliedRequests.add(parent.id);
-    if (message.type !== "ACK" && this.handoffTurns[from] !== undefined) this.handoffTurns[from] = true;
+    if (!forwarded && message.type !== "ACK" && this.handoffTurns[message.from] !== undefined) this.handoffTurns[message.from] = true;
     if (specSnapshot) this.specSnapshots.set(specSnapshot.key, specSnapshot.content);
     this.messages.set(message.id, message);
+    if (!this.options.parallelParent && message.parallel && message.thread && !this.threadSenders.has(message.thread))
+      this.threadSenders.set(message.thread, message.from);
     bus.publish({ kind: "message", message });
     // ACK は記録のみ。配送して Agent を起こさない（DESIGN.md §12, §25）
     if (message.type !== "ACK") this.detach(this.deliver(message), message.to);
@@ -380,6 +525,10 @@ export class Coordinator {
 
   // interrupt: 宛先が送信元からの message を処理中なら、そのターンに足す。足せなければキューに積む（DESIGN.md §28 v0.3 C）
   private async deliver(message: AgentMessage, attempt = 1): Promise<void> {
+    if (message.thread && this.threadSenders.get(message.thread) === message.from && this.options.deliverToThread) {
+      await this.options.deliverToThread(message.thread, message);
+      return;
+    }
     const envelope = `${attempt > 1 ? `${RETRY_NOTE}\n` : ""}${buildEnvelope(message, this.language)}`;
     const mailbox = this.mailboxes[message.to];
     const steerable =
@@ -396,9 +545,17 @@ export class Coordinator {
       if (!mailbox.isClosed) await this.deliver(message, attempt + 1);
       return;
     }
+    const error = (result.text.split("\n", 1)[0] ?? "").slice(0, ERROR_LINE_LENGTH);
+    if (this.options.forwardFailureToParent && this.isParentDelivery(message)) {
+      this.options.forwardFailureToParent(message, error);
+      return;
+    }
+    this.reportDeliveryFailure(message, error);
+  }
+
+  reportDeliveryFailure(message: AgentMessage, error: string): void {
     const sender = this.mailboxes[message.from];
     if (sender.isClosed) return;
-    const error = (result.text.split("\n", 1)[0] ?? "").slice(0, ERROR_LINE_LENGTH);
     this.options.bus.publish({ kind: "notice", text: t("notice.handoffFailed", { type: message.type, to: message.to, from: message.from }), level: "warn" });
     this.detach(sender.enqueue(handoffFallback(message, error), { inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`, suffix: this.reminder }), message.from);
   }
@@ -419,6 +576,16 @@ export class Coordinator {
     );
     if (!created.ok) return;
     const message: AgentMessage = { ...created.message, auto: true };
+    if (
+      this.options.forwardToParent &&
+      message.from === this.options.parallelParent?.to &&
+      message.to === this.options.parallelParent.from &&
+      this.isParallelRequestChain(message)
+    ) {
+      this.forwardChildMessage({ ok: true, message });
+      return;
+    }
+    if (request.thread) message.thread = request.thread;
     const budgetError = this.budget.admit(message, request);
     if (budgetError) {
       this.options.bus.publish({ kind: "agent", agent: request.to, event: { type: "error", message: humanBudgetError(budgetError) } });

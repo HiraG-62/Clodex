@@ -23,6 +23,7 @@ import { ConversationTranscript, transcriptPath } from "../project/conversation-
 import { artifactsDirPath, createFilePreview, uploadsDirPath } from "../project/file-preview.js";
 import { hasRecoveryWork, loadRecovery, saveRecovery } from "../project/recovery-store.js";
 import { createWorktree } from "../project/worktree.js";
+import type { AgentMessage } from "../protocol/messages.js";
 import { SandboxController, type SandboxPlatform } from "../sandbox/controller.js";
 import { WindowsSandboxPlatform } from "../sandbox/windows-platform.js";
 import { connectConversationFeed } from "../web/conversation-feed.js";
@@ -184,7 +185,7 @@ export const openProject = async ({
     await sandbox.allowWorktree(workDir);
     let coordinator: Coordinator | undefined;
     const mcp = await startMcpServer({
-      sendMessage: (from, input) => coordinator!.receiveMessage(from, input),
+      sendMessage: (from, input) => coordinator!.receiveMessageFromTool(from, input),
       askUser: (from, input) => coordinator!.askUser(from, input),
       readConversation: (_from, input) => transcript.page(input),
     });
@@ -197,6 +198,16 @@ export const openProject = async ({
       knownMessages: savedFeed.flatMap(item => (item.type === "event" && item.event.kind === "message" ? [item.event.message] : [])),
       modelCatalog: () => catalog,
       mcpUrlFor: agent => mcp.urlFor(agent),
+      startParallel: message => workspace!.startParallel(conversation.id, message),
+      discardParallel: thread => workspace!.discardParallel(thread),
+      deliverToThread: (thread, message) => workspace!.deliverToThread(thread, message),
+      ...(conversation.parent
+        ? {
+            parallelParent: { from: conversation.parent.from, to: conversation.parent.to, messageId: conversation.parent.messageId },
+            forwardToParent: (message: AgentMessage) => workspace!.forwardToParent(conversation, message),
+            forwardFailureToParent: (message: AgentMessage, error: string) => workspace!.forwardFailureToParent(conversation, message, error),
+          }
+        : {}),
       settings: resolveStartSettings({
         saved: sandbox.enabled
           ? {

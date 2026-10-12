@@ -24,7 +24,7 @@ export interface Segment {
 
 export interface AssistState {
   agents: ReadonlyArray<{ id: string; models: readonly ModelOption[] }>;
-  conversations: ReadonlyArray<{ title?: string }>;
+  conversations: ReadonlyArray<{ title?: string; parent?: unknown }>;
   projects?: ReadonlyArray<{ projectRoot: string }>;
   questions?: ReadonlyArray<{ id: string; questions: ReadonlyArray<{ question: string }> }>;
   pendingInputs: ReadonlyArray<{ id: string }>;
@@ -134,10 +134,16 @@ export function createInputAssist(
         case "resume":
         case "delete":
         case "pin":
-          if (index === 0) values = state.conversations.map((conversation, i) => ({ value: String(i + 1), detail: conversation.title ?? labels.conversation }));
+          if (index === 0)
+            values = state.conversations.flatMap((conversation, i) =>
+              conversation.parent ? [] : [{ value: String(i + 1), detail: conversation.title ?? labels.conversation }],
+            );
           break;
         case "rename":
-          if (index === 0) values = state.conversations.map((conversation, i) => ({ value: `#${i + 1}`, detail: conversation.title ?? labels.conversation }));
+          if (index === 0)
+            values = state.conversations.flatMap((conversation, i) =>
+              conversation.parent ? [] : [{ value: `#${i + 1}`, detail: conversation.title ?? labels.conversation }],
+            );
           break;
         case "project": {
           const projects = (state.projects ?? []).map(({ projectRoot }) => ({ value: projectRoot, detail: labels.project }));

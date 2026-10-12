@@ -170,6 +170,7 @@ const labels = (): TerminalLabels => ({
   steer: t("web.steer"),
   auto: t("web.message.auto"),
   fresh: t("web.message.fresh"),
+  parallel: t("web.conv.parallel"),
 });
 
 const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed; now: number }) => {

@@ -5,6 +5,7 @@ export interface TabConversation {
   title?: string;
   pinned?: boolean;
   activity?: ConversationActivity;
+  parent?: { conversationId: string };
 }
 
 export interface ConversationTab {
@@ -14,6 +15,7 @@ export interface ConversationTab {
   pinned: boolean;
   current: boolean;
   activity?: ConversationActivity;
+  parentTitle?: string;
 }
 
 export interface TabProject {
@@ -29,9 +31,16 @@ export function buildTabs(projects: readonly TabProject[], current?: { projectRo
     pinned: Boolean(conversation.pinned),
     current: current?.projectRoot === projectRoot && current.conversation.id === conversation.id,
     ...(conversation.activity ? { activity: conversation.activity } : {}),
+    ...(conversation.parent
+      ? {
+          parentTitle:
+            projects.find(project => project.projectRoot === projectRoot)?.conversations.find(entry => entry.id === conversation.parent?.conversationId)
+              ?.title ?? "",
+        }
+      : {}),
   });
   const pinned = projects.flatMap(({ projectRoot, conversations }) =>
-    conversations.filter(conversation => conversation.pinned).map(conversation => tab(projectRoot, conversation)),
+    conversations.filter(conversation => conversation.pinned && !conversation.parent).map(conversation => tab(projectRoot, conversation)),
   );
   if (!current || pinned.some(entry => entry.current)) return pinned;
   return [...pinned, tab(current.projectRoot, current.conversation)];

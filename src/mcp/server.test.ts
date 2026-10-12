@@ -98,6 +98,34 @@ describe("startMcpServer", () => {
     await client.close();
   });
 
+  it("非同期の子会話準備が終わるまで受理を返さない", async () => {
+    let release: (() => void) | undefined;
+    const ready = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    server = await startMcpServer({
+      readConversation,
+      askUser: () => ({ ok: true, id: "q1" }),
+      sendMessage: async () => {
+        await ready;
+        return accepted;
+      },
+    });
+    const client = await connect(server.urlFor("claude"));
+    let settled = false;
+    const reply = client
+      .callTool({ name: "send_message", arguments: { to: "codex", type: "DELEGATE", taskId: "P", body: "依頼", parallel: true } })
+      .then(result => {
+        settled = true;
+        return result;
+      });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    release?.();
+    expect((await reply).isError).toBeFalsy();
+    await client.close();
+  });
+
   it("Codex の URL からの送信は codex として扱う（URL で送信元が決まる）", async () => {
     const froms: AgentId[] = [];
     server = await startMcpServer({
