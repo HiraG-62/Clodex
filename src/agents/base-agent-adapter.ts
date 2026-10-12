@@ -13,6 +13,7 @@ import type { AgentProcess } from "./agent-process.js";
 
 const INVALID_LINE_PREVIEW_LENGTH = 200;
 const INTERRUPT_TIMEOUT_MS = 30_000;
+const QUIET_TURN_EVENTS: ReadonlySet<AgentEvent["type"]> = new Set(["text", "tool"]);
 
 // 両 Adapter 共通の status / event / turn / 終了処理。CLI 固有のプロトコルはサブクラスが扱う
 export abstract class BaseAgentAdapter implements AgentAdapter {
@@ -115,6 +116,8 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   }
 
   protected emit(event: AgentEvent): void {
+    // 設定用のターン（/model・/effort）の応答を、ログのターンとして出さない。開始と終了も出さないので、出すと作業中のまま残る
+    if (this.quietTurn && QUIET_TURN_EVENTS.has(event.type)) return;
     for (const handler of this.handlers) handler(event);
   }
 

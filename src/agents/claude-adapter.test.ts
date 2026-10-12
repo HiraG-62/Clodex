@@ -186,6 +186,19 @@ describe("ClaudeAdapter", () => {
     ]);
   });
 
+  it("設定ターンの応答の発言は event として出さない", async () => {
+    const { adapter, proc, events } = await setup();
+    const model = adapter.setModel("fable");
+    proc.emit({
+      type: "assistant",
+      parent_tool_use_id: null,
+      message: { content: [{ type: "text", text: "Set model to `Fable 5.1` for this session only" }] },
+    });
+    proc.emit(result("Set model to `Fable 5.1` for this session only"));
+    await expect(model).resolves.toMatchObject({ status: "completed" });
+    expect(events.filter(event => event.type === "text" || event.type === "turn_started" || event.type === "turn")).toEqual([]);
+  });
+
   it("不正な model / effort は is_error=false でも failed にする", async () => {
     const { adapter, proc, events } = await setup();
     const model = adapter.setModel("missing-model");
