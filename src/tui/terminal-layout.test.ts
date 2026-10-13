@@ -48,6 +48,17 @@ it("コマンド入力の枠を緑にして上辺にラベルを置き、! を�
 });
 
 describe("advanceTerminalFeed", () => {
+  it("旧 feed の ID が無い同文の入力は最後だけ取り消す", () => {
+    const first = advanceTerminalFeed(
+      { timeline: [], completed: [] },
+      { type: "event", seq: 1, event: { kind: "human", agent: "codex", text: "同文", at: "first" } },
+      false,
+    );
+    const second = advanceTerminalFeed(first, { type: "event", seq: 2, event: { kind: "human", agent: "codex", text: "同文", at: "second" } }, false);
+    const canceled = advanceTerminalFeed(second, { type: "cancel", id: "in2", agent: "codex", text: "同文" }, false);
+    expect(canceled.completed).toHaveLength(1);
+    expect(canceled.completed[0]?.item.id).toBe("e1");
+  });
   it("以前の feed にある notice もログに残さない", () => {
     const initial = { timeline: [], completed: [] };
     expect(advanceTerminalFeed(initial, { type: "event", seq: 1, event: { kind: "notice", text: "古い通知", at: "now" } }, false)).toEqual(initial);
@@ -221,6 +232,7 @@ describe("ログの表示行", () => {
     expect(formatTimelineItem(human, labels, false).tag).toBe("割り込み");
     expect(formatTimelineItem({ ...human, delivered: true }, labels, false).tag).toBe("割り込み ✓");
     expect(formatTimelineItem({ ...human, steer: undefined }, labels, false).tag).toBeUndefined();
+    expect(formatTimelineItem({ ...human, interrupted: true }, labels, false).tag).toBe("割り込み · 中断");
   });
   it("人とターンの見出し 1 行だけを発言者の背景色で幅いっぱいに埋める", () => {
     const human: TimelineItem = { kind: "human", id: "h", at: "2026-01-01T00:00:00Z", agent: "claude", text: "本文" };

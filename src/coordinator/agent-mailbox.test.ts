@@ -137,7 +137,7 @@ describe("AgentMailbox", () => {
     void mailbox.enqueue("next", { inputId: "in1", images: ["shot.png"], suffix: "\nlang" });
     expect(mailbox.recoveryQueue).toEqual([
       { kind: "message", message: formal },
-      { kind: "input", text: "next", images: ["shot.png"] },
+      { kind: "input", id: "in1", text: "next", images: ["shot.png"] },
     ]);
     expect(mailbox.activeSending).toBe(true);
     mailbox.close();

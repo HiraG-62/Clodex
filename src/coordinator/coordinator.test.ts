@@ -13,7 +13,7 @@ const NOW = "2026-10-05T07:00:00.000Z";
 const PROJECT_ROOT = "C:\\dev\\app";
 const mcpUrlFor = (agent: string) => `http://127.0.0.1:5000/mcp/token-${agent}`;
 
-const setup = (projectRoot = PROJECT_ROOT) => {
+const setup = (projectRoot = PROJECT_ROOT, knownInputIds: readonly string[] = []) => {
   let seq = 0;
   const claude = new FakeAgentAdapter("claude");
   const codex = new FakeAgentAdapter("codex");
@@ -24,6 +24,7 @@ const setup = (projectRoot = PROJECT_ROOT) => {
     projectRoot,
     agents: { claude, codex },
     bus,
+    knownInputIds,
     mcpUrlFor,
     createMessageId: () => `msg_${String(++seq).padStart(8, "0")}`,
   });
@@ -733,7 +734,7 @@ describe("Coordinator", () => {
     expect(states.some(state => state.interrupted.includes("claude"))).toBe(true);
     void coordinator.sendToAgent("claude", "cancel me");
     const queued = states.at(-1)?.queue.claude;
-    expect(queued).toEqual([{ kind: "input", text: "cancel me" }]);
+    expect(queued).toEqual([{ kind: "input", id: "in2", text: "cancel me" }]);
     coordinator.cancelInput();
     expect(states.at(-1)?.queue.claude).toEqual([]);
     coordinator.receiveMessage("codex", { to: "claude", type: "QUESTION", taskId: "T", body: "check" });
@@ -912,7 +913,7 @@ describe("Coordinator", () => {
     expect(events).toContainEqual({ kind: "human", agent: "codex", text: "画像を見て", inputId: "in2", at: NOW });
     expect(events.filter(event => event.kind === "human").every(event => !event.text.includes("read_conversation"))).toBe(true);
     expect(coordinator.pendingInputs()).toContainEqual(expect.objectContaining({ agent: "codex", text: "画像を見て" }));
-    expect(coordinator.recoveryState().queue.codex).toContainEqual({ kind: "input", text: "画像を見て", context: true });
+    expect(coordinator.recoveryState().queue.codex).toContainEqual({ kind: "input", id: "in2", text: "画像を見て", context: true });
     codex.completeTurn();
     await flush();
     expect(codex.sent[1]).toContain("read_conversation");
@@ -1554,6 +1555,59 @@ describe("Coordinator", () => {
 });
 
 describe("Coordinator の取り消しと割り込み", () => {
+  it("保存済み発言より後の ID を振り、再起動後の取消で過去の発言を消さない", async () => {
+    const { coordinator, codex, events } = setup(PROJECT_ROOT, ["in1", "in8", "invalid"]);
+    void coordinator.sendToAgent("codex", "作業中");
+    await flush();
+    void coordinator.sendToAgent("codex", "取り消す");
+    expect(events.filter(event => event.kind === "human")).toMatchObject([{ inputId: "in9" }, { inputId: "in10" }]);
+    expect(coordinator.cancelInput("in10")).toMatchObject({ id: "in10" });
+    expect(events.at(-1)).toMatchObject({ kind: "canceled", id: "in10" });
+    codex.completeTurn();
+  });
+  it("復旧した配送待ちの入力は元の ID で取り消す", async () => {
+    const { coordinator, claude, codex, events } = setup();
+    void coordinator.sendToAgent("claude", "作業中");
+    await flush();
+    void coordinator.sendToAgent("claude", "取り消す");
+    const original = coordinator.pendingInputs()[0]!;
+    const saved = coordinator.recoveryState();
+    expect(saved.queue.claude[0]).toMatchObject({ kind: "input", id: original.id });
+
+    const restored = setup();
+    restored.claude.sessionId = "previous";
+    restored.coordinator.restore({ ...saved, interrupted: ["claude"] });
+    await flush();
+    expect(restored.coordinator.cancelInput(original.id)).toMatchObject({ id: original.id });
+    expect(restored.events).toContainEqual(expect.objectContaining({ kind: "canceled", id: original.id }));
+    expect(events.some(event => event.kind === "human" && event.inputId === original.id)).toBe(true);
+    claude.completeTurn();
+    codex.completeTurn();
+    restored.claude.completeTurn();
+  });
+
+  it("中断したターンの通常入力と steer 入力だけに ID を付ける", async () => {
+    const { coordinator, codex, events } = setup();
+    void coordinator.sendToAgent("codex", "作業中");
+    await flush();
+    const inputId = events.find(event => event.kind === "human" && event.text === "作業中");
+    codex.emit({ type: "turn_started" });
+    await coordinator.steerOrSend("codex", "追加");
+    const steer = events.find(event => event.kind === "human" && event.text === "追加");
+    codex.emit({ type: "turn", result: { status: "interrupted", text: "" } });
+    expect(events.at(-1)).toMatchObject({
+      kind: "agent",
+      inputIds: [inputId && "inputId" in inputId ? inputId.inputId : "", steer && "steerId" in steer ? steer.steerId : ""],
+    });
+    codex.completeTurn({ status: "interrupted", text: "" });
+
+    void coordinator.sendToAgent("codex", "完了");
+    await flush();
+    codex.emit({ type: "turn_started" });
+    codex.emit({ type: "turn", result: { status: "completed", text: "ok" } });
+    expect(events.at(-1)).not.toHaveProperty("inputIds");
+    codex.completeTurn();
+  });
   it("配送待ちの formal message を一覧に出し、ID 指定で取り消す", async () => {
     const { claude, codex, coordinator } = setup();
     void coordinator.sendToAgent("codex", "作業中");

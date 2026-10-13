@@ -13,7 +13,13 @@ const messageSchema = z.object(sendMessageShape).extend({
   createdAt: z.string(),
 });
 const itemSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("input"), text: z.string(), images: z.array(z.string()).optional(), context: z.literal(true).optional() }),
+  z.strictObject({
+    kind: z.literal("input"),
+    id: z.string().optional(),
+    text: z.string(),
+    images: z.array(z.string()).optional(),
+    context: z.literal(true).optional(),
+  }),
   z.strictObject({ kind: z.literal("message"), message: messageSchema }),
 ]);
 const workSchema = z.strictObject({ plan: z.string().optional(), actions: z.array(z.string()).max(5) });

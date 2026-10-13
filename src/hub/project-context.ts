@@ -1,7 +1,7 @@
 // project ごとの設定・会話・Agent・保存をまとめる（DESIGN.md §28 D2a）
 
 import { mkdirSync } from "node:fs";
-import type { AgentAdapter, AgentId } from "../agents/agent-adapter.js";
+import { AGENT_IDS, type AgentAdapter, type AgentId } from "../agents/agent-adapter.js";
 import { type SpawnAgentProcess, spawnAgentProcess } from "../agents/agent-process.js";
 import { ClaudeAdapter } from "../agents/claude-adapter.js";
 import { CodexAdapter } from "../agents/codex-adapter.js";
@@ -178,7 +178,9 @@ export const openProject = async ({
   const createRuntime = async (conversation: Conversation): Promise<ConversationRuntime> => {
     const bus = new EventBus();
     const transcript = new ConversationTranscript(transcriptPath(statePath, conversation.id));
+    const savedInputIds = feedStore.inputIds(conversation.id);
     const savedFeed = feedStore.load(conversation.id);
+    const recoveryQueue = recovery?.conversations[conversation.id]?.queue;
     transcript.seed(savedFeed);
     bus.subscribe(event => transcript.append(event));
     const workDir = conversation.workDir ?? projectRoot;
@@ -196,6 +198,10 @@ export const openProject = async ({
       canStart: () => sandbox.usable,
       bus,
       knownMessages: savedFeed.flatMap(item => (item.type === "event" && item.event.kind === "message" ? [item.event.message] : [])),
+      knownInputIds: [
+        ...savedInputIds,
+        ...AGENT_IDS.flatMap(agent => recoveryQueue?.[agent].flatMap(item => (item.kind === "input" && item.id ? [item.id] : [])) ?? []),
+      ],
       modelCatalog: () => catalog,
       mcpUrlFor: agent => mcp.urlFor(agent),
       startParallel: message => workspace!.startParallel(conversation.id, message),

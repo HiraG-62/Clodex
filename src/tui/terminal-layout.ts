@@ -23,10 +23,14 @@ export const advanceTerminalFeed = (state: TerminalFeed, feed: FeedItem, expande
   if (feed.type === "cancel")
     return {
       timeline: applyFeedItem(state.timeline, feed),
-      completed: state.completed.flatMap(entry => {
-        const items = applyFeedItem([entry.item], feed);
-        return items.map(item => ({ ...entry, item }));
-      }),
+      completed: (() => {
+        const items = applyFeedItem(
+          state.completed.map(entry => entry.item),
+          feed,
+        );
+        const byId = new Map(state.completed.map(entry => [entry.item.id, entry]));
+        return items.map(item => ({ ...byId.get(item.id)!, item }));
+      })(),
     };
   if (feed.type === "output") {
     return { ...state, completed: [...state.completed, { item: { kind: "output", id: `o${feed.seq}`, text: feed.text }, expanded }] };
@@ -55,6 +59,17 @@ export const advanceTerminalFeed = (state: TerminalFeed, feed: FeedItem, expande
       completed: state.completed.map(entry =>
         entry.item.kind === "human" && entry.item.inputId === steered.inputId
           ? { ...entry, item: { ...entry.item, steer: true, steerId: steered.steerId, queued: false } }
+          : entry,
+      ),
+    };
+  }
+  if (feed.event.kind === "agent" && feed.event.event.type === "turn" && feed.event.event.result.status === "interrupted" && feed.event.inputIds?.length) {
+    const inputIds = feed.event.inputIds;
+    state = {
+      ...state,
+      completed: state.completed.map(entry =>
+        entry.item.kind === "human" && inputIds.includes(entry.item.inputId ?? entry.item.steerId ?? "")
+          ? { ...entry, item: { ...entry.item, interrupted: true } }
           : entry,
       ),
     };
@@ -591,7 +606,13 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
       headerBackgroundColor: TERMINAL_COLORS.humanHeader,
       title: `${labels.you} → ${agentName(item.agent)}`,
       body: item.text,
-      ...(item.steer ? { tag: item.delivered ? `${labels.steer} ✓` : labels.steer } : {}),
+      ...(item.steer || item.interrupted
+        ? {
+            tag: [item.steer ? (item.delivered ? `${labels.steer} ✓` : labels.steer) : "", item.interrupted ? labels.interrupted : ""]
+              .filter(Boolean)
+              .join(" · "),
+          }
+        : {}),
     };
   if (item.kind === "error") return { kind: item.kind, color: TERMINAL_COLORS.error, title: `${labels.error} · ${agentName(item.agent)}`, body: item.text };
   if (item.kind === "notice") return { kind: item.kind, color: TERMINAL_COLORS.warn, title: labels.notice, body: item.text };

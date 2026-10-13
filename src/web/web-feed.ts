@@ -55,7 +55,7 @@ export type FeedItem =
   | { type: "output"; seq: number; text: string; command?: CommandLifecycle }
   | { type: "state"; state: WebState }
   | { type: "toast"; text: string; level: "info" | "warn" }
-  | { type: "cancel"; id: string }
+  | { type: "cancel"; id: string; agent?: AgentId; text?: string }
   | { type: "notify"; notification: HubNotification }
   | { type: "reset" }
   // 接続のたびに最初に送る。画面の版が違えば再読み込みする
@@ -79,6 +79,14 @@ export interface GuiInfo {
 export type HistoryItem = Extract<FeedItem, { type: "event" | "output" }>;
 export const isCanceledHistoryItem = (item: HistoryItem, id: string): boolean =>
   item.type === "event" && ((item.event.kind === "human" && item.event.inputId === id) || (item.event.kind === "message" && item.event.message.id === id));
+export const withoutCanceledHistoryItem = (items: readonly HistoryItem[], id: string, agent?: AgentId, text?: string): HistoryItem[] => {
+  if (items.some(item => isCanceledHistoryItem(item, id))) return items.filter(item => !isCanceledHistoryItem(item, id));
+  if (!agent || text === undefined) return [...items];
+  const index = items.findLastIndex(
+    item => item.type === "event" && item.event.kind === "human" && !item.event.inputId && item.event.agent === agent && item.event.text === text,
+  );
+  return items.filter((_, itemIndex) => itemIndex !== index);
+};
 export interface HistoryPage {
   items: HistoryItem[];
   hasMore: boolean;
@@ -114,9 +122,9 @@ export class WebFeed {
     this.deliver({ type: "toast", text, level });
   }
 
-  cancel(id: string): void {
-    this.items.splice(0, this.items.length, ...this.items.filter(item => !isCanceledHistoryItem(item, id)));
-    this.deliver({ type: "cancel", id });
+  cancel(id: string, agent?: AgentId, text?: string): void {
+    this.items.splice(0, this.items.length, ...withoutCanceledHistoryItem(this.items, id, agent, text));
+    this.deliver({ type: "cancel", id, ...(agent ? { agent } : {}), ...(text !== undefined ? { text } : {}) });
   }
 
   publishNotify(notification: HubNotification): void {

@@ -9,6 +9,58 @@ import { applyFeedItem, rebuildTimeline } from "../web/client/timeline.js";
 import { WebFeed } from "../web/web-feed.js";
 import { openProject, protectRecoverySave } from "./project-context.js";
 
+it("Hub 再起動後の新しい入力の取消で、保存済み feed の発言を残す", async () => {
+  const homeDir = mkdtempSync(join(tmpdir(), "clodex-input-seq-"));
+  const projectRoot = join(homeDir, "project");
+  mkdirSync(projectRoot);
+  const codex = new FakeAgentAdapter("codex");
+  const open = () =>
+    openProject({
+      projectRoot,
+      homeDir,
+      args: { models: {}, resume: true, web: false, serve: false },
+      language: "ja",
+      printTerminal: () => {},
+      notify: () => {},
+      notifyAgent: () => {},
+      displayMode: () => "normal",
+      isCurrent: () => true,
+      modelCatalog: EMPTY_MODEL_CATALOG,
+      registerCoordinator: () => () => {},
+      createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex }),
+    });
+  const first = await open();
+  first.history.rename("保存済み会話");
+  const conversationId = first.history.currentId;
+  first.feedStore.append(conversationId, {
+    type: "event",
+    seq: 1,
+    event: { kind: "human", agent: "codex", inputId: "in1", text: "前回の発言", at: "now" },
+  });
+  await first.close();
+
+  const restored = await open();
+  try {
+    expect(restored.history.currentId).toBe(conversationId);
+    const runtime = restored.workspace.current;
+    runtime.bus.subscribe(event => {
+      if (event.kind === "human") restored.feedStore.append(conversationId, { type: "event", seq: 2, event });
+      if (event.kind === "canceled") restored.feedStore.remove(conversationId, event.id, event.agent, event.text);
+    });
+    void runtime.coordinator.sendToAgent("codex", "作業中");
+    await new Promise(resolve => setTimeout(resolve, 0));
+    void runtime.coordinator.sendToAgent("codex", "取り消す");
+    expect(runtime.coordinator.cancelInput("in3")).toMatchObject({ id: "in3" });
+    expect(restored.feedStore.load(conversationId).filter(item => item.type === "event" && item.event.kind === "human")).toMatchObject([
+      { event: { text: "前回の発言", inputId: "in1" } },
+      { event: { text: "作業中", inputId: "in2" } },
+    ]);
+    codex.completeTurn();
+  } finally {
+    await restored.close();
+  }
+});
+
 it("既存の会話を worktree に移すと runtime と session を保って cwd と preview を切り替える", async () => {
   const homeDir = mkdtempSync(join(tmpdir(), "clodex-move-context-"));
   const projectRoot = join(homeDir, "project");

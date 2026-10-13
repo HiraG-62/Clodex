@@ -90,6 +90,7 @@ export interface CoordinatorOptions {
   instructions?: (agent: AgentId) => string | undefined;
   createMessageId?: () => string;
   knownMessages?: readonly AgentMessage[];
+  knownInputIds?: readonly string[];
   limits?: BudgetLimits;
   settings?: Partial<Record<AgentId, AgentStartSettings>>;
   freshThread?: Partial<Record<"DELEGATE" | "REVIEW_REQUEST", boolean>>;
@@ -123,6 +124,7 @@ export class Coordinator {
   private readonly budget: BudgetManager;
   private readonly usage: UsageMonitor;
   private inputSeq = 0;
+  private readonly turnInputs: Partial<Record<AgentId, string[]>> = {};
   private readonly questions = new QuestionStore();
   private readonly workRecorder = new WorkRecorder();
   private readonly deliveryNotes: DeliveryNotes;
@@ -169,6 +171,11 @@ export class Coordinator {
 
   restore(state: ConversationRecovery): void {
     this.questions.restore(state.questions ?? []);
+    for (const agent of AGENT_IDS) {
+      for (const item of state.queue[agent]) {
+        if (item.kind === "input" && item.id) this.rememberInputId(item.id);
+      }
+    }
     for (const id of AGENT_IDS) this.mailboxes[id].pause();
     for (const id of state.interrupted) {
       if (this.mailboxes[id].sessionId)
@@ -182,7 +189,7 @@ export class Coordinator {
         if (item.kind === "input") {
           this.detach(
             this.mailboxes[id].enqueue(item.text, {
-              inputId: `${INPUT_ID_PREFIX}${++this.inputSeq}`,
+              inputId: item.id ?? `${INPUT_ID_PREFIX}${++this.inputSeq}`,
               images: item.images,
               suffix: this.inputSuffix(item.context),
               ...(item.context ? { context: true } : {}),
@@ -203,6 +210,7 @@ export class Coordinator {
 
   constructor(private readonly options: CoordinatorOptions) {
     const { agents, bus, mcpUrlFor, instructions, limits, settings } = options;
+    for (const inputId of options.knownInputIds ?? []) this.rememberInputId(inputId);
     this.deliveryNotes = new DeliveryNotes(options.soloReleased, options.consumeSoloReleased);
     this.budget = new BudgetManager(limits);
     for (const message of options.knownMessages ?? []) {
@@ -217,6 +225,8 @@ export class Coordinator {
         if (event.type === "turn_started") {
           const current = this.mailboxes?.[id]?.current;
           this.handoffTurns[id] = current ? RETRIED_TYPES.has(current.type) : false;
+          const inputId = this.mailboxes?.[id]?.activeInputId;
+          this.turnInputs[id] = inputId ? [inputId] : [];
         }
         if (event.type === "rate_limit") this.liveUsage.add(id);
         if (event.type === "subagents") this.subagents[id] = [...event.running];
@@ -226,7 +236,9 @@ export class Coordinator {
         if (["turn_started", "text", "tool", "turn"].includes(event.type)) this.notifyRecoveryChange();
         const handoff = event.type === "turn" && this.handoffTurns[id] === true;
         if (event.type === "turn") delete this.handoffTurns[id];
-        bus.publish({ kind: "agent", agent: id, event, ...(handoff ? { handoff: true } : {}) });
+        const inputIds = event.type === "turn" && event.result.status === "interrupted" ? this.turnInputs[id] : undefined;
+        if (event.type === "turn") delete this.turnInputs[id];
+        bus.publish({ kind: "agent", agent: id, event, ...(handoff ? { handoff: true } : {}), ...(inputIds?.length ? { inputIds } : {}) });
         if (event.type === "turn") {
           if (event.result.status === "failed") {
             const mailbox = this.mailboxes?.[id];
@@ -279,6 +291,12 @@ export class Coordinator {
       );
     };
     this.mailboxes = { claude: createMailbox("claude"), codex: createMailbox("codex") };
+  }
+
+  private rememberInputId(id: string): void {
+    if (!id.startsWith(INPUT_ID_PREFIX)) return;
+    const sequence = Number(id.slice(INPUT_ID_PREFIX.length));
+    if (Number.isSafeInteger(sequence)) this.inputSeq = Math.max(this.inputSeq, sequence);
   }
 
   private limitHold(id: AgentId): { resumeAt: number; text: string; time: string } | undefined {
@@ -634,6 +652,7 @@ export class Coordinator {
   async steerOrSend(id: AgentId, text: string, context = false, shared = false): Promise<"steered" | "queued"> {
     const steerId = randomUUID();
     if (await this.steerWithNotice(id, `${text}${this.inputSuffix(context)}`, steerId)) {
+      this.turnInputs[id]?.push(steerId);
       this.options.bus.publish({ kind: "human", agent: id, text, steer: true, steerId });
       if (!shared) this.deliveryNotes.queueHumanContext(id, text);
       return "steered";
@@ -747,7 +766,10 @@ export class Coordinator {
         return this.steerWithNotice(target.agent, text, steerId);
       });
       if (!sent) return { ok: false, reason: "rejected", agent: target.agent };
-      if (input) this.options.bus.publish({ kind: "steered", inputId: id, steerId });
+      if (input) {
+        this.turnInputs[target.agent]?.push(id);
+        this.options.bus.publish({ kind: "steered", inputId: id, steerId });
+      }
       return { ok: true };
     } catch {
       return { ok: false, reason: "rejected", agent: target.agent };
@@ -760,7 +782,7 @@ export class Coordinator {
       ? (this.pendingInputs().find(input => input.id === id) ?? this.pendingMessages().find(message => message.id === id))
       : this.pendingInputs().at(-1);
     if (!target || this.mailboxes[target.agent].cancel(target.id) === undefined) return undefined;
-    this.options.bus.publish({ kind: "canceled", id: target.id });
+    this.options.bus.publish({ kind: "canceled", id: target.id, agent: target.agent, text: target.text });
     return target;
   }
 

@@ -53,6 +53,7 @@ export class AgentMailbox {
   // 配送中のターンが処理している message。Budget の chain 追跡に使う（DESIGN.md §14）
   current: AgentMessage | undefined;
   private activeSend = false;
+  private currentInputId: string | undefined;
   private steering = false;
   private holdTimer: ReturnType<typeof setTimeout> | undefined;
   private resumeAt: number | undefined;
@@ -102,13 +103,25 @@ export class AgentMailbox {
     return this.queue.flatMap((item): RecoveryItem[] => {
       if (item.message) return [{ kind: "message", message: item.message }];
       if (item.inputId)
-        return [{ kind: "input", text: item.text, ...(item.images ? { images: [...item.images] } : {}), ...(item.context ? { context: true } : {}) }];
+        return [
+          {
+            kind: "input",
+            id: item.inputId,
+            text: item.text,
+            ...(item.images ? { images: [...item.images] } : {}),
+            ...(item.context ? { context: true } : {}),
+          },
+        ];
       return [];
     });
   }
 
   get activeSending(): boolean {
     return this.activeSend;
+  }
+
+  get activeInputId(): string | undefined {
+    return this.currentInputId;
   }
 
   get isClosed(): boolean {
@@ -270,6 +283,7 @@ export class AgentMailbox {
     try {
       for (let item = this.queue.shift(); item; item = this.paused ? undefined : this.queue.shift()) {
         this.activeSend = item.kind === "send";
+        this.currentInputId = item.inputId;
         this.current = item.message;
         this.onChange();
         try {
@@ -284,6 +298,7 @@ export class AgentMailbox {
           if (hold) this.hold(hold);
         } finally {
           this.current = undefined;
+          this.currentInputId = undefined;
           this.activeSend = false;
           this.onChange();
         }

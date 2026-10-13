@@ -47,6 +47,33 @@ describe("FeedStore", () => {
     expect(store.load("a")).toEqual([output(3)]);
     expect(readFileSync(join(store.directory, "a.jsonl"), "utf8")).not.toContain("取り消す");
   });
+  it("旧 feed の ID が無い入力は同文の最後だけを取り消す", () => {
+    const store = new FeedStore(makeDir());
+    const first: HistoryItem = { type: "event", seq: 1, event: { kind: "human", agent: "codex", text: "同文", at: "first" } };
+    const second: HistoryItem = { type: "event", seq: 2, event: { kind: "human", agent: "codex", text: "同文", at: "second" } };
+    store.append("a", first);
+    store.append("a", second);
+    store.remove("a", "in2", "codex", "同文");
+    expect(store.load("a")).toEqual([first]);
+  });
+  it("中断した入力の ID を保存して再生する", () => {
+    const store = new FeedStore(makeDir());
+    const item: HistoryItem = {
+      type: "event",
+      seq: 2,
+      event: { kind: "agent", agent: "codex", at: "now", inputIds: ["in1", "s1"], event: { type: "turn", result: { status: "interrupted", text: "" } } },
+    };
+    store.append("a", item);
+    expect(store.load("a")).toEqual([item]);
+  });
+  it("表示用の件数制限より古い発言からも入力 ID を読む", () => {
+    const store = new FeedStore(makeDir(), 2);
+    store.append("a", { type: "event", seq: 1, event: { kind: "human", agent: "codex", inputId: "in12", text: "前回", at: "now" } });
+    store.append("a", output(2));
+    store.append("a", output(3));
+    expect(store.load("a")).toEqual([output(2), output(3)]);
+    expect(store.inputIds("a")).toEqual(["in12"]);
+  });
   it("以前に保存した /context の内部指示を表示から除く", () => {
     const store = new FeedStore(makeDir());
     store.append("a", {

@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, unlin
 import { basename, extname, join } from "node:path";
 import type { AgentId } from "../agents/agent-adapter.js";
 import { withoutContextInstruction } from "../context/conversation-instruction.js";
-import { DEFAULT_RECENT_ITEMS, type HistoryItem, isCanceledHistoryItem } from "./web-feed.js";
+import { DEFAULT_RECENT_ITEMS, type HistoryItem, withoutCanceledHistoryItem } from "./web-feed.js";
 
 const FEED_EXT = ".jsonl";
 // limit のこの倍を超えたら直近だけに書き直す
@@ -99,11 +99,11 @@ export class FeedStore {
     appendFileSync(this.pathOf(conversationId), toLines([item]));
   }
 
-  remove(conversationId: string, id: string): void {
+  remove(conversationId: string, id: string, agent?: AgentId, text?: string): void {
     const path = this.pathOf(conversationId);
     if (!existsSync(path)) return;
     const { items } = readItems(path);
-    writeFileSync(path, toLines(items.filter(item => !isCanceledHistoryItem(item, id))));
+    writeFileSync(path, toLines(withoutCanceledHistoryItem(items, id, agent, text)));
   }
 
   // 読めなくても起動や会話の切り替えは妨げない（空の feed として扱う）
@@ -115,6 +115,16 @@ export class FeedStore {
       const items = all.slice(-this.limit);
       if (lines > this.limit * COMPACT_FACTOR) writeFileSync(path, toLines(items));
       return [...items, ...interruptionsOf(items, working)].slice(-this.limit);
+    } catch {
+      return [];
+    }
+  }
+
+  inputIds(conversationId: string): string[] {
+    try {
+      const path = this.pathOf(conversationId);
+      if (!existsSync(path)) return [];
+      return readItems(path).items.flatMap(item => (item.type === "event" && item.event.kind === "human" && item.event.inputId ? [item.event.inputId] : []));
     } catch {
       return [];
     }

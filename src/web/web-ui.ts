@@ -40,7 +40,7 @@ export const connectWebFeed = (source: EventSource, feed: WebFeed, buildState: (
   };
 
   source.subscribe(event => {
-    if (event.kind === "canceled") feed.cancel(event.id);
+    if (event.kind === "canceled") feed.cancel(event.id, event.agent, event.text);
     else if (event.kind === "notice") feed.publishToast(event.text, event.level ?? "info");
     else if (isFeedEvent(event)) feed.publishEvent(event, envelopeOf(event, typeof language === "function" ? language() : language));
     refreshState();

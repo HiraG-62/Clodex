@@ -5,7 +5,7 @@ import type { AgentMessage } from "../../protocol/messages.js";
 import type { UserQuestion } from "../../protocol/questions.js";
 import type { FeedItem, HistoryItem } from "../web-feed.js";
 
-export { isCanceledHistoryItem } from "../web-feed.js";
+export { isCanceledHistoryItem, withoutCanceledHistoryItem } from "../web-feed.js";
 
 export type TimelineStep = { kind: "say"; text: string; at: string } | { kind: "tool"; name: string; input: string; files?: string[] };
 
@@ -21,6 +21,7 @@ export type TimelineItem =
       steer?: boolean;
       steerId?: string;
       delivered?: boolean;
+      interrupted?: boolean;
       queued?: boolean;
     }
   | {
@@ -161,8 +162,13 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   if (item.type === "state" || item.type === "version" || item.type === "toast" || item.type === "notify" || item.type === "gui" || item.type === "gui_command")
     return items;
   if (item.type === "reset") return [];
-  if (item.type === "cancel")
-    return items.flatMap(entry => {
+  if (item.type === "cancel") {
+    const hasId = items.some(entry => (entry.kind === "human" && entry.inputId === item.id) || (entry.kind === "message" && entry.message.id === item.id));
+    const legacyIndex = hasId
+      ? -1
+      : items.findLastIndex(entry => entry.kind === "human" && !entry.inputId && entry.agent === item.agent && entry.text === item.text);
+    return items.flatMap((entry, index) => {
+      if (index === legacyIndex) return [];
       if (entry.kind === "human" && entry.inputId === item.id) return [];
       if (entry.kind === "message" && entry.message.id === item.id) return [];
       if (entry.kind === "turn" && entry.messages?.some(message => message.message.id === item.id))
@@ -175,6 +181,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
         ];
       return [entry];
     });
+  }
   if (item.type === "output") {
     const last = items[items.length - 1];
     if (last?.kind === "output") return [...items.slice(0, -1), { ...last, text: `${last.text}\n${item.text}` }];
@@ -269,6 +276,11 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
       }));
     case "turn": {
       const { status, text } = agentEvent.result;
+      if (status === "interrupted" && event.inputIds?.length) {
+        items = items.map(entry =>
+          entry.kind === "human" && event.inputIds?.includes(entry.inputId ?? entry.steerId ?? "") ? { ...entry, interrupted: true } : entry,
+        );
+      }
       const finish = (turn: Turn): Turn => {
         const last = turn.steps[turn.steps.length - 1];
         // 最終応答は本文として出すので、同じ内容の最後の発言は作業から外す

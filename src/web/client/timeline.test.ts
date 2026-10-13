@@ -11,6 +11,7 @@ import {
   mergeReplayHistory,
   rebuildTimeline,
   type TimelineItem,
+  withoutCanceledHistoryItem,
   withStartingTurns,
   withSubagentRows,
   withWorkingTurnsLast,
@@ -72,6 +73,35 @@ it("取り消した入力と formal message を履歴と画面から除く", () 
   expect(run([...history, { type: "cancel", id: "in1" }, { type: "cancel", id: message.event.kind === "message" ? message.event.message.id : "" }])).toEqual(
     [],
   );
+});
+
+it("旧 feed の ID が無い同文の入力は、最後の 1 件だけ消す", () => {
+  const first = human("codex", "取り消す");
+  const second = human("codex", "取り消す");
+  const cancel: FeedItem = { type: "cancel", id: "in9", agent: "codex", text: "取り消す" };
+  expect(withoutCanceledHistoryItem([first, second], cancel.id, cancel.agent, cancel.text)).toEqual([first]);
+  expect(run([first, second, cancel])).toMatchObject([{ kind: "human", id: `e${first.seq}` }]);
+});
+
+it("中断したターンの入力と steer 入力に印を付け、feed の再生でも保持する", () => {
+  const first: FeedItem = { type: "event", seq: 2001, event: { kind: "human", agent: "codex", inputId: "in1", text: "作業", at: AT } };
+  const steer: FeedItem = { type: "event", seq: 2002, event: { kind: "human", agent: "codex", text: "追加", steer: true, steerId: "s1", at: AT } };
+  const end: FeedItem = {
+    type: "event",
+    seq: 2003,
+    event: { kind: "agent", agent: "codex", at: LATER, inputIds: ["in1", "s1"], event: { type: "turn", result: { status: "interrupted", text: "" } } },
+  };
+  const history = [first, steer, end] as Extract<FeedItem, { type: "event" }>[];
+  expect(rebuildTimeline(history, applyFeedItem).filter(item => item.kind === "human")).toMatchObject([
+    { text: "作業", interrupted: true },
+    { text: "追加", interrupted: true },
+  ]);
+  const completed: FeedItem = {
+    type: "event",
+    seq: 2004,
+    event: { kind: "agent", agent: "codex", at: LATER, inputIds: ["in1"], event: { type: "turn", result: { status: "completed", text: "ok" } } },
+  };
+  expect(run([first, completed]).find(item => item.kind === "human")).not.toHaveProperty("interrupted");
 });
 
 it("live の履歴だけを表示と同じ上限で切る", () => {

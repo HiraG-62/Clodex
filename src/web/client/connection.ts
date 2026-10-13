@@ -8,10 +8,10 @@ import type { TimelineItem } from "./timeline.js";
 import {
   announcementKind,
   applyFeedItem,
-  isCanceledHistoryItem,
   limitLiveHistory,
   mergeReplayHistory,
   rebuildTimeline,
+  withoutCanceledHistoryItem,
   withStartingTurns,
 } from "./timeline.js";
 
@@ -181,8 +181,8 @@ export function createConnection(ctx: ClientContext) {
         return;
       }
       if (item.type === "cancel") {
-        ctx.store.incomingHistory = ctx.store.incomingHistory.filter(entry => !isCanceledHistoryItem(entry, item.id));
-        ctx.store.history = ctx.store.history.filter(entry => !isCanceledHistoryItem(entry, item.id));
+        ctx.store.incomingHistory = withoutCanceledHistoryItem(ctx.store.incomingHistory, item.id, item.agent, item.text);
+        ctx.store.history = withoutCanceledHistoryItem(ctx.store.history, item.id, item.agent, item.text);
         ctx.store.items = rebuildTimeline(ctx.store.history, applyFeedItem);
         scheduleLog();
         return;

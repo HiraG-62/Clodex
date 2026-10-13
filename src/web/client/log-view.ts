@@ -62,6 +62,7 @@ export function createLogView(ctx: ClientContext) {
             head.append(delivered);
           }
         }
+        if (item.interrupted) head.append(ctx.el("span", "kind interrupted", ctx.t("web.turn.interrupted")));
         const body = ctx.el("div", "body md");
         body.innerHTML = renderMarkdown(item.text);
         node.append(ctx.mark("you"), head, body);
