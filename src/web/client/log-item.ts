@@ -7,6 +7,7 @@ import type { ClientContext } from "./store.js";
 import type { TimelineItem } from "./timeline.js";
 
 const VISIBLE_REFERENCE_FILES = 3;
+const PLAN_KEY_PREFIX = "plan:";
 
 export function splitReferenceFiles(files: readonly string[]): { visible: string[]; hidden: string[] } {
   return { visible: files.slice(0, VISIBLE_REFERENCE_FILES), hidden: files.slice(VISIBLE_REFERENCE_FILES) };
@@ -20,6 +21,35 @@ export function createLogItem(ctx: ClientContext) {
     node.append(ctx.el("summary", "", summary), body);
     node.addEventListener("toggle", () => ctx.store.opened.set(id, node.open));
     return node;
+  };
+
+  const renderPlan = (item: Extract<TimelineItem, { kind: "turn" }>): HTMLElement => {
+    const plan = ctx.el("div", "plan");
+    const content = ctx.el("div", "plan-content md");
+    content.innerHTML = renderMarkdown(item.plan ?? "");
+    linkImagePaths(content, item.at);
+    plan.append(content);
+    const key = `${PLAN_KEY_PREFIX}${item.id}`;
+    const expanded = ctx.store.opened.get(key) ?? false;
+    plan.classList.toggle("expanded", expanded);
+    plan.setAttribute("role", "button");
+    plan.setAttribute("aria-expanded", String(expanded));
+    plan.tabIndex = 0;
+    const toggle = () => {
+      const open = plan.classList.toggle("expanded");
+      plan.setAttribute("aria-expanded", String(open));
+      ctx.store.opened.set(key, open);
+    };
+    plan.addEventListener("click", event => {
+      if ((event.target as Element).closest("a, button, .image-link")) return;
+      toggle();
+    });
+    plan.addEventListener("keydown", event => {
+      if (event.target !== plan || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      toggle();
+    });
+    return plan;
   };
 
   // tool 名を短い種類にする（Claude: Read / Bash / mcp__clodex__send_message、Codex: command / clodex.send_message）
@@ -136,9 +166,7 @@ export function createLogItem(ctx: ClientContext) {
     if (change.plan) {
       node.querySelector(":scope > .plan")?.remove();
       if (next.plan) {
-        const plan = ctx.el("div", "plan md");
-        plan.innerHTML = renderMarkdown(next.plan);
-        linkImagePaths(plan, next.at);
+        const plan = renderPlan(next);
         head.after(plan);
         updated.push(plan);
       }
@@ -210,9 +238,7 @@ export function createLogItem(ctx: ClientContext) {
     }
     node.append(head);
     if (item.plan) {
-      const plan = ctx.el("div", "plan md");
-      plan.innerHTML = renderMarkdown(item.plan);
-      node.append(plan);
+      node.append(renderPlan(item));
     }
     const finalStep = (item.messages?.length || item.questions?.length) && item.text ? [{ kind: "say" as const, text: item.text, at: item.at }] : [];
     const steps = [...item.steps, ...finalStep];

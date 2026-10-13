@@ -1,5 +1,6 @@
 import { discardMissingOpened, sameWorkingEntry } from "./log-diff.js";
 import { renderMarkdown } from "./markdown.js";
+import { captureScrollPosition, restoreScrollPosition } from "./scroll-position.js";
 import type { ClientContext } from "./store.js";
 import type { DisplayTimelineItem, TimelineItem } from "./timeline.js";
 import { type WorkingEntry, withStartingTurns, withSubagentRows, withWorkingTurnsLast, workingFeed } from "./timeline.js";
@@ -134,7 +135,7 @@ export function createLogView(ctx: ClientContext) {
     const feedChanged =
       feed.length !== previousFeed.length || feed.some((entry, index) => !previousFeed[index] || !sameWorkingEntry(previousFeed[index], entry));
     if (!feedChanged) return;
-    const following = list.scrollHeight - list.scrollTop - list.clientHeight < ctx.NEAR_BOTTOM_PX;
+    const position = captureScrollPosition(list, ctx.NEAR_BOTTOM_PX);
     feed.forEach((entry, index) => {
       if (previousFeed[index] && sameWorkingEntry(previousFeed[index], entry)) return;
       let node: HTMLElement;
@@ -165,7 +166,7 @@ export function createLogView(ctx: ClientContext) {
     });
     while (list.children.length > feed.length) list.lastElementChild?.remove();
     previousFeed = feed;
-    if (following) list.scrollTop = list.scrollHeight;
+    restoreScrollPosition(list, position);
   };
   workingToggle.addEventListener("click", () => setWorkingOpen(Boolean(workingPanel.hidden)));
   ctx.$("#working-close").addEventListener("click", () => {
@@ -247,7 +248,10 @@ export function createLogView(ctx: ClientContext) {
     const openedKeep = new Set(keep);
     for (const item of visibleItems) {
       if (item.kind === "message") openedKeep.add(`refs:${item.id}`);
-      if (item.kind === "turn") for (const message of item.messages ?? []) openedKeep.add(`refs:${message.message.id}`);
+      if (item.kind === "turn") {
+        openedKeep.add(`plan:${item.id}`);
+        for (const message of item.messages ?? []) openedKeep.add(`refs:${message.message.id}`);
+      }
     }
     const anchor = (() => {
       if (stick) return undefined;

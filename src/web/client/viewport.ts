@@ -1,4 +1,5 @@
 import { chooseProjectPath } from "./project-picker.js";
+import { captureScrollPosition, restoreScrollPosition } from "./scroll-position.js";
 import type { ClientContext } from "./store.js";
 
 export function createViewport(ctx: ClientContext) {
@@ -95,6 +96,7 @@ export function createViewport(ctx: ClientContext) {
     dragStart = undefined;
   });
   const syncViewport = () => {
+    const position = captureScrollPosition(ctx.log, ctx.NEAR_BOTTOM_PX);
     const viewport = window.visualViewport;
     const focused = document.activeElement?.matches("input, textarea, select");
     const keyboard = ctx.mobile.matches && focused && viewport && viewport.scale === 1 && window.innerHeight - viewport.height > ctx.KEYBOARD_THRESHOLD_PX;
@@ -108,6 +110,7 @@ export function createViewport(ctx: ClientContext) {
       root.removeProperty("--viewport-height");
       root.removeProperty("--viewport-top");
     }
+    restoreScrollPosition(ctx.log, position);
   };
   window.visualViewport?.addEventListener("resize", syncViewport);
   window.visualViewport?.addEventListener("scroll", syncViewport);
