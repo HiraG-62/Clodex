@@ -6,12 +6,14 @@ import type { UserQuestion } from "../protocol/questions.js";
 export type CoordinatorEventInput =
   | { kind: "agent"; agent: AgentId; event: AgentEvent; handoff?: true; inputIds?: string[] }
   | { kind: "message"; message: AgentMessage }
-  | { kind: "human"; agent: AgentId; text: string; inputId?: string; steer?: boolean; steerId?: string } // steer: 実行中のターンに足した
+  | { kind: "human"; agent: AgentId; text: string; inputId?: string; steer?: boolean; steerId?: string; nextRound?: true } // steer: 実行中のターンに足した
   | { kind: "canceled"; id: string; agent?: AgentId; text?: string }
   | { kind: "steered"; inputId: string; steerId: string }
+  | { kind: "brainstormReleased"; inputId: string }
   | { kind: "question"; id: string; agent: AgentId; questions: UserQuestion[] }
   | { kind: "answer"; id: string; agent: AgentId; answers: string[][] }
-  | { kind: "notice"; text: string; level?: "warn"; limitHold?: { agent: AgentId; time: string } };
+  | { kind: "notice"; text: string; level?: "warn"; limitHold?: { agent: AgentId; time: string } }
+  | { kind: "brainstorm"; phase: "round" | "summary"; round?: number; total: number; artifact?: string };
 
 export type CoordinatorEvent = CoordinatorEventInput & { at: string };
 

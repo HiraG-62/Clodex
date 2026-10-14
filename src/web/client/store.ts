@@ -48,6 +48,7 @@ export interface SharedStore {
     | "projects"
     | "shared"
     | "artifacts"
+    | "brainstorm"
     | "viewer"
     | undefined;
   sendKey: SendKey;
@@ -178,6 +179,7 @@ export interface ClientContext extends ClientDeps {
   refreshPush: (body: HTMLElement) => void;
   syncLimitActions: (form: HTMLElement) => void;
   openConversations: () => void;
+  openBrainstorm: () => void;
   THEME_ICON: Record<Theme, string>;
   syncThemeButton: (button: HTMLButtonElement, text: boolean) => void;
   cycleTheme: () => void;

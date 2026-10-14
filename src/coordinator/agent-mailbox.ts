@@ -15,6 +15,7 @@ interface QueueItem {
   suffix?: string; // 配送するときだけ本文の末尾に足す（送信待ちの表示には出さない）
   context?: true;
   fresh?: true;
+  signal?: AbortSignal;
   resolve: (result: TurnResult) => void;
 }
 
@@ -25,6 +26,7 @@ export interface EnqueueOptions {
   suffix?: string;
   context?: true;
   fresh?: true;
+  signal?: AbortSignal;
 }
 
 export interface QueuedSend {
@@ -72,7 +74,7 @@ export class AgentMailbox {
   ) {}
 
   // 失敗しても reject せず failed の TurnResult を返す（呼び出し側は待たずに投げてよい）
-  enqueue(text: string, { message, inputId, images, suffix, context, fresh }: EnqueueOptions = {}): Promise<TurnResult> {
+  enqueue(text: string, { message, inputId, images, suffix, context, fresh, signal }: EnqueueOptions = {}): Promise<TurnResult> {
     if (this.closed) return Promise.resolve(CLOSED_RESULT);
     return this.push({
       kind: "send",
@@ -83,6 +85,7 @@ export class AgentMailbox {
       ...(suffix ? { suffix } : {}),
       ...(context ? { context } : {}),
       ...(fresh ? { fresh } : {}),
+      ...(signal ? { signal } : {}),
     });
   }
 
@@ -292,7 +295,7 @@ export class AgentMailbox {
               ? await this.compact()
               : item.kind === "model" || item.kind === "effort"
                 ? await this.setting(item.kind, item.text)
-                : await this.deliver(`${item.text}${item.suffix ?? ""}`, item.images, item.fresh);
+                : await this.deliver(`${item.text}${item.suffix ?? ""}`, item.images, item.fresh, item.signal);
           item.resolve(result);
           const hold = item.kind === "send" && result.status === "failed" ? this.limitHold() : undefined;
           if (hold) this.hold(hold);
@@ -321,14 +324,16 @@ export class AgentMailbox {
     }
   }
 
-  private async deliver(text: string, images?: readonly string[], fresh?: true): Promise<TurnResult> {
+  private async deliver(text: string, images?: readonly string[], fresh?: true, signal?: AbortSignal): Promise<TurnResult> {
     try {
+      if (signal?.aborted) return CANCELED_RESULT;
       if (fresh && this.sessionId) {
         await this.agent.stop();
         this.onFreshSession();
         this.switchSession(undefined);
       }
       await this.ensureRunning();
+      if (signal?.aborted) return CANCELED_RESULT;
       return await this.agent.send(`${text}${this.deliveryNote()}`, images);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

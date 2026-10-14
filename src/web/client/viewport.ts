@@ -128,6 +128,7 @@ export function createViewport(ctx: ClientContext) {
   ctx.$("#open-conversations").addEventListener("click", ctx.openConversations);
   ctx.$("#open-settings").addEventListener("click", ctx.openSettings);
   ctx.$("#new-conversation").addEventListener("click", () => void ctx.send("/new", ctx.$("#new-conversation")));
+  ctx.$("#new-brainstorm").addEventListener("click", ctx.openBrainstorm);
   ctx.$("#open-artifacts").addEventListener("click", ctx.openArtifacts);
   ctx.$("#open-shared").addEventListener("click", ctx.openShared);
   ctx.$("#projects").addEventListener("change", event => {

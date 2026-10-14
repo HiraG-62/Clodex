@@ -16,6 +16,20 @@ describe("feedDirPath", () => {
 });
 
 describe("FeedStore", () => {
+  it("ブレストの周と資料の event を保存して再生する", () => {
+    const store = new FeedStore(makeDir());
+    const round: HistoryItem = { type: "event", seq: 1, event: { kind: "brainstorm", phase: "round", round: 1, total: 2, at: "now" } };
+    const artifact: HistoryItem = {
+      type: "event",
+      seq: 2,
+      event: { kind: "brainstorm", phase: "summary", total: 2, artifact: "C:\\out\\summary.md", at: "later" },
+    };
+    const released: HistoryItem = { type: "event", seq: 3, event: { kind: "brainstormReleased", inputId: "in1", at: "later" } };
+    store.append("a", round);
+    store.append("a", artifact);
+    store.append("a", released);
+    expect(store.load("a")).toEqual([round, artifact, released]);
+  });
   it("以前に保存した notice を読み込まない", () => {
     const store = new FeedStore(makeDir());
     store.append("a", output(1));

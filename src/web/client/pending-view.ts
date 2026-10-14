@@ -81,6 +81,7 @@ export function createPendingView(ctx: ClientContext) {
       const branch = conversation.branch ? ` · ⎇ ${conversation.branch}` : "";
       const meta = `${activity}${ctx.shortDate(conversation.updatedAt)} · ${Object.keys(conversation.sessions).join(", ") || "—"}${branch}`;
       const title = ctx.el("span", "t", conversation.title ?? ctx.t("web.conv.untitled"));
+      if (conversation.mode === "brainstorm") title.prepend(ctx.el("span", "conv-brainstorm", `${ctx.t("web.brainstorm")} · `));
       const parent = conversation.parent && ctx.store.state?.conversations.find(entry => entry.id === conversation.parent?.conversationId);
       if (conversation.parent) {
         const label = ctx.t("web.conv.parallelParent", { title: parent?.title ?? ctx.t("web.conv.untitled") });

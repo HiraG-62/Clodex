@@ -185,6 +185,17 @@ export const openProject = async ({
     bus.subscribe(event => transcript.append(event));
     const workDir = conversation.workDir ?? projectRoot;
     await sandbox.allowWorktree(workDir);
+    const startSettings = resolveStartSettings({
+      saved: sandbox.enabled
+        ? {
+            ...settingsStore.load(),
+            claude: { ...settingsStore.load().claude, permission: "full" },
+            codex: { ...settingsStore.load().codex, permission: "full" },
+          }
+        : settingsStore.load(),
+      models: args.models,
+      ...(config.permission ? { configPermission: config.permission } : {}),
+    });
     let coordinator: Coordinator | undefined;
     const mcp = await startMcpServer({
       sendMessage: (from, input) => coordinator!.receiveMessageFromTool(from, input),
@@ -215,21 +226,15 @@ export const openProject = async ({
             forwardFailureToParent: (message: AgentMessage, error: string) => workspace!.forwardFailureToParent(conversation, message, error),
           }
         : {}),
-      settings: resolveStartSettings({
-        saved: sandbox.enabled
-          ? {
-              ...settingsStore.load(),
-              claude: { ...settingsStore.load().claude, permission: "full" },
-              codex: { ...settingsStore.load().codex, permission: "full" },
-            }
-          : settingsStore.load(),
-        models: args.models,
-        ...(config.permission ? { configPermission: config.permission } : {}),
-      }),
+      settings:
+        conversation.mode === "brainstorm"
+          ? { claude: { ...startSettings.claude, permission: "read-only" }, codex: { ...startSettings.codex, permission: "read-only" } }
+          : startSettings,
       ...(config.freshThread ? { freshThread: config.freshThread } : {}),
       clearSession: agent => history.clearSession(agent, conversation.id),
       instructions: id =>
         buildRoleInstructions(id, config.roles, {
+          brainstorm: conversation.mode === "brainstorm",
           language: typeof language === "function" ? language() : language,
           artifactsDir,
           usageHints: config.usageHints?.[id] === true,
@@ -242,6 +247,14 @@ export const openProject = async ({
       soloReleased: agent => history.soloReleasedOf(conversation.id, agent),
       consumeSoloReleased: agent => history.consumeSoloReleased(conversation.id, agent),
       language,
+      ...(conversation.brainstorm
+        ? {
+            brainstorm: conversation.brainstorm,
+            brainstormArtifactsDir: artifactsDir,
+            brainstormPrimary: primary,
+            brainstormComplete: savedFeed.some(item => item.type === "event" && item.event.kind === "brainstorm" && Boolean(item.event.artifact)),
+          }
+        : {}),
     });
     attachEventLog(bus, {
       path: defaultLogPath(homeDir, projectRoot, startedAt, conversation.id.slice(0, LOG_SUFFIX_LENGTH)),

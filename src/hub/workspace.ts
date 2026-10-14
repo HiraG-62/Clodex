@@ -198,15 +198,20 @@ export class Workspace {
   }
 
   // worktree: 新しい会話用の worktree を作り、その会話の作業場所にする。作れなければ理由を返す（切り替えない）
-  async startNew({ worktree = false }: { worktree?: boolean } = {}): Promise<string | undefined> {
+  async startNew({ worktree = false, brainstorm }: { worktree?: boolean; brainstorm?: { topic: string; rounds: number } } = {}): Promise<string | undefined> {
     if (worktree) {
       const created = await this.options.createWorktree(this.options.projectRoot, randomUUID());
       if (!created.ok) return created.error;
       this.options.history.startNew(created.worktree);
     } else {
-      this.options.history.startNew();
+      this.options.history.startNew(brainstorm ? { mode: "brainstorm", brainstorm, title: brainstorm.topic } : {});
     }
-    this.notifySwitch(await this.ensure(this.options.history.current));
+    const runtime = await this.ensure(this.options.history.current);
+    this.notifySwitch(runtime);
+    if (brainstorm)
+      void runtime.coordinator.startBrainstorm().catch(error => {
+        runtime.bus.publish({ kind: "notice", text: error instanceof Error ? error.message : String(error), level: "warn" });
+      });
     return undefined;
   }
 

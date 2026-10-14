@@ -63,6 +63,7 @@ export function createLogView(ctx: ClientContext) {
             head.append(delivered);
           }
         }
+        if (item.nextRound) head.append(ctx.el("span", "kind", ctx.t("web.brainstorm.next")));
         if (item.interrupted) head.append(ctx.el("span", "kind interrupted", ctx.t("web.turn.interrupted")));
         const body = ctx.el("div", "body md");
         body.innerHTML = renderMarkdown(item.text);
@@ -78,6 +79,12 @@ export function createLogView(ctx: ClientContext) {
         return ctx.renderMessage(item);
       case "notice":
         return ctx.el("div", "notice", item.compactAgent ? ctx.t("web.notice.compacted", { agent: ctx.AGENTS[item.compactAgent].name }) : item.text);
+      case "brainstorm":
+        return ctx.el(
+          "div",
+          "brainstorm-heading",
+          item.phase === "summary" ? ctx.t("web.brainstorm.summary") : ctx.t("web.brainstorm.round", { round: item.round ?? 1, total: item.total }),
+        );
       case "error":
         return ctx.el("div", "error-row", `${ctx.AGENTS[item.agent].name}: ${item.text}`);
       case "output":

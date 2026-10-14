@@ -23,6 +23,7 @@ export type TimelineItem =
       delivered?: boolean;
       interrupted?: boolean;
       queued?: boolean;
+      nextRound?: true;
     }
   | {
       kind: "turn";
@@ -44,6 +45,7 @@ export type TimelineItem =
     }
   | { kind: "message"; id: string; at: string; message: AgentMessage; envelope?: string }
   | { kind: "notice"; id: string; at: string; text: string; compactAgent?: AgentId }
+  | { kind: "brainstorm"; id: string; at: string; phase: "round" | "summary"; round?: number; total: number }
   | { kind: "error"; id: string; at: string; agent: AgentId; text: string }
   | { kind: "output"; id: string; text: string };
 
@@ -77,7 +79,7 @@ export function withStartingTurns(
     if (agent.status === "stopped") continue;
     const last = items.findLast(item => "agent" in item && item.agent === agent.id && ["human", "turn", "error"].includes(item.kind));
     if (agent.status === "busy" || pendingInputs.some(input => input.agent === agent.id)) {
-      if (last?.kind === "human" && !last.queued && !last.steer) result[result.indexOf(last)] = { ...last, queued: true };
+      if (last?.kind === "human" && !last.queued && !last.steer && !last.nextRound) result[result.indexOf(last)] = { ...last, queued: true };
       continue;
     }
     if (last?.kind === "turn" && last.status === "working" && last.segment !== "closed") continue;
@@ -239,10 +241,20 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
         ...(event.inputId ? { inputId: event.inputId } : {}),
         ...(event.steer ? { steer: true } : {}),
         ...(event.steerId ? { steerId: event.steerId } : {}),
+        ...(event.nextRound ? { nextRound: true } : {}),
       },
     ]);
   }
   if (event.kind === "notice") return items;
+  if (event.kind === "brainstorm") {
+    if (event.artifact) {
+      const index = items.findLastIndex(entry => entry.kind === "turn" && entry.status === "completed");
+      return items.map((entry, i) => (i === index && entry.kind === "turn" ? { ...entry, text: `${entry.text}\n\n[資料](<${event.artifact}>)` } : entry));
+    }
+    return limit([...items, { kind: "brainstorm", id, at: event.at, phase: event.phase, ...(event.round ? { round: event.round } : {}), total: event.total }]);
+  }
+  if (event.kind === "brainstormReleased")
+    return items.map(entry => (entry.kind === "human" && entry.inputId === event.inputId ? { ...entry, nextRound: undefined } : entry));
   if (event.kind === "message") {
     if (event.message.type !== "ACK") {
       const from = event.message.from;

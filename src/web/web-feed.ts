@@ -35,6 +35,7 @@ export interface WebState {
   roles: Partial<Record<AgentId, string>>;
   rolePreset?: RolePresetName;
   agents: AgentState[];
+  brainstorm?: { phase: string; round: number; total: number };
   // activity: 動いている会話の状態（無ければ保存のみ。DESIGN.md §28 D1）
   conversations: Array<Conversation & { current: boolean; activity?: ConversationActivity }>;
   parallelChildren?: Array<Pick<Conversation, "id" | "title">>;

@@ -1,6 +1,7 @@
 // Agent 間の routing と lifecycle を決定論的に行う（DESIGN.md §3.9, §12）
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   AGENT_IDS,
   type AgentAdapter,
@@ -22,6 +23,7 @@ import { resolveSpecFile } from "../project/spec-file.js";
 import { type AgentMessage, type CreateMessageResult, createMessage, FOLLOWUP_TYPES, MAX_BODY_LENGTH } from "../protocol/messages.js";
 import type { AskUserResult, PendingQuestion } from "../protocol/questions.js";
 import { AgentMailbox } from "./agent-mailbox.js";
+import { type BrainstormConfig, type BrainstormResponse, roundPrompt, summaryPrompt } from "./brainstorm.js";
 import { type BudgetLimits, BudgetManager, humanBudgetError } from "./budget-manager.js";
 import { DeliveryNotes, OTHER_AGENT } from "./delivery-notes.js";
 import type { EventBus } from "./event-bus.js";
@@ -58,6 +60,7 @@ export const RECOVERY_CONTINUE = "[Clodex] Clodex restarted and your previous tu
 export type SoloMode = "free" | AgentId;
 const SOLO_REMINDER = "[Clodex] Solo mode: do not use send_message. Do all the work yourself.";
 const SOLO_REJECTED = "solo mode: the other agent is not available. Do the work yourself.";
+const BRAINSTORM_REJECTED = "brainstorm mode: do not use send_message";
 const STEER_IMAGE_INSTRUCTION = "[Clodex] Attached images (read them with your tools):";
 // 作業を頼む message は、配送したターンが失敗したら一度だけ送り直し、それでも失敗したら送信元に引き取らせる（DESIGN.md §12 配送ルール）
 const RETRIED_TYPES: ReadonlySet<AgentMessage["type"]> = new Set(["DELEGATE", "REVIEW_REQUEST", "QUESTION", "FIX", "ADD"]);
@@ -80,6 +83,10 @@ const handoffFallback = (message: AgentMessage, error: string) =>
   `Do not send it again. ${HANDOFF_ACTION[message.type] ?? "Do the work yourself"} and continue the task.`;
 
 export interface CoordinatorOptions {
+  brainstorm?: BrainstormConfig;
+  brainstormArtifactsDir?: string;
+  brainstormPrimary?: AgentId;
+  brainstormComplete?: boolean;
   permissionLocked?: () => boolean;
   canStart?: () => boolean;
   projectRoot: string;
@@ -141,6 +148,107 @@ export class Coordinator {
   private readonly backgroundTasks: Record<AgentId, SubagentState[]> = { claude: [], codex: [] };
   private readonly recoveryListeners = new Set<() => void>();
   private stoppingRecovery: ConversationRecovery | undefined;
+  private brainstormPhase: "idle" | "round" | "summary" | "done" | "stopped" = "idle";
+  private brainstormRound = 0;
+  private brainstormHuman: Array<{ id: string; agent: AgentId; targets: readonly AgentId[]; text: string }> = [];
+  private brainstormInFlightHuman: typeof this.brainstormHuman = [];
+  private brainstormInterrupted = false;
+  private readonly brainstormAbort = new AbortController();
+
+  get brainstormState(): { phase: string; round: number; total: number } | undefined {
+    const config = this.options.brainstorm;
+    return config ? { phase: this.brainstormPhase, round: this.brainstormRound, total: config.rounds } : undefined;
+  }
+
+  addBrainstormInput(agent: AgentId, text: string, targets: readonly AgentId[] = [agent]): void {
+    const id = `${INPUT_ID_PREFIX}${++this.inputSeq}`;
+    this.brainstormHuman.push({ id, agent, targets, text });
+    this.options.bus.publish({ kind: "human", agent, text, inputId: id, nextRound: true });
+    this.notifyRecoveryChange();
+  }
+
+  private takeBrainstormInput(): string[] {
+    this.brainstormInFlightHuman = this.brainstormHuman.splice(0);
+    this.notifyRecoveryChange();
+    return this.brainstormInFlightHuman.map(({ text }) => text);
+  }
+
+  private finishBrainstormInput(completed: boolean): void {
+    if (!completed) this.brainstormHuman.unshift(...this.brainstormInFlightHuman);
+    this.brainstormInFlightHuman = [];
+    this.notifyRecoveryChange();
+  }
+
+  private releaseBrainstormInput(): void {
+    for (const input of [...this.brainstormInFlightHuman.splice(0), ...this.brainstormHuman.splice(0)]) {
+      this.options.bus.publish({ kind: "brainstormReleased", inputId: input.id });
+      for (const target of input.targets) {
+        const inputId = target === input.agent ? input.id : `${INPUT_ID_PREFIX}${++this.inputSeq}`;
+        this.detach(this.mailboxes[target].enqueue(input.text, { inputId, suffix: this.reminder }), target);
+      }
+    }
+    this.notifyRecoveryChange();
+  }
+
+  async startBrainstorm(): Promise<void> {
+    const config = this.options.brainstorm;
+    if (!config || this.brainstormPhase !== "idle") return;
+    const responses: BrainstormResponse[] = [];
+    const peers: Record<AgentId, AgentId> = { claude: "codex", codex: "claude" };
+    for (let round = 1; round <= config.rounds; round++) {
+      if (this.brainstormInterrupted) break;
+      this.brainstormPhase = "round";
+      this.brainstormRound = round;
+      this.options.bus.publish({ kind: "brainstorm", phase: "round", round, total: config.rounds });
+      this.notifyRecoveryChange();
+      const human = this.takeBrainstormInput();
+      const turns = AGENT_IDS.map(id =>
+        this.mailboxes[id].enqueue(
+          roundPrompt(config, round, peers[id], responses.find(response => response.round === round - 1 && response.agent === peers[id])?.text ?? "", human),
+          { suffix: this.reminder, signal: this.brainstormAbort.signal },
+        ),
+      );
+      const results = await Promise.all(turns);
+      const completed = !this.brainstormInterrupted && results.every(result => result.status === "completed");
+      this.finishBrainstormInput(completed);
+      if (!completed) break;
+      for (const [index, id] of AGENT_IDS.entries()) responses.push({ round, agent: id, text: results[index]?.text ?? "" });
+    }
+    if (responses.length === config.rounds * AGENT_IDS.length && !this.brainstormInterrupted) {
+      this.brainstormPhase = "summary";
+      this.options.bus.publish({ kind: "brainstorm", phase: "summary", total: config.rounds });
+      this.notifyRecoveryChange();
+      const primary = this.options.brainstormPrimary ?? "claude";
+      const result = await this.mailboxes[primary].enqueue(summaryPrompt(config, responses, this.takeBrainstormInput()), {
+        suffix: this.reminder,
+        signal: this.brainstormAbort.signal,
+      });
+      this.finishBrainstormInput(result.status === "completed" && !this.brainstormInterrupted);
+      if (result.status === "completed" && !this.brainstormInterrupted) {
+        const dir = this.options.brainstormArtifactsDir;
+        if (dir) {
+          try {
+            mkdirSync(dir, { recursive: true });
+            const path = join(dir, `brainstorm-${new Date().toISOString().replace(/[:.]/g, "-")}.md`);
+            writeFileSync(path, `${result.text}\n`, "utf8");
+            this.options.bus.publish({ kind: "brainstorm", phase: "summary", total: config.rounds, artifact: path });
+          } catch (error) {
+            this.options.bus.publish({ kind: "notice", text: error instanceof Error ? error.message : String(error), level: "warn" });
+            this.brainstormPhase = "stopped";
+            this.notifyRecoveryChange();
+            return;
+          }
+        }
+        this.brainstormPhase = "done";
+        this.notifyRecoveryChange();
+        return;
+      }
+    }
+    this.brainstormPhase = "stopped";
+    this.releaseBrainstormInput();
+    this.options.bus.publish({ kind: "notice", text: t("notice.brainstormStopped"), level: "warn" });
+    this.notifyRecoveryChange();
+  }
 
   private detach(promise: Promise<unknown>, agent?: AgentId): void {
     void promise.catch((error: unknown) => {
@@ -163,13 +271,29 @@ export class Coordinator {
   recoveryState(): ConversationRecovery {
     if (this.stoppingRecovery) return this.stoppingRecovery;
     const interrupted = AGENT_IDS.filter(id => this.mailboxes[id].activeSending || this.mailboxes[id].holding || this.options.agents[id].status === "busy");
-    return this.workRecorder.recoveryState(this.pendingQuestions(), interrupted, {
+    const queue = {
       claude: this.mailboxes.claude.recoveryQueue,
       codex: this.mailboxes.codex.recoveryQueue,
-    });
+    };
+    for (const input of [...this.brainstormInFlightHuman, ...this.brainstormHuman]) {
+      for (const target of input.targets) {
+        queue[target].push({ kind: "input", ...(target === input.agent ? { id: input.id } : {}), text: input.text, brainstorm: true });
+      }
+    }
+    return {
+      ...this.workRecorder.recoveryState(this.pendingQuestions(), interrupted, queue),
+      ...(this.options.brainstorm ? { brainstormPhase: this.brainstormPhase } : {}),
+    };
   }
 
   restore(state: ConversationRecovery): void {
+    const interruptedBrainstorm = Boolean(
+      this.options.brainstorm && !this.options.brainstormComplete && state.brainstormPhase !== "stopped" && state.brainstormPhase !== "done",
+    );
+    if (this.options.brainstorm && !this.options.brainstormComplete) {
+      this.brainstormPhase = "stopped";
+      if (interruptedBrainstorm) this.options.bus.publish({ kind: "notice", text: t("notice.brainstormStopped"), level: "warn" });
+    }
     this.questions.restore(state.questions ?? []);
     for (const agent of AGENT_IDS) {
       for (const item of state.queue[agent]) {
@@ -177,7 +301,7 @@ export class Coordinator {
       }
     }
     for (const id of AGENT_IDS) this.mailboxes[id].pause();
-    for (const id of state.interrupted) {
+    for (const id of interruptedBrainstorm ? [] : state.interrupted) {
       if (this.mailboxes[id].sessionId)
         this.detach(
           this.mailboxes[id].enqueue(`${RECOVERY_CONTINUE}${this.workRecorder.recoveryWorkNote(state.lastWork?.[id])}`, { suffix: this.reminder }),
@@ -187,6 +311,7 @@ export class Coordinator {
     for (const id of AGENT_IDS) {
       for (const item of state.queue[id]) {
         if (item.kind === "input") {
+          if (item.brainstorm && item.id) this.options.bus.publish({ kind: "brainstormReleased", inputId: item.id });
           this.detach(
             this.mailboxes[id].enqueue(item.text, {
               inputId: item.id ?? `${INPUT_ID_PREFIX}${++this.inputSeq}`,
@@ -209,6 +334,7 @@ export class Coordinator {
   }
 
   constructor(private readonly options: CoordinatorOptions) {
+    if (options.brainstormComplete) this.brainstormPhase = "done";
     const { agents, bus, mcpUrlFor, instructions, limits, settings } = options;
     for (const inputId of options.knownInputIds ?? []) this.rememberInputId(inputId);
     this.deliveryNotes = new DeliveryNotes(options.soloReleased, options.consumeSoloReleased);
@@ -375,6 +501,7 @@ export class Coordinator {
   // MCP の send_message から呼ばれる。検証・記録・配送を行い、受理結果を送信元へ返す
   receiveMessage(from: AgentId, input: unknown): CreateMessageResult {
     const { projectRoot, createMessageId } = this.options;
+    if (this.options.brainstorm) return { ok: false, error: BRAINSTORM_REJECTED };
     if (this.options.solo?.()) return { ok: false, error: SOLO_REJECTED };
     const result = createMessage(input, {
       from,
@@ -388,6 +515,7 @@ export class Coordinator {
   }
 
   async receiveMessageFromTool(from: AgentId, input: unknown): Promise<CreateMessageResult> {
+    if (this.options.brainstorm) return { ok: false, error: BRAINSTORM_REJECTED };
     if (this.options.solo?.()) return { ok: false, error: SOLO_REJECTED };
     const result = createMessage(input, {
       from,
@@ -819,6 +947,10 @@ export class Coordinator {
 
   // Agent 指定なしは、Agent 間のやり取りも止める: 配送待ちの formal message を破棄し、chain を閉じる
   async interrupt(id?: AgentId): Promise<void> {
+    if (this.brainstormPhase === "round" || this.brainstormPhase === "summary") {
+      this.brainstormInterrupted = true;
+      this.brainstormAbort.abort();
+    }
     if (!id) this.stopExchanges();
     const targets = id ? [id] : AGENT_IDS;
     for (const target of targets) {
@@ -838,6 +970,7 @@ export class Coordinator {
   }
 
   async setPermission(level: PermissionLevel, id?: AgentId): Promise<void> {
+    if (this.options.brainstorm) return;
     if (this.options.permissionLocked?.()) throw new Error(t("sandbox.permission"));
     const targets = id ? [id] : AGENT_IDS;
     await Promise.all(targets.map(target => this.options.agents[target].setPermission(level)));

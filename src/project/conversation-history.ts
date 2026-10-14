@@ -29,6 +29,8 @@ const conversationSchema = z.strictObject({
   // DESIGN.md §11 Solo
   solo: z.union([z.literal("free"), z.enum(AGENT_IDS)]).optional(),
   soloReleased: z.array(z.enum(AGENT_IDS)).optional(),
+  mode: z.literal("brainstorm").optional(),
+  brainstorm: z.strictObject({ topic: z.string().min(1), rounds: z.number().int().min(1).max(5) }).optional(),
 });
 const stateSchema = z.strictObject({ conversations: z.array(conversationSchema) });
 
@@ -53,7 +55,7 @@ export const loadConversations = (path: string): Conversation[] => {
   }
 };
 
-const isWorthSaving = (c: Conversation) => Boolean(c.title || c.workDir || c.solo || c.soloReleased?.length || c.sessions.claude || c.sessions.codex);
+const isWorthSaving = (c: Conversation) => Boolean(c.title || c.workDir || c.solo || c.mode || c.soloReleased?.length || c.sessions.claude || c.sessions.codex);
 const byNewest = (a: Conversation, b: Conversation) => b.updatedAt.localeCompare(a.updatedAt);
 // ピン止めした会話は先頭に並べ、最大件数の枠に数えない
 const arrange = (conversations: Conversation[], protectedParentId?: string): Conversation[] => {
@@ -101,9 +103,9 @@ export class ConversationHistory {
   }
 
   // /new: 新しい会話を始める。前の会話は履歴に残る（session も入力も作業場所も無いうちは保存しない）
-  startNew(place: Pick<Conversation, "workDir" | "branch"> = {}): void {
-    this.currentConversation = { ...this.emptyConversation(), ...place };
-    if (place.workDir) this.save(list => list);
+  startNew(place: Pick<Conversation, "workDir" | "branch" | "mode" | "brainstorm" | "title"> = {}): void {
+    this.currentConversation = { ...this.emptyConversation(), ...place, ...(place.title ? { title: place.title.slice(0, TITLE_LENGTH) } : {}) };
+    if (place.workDir || place.mode) this.save(list => list);
     this.notifySwitch();
   }
 

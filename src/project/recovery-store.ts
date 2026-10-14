@@ -19,6 +19,7 @@ const itemSchema = z.discriminatedUnion("kind", [
     text: z.string(),
     images: z.array(z.string()).optional(),
     context: z.literal(true).optional(),
+    brainstorm: z.literal(true).optional(),
   }),
   z.strictObject({ kind: z.literal("message"), message: messageSchema }),
 ]);
@@ -28,6 +29,7 @@ const lastWorkSchema = z.strictObject({
   codex: workSchema.optional().catch(undefined),
 });
 const conversationSchema = z.strictObject({
+  brainstormPhase: z.enum(["idle", "round", "summary", "done", "stopped"]).optional(),
   questions: z.array(pendingQuestionSchema).optional(),
   interrupted: z.array(z.enum(AGENT_IDS)),
   queue: z.strictObject({ claude: z.array(itemSchema), codex: z.array(itemSchema) }),

@@ -1,6 +1,15 @@
 // 画面の文言カタログ（DESIGN.md §28 v0.3 i18n）。en がキーを決め、ja は同じキーをすべて持つ（欠けは型エラー）。
 // {name} は translate の params で置き換える。Agent 向けの指示（定型文・envelope・Budget のエラー）は英語のままで、ここには入れない
 export const en = {
+  "cmd.brainstorm": "brainstorm with Claude and Codex",
+  "shell.brainstormReadOnly": "Brainstorm · read-only",
+  "notice.brainstormStopped": "Brainstorm stopped",
+  "web.brainstorm": "Brainstorm",
+  "web.brainstorm.topic": "Topic",
+  "web.brainstorm.rounds": "Rounds",
+  "web.brainstorm.next": "Next round",
+  "web.brainstorm.round": "Brainstorm {round}/{total}",
+  "web.brainstorm.summary": "Summary",
   "cmd.language": "show or change language",
   "shell.language": "Language: {language}",
   "shell.languageFailed": "Language change failed: {message}",
@@ -452,6 +461,15 @@ export type MessageKey = keyof typeof en;
 export type Messages = Record<MessageKey, string>;
 
 export const ja: Messages = {
+  "cmd.brainstorm": "Claude と Codex でブレスト",
+  "shell.brainstormReadOnly": "ブレスト · 読み取り専用",
+  "notice.brainstormStopped": "ブレスト中断",
+  "web.brainstorm": "ブレスト",
+  "web.brainstorm.topic": "テーマ",
+  "web.brainstorm.rounds": "周回数",
+  "web.brainstorm.next": "次の周へ",
+  "web.brainstorm.round": "ブレスト {round}/{total}",
+  "web.brainstorm.summary": "まとめ",
   "cmd.language": "言語を表示・変更",
   "shell.language": "言語: {language}",
   "shell.languageFailed": "言語の変更失敗: {message}",

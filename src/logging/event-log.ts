@@ -94,6 +94,9 @@ export const formatEvent = (event: CoordinatorEvent, mode: DisplayMode): string 
     case "human":
       // 既定では入力行が画面に残っているので出さない
       return mode === "verbose" ? `${time} [YOU -> ${event.agent.toUpperCase()}] ${indentContinuation(event.text)}` : undefined;
+    case "brainstorm":
+      if (event.artifact) return `${time} [CLODEX] [資料](<${event.artifact}>)`;
+      return `${time} [CLODEX] ${event.phase === "summary" ? t("web.brainstorm.summary") : t("web.brainstorm.round", { round: event.round ?? 1, total: event.total })}`;
     case "agent": {
       const text = mode === "verbose" ? describeAgentEvent(event.event) : describeNormal(event.event);
       return text === undefined ? undefined : `${time} [${event.agent.toUpperCase()}] ${indentContinuation(text)}`;

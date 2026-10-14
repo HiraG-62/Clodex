@@ -37,6 +37,8 @@ export interface AgentState {
 }
 
 export interface ShellCoordinator {
+  readonly brainstormState?: { phase: string; round: number; total: number };
+  addBrainstormInput?(agent: AgentId, text: string, targets?: readonly AgentId[]): void;
   sendToAgent(agent: AgentId, text: string, images?: readonly string[], context?: boolean, shared?: boolean): Promise<TurnResult>;
   steerOrSend(agent: AgentId, text: string, context?: boolean, shared?: boolean): Promise<"steered" | "queued">;
   interrupt(agent?: AgentId): Promise<void>;
@@ -68,7 +70,7 @@ export interface ConversationList {
   // 今の会話を切り替える。前の会話の Agent は止めない（DESIGN.md §28 D1）
   switchTo(id: string): Promise<Conversation | undefined>;
   // worktree: 新しい会話用の worktree を作る。作れなければ理由を返す
-  startNew(options?: { worktree?: boolean }): Promise<string | undefined>;
+  startNew(options?: { worktree?: boolean; brainstorm?: { topic: string; rounds: number } }): Promise<string | undefined>;
   moveCurrentToWorktree(): Promise<WorktreeMoveResult>;
   clearSession(agent: AgentId): void;
   rename(title: string): void;
@@ -314,6 +316,11 @@ export const createShell = ({
   const handleSend = async (command: CommandOf<"send" | "sendAll">): Promise<ShellOutcome> => {
     // 送信はキューに積むだけ。ターン完了は Event Bus 経由で表示される
     if (rejectLocked(command.kind === "sendAll" ? AGENT_IDS : [command.agent])) return "continue";
+    const brainstorm = coordinator();
+    if (!command.steer && brainstorm.brainstormState?.phase === "round") {
+      brainstorm.addBrainstormInput?.(command.kind === "sendAll" ? primary : command.agent, command.text, command.kind === "sendAll" ? AGENT_IDS : undefined);
+      return "continue";
+    }
     if (busyElsewhere()) notify(t("notice.sameDirBusy"), "warn");
     const resolved = await resolveReferences(command.text, resolveReference);
     const text = command.kind === "sendAll" ? `${ALL_MESSAGE_PREFIX}\n${resolved.text}` : resolved.text;
@@ -624,6 +631,10 @@ export const createShell = ({
     return "continue";
   };
   const handlePermission = async (command: CommandOf<"permission">): Promise<ShellOutcome> => {
+    if (coordinator().brainstormState) {
+      print(t("shell.brainstormReadOnly"));
+      return "continue";
+    }
     if (sandbox?.enabled()) {
       print(t("sandbox.permission"));
       return "continue";
@@ -665,7 +676,13 @@ export const createShell = ({
     print(command.message);
     return "continue";
   };
+  const handleBrainstorm = async (command: CommandOf<"brainstorm">): Promise<ShellOutcome> => {
+    const error = await history().startNew({ brainstorm: { topic: command.topic, rounds: command.rounds } });
+    if (error) notify(error, "warn");
+    return "continue";
+  };
   const handlers = {
+    brainstorm: { requiresCurrent: true, run: handleBrainstorm },
     answer: { requiresCurrent: true, run: handleAnswer },
     empty: { requiresCurrent: false, run: handleEmpty },
     send: { requiresCurrent: true, run: handleSend },

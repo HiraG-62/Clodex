@@ -3,6 +3,7 @@ import type { ConversationActivity } from "./workspace.js";
 export interface TabConversation {
   id: string;
   title?: string;
+  mode?: "brainstorm";
   pinned?: boolean;
   activity?: ConversationActivity;
   parent?: { conversationId: string };
@@ -12,6 +13,7 @@ export interface ConversationTab {
   projectRoot: string;
   conversationId: string;
   title: string;
+  mode?: "brainstorm";
   pinned: boolean;
   current: boolean;
   activity?: ConversationActivity;
@@ -28,6 +30,7 @@ export function buildTabs(projects: readonly TabProject[], current?: { projectRo
     projectRoot,
     conversationId: conversation.id,
     title: conversation.title ?? "",
+    ...(conversation.mode ? { mode: conversation.mode } : {}),
     pinned: Boolean(conversation.pinned),
     current: current?.projectRoot === projectRoot && current.conversation.id === conversation.id,
     ...(conversation.activity ? { activity: conversation.activity } : {}),

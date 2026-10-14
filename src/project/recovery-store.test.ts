@@ -17,8 +17,9 @@ describe("recovery store", () => {
       current: "c1",
       conversations: {
         c1: {
+          brainstormPhase: "round" as const,
           interrupted: ["claude" as const],
-          queue: { claude: [{ kind: "input" as const, text: "次", images: ["shot.png"], context: true as const }], codex: [] },
+          queue: { claude: [{ kind: "input" as const, text: "次", images: ["shot.png"], context: true as const, brainstorm: true as const }], codex: [] },
         },
         c2: { interrupted: [], queue: { claude: [], codex: [] } },
       },

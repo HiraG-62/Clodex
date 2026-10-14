@@ -43,6 +43,7 @@ export function createStateView(ctx: ClientContext) {
         if (tab.parentTitle !== undefined) main.title += ` · ${ctx.t("web.conv.parallelParent", { title: tab.parentTitle })}`;
         main.setAttribute("aria-label", main.title);
         main.append(ctx.el("span", "tab-project", name), ctx.el("span", "tab-title", title));
+        if (tab.mode === "brainstorm") main.append(ctx.el("span", "tab-parallel", ctx.t("web.brainstorm")));
         if (tab.parentTitle !== undefined) main.append(ctx.el("span", "tab-parallel", ctx.t("web.conv.parallel")));
         if (tab.activity === "busy") main.append(ctx.el("span", "tab-busy"));
         main.disabled = tab.current;

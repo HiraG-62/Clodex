@@ -43,7 +43,7 @@ ${UI_ICONS}
   <section class="agent-strip" id="agents" aria-label="${m("web.agents.label")}"><div class="strip-well" aria-hidden="true">${[0, 1].map(() => '<div class="strip-skeleton"><span class="sk sk-avatar"></span><div class="sk-identity"><div><span class="sk sk-name"></span><span class="sk sk-state"></span></div><span class="sk sk-settings"></span></div><div class="sk-gauges"><span class="sk"></span><span class="sk"></span><span class="sk"></span></div></div>').join("")}</div></section>
   <aside class="side">
     <section>
-      <div class="side-head"><div class="eyebrow">${m("web.side.conversations")}</div>${button("new-conversation", "square-pen", "web.side.newConversation")}</div>
+      <div class="side-head"><div class="eyebrow">${m("web.side.conversations")}</div><div class="side-actions">${button("new-brainstorm", "lightbulb", "web.brainstorm")}${button("new-conversation", "square-pen", "web.side.newConversation")}</div></div>
       <div id="conversations">${[0, 1, 2].map(() => '<div class="conv-skeleton" aria-hidden="true"><span class="sk"></span><span class="sk"></span></div>').join("")}</div>
     </section>
   </aside>

@@ -469,6 +469,7 @@ const main = async (): Promise<void> => {
         roles: context?.config.roles ?? {},
         rolePreset: matchingRolePreset(context?.config.roles ?? {}),
         agents: runtime?.coordinator.status() ?? [],
+        ...(runtime?.coordinator.brainstormState ? { brainstorm: runtime.coordinator.brainstormState } : {}),
         questions: runtime?.coordinator.pendingQuestions() ?? [],
         pendingInputs: runtime?.coordinator.pendingInputs() ?? [],
         pendingMessages: runtime?.coordinator.pendingMessages() ?? [],

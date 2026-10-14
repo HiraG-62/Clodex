@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { buildRoleInstructions } from "./role-instructions.js";
 
 describe("buildRoleInstructions", () => {
+  it("ブレストでは役割の指示を外して読み取り専用の定型文にする", () => {
+    const text = buildRoleInstructions("codex", { codex: "実装", claude: "設計" }, { brainstorm: true, language: "ja" });
+    expect(text).toContain("brainstorming together");
+    expect(text).toContain("do not edit files");
+    expect(text).toContain("Do not use send_message or ask_user");
+    expect(text).not.toContain("Your role:");
+  });
   it("自分と相手の役割と、相手の役割の作業は send_message で依頼することを伝える", () => {
     const text = buildRoleInstructions("claude", { claude: "設計とレビュー", codex: "実装" });
     expect(text).toContain('You are the "claude" agent in Clodex');

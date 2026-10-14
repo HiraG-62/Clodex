@@ -41,6 +41,13 @@ describe("conversationStatePath", () => {
 });
 
 describe("ConversationHistory", () => {
+  it("ブレストの設定と名前を保存して復旧する", () => {
+    const path = makePath();
+    const { history } = setup(path);
+    history.startNew({ mode: "brainstorm", brainstorm: { topic: "新しい機能", rounds: 3 }, title: "新しい機能" });
+    const restored = new ConversationHistory(path, { resumeLatest: true });
+    expect(restored.current).toMatchObject({ mode: "brainstorm", brainstorm: { topic: "新しい機能", rounds: 3 }, title: "新しい機能" });
+  });
   it("別プロセス相当の更新後に書くとき、他方の会話を消さない", () => {
     const path = makePath();
     const first = setup(path, false, 0);

@@ -99,6 +99,7 @@
   .links button { border: 0; background: none; padding: 6px 0; color: var(--fg-2); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-strong); }
   .links button.danger { color: var(--crit); text-decoration-color: currentColor; }
   .side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .side-actions { display: flex; align-items: center; gap: 2px; }
   .ghost.small { padding: 4px 10px; font-size: 12px; }
   .conv-row { display: flex; align-items: center; gap: 2px; min-width: 0; }
   .conv-row .conv { flex: 1; }
@@ -225,6 +226,7 @@
   .notice, .error-row { padding: 10px 0; font-size: 12.5px; display: flex; gap: 8px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; min-width: 0; }
   .notice { color: var(--warn); } .error-row { color: var(--crit); }
   .notice::before, .error-row::before { content: "!"; font: 600 11px/18px var(--font-mono); width: 18px; height: 18px; text-align: center; border: 1px solid currentColor; border-radius: 50%; flex: none; }
+  .brainstorm-heading { padding: 12px 0 8px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 500; }
   .kind.steer { color: var(--crit); border-color: currentColor; }
   .kind.parallel-link { background: transparent; cursor: pointer; color: var(--fg-2); }
   .kind.parallel-link:hover { border-color: var(--fg-2); }
@@ -672,6 +674,11 @@
   .table-scroll table { min-width: 100%; }
   .mobile-action-label, .gauge-reset { display: none; }
   .drawer-new { display: inline-flex; align-items: center; justify-content: center; gap: 8px; color: var(--fg); background: transparent; border: 1px solid var(--line-strong); border-radius: var(--r); min-height: 44px; margin: 4px 4px 8px; }
+  .brainstorm-form { display: grid; gap: 16px; padding: 12px 0; }
+  .brainstorm-form label { display: grid; gap: 6px; color: var(--fg-2); font-size: 13px; }
+  .brainstorm-form textarea, .brainstorm-form select { width: 100%; box-sizing: border-box; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--bg); color: var(--fg); font: inherit; padding: 10px; }
+  .brainstorm-form textarea { min-height: 140px; resize: vertical; }
+  .brainstorm-form .btn { justify-self: end; min-height: 36px; }
   .sheet-backdrop:hover:not(:disabled), .sheet-backdrop:active:not(:disabled) { background: var(--scrim); transform: none; }
   @media (max-width: 899px), (pointer: coarse) {
     .mobile-only { display: flex; }

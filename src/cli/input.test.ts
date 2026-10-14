@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { parseInput } from "./input.js";
 
 describe("parseInput", () => {
+  it("/brainstorm の周回数とテーマを解釈する", () => {
+    expect(parseInput("/brainstorm 案", "claude")).toEqual({ kind: "brainstorm", rounds: 2, topic: "案" });
+    expect(parseInput("/brainstorm 3 新しい案", "claude")).toEqual({ kind: "brainstorm", rounds: 3, topic: "新しい案" });
+    for (const input of ["/brainstorm", "/brainstorm 0 案", "/brainstorm 6 案", "/brainstorm 2"]) {
+      expect(parseInput(input, "claude").kind).toBe("invalid");
+    }
+  });
   it("/role の表示と編集を区別する", () => {
     expect(parseInput("/role", "claude")).toEqual({ kind: "role" });
     expect(parseInput("/role codex", "claude")).toEqual({ kind: "role", agent: "codex" });

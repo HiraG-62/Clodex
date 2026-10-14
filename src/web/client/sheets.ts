@@ -69,6 +69,10 @@ export function createSheets(ctx: ClientContext) {
         if (ok) closeSheet();
       });
     });
+    const brainstorm = ctx.el("button", "drawer-new", ctx.t("web.brainstorm")) as HTMLButtonElement;
+    brainstorm.type = "button";
+    brainstorm.prepend(ctx.icon("lightbulb"));
+    brainstorm.addEventListener("click", openBrainstorm);
     const conversations = ctx.el("div", "drawer-conversations");
     conversations.append(...ctx.conversationList());
     const footer = ctx.el("div", "drawer-projects");
@@ -91,7 +95,40 @@ export function createSheets(ctx: ClientContext) {
     const selectedName = ctx.el("span", "", ctx.store.state?.project.split(/[\\/]/).filter(Boolean).at(-1) ?? ctx.t("web.top.noProject"));
     pill.append(ctx.icon("folder"), selectedName, ctx.icon("chevron-down"), projects);
     footer.append(pill);
-    openSheet(ctx.t("web.conv.title"), [fresh, conversations, footer]);
+    openSheet(ctx.t("web.conv.title"), [fresh, brainstorm, conversations, footer]);
+  };
+  const openBrainstorm = () => {
+    ctx.store.sheetKind = "brainstorm";
+    const form = ctx.el("form", "brainstorm-form") as HTMLFormElement;
+    const topic = ctx.el("textarea") as HTMLTextAreaElement;
+    topic.required = true;
+    topic.rows = 5;
+    topic.placeholder = ctx.t("web.brainstorm.topic");
+    const topicLabel = ctx.el("label", "", ctx.t("web.brainstorm.topic"));
+    topicLabel.append(topic);
+    const rounds = ctx.el("select") as HTMLSelectElement;
+    rounds.setAttribute("aria-label", ctx.t("web.brainstorm.rounds"));
+    const roundsLabel = ctx.el("label", "", ctx.t("web.brainstorm.rounds"));
+    roundsLabel.append(rounds);
+    for (let value = 1; value <= 5; value++) {
+      const option = ctx.el("option", "", String(value)) as HTMLOptionElement;
+      option.value = String(value);
+      rounds.append(option);
+    }
+    rounds.value = "2";
+    const submit = ctx.el("button", "btn", ctx.t("web.brainstorm")) as HTMLButtonElement;
+    submit.type = "submit";
+    form.append(topicLabel, roundsLabel, submit);
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      const value = topic.value.trim();
+      if (!value) return;
+      void ctx.send(`/brainstorm ${rounds.value} ${value.replace(/\r?\n/g, " ")}`, submit).then(ok => {
+        if (ok) closeSheet();
+      });
+    });
+    openSheet(ctx.t("web.brainstorm"), [form]);
+    topic.focus();
   };
   const sheetButton = (label: string, cls: string, run: (button: HTMLButtonElement) => void) => {
     const button = ctx.el("button", cls, label) as HTMLButtonElement;
@@ -99,5 +136,5 @@ export function createSheets(ctx: ClientContext) {
     button.addEventListener("click", () => run(button));
     return button;
   };
-  return { sheet, openAgentSheet, closeSheet, openSheet, rememberFocus, restoreFocus, trapTab, sheetButton, openConversations };
+  return { sheet, openAgentSheet, closeSheet, openSheet, rememberFocus, restoreFocus, trapTab, sheetButton, openConversations, openBrainstorm };
 }

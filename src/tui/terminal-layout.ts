@@ -1,6 +1,7 @@
 // Ink に渡す前の分類と編集操作。端末 I/O を含めない。
 
 import { marked, type Token, type Tokens } from "marked";
+import { t } from "../i18n/i18n.js";
 import type { MessageType } from "../protocol/messages.js";
 import { isShellInput } from "../web/client/shell-input.js";
 import { applyFeedItem, type TimelineItem } from "../web/client/timeline.js";
@@ -621,6 +622,13 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
     };
   if (item.kind === "error") return { kind: item.kind, color: TERMINAL_COLORS.error, title: `${labels.error} · ${agentName(item.agent)}`, body: item.text };
   if (item.kind === "notice") return { kind: item.kind, color: TERMINAL_COLORS.warn, title: labels.notice, body: item.text };
+  if (item.kind === "brainstorm")
+    return {
+      kind: item.kind,
+      color: TERMINAL_COLORS.muted,
+      title: t("web.brainstorm"),
+      body: item.phase === "summary" ? t("web.brainstorm.summary") : t("web.brainstorm.round", { round: item.round ?? 1, total: item.total }),
+    };
   return { kind: item.kind, color: TERMINAL_COLORS.muted, title: labels.output, body: item.text };
 };
 

@@ -40,6 +40,7 @@ const SPECS: readonly SlashCommandSpec[] = [
   { name: "delete", args: "<number>", description: "cmd.delete" },
   { name: "pin", args: "<number>", description: "cmd.pin" },
   { name: "new", args: "[worktree|agent]", description: "cmd.new" },
+  { name: "brainstorm", args: "[1-5] <topic>", description: "cmd.brainstorm" },
   { name: "worktree", args: "", description: "cmd.worktree" },
   { name: "compact", args: "[agent]", description: "cmd.compact" },
   { name: "sandbox", args: "[on|off|uninstall]", argumentValues: ["on", "off", "uninstall"], description: "cmd.sandbox" },

@@ -71,14 +71,21 @@ export interface RoleInstructionOptions {
   language?: Language;
   artifactsDir?: string;
   usageHints?: boolean;
+  brainstorm?: boolean;
 }
 
 export const buildRoleInstructions = (
   agent: AgentId,
   roles: RolesConfig | undefined,
-  { language, artifactsDir, usageHints }: RoleInstructionOptions = {},
+  { language, artifactsDir, usageHints, brainstorm }: RoleInstructionOptions = {},
 ): string => {
   const peer = peerOf(agent);
+  if (brainstorm)
+    return [
+      header(agent, peer),
+      `You and ${peer} are brainstorming together. Offer concrete ideas in bullet points. Read code and documents if useful, but do not edit files. Do not use send_message or ask_user.`,
+      ...(language ? [languageDirective(language)] : []),
+    ].join("\n");
   return [
     header(agent, peer),
     ...roleLines(agent, peer, roles),

@@ -42,6 +42,7 @@ export type ShellCommand =
   | { kind: "steerQueued"; id: string }
   | { kind: "rename"; title: string; index?: number }
   | { kind: "solo"; mode?: SoloMode }
+  | { kind: "brainstorm"; rounds: number; topic: string }
   | { kind: "delete"; index: number }
   | { kind: "pin"; index: number }
   | { kind: "run"; command: string }
@@ -66,6 +67,8 @@ const PERMISSION_USAGE = `/permission [${AGENT_IDS.join("|")}] <${PERMISSION_LEV
 const MODEL_USAGE = `/model <${AGENT_IDS.join("|")}> <model>`;
 const EFFORT_USAGE = `/effort [${AGENT_IDS.join("|")}] <level>`;
 const LIMITS_USAGE = "/limits [<name> <n> ...|reset|unlimited]";
+const BRAINSTORM_USAGE = "/brainstorm [1-5] <topic>";
+const DEFAULT_BRAINSTORM_ROUNDS = 2;
 
 const parsePermission = (arg: string): ShellCommand => {
   const [first, second, ...extra] = arg.split(/\s+/).filter(Boolean);
@@ -233,6 +236,15 @@ const parseCommand = (name: string, arg: string, primary: AgentId): ShellCommand
       if (!arg || arg === "enable") return { kind: "solo", mode: "free" };
       if (arg === "disable") return { kind: "solo" };
       return isAgentId(arg) ? { kind: "solo", mode: arg } : usage("/solo [enable|disable|claude|codex]");
+    case "brainstorm": {
+      if (!arg) return usage(BRAINSTORM_USAGE);
+      const match = /^(\d+)(?:\s+([\s\S]+))?$/.exec(arg);
+      if (!match) return { kind: "brainstorm", rounds: DEFAULT_BRAINSTORM_ROUNDS, topic: arg };
+      const rounds = Number(match[1]);
+      return Number.isInteger(rounds) && rounds >= 1 && rounds <= 5 && match[2]?.trim()
+        ? { kind: "brainstorm", rounds, topic: match[2].trim() }
+        : usage(BRAINSTORM_USAGE);
+    }
     case "delete":
     case "pin":
       return isConversationNumber(arg) ? { kind: name, index: Number(arg) } : usage(`/${name} <number>`);
