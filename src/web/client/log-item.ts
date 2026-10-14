@@ -260,7 +260,14 @@ export function createLogItem(ctx: ClientContext) {
           if (entry) body.append(renderMessage({ ...entry, id: entry.message.id, at: entry.message.createdAt }));
         } else {
           const entry = item.questions?.find(question => question.id === attached.id);
-          if (entry) body.append(renderQuestion(entry, true));
+          if (entry) {
+            if (entry.context) {
+              const context = ctx.el("div", "md question-context");
+              context.innerHTML = renderMarkdown(entry.context);
+              body.append(context);
+            }
+            body.append(renderQuestion(entry, true));
+          }
         }
       }
       node.append(body);
@@ -367,6 +374,11 @@ export function createLogItem(ctx: ClientContext) {
       ctx.el("span", "kind", ctx.t(item.answers ? "web.question.answered" : "web.question.waiting")),
     );
     if (!embedded) node.append(ctx.mark(item.agent));
+    if (!embedded && item.context) {
+      const context = ctx.el("div", "md question-context");
+      context.innerHTML = renderMarkdown(item.context);
+      node.append(context);
+    }
     node.append(head);
     const previewText = item.questions.flatMap(question => [question.question, ...question.options.map(option => option.description ?? "")]).join("\n");
     const record = ctx.el("dl", "question-record");

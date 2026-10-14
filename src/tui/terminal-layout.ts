@@ -534,18 +534,23 @@ const MESSAGE_COLORS: Record<MessageType, string> = {
 
 export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, expanded: boolean): TerminalCard => {
   const questionBody = (entry: Extract<TimelineItem, { kind: "question" }>) =>
-    entry.questions
-      .map((question, index) =>
-        [
-          question.header,
-          question.question,
-          ...(entry.answers
-            ? [entry.answers[index]!.join(", ")]
-            : question.options.map((option, optionIndex) => `${optionIndex + 1}. ${option.label}${option.description ? ` — ${option.description}` : ""}`)),
-        ]
-          .filter(Boolean)
-          .join("\n"),
-      )
+    [
+      entry.context,
+      entry.questions
+        .map((question, index) =>
+          [
+            question.header,
+            question.question,
+            ...(entry.answers
+              ? [entry.answers[index]!.join(", ")]
+              : question.options.map((option, optionIndex) => `${optionIndex + 1}. ${option.label}${option.description ? ` — ${option.description}` : ""}`)),
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        )
+        .join("\n\n"),
+    ]
+      .filter(Boolean)
       .join("\n\n");
   if (item.kind === "question")
     return {

@@ -10,7 +10,7 @@ export { isCanceledHistoryItem, withoutCanceledHistoryItem } from "../web-feed.j
 export type TimelineStep = { kind: "say"; text: string; at: string } | { kind: "tool"; name: string; input: string; files?: string[] };
 
 export type TimelineItem =
-  | { kind: "question"; id: string; at: string; agent: AgentId; questions: UserQuestion[]; answers?: string[][] }
+  | { kind: "question"; id: string; at: string; agent: AgentId; questions: UserQuestion[]; context?: string; answers?: string[][] }
   | {
       kind: "human";
       id: string;
@@ -191,10 +191,33 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   const id = `e${item.seq}`;
   const { event } = item;
   if (event.kind === "question") {
-    const question: Question = { kind: "question", id: event.id, agent: event.agent, at: event.at, questions: event.questions };
     let index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === event.agent && entry.status === "working" && entry.segment !== "closed");
     const last = items.at(-1);
     if (index < 0 && last?.kind === "turn" && last.agent === event.agent && last.status === "completed") index = items.length - 1;
+    let context: string | undefined;
+    const turn = items[index];
+    if (turn?.kind === "turn" && !hasAttachments(turn)) {
+      const sayIndex = turn.steps.findLastIndex(step => step.kind === "say");
+      if (sayIndex >= 0) {
+        const say = turn.steps[sayIndex];
+        if (say?.kind === "say") context = say.text;
+        items = items.map((entry, entryIndex) =>
+          entryIndex === index ? { ...turn, steps: turn.steps.filter((_, stepIndex) => stepIndex !== sayIndex) } : entry,
+        );
+      } else if (turn.plan !== undefined) {
+        context = turn.plan;
+        const { plan: _plan, planAt: _planAt, ...withoutPlan } = turn;
+        items = items.map((entry, entryIndex) => (entryIndex === index ? withoutPlan : entry));
+      }
+    }
+    const question: Question = {
+      kind: "question",
+      id: event.id,
+      agent: event.agent,
+      at: event.at,
+      questions: event.questions,
+      ...(context !== undefined ? { context } : {}),
+    };
     return index < 0 ? limit([...items, question]) : attachToTurn(index, { kind: "question", entry: question }, event.at, true);
   }
   if (event.kind === "answer")

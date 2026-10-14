@@ -264,6 +264,57 @@ describe("withWorkingTurnsLast", () => {
 });
 
 describe("applyFeedItem", () => {
+  it("質問直前の最後の発言を作業から質問へ移す", () => {
+    const timeline = run([
+      agent("claude", { type: "turn_started" }),
+      agent("claude", { type: "text", text: "調べます" }),
+      agent("claude", { type: "tool", name: "Read", input: "a.ts" }),
+      agent("claude", { type: "text", text: "途中です" }),
+      agent("claude", { type: "text", text: "**選択の理由**\n詳細" }),
+      question(),
+    ]);
+    expect(timeline[0]).toMatchObject({
+      kind: "turn",
+      plan: "調べます",
+      steps: [{ kind: "tool" }, { kind: "say", text: "途中です" }],
+      questions: [{ id: "q1", context: "**選択の理由**\n詳細" }],
+    });
+  });
+
+  it("質問直前に発言が無ければ本文を付けない", () => {
+    const timeline = run([agent("claude", { type: "turn_started" }), agent("claude", { type: "tool", name: "Read", input: "a.ts" }), question()]);
+    expect(timeline[0]).toMatchObject({ kind: "turn", steps: [{ kind: "tool" }], questions: [{ id: "q1" }] });
+    expect((timeline[0] as Extract<TimelineItem, { kind: "turn" }>).questions?.[0]).not.toHaveProperty("context");
+  });
+
+  it("message より前の発言を後続の質問へ再利用しない", () => {
+    const timeline = run([
+      agent("claude", { type: "turn_started" }),
+      agent("claude", { type: "text", text: "依頼の説明" }),
+      formal("claude", "調査依頼"),
+      question(),
+    ]);
+    const attached = timeline.filter(item => item.kind === "turn").flatMap(item => (item.kind === "turn" ? (item.questions ?? []) : []));
+    expect(attached).toHaveLength(1);
+    expect(attached[0]).not.toHaveProperty("context");
+  });
+
+  it("複数の質問へそれぞれ直前の発言を移し、保存 feed の再生でも保持する", () => {
+    const events = [
+      agent("claude", { type: "turn_started" }),
+      agent("claude", { type: "text", text: "一つ目の説明" }),
+      question("q1"),
+      agent("claude", { type: "text", text: "二つ目の説明" }),
+      question("q2"),
+    ];
+    for (const timeline of [run(events), rebuildTimeline(events, applyFeedItem)]) {
+      expect(
+        timeline.filter(item => item.kind === "turn").flatMap(item => (item.kind === "turn" ? (item.questions?.map(entry => entry.context) ?? []) : [])),
+      ).toEqual(["一つ目の説明", "二つ目の説明"]);
+      expect(timeline.filter(item => item.kind === "turn").flatMap(item => (item.kind === "turn" ? item.steps : []))).toEqual([]);
+    }
+  });
+
   it("作業中の質問をターンに入れ、回答も同じカードに付ける", () => {
     const timeline = run([agent("claude", { type: "turn_started" }), agent("claude", { type: "text", text: "確認します" }), question(), answer()]);
     expect(timeline).toHaveLength(2);
@@ -544,9 +595,8 @@ describe("applyFeedItem", () => {
         agent: "claude",
         status: "completed",
         segment: "closed",
-        plan: "確認します。",
         steps: [{ kind: "say", text: "選んでください。" }],
-        questions: [{ id: "q1" }],
+        questions: [{ id: "q1", context: "確認します。" }],
         attachmentOrder: [
           { kind: "question", id: "q1" },
           { kind: "message", id: expect.any(String) },

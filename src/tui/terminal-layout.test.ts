@@ -149,6 +149,18 @@ describe("formatMarkdown", () => {
 });
 
 describe("formatTimelineItem", () => {
+  it("質問の直前の発言を質問本文の前に表示する", () => {
+    const question: TimelineItem = {
+      kind: "question",
+      id: "q1",
+      agent: "claude",
+      at: "2026-01-01T00:00:00Z",
+      context: "**選択の理由**\n詳細",
+      questions: [{ question: "どれ？", options: [{ label: "A" }] }],
+    };
+    expect(formatTimelineItem(question, labels, false).body).toBe("**選択の理由**\n詳細\n\nどれ？\n1. A");
+  });
+
   it("ターンと formal message の見出しと本文を組み立てる", () => {
     const turn: TimelineItem = {
       kind: "turn",
