@@ -127,7 +127,7 @@
   .conv:disabled { opacity: 1; }
   .conv .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .conv-pinned { display: inline-flex; vertical-align: middle; margin-left: 5px; color: var(--muted); }
-  .conv-parallel, .tab-parallel { display: inline-flex; margin-left: 6px; font-size: 10px; color: var(--warn); }
+  .conv-parallel, .tab-parallel { display: inline-flex; flex: none; margin-left: 6px; font-size: 10px; color: var(--warn); white-space: nowrap; }
   .conv-pinned .i { width: 12px; height: 12px; }
   .conv .m { color: var(--muted); font-size: 11.5px; }
 
