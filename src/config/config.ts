@@ -1,9 +1,9 @@
-// 設定ファイル（DESIGN.md §13 Roles）。ユーザー全体の設定を project の設定でトップレベルのキー単位に上書きする
+// 設定ファイル（DESIGN.md §13 Roles）。オブジェクトはキーごとに重ね、rules は user → project の順につなぐ
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { AGENT_IDS, PERMISSION_LEVELS } from "../agents/agent-adapter.js";
+import { AGENT_IDS, type AgentId, PERMISSION_LEVELS } from "../agents/agent-adapter.js";
 import { LANGUAGES, type Language } from "../context/language.js";
 import { writeFileAtomic } from "../project/atomic-write.js";
 
@@ -26,6 +26,7 @@ const configSchema = z.strictObject({
   permission: z.enum(PERMISSION_LEVELS).optional(),
   updateChannel: z.enum(UPDATE_CHANNELS).optional(),
   roles: z.strictObject({ claude: role.optional(), codex: role.optional() }).optional(),
+  rules: z.strictObject({ claude: z.string().optional(), codex: z.string().optional() }).optional(),
   freshThread: z.strictObject({ DELEGATE: z.boolean().optional(), REVIEW_REQUEST: z.boolean().optional() }).optional(),
   usageHints: z.strictObject({ claude: z.boolean().optional(), codex: z.boolean().optional() }).optional(),
   threadTokenWarn: z
@@ -51,6 +52,15 @@ const configSchema = z.strictObject({
 
 export type ClodexConfig = z.infer<typeof configSchema>;
 export type RolesConfig = NonNullable<ClodexConfig["roles"]>;
+export type ConfigSource = "user" | "project";
+export interface ConfigSources {
+  roles: Partial<Record<AgentId, ConfigSource>>;
+  rules: Partial<Record<AgentId, Array<{ source: ConfigSource; text: string }>>>;
+}
+export interface ConfigLayers {
+  config: ClodexConfig;
+  sources: ConfigSources;
+}
 
 const readConfigFile = (path: string): ClodexConfig => {
   if (!existsSync(path)) return {};
@@ -65,12 +75,14 @@ const readConfigFile = (path: string): ClodexConfig => {
     const detail = parsed.error.issues.map(i => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ");
     throw new Error(`${path}: ${detail}`);
   }
-  const { roles, ...config } = parsed.data;
-  if (!roles) return config;
-  const configuredRoles: RolesConfig = {};
-  if (roles.claude) configuredRoles.claude = roles.claude;
-  if (roles.codex) configuredRoles.codex = roles.codex;
-  return Object.keys(configuredRoles).length ? { ...config, roles: configuredRoles } : config;
+  const config = parsed.data;
+  for (const key of ["roles", "rules"] as const) {
+    const values = config[key];
+    if (!values) continue;
+    for (const agent of AGENT_IDS) if (!values[agent]) delete values[agent];
+    if (!Object.keys(values).length) delete config[key];
+  }
+  return config;
 };
 
 export interface ConfigPaths {
@@ -88,10 +100,35 @@ export const ensureUserConfigTemplate = (homeDir: string): void => {
   }
 };
 
-export const loadConfig = ({ homeDir, projectRoot }: ConfigPaths): ClodexConfig => ({
-  ...readConfigFile(join(homeDir, USER_CONFIG_PATH)),
-  ...readConfigFile(join(projectRoot, PROJECT_CONFIG_FILE)),
-});
+const OBJECT_CONFIG_KEYS = ["roles", "freshThread", "usageHints", "limits", "worktree", "web", "usageAlert"] as const;
+
+export const loadConfigLayers = ({ homeDir, projectRoot }: ConfigPaths): ConfigLayers => {
+  const user = readConfigFile(join(homeDir, USER_CONFIG_PATH));
+  const project = readConfigFile(join(projectRoot, PROJECT_CONFIG_FILE));
+  const config: ClodexConfig = { ...user, ...project };
+  for (const key of OBJECT_CONFIG_KEYS) {
+    if (user[key] && project[key]) Object.assign(config, { [key]: { ...user[key], ...project[key] } });
+  }
+  if (typeof user.threadTokenWarn === "object" && typeof project.threadTokenWarn === "object") {
+    config.threadTokenWarn = { ...user.threadTokenWarn, ...project.threadTokenWarn };
+  }
+  const sources: ConfigSources = { roles: {}, rules: {} };
+  const rules: NonNullable<ClodexConfig["rules"]> = {};
+  for (const agent of AGENT_IDS) {
+    if (project.roles?.[agent]) sources.roles[agent] = "project";
+    else if (user.roles?.[agent]) sources.roles[agent] = "user";
+    const layers: NonNullable<ConfigSources["rules"][AgentId]> = [];
+    if (user.rules?.[agent]) layers.push({ source: "user", text: user.rules[agent] });
+    if (project.rules?.[agent]) layers.push({ source: "project", text: project.rules[agent] });
+    if (!layers.length) continue;
+    sources.rules[agent] = layers;
+    rules[agent] = layers.map(layer => layer.text).join("\n");
+  }
+  if (Object.keys(rules).length) config.rules = rules;
+  return { config, sources };
+};
+
+export const loadConfig = (paths: ConfigPaths): ClodexConfig => loadConfigLayers(paths).config;
 
 export const saveUserLanguage = (homeDir: string, language: Language): void => {
   const path = join(homeDir, USER_CONFIG_PATH);

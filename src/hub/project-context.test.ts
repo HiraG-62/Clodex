@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { expect, it, vi } from "vitest";
 import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { EMPTY_MODEL_CATALOG } from "../agents/startup-probe.js";
+import { saveProjectRole } from "../project/role-settings.js";
 import { applyFeedItem, rebuildTimeline } from "../web/client/timeline.js";
 import { WebFeed } from "../web/web-feed.js";
 import { openProject, protectRecoverySave } from "./project-context.js";
@@ -369,6 +370,49 @@ it("sandbox off の project を開いても実機の検査や broker 接続を�
     expect(inspect).not.toHaveBeenCalled();
     expect(connect).not.toHaveBeenCalled();
     expect(context.sandbox.setupReady).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
+it("役割の保存後は層を読み直し、起動オプションと実行中の権限を保つ", async () => {
+  const homeDir = mkdtempSync(join(tmpdir(), "clodex-config-reload-"));
+  const projectRoot = join(homeDir, "project");
+  mkdirSync(projectRoot);
+  mkdirSync(join(homeDir, ".clodex"));
+  const userPath = join(homeDir, ".clodex", "config.json");
+  writeFileSync(userPath, JSON.stringify({ primary: "claude", roles: { claude: "設計", codex: "実装" }, rules: { codex: "テスト" } }));
+  const claude = new FakeAgentAdapter("claude");
+  const codex = new FakeAgentAdapter("codex");
+  const context = await openProject({
+    projectRoot,
+    homeDir,
+    args: { primary: "codex", models: { codex: "cli-model" }, resume: false, web: false, serve: false },
+    language: "ja",
+    printTerminal: () => {},
+    notify: () => {},
+    notifyAgent: () => {},
+    displayMode: () => "normal",
+    isCurrent: () => true,
+    modelCatalog: EMPTY_MODEL_CATALOG,
+    registerCoordinator: () => () => {},
+    createAgents: () => ({ claude, codex }),
+  });
+  try {
+    await context.workspace.current.coordinator.start();
+    await context.workspace.current.coordinator.setPermission("full", "codex");
+    saveProjectRole(projectRoot, "codex", "レビュー");
+    writeFileSync(userPath, JSON.stringify({ primary: "claude", permission: "read-only", roles: { claude: "新しい設計" }, rules: { codex: "型チェック" } }));
+    context.reloadConfig();
+    expect(context.config.roles).toEqual({ claude: "新しい設計", codex: "レビュー" });
+    expect(context.configSources).toEqual({ roles: { claude: "user", codex: "project" }, rules: { codex: [{ source: "user", text: "型チェック" }] } });
+    expect(context.primary).toBe("codex");
+    expect(codex.permission).toBe("full");
+    await context.workspace.current.coordinator.switchSessions({}, ["codex"]);
+    await context.workspace.current.coordinator.start();
+    expect(codex.starts.at(-1)?.instructions).toContain("Rules: 型チェック");
+    expect(codex.starts.at(-1)?.instructions).toContain("Role of claude: 新しい設計");
+    expect(codex.model).toBe("cli-model");
   } finally {
     await context.close();
   }

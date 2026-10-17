@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentId, PermissionLevel, TurnResult } from "../agents/agent-adapter.js";
+import type { ConfigSources } from "../config/config.js";
 import { DEFAULT_LIMITS, LIMIT_KEYS } from "../coordinator/budget-manager.js";
 import type { PendingMessage, SoloMode } from "../coordinator/coordinator.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
@@ -260,6 +261,7 @@ const setup = ({ withoutProject = false } = {}) => {
   const worktreeSetup: { value: string | undefined } = { value: undefined };
   const saved: Array<{ agents: readonly AgentId[]; change: object }> = [];
   const roles: Partial<Record<AgentId, string>> = { claude: "設計" };
+  const configSources: ConfigSources = { roles: {}, rules: {} };
   const references: string[] = [];
   let hasProject = !withoutProject;
   const tabUnpinned: Array<{ projectRoot: string; id: string }> = [];
@@ -345,6 +347,7 @@ const setup = ({ withoutProject = false } = {}) => {
     projects,
     processes: background,
     roles: () => roles,
+    configSources: () => configSources,
     worktreeSetup: () => worktreeSetup.value,
     saveRole: (agent, value) => {
       roles[agent] = value;
@@ -366,6 +369,7 @@ const setup = ({ withoutProject = false } = {}) => {
     worktreeSetup,
     projects,
     roles,
+    configSources,
     background,
     references,
     sandbox,
@@ -516,6 +520,16 @@ describe("createShell", () => {
     await shell.handleLine("/role codex 実装を担当");
     expect(roles.codex).toBe("実装を担当");
     expect(printed.at(-1)).toContain("/new codex");
+  });
+  it("/role は役割の設定元と rules を層ごとに表示する", async () => {
+    const { shell, printed, configSources } = setup();
+    configSources.roles.claude = "user";
+    configSources.rules.claude = [
+      { source: "user", text: "日本語\nテスト" },
+      { source: "project", text: "コミット禁止" },
+    ];
+    await shell.handleLine("/role claude");
+    expect(printed).toEqual(["claude role: 設計 (user)", "rules (user): 日本語 テスト", "rules (project): コミット禁止"]);
   });
   it("/role preset が一覧を出し、選択時は両 Agent の役割を保存する", async () => {
     const { shell, printed, roles } = setup();

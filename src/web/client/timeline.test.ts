@@ -695,6 +695,8 @@ describe("applyFeedItem", () => {
             project: "C:app",
             primary: "claude",
             roles: {},
+            roleSources: {},
+            rules: {},
             agents: [],
             tabs: [],
             conversations: [],

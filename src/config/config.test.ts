@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { clodexHomeDir, ensureUserConfigTemplate, loadConfig, saveUserLanguage } from "./config.js";
+import { clodexHomeDir, ensureUserConfigTemplate, loadConfig, loadConfigLayers, saveUserLanguage } from "./config.js";
 
 const setup = (files: { user?: unknown; project?: unknown } = {}) => {
   const base = mkdtempSync(join(tmpdir(), "clodex-config-"));
@@ -50,11 +50,14 @@ describe("loadConfig", () => {
       user: { freshThread: { DELEGATE: true, REVIEW_REQUEST: true } },
       project: { freshThread: { DELEGATE: false } },
     });
-    expect(loadConfig(paths).freshThread).toEqual({ DELEGATE: false });
+    expect(loadConfig(paths).freshThread).toEqual({ DELEGATE: false, REVIEW_REQUEST: true });
     expect(() => loadConfig(setup({ user: { freshThread: { QUESTION: true } } }))).toThrow(/freshThread/);
   });
-  it("usageHints は Agent ごとの boolean で、project の設定が全体を上書きする", () => {
-    expect(loadConfig(setup({ user: { usageHints: { codex: true } }, project: { usageHints: { claude: true } } })).usageHints).toEqual({ claude: true });
+  it("usageHints は Agent ごとの boolean で、project の設定がキーごとに上書きする", () => {
+    expect(loadConfig(setup({ user: { usageHints: { codex: true } }, project: { usageHints: { claude: true } } })).usageHints).toEqual({
+      claude: true,
+      codex: true,
+    });
     expect(() => loadConfig(setup({ user: { usageHints: { claude: "on" } } }))).toThrow(/usageHints/);
   });
   it("設定ファイルが無ければ空の設定", () => {
@@ -86,16 +89,70 @@ describe("loadConfig", () => {
     expect(() => loadConfig(setup({ project: "{ broken" }))).toThrow(/\.clodex\.json: invalid JSON/);
   });
 
-  it("project の設定はトップレベルのキー単位でユーザーの設定を上書きする", () => {
+  it("project の設定はオブジェクトのキーごとにユーザーの設定を上書きする", () => {
     const paths = setup({
       user: { primary: "codex", roles: { claude: "設計", codex: "実装" }, limits: { maxMessagesPerChain: 10 } },
       project: { roles: { codex: "レビュー" } },
     });
     expect(loadConfig(paths)).toEqual({
       primary: "codex",
-      roles: { codex: "レビュー" },
+      roles: { claude: "設計", codex: "レビュー" },
       limits: { maxMessagesPerChain: 10 },
     });
+    expect(loadConfigLayers(paths).sources.roles).toEqual({ claude: "user", codex: "project" });
+  });
+
+  it("rules は Agent ごとに user、project の順につなぎ、空文字は無視する", () => {
+    const paths = setup({
+      user: { rules: { claude: "日本語", codex: "テスト\n型チェック" }, roles: { claude: "設計" } },
+      project: { rules: { claude: "", codex: "コミット禁止" }, roles: { claude: "" } },
+    });
+    expect(loadConfigLayers(paths)).toEqual({
+      config: { roles: { claude: "設計" }, rules: { claude: "日本語", codex: "テスト\n型チェック\nコミット禁止" } },
+      sources: {
+        roles: { claude: "user" },
+        rules: {
+          claude: [{ source: "user", text: "日本語" }],
+          codex: [
+            { source: "user", text: "テスト\n型チェック" },
+            { source: "project", text: "コミット禁止" },
+          ],
+        },
+      },
+    });
+    expect(loadConfigLayers(setup({ project: { rules: { codex: "" } } }))).toEqual({ config: {}, sources: { roles: {}, rules: {} } });
+  });
+
+  it("limits・worktree・web・usageAlert をキーごとに重ね、単一値は上書きする", () => {
+    expect(
+      loadConfig(
+        setup({
+          user: {
+            primary: "claude",
+            limits: { maxMessagesPerChain: 10, maxDelegationDepth: 2 },
+            worktree: { setup: "pnpm install" },
+            web: { port: 5000 },
+            usageAlert: { weeklyPaceThreshold: 20, fiveHourThreshold: 80 },
+          },
+          project: { primary: "codex", limits: { maxMessagesPerChain: 3 }, worktree: {}, web: {}, usageAlert: { fiveHourThreshold: 90 } },
+        }),
+      ),
+    ).toEqual({
+      primary: "codex",
+      limits: { maxMessagesPerChain: 3, maxDelegationDepth: 2 },
+      worktree: { setup: "pnpm install" },
+      web: { port: 5000 },
+      usageAlert: { weeklyPaceThreshold: 20, fiveHourThreshold: 90 },
+    });
+  });
+
+  it.each([
+    [{ claude: 100, codex: 200 }, { codex: 300 }, { claude: 100, codex: 300 }],
+    [100, { codex: 300 }, { codex: 300 }],
+    [{ claude: 100 }, 300, 300],
+    [100, 300, 300],
+  ])("threadTokenWarn は両方オブジェクトの場合だけキーごとに重ねる", (user, project, expected) => {
+    expect(loadConfig(setup({ user: { threadTokenWarn: user }, project: { threadTokenWarn: project } })).threadTokenWarn).toEqual(expected);
   });
 
   it("permission を読み、未知のレベルは拒否する", () => {

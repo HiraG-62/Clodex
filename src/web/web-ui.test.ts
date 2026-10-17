@@ -7,6 +7,8 @@ const STATE: WebState = {
   project: "C:\\app",
   primary: "claude",
   roles: {},
+  roleSources: {},
+  rules: {},
   agents: [],
   tabs: [],
   conversations: [],

@@ -57,6 +57,8 @@ const EMPTY_STATE: WebState = {
   project: "",
   primary: "claude",
   roles: {},
+  roleSources: {},
+  rules: {},
   agents: [],
   tabs: [],
   conversations: [],

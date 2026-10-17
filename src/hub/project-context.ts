@@ -8,7 +8,7 @@ import { CodexAdapter } from "../agents/codex-adapter.js";
 import type { ModelCatalog } from "../agents/startup-probe.js";
 import { fetchStartupProbe, type StartupProbe } from "../agents/startup-probe.js";
 import type { CliArgs } from "../cli/args.js";
-import { type ClodexConfig, loadConfig } from "../config/config.js";
+import { type ClodexConfig, type ConfigSources, loadConfigLayers } from "../config/config.js";
 import type { Language } from "../context/language.js";
 import { buildRoleInstructions } from "../context/role-instructions.js";
 import { type BudgetLimits, DEFAULT_LIMITS, LIMIT_KEYS, type LimitName, UNLIMITED_LIMITS } from "../coordinator/budget-manager.js";
@@ -53,7 +53,9 @@ export interface ProjectContext {
   readonly sandbox: SandboxController;
   probe(): Promise<void>;
   projectRoot: string;
-  config: ClodexConfig;
+  readonly config: ClodexConfig;
+  readonly configSources: ConfigSources;
+  reloadConfig(): void;
   primary: AgentId;
   history: ConversationHistory;
   workspace: Workspace;
@@ -110,7 +112,7 @@ export const openProject = async ({
   sandboxPlatform,
   startupProbe,
 }: OpenProjectOptions): Promise<ProjectContext> => {
-  const config = loadConfig({ homeDir, projectRoot });
+  let { config, sources } = loadConfigLayers({ homeDir, projectRoot });
   const primary = args.primary ?? config.primary ?? DEFAULT_PRIMARY;
   const statePath = conversationStatePath(homeDir, projectRoot);
   // この project のターンはまだ動いていない。前の Hub が残した終わっていないターンを、復旧より先に閉じる（DESIGN.md §17）
@@ -234,6 +236,7 @@ export const openProject = async ({
       clearSession: agent => history.clearSession(agent, conversation.id),
       instructions: id =>
         buildRoleInstructions(id, config.roles, {
+          rules: config.rules?.[id],
           brainstorm: conversation.mode === "brainstorm",
           language: typeof language === "function" ? language() : language,
           artifactsDir,
@@ -339,7 +342,15 @@ export const openProject = async ({
     resetLimits: () => applyLimits({}),
     setUnlimited: () => applyLimits(overrides, true),
     projectRoot,
-    config,
+    get config() {
+      return config;
+    },
+    get configSources() {
+      return sources;
+    },
+    reloadConfig: () => {
+      ({ config, sources } = loadConfigLayers({ homeDir, projectRoot }));
+    },
     primary,
     history,
     workspace: activeWorkspace,

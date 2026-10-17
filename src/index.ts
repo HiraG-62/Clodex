@@ -403,11 +403,12 @@ const main = async (): Promise<void> => {
       },
     },
     roles: () => current().config.roles ?? {},
+    configSources: () => current().configSources,
     worktreeSetup: () => current().config.worktree?.setup,
     saveRole: (agent, text) => {
       const context = current();
       const saved = saveProjectRole(context.projectRoot, agent, text);
-      context.config.roles = { ...context.config.roles, [agent]: saved };
+      context.reloadConfig();
       return saved;
     },
     busyElsewhere: () => current().workspace.busyElsewhereInSameDir(),
@@ -467,6 +468,8 @@ const main = async (): Promise<void> => {
         }),
         primary: shell.getPrimary(),
         roles: context?.config.roles ?? {},
+        roleSources: context?.configSources.roles ?? {},
+        rules: context?.configSources.rules ?? {},
         rolePreset: matchingRolePreset(context?.config.roles ?? {}),
         agents: runtime?.coordinator.status() ?? [],
         ...(runtime?.coordinator.brainstormState ? { brainstorm: runtime.coordinator.brainstormState } : {}),

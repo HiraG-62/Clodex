@@ -68,6 +68,7 @@ const artifactsNote = (dir: string) =>
   "Put any file you want the human to see in your final reply as [name](<full path>). It appears under Shared.";
 
 export interface RoleInstructionOptions {
+  rules?: string;
   language?: Language;
   artifactsDir?: string;
   usageHints?: boolean;
@@ -77,7 +78,7 @@ export interface RoleInstructionOptions {
 export const buildRoleInstructions = (
   agent: AgentId,
   roles: RolesConfig | undefined,
-  { language, artifactsDir, usageHints, brainstorm }: RoleInstructionOptions = {},
+  { language, artifactsDir, usageHints, brainstorm, rules }: RoleInstructionOptions = {},
 ): string => {
   const peer = peerOf(agent);
   if (brainstorm)
@@ -89,6 +90,7 @@ export const buildRoleInstructions = (
   return [
     header(agent, peer),
     ...roleLines(agent, peer, roles),
+    ...(rules ? [`Rules: ${rules}`] : []),
     PERMISSION_NOTE,
     PLAN_NOTE,
     ASK_USER_NOTE,

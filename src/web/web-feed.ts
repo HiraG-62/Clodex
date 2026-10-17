@@ -3,6 +3,7 @@
 import type { AgentId } from "../agents/agent-adapter.js";
 import type { CommandLifecycle } from "../cli/command-runner.js";
 import type { AgentState } from "../cli/shell.js";
+import type { ConfigSources } from "../config/config.js";
 import type { PendingMessage } from "../coordinator/coordinator.js";
 import type { CoordinatorEvent } from "../coordinator/event-bus.js";
 import type { HubProjectEntry } from "../hub/hub.js";
@@ -33,6 +34,8 @@ export interface WebState {
   tabs: ConversationTab[];
   primary: AgentId;
   roles: Partial<Record<AgentId, string>>;
+  roleSources: ConfigSources["roles"];
+  rules: ConfigSources["rules"];
   rolePreset?: RolePresetName;
   agents: AgentState[];
   brainstorm?: { phase: string; round: number; total: number };

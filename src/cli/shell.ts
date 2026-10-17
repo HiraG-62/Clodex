@@ -2,6 +2,7 @@
 
 import { AGENT_IDS, type AgentId, type AgentStatus, type PermissionLevel, type SubagentState, type TurnResult } from "../agents/agent-adapter.js";
 import type { ModelOption } from "../agents/startup-probe.js";
+import type { ConfigSources } from "../config/config.js";
 import { isRolePresetName, ROLE_PRESET_NAMES, ROLE_PRESETS, type RolePresetName } from "../config/role-presets.js";
 import type { Language } from "../context/language.js";
 import { type BudgetLimits, DEFAULT_LIMITS, LIMIT_KEYS, LIMIT_NAMES, type LimitName } from "../coordinator/budget-manager.js";
@@ -117,6 +118,7 @@ export interface ShellOptions {
   };
   language?: { get(): Language; set(value: Language): void | Promise<void> };
   roles?: () => Partial<Record<AgentId, string>>;
+  configSources?: () => ConfigSources;
   // /new worktree の直後に worktree で実行する command（設定の worktree.setup）
   worktreeSetup?: () => string | undefined;
   sandbox?: { enabled(): boolean; ready(): Promise<boolean>; set(enabled: boolean): Promise<void>; uninstall(): Promise<void> };
@@ -218,6 +220,7 @@ export const createShell = ({
   sandbox,
   limits: projectLimits,
   roles = () => ({}),
+  configSources = () => ({ roles: {}, rules: {} }),
   worktreeSetup = () => undefined,
   saveRole = (_agent, text) => text,
 }: ShellOptions) => {
@@ -492,7 +495,11 @@ export const createShell = ({
       return "continue";
     }
     for (const agent of command.agent ? [command.agent] : AGENT_IDS) {
-      print(t("shell.role", { agent, text: roles()[agent] ?? t("shell.roleUnset") }));
+      const sources = configSources();
+      const source = sources.roles[agent];
+      const text = roles()[agent] ?? t("shell.roleUnset");
+      print(t("shell.role", { agent, text: `${text}${source ? ` (${source})` : ""}` }));
+      for (const rule of sources.rules[agent] ?? []) print(`rules (${rule.source}): ${rule.text.replace(/\r?\n/g, " ")}`);
     }
     return "continue";
   };

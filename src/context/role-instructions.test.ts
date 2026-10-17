@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { buildRoleInstructions } from "./role-instructions.js";
 
 describe("buildRoleInstructions", () => {
+  it("rules を役割の行の直後に複数行のまま挿入する", () => {
+    const text = buildRoleInstructions("codex", { codex: "実装" }, { rules: "テスト\n型チェック" });
+    expect(text).toContain("Small edits (typos, formatting, trivial fixes) you may do yourself.\nRules: テスト\n型チェック\nThe human");
+    expect(buildRoleInstructions("codex", undefined, { rules: "テスト" })).toContain("Rules: テスト");
+    expect(buildRoleInstructions("codex", undefined, { rules: "" })).not.toContain("Rules:");
+    expect(buildRoleInstructions("codex", undefined, { rules: "テスト", brainstorm: true })).not.toContain("Rules:");
+  });
   it("ブレストでは役割の指示を外して読み取り専用の定型文にする", () => {
     const text = buildRoleInstructions("codex", { codex: "実装", claude: "設計" }, { brainstorm: true, language: "ja" });
     expect(text).toContain("brainstorming together");

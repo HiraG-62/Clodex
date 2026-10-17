@@ -9,6 +9,17 @@ export function createAgentSettings(ctx: ClientContext) {
     const agent = ctx.displayedAgent(incoming);
     ctx.store.sheetAgent = id;
     ctx.store.sheetKind = "agentSettings";
+    const roleHeading = ctx.el("div", "eyebrow role-heading", ctx.t("web.role.title", { agent: ctx.AGENTS[id].name }));
+    const roleSource = ctx.store.state?.roleSources[id];
+    const sourceBadge = (source: "user" | "project") => ctx.el("span", "config-source", ctx.t(`web.configSource.${source}`));
+    if (roleSource) roleHeading.append(sourceBadge(roleSource));
+    const rules = (ctx.store.state?.rules[id] ?? []).map(rule => {
+      const block = ctx.el("div", "config-rule");
+      const heading = ctx.el("div", "eyebrow role-heading", "Rules");
+      heading.append(sourceBadge(rule.source));
+      block.append(heading, ctx.el("div", "config-rule-text", rule.text));
+      return block;
+    });
     const roleField = ctx.el("textarea", "role-editor") as HTMLTextAreaElement;
     roleField.value = ctx.store.state?.roles[id] ?? "";
     roleField.setAttribute("aria-label", ctx.t("web.role.title", { agent: ctx.AGENTS[id].name }));
@@ -83,10 +94,11 @@ export function createAgentSettings(ctx: ClientContext) {
       });
     });
     ctx.openSheet(ctx.t("web.agentSettings.title", { agent: ctx.AGENTS[id].name }), [
-      ctx.el("div", "eyebrow", ctx.t("web.role.title", { agent: ctx.AGENTS[id].name })),
+      roleHeading,
       roleField,
       saveRole,
       ctx.el("p", "muted small", ctx.t("web.role.restart", { agent: id })),
+      ...rules,
       permission,
       model,
       effort,

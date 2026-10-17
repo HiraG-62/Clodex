@@ -7,6 +7,8 @@ const IDLE: WebState = {
   project: "app",
   primary: "claude",
   roles: {},
+  roleSources: {},
+  rules: {},
   agents: [],
   tabs: [],
   conversations: [],

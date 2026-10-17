@@ -9,6 +9,8 @@ const STATE: WebState = {
   project: "C:app",
   primary: "claude",
   roles: {},
+  roleSources: {},
+  rules: {},
   agents: [],
   tabs: [],
   conversations: [],
@@ -48,6 +50,14 @@ describe("WebFeed", () => {
     feed.subscribe(item => received.push(item));
     const state: WebState = {
       ...STATE,
+      roles: { claude: "設計", codex: "実装" },
+      roleSources: { claude: "user", codex: "project" },
+      rules: {
+        codex: [
+          { source: "user", text: "テスト" },
+          { source: "project", text: "コミット禁止" },
+        ],
+      },
       sandbox: { enabled: true, ready: true },
       language: "ja",
       limits: {

@@ -14,6 +14,8 @@ const STATE: WebState = {
   project: "C:app",
   primary: "claude",
   roles: { codex: "実装" },
+  roleSources: {},
+  rules: {},
   agents: [],
   tabs: [],
   conversations: [],
