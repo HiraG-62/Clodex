@@ -672,7 +672,7 @@ git:
 - `/model` は model 名を検証しない（CLI が受け付けなければ、その返事を警告の通知で出す）。model 名は Agent ごとに違うので Agent の指定を必須にする
 - `/effort` の値: Claude は `low` / `medium` / `high` / `xhigh` / `max`（`claude --effort`）。Codex は `ReasoningEffort`（文字列。model ごとに対応する値が違う）。Agent を省略したときは両 Agent が受け付ける値だけを許す
 - `/status` と Web UI に、各 Agent の今の model と effort を表示する。CLI の既定のままで実際の値が分からなければ `default`
-- 反映の方法（docs/spikes/model-effort.md で実測）: Codex は `turn/start` の `model` / `effort`（以降のターンにも引き継がれる）。Claude は `/model <model>` / `/effort <level>` を user message として mailbox の 1 ターンで直列に送る。CLI の result 文言で成功を確認する。この設定用のターンは `turn_started` / `turn` を出さず、ログに Claude の枠を作らない（CLI の「this session only」という返事は Clodex の保存と食い違って見えるため出さない）。成功したら Clodex が「model を保存: <agent> → <model>」「effort を保存: <対象> → <level>」の 1 行を出し、失敗したら CLI の返事を警告の通知で出す
+- 反映の方法（docs/spikes/model-effort.md で実測）: Codex は `turn/start` の `model` / `effort`（以降のターンにも引き継がれる）。Codex には毎ターン effort を明示して送る（依頼ごとの effort を次のターンに持ち越さない）。値は、依頼の `effort`（§11）があればそれ、無ければ人が `/effort` で決めた値、それも無ければ thread の開始時に読んだ既定の値。Claude は `/model <model>` / `/effort <level>` を user message として mailbox の 1 ターンで直列に送る。CLI の result 文言で成功を確認する。この設定用のターンは `turn_started` / `turn` を出さず、ログに Claude の枠を作らない（CLI の「this session only」という返事は Clodex の保存と食い違って見えるため出さない）。成功したら Clodex が「model を保存: <agent> → <model>」「effort を保存: <対象> → <level>」の 1 行を出し、失敗したら CLI の返事を警告の通知で出す
 
 ## Agent の設定の保存
 
@@ -805,6 +805,7 @@ Agent が指定するフィールド:
 | `status` | | RESULT のみ。`approved` / `changes_requested` / `done` / `failed` / `canceled`（`CANCEL` で取りやめた） |
 | `issues` | | RESULT / ISSUE のみ。`{ file, line?, severity, summary }` の配列。severity は `low` / `medium` / `high` / `critical` |
 | `rework` | | `DELEGATE` / `FIX` / `ADD` のみ。同じ task の再依頼の理由。`spec`（設計の不足・誤り）/ `impl`（実装の誤り）/ `check`（検証の不足）。§17 task 単位の計測に使う |
+| `effort` | | `DELEGATE` / `REVIEW_REQUEST` のみ、宛先が `codex` のときだけ。その依頼を処理するターンの reasoning effort（§9 Model / Effort）。Claude は effort を設定用のターンで session ごと変えるしかなく、ターン単位にできないので受け付けない |
 | `relatesTo` | | `DELEGATE` / `REVIEW_REQUEST` のみ。別の `taskId` で出した、関係する前の task の ID（作り直し・続き）。§17 task 単位の計測に使う |
 
 Coordinator が付与するフィールド（Agent の自己申告は使わない）:
@@ -817,6 +818,7 @@ Coordinator が付与するフィールド（Agent の自己申告は使わな�
 | `createdAt` | ISO 8601 |
 | `specChanges` | `spec` があり、宛先に同じ設計書を前に渡しているときだけ付ける。前回から変わった節の見出し（下記 Spec の差分）。変わっていなければ空配列 |
 | `auto` | Coordinator が依頼の最終応答から作った `RESULT` / `ANSWER` にだけ付ける（§12 配送ルール） |
+| `specHash` | `spec` の配送した中身の SHA-256 の先頭 12 桁（§13 Spec の差分） |
 
 例:
 
@@ -924,7 +926,7 @@ MCP message を受け取った後、
   - 待っている間に Hub が止まったら、再試行はしない（未配送分としても残らない）
   - 再送の envelope には `[Clodex] Retry: your previous attempt at this message failed partway. Check the current state of the files before continuing; do not redo finished work.` の 1 行を添える（前回のターンが途中まで作業していても、やり直しで二重に作業しないように）
 - 依頼系の message（`DELEGATE`・`REVIEW_REQUEST`・`QUESTION`）を配送したターンが完了（`completed`）したのに、宛先の Agent がそのターンの間に送信元へ formal message を 1 つも送らなかったら、Coordinator がそのターンの最終応答を `RESULT`（`QUESTION` なら `ANSWER`）として送信元へ届ける（Agent が `send_message` を使わずに普通の返答で報告して終えても、依頼元が結果を受け取れるように）
-  - `from` は宛先の Agent、`to` は依頼の送信元、`taskId` は依頼と同じ、`replyTo` は依頼の message ID、`status` は `done`（`ANSWER` には付けない）、`body` は最終応答（`MAX_BODY_LENGTH` を超えたら切り詰め、末尾に `…`）。最終応答が空なら送らない
+  - `from` は宛先の Agent、`to` は依頼の送信元、`taskId` は依頼と同じ、`replyTo` は依頼の message ID、`status` は付けない（Agent が完了を宣言していないため。依頼元は本文で判断する）、`body` は最終応答（`MAX_BODY_LENGTH` を超えたら切り詰め、末尾に `…`）。最終応答が空なら送らない
   - Coordinator が作ったことを示す `auto: true` を付ける（Coordinator が付与するフィールド。Agent の入力では受け付けない）。envelope には `Auto: the recipient ended its turn without send_message; this is its final reply.` の 1 行を添える。画面の message の行にも自動で届けたことが分かる印を出す
   - そのターンの間に宛先が送信元へ `ANSWER`・`RESULT`・`QUESTION`・`ISSUE` などを送っていれば、やり取りが続いているので作らない。ターンが `failed`・`interrupted` のとき、割り込み（`interrupt`）で実行中のターンに足した依頼、宛先が利用枠の上限で待っているときも作らない
   - Budget は通常の `RESULT` / `ANSWER` と同じく数える（親は依頼の message）。上限を超えるなら作らず、人に `error` を出す
@@ -953,7 +955,7 @@ Agent が人に判断を求めるとき、文章の中に質問を書かせず�
 ## 会話本文の参照（`read_conversation`）
 
 - 同じ会話の Agent は MCP tool `read_conversation` で、その会話の本文を必要なときに読む。自分への入力に加え、ユーザーともう一方の Agent のやり取り、Agent 間の formal message、質問と回答を含む。別の会話の本文は返さない
-- 返すのはユーザーの入力、Agent の最終応答、formal message の body、質問・回答の本文だけ。途中の text・tool・作業ログ、通知、設定用ターンは含めない
+- 返すのはユーザーの入力、Agent の最終応答、formal message の body、質問・回答の本文だけ。formal message には message の `id`（`msg_…`）を付ける（`replyTo` に使えるように）。途中の text・tool・作業ログ、通知、設定用ターンは含めない
 - 各本文の時刻（`at`）は、Hub のある端末の時間帯のオフセット付き ISO 8601（例: `2026-10-09T22:13:38+09:00`）で返す。保存は今どおり UTC。Agent が UTC の時刻をそのまま人に伝え、画面の時刻（端末の時間帯）と食い違うのを防ぐため
 - 入力は `{ before?: number, limit?: number }`。新しい順のページを取得し、各ページの本文は時系列で返す。`before` は前の応答の `nextBefore`、`limit` は既定 50・最大 100。全件を system prompt や Task envelope に自動挿入しない
 - Event Bus から選んだ本文を会話 ID ごとの JSONL に保存し、Hub の再起動後も読めるようにする。既存の会話は保存済みの feed から読める範囲を初期値にする。MCP server は ConversationRuntime ごとに作るので、tool に会話 ID を指定させない
@@ -1006,8 +1008,10 @@ Write body in Markdown: a one-line summary first, then bullet points. Do not wri
 
 QUESTION と次の依頼の間に設計書へ書き足すと、受け手はどこが新しいか分からず全文を読み直すことになる。Coordinator は変わった節の見出しを envelope に添える。
 
-- Coordinator は `spec` 付きの message を受理するたびに、宛先 Agent ごと・設計書（実パス）ごとに中身を記録する。記録はメモリだけで、Clodex を起動し直すと消える
-- 同じ宛先に同じ設計書を前に渡していれば、前回の中身と比べて `specChanges` を付ける。初めて渡すときは付けない
+- 差分は受理時ではなく、宛先に配送する直前（mailbox が送り始めるとき・実行中のターンに足すとき）に計算する。比べる相手は「宛先の今の session が最後に受けた設計書の中身」。envelope もその時点で作る
+- Coordinator は `spec` 付きの message を配送するたびに、宛先 Agent ごと・設計書（実パス）ごとに、中身と宛先の session ID を記録する。記録はメモリだけ
+- 前回の記録があり、その session ID が宛先の今の session と同じときだけ `specChanges` を付ける。次のときは履歴が不明なので付けない（受け手は全文を読む）: 初めて渡す、session が変わった（`fresh`・`/new`・`/resume`）、Hub を再起動した。配送待ちのまま取り消された message は配送していないので記録しない
+- 配送した中身の SHA-256 の先頭 12 桁を `specHash` として message に付け、envelope の `Spec:` 行に `(sha256:<hash>)` を添える。`RESULT` / `ANSWER` に `spec` があれば同じく付ける（どの版を読んで答えたかを依頼元が確かめられる）
 - 節は Markdown の ATX 見出し（`#` 〜 `######`）で区切る。code fence の中の `#` は見出しとみなさない。最初の見出しより前は `(top)` とする
 - 見出しの行から次の見出しの直前までを節の中身とし、中身が変わった節と新しい節を見出しの行のまま並べる。消えた節は `(removed) ` を前に付ける。改行コードと行末の空白の違いは無視する
 - 全文の diff ではなく見出しにするのは、envelope を短く保つため（§3.3）。中身は受け手が設計書を開いて読む
