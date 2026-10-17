@@ -1,6 +1,13 @@
 // 画面の文言カタログ（DESIGN.md §28 v0.3 i18n）。en がキーを決め、ja は同じキーをすべて持つ（欠けは型エラー）。
 // {name} は translate の params で置き換える。Agent 向けの指示（定型文・envelope・Budget のエラー）は英語のままで、ここには入れない
 export const en = {
+  "verification.changed": "Changed since request · {count}",
+  "verification.peer": "also edited by {agent}",
+  "verification.notRun": "not run",
+  "verification.failed": "failed",
+  "verification.unknown": "exit unknown",
+  "verification.timeout": "timed out",
+  "verification.specCheck": "Spec check",
   "metrics.summary": "{turns} turns · in {input} · {minutes} min · {questions}",
   "metrics.question": "{count} question",
   "metrics.questions": "{count} questions",
@@ -475,6 +482,13 @@ export type MessageKey = keyof typeof en;
 export type Messages = Record<MessageKey, string>;
 
 export const ja: Messages = {
+  "verification.changed": "依頼開始後の差分 · {count} 件",
+  "verification.peer": "{agent} も編集",
+  "verification.notRun": "未実行",
+  "verification.failed": "失敗",
+  "verification.unknown": "終了コード不明",
+  "verification.timeout": "時間切れ",
+  "verification.specCheck": "設計書の検査",
   "metrics.summary": "{turns} ターン · 入力 {input} · {minutes} 分 · {questions}",
   "metrics.question": "質問 {count}",
   "metrics.questions": "質問 {count}",

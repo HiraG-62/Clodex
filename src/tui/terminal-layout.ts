@@ -7,6 +7,7 @@ import type { AgentMessage, MessageType } from "../protocol/messages.js";
 import { isShellInput } from "../web/client/shell-input.js";
 import { formatTaskMetrics } from "../web/client/task-metrics-format.js";
 import { applyFeedItem, type TimelineItem } from "../web/client/timeline.js";
+import { formatVerification, type VerificationLine } from "../web/client/verification-format.js";
 import type { FeedItem } from "../web/web-feed.js";
 
 export interface StaticItem {
@@ -38,7 +39,7 @@ export const advanceTerminalFeed = (state: TerminalFeed, feed: FeedItem, expande
   if (feed.type === "output") {
     return { ...state, completed: [...state.completed, { item: { kind: "output", id: `o${feed.seq}`, text: feed.text }, expanded }] };
   }
-  if (feed.event.kind === "answer") {
+  if (feed.event.kind === "answer" || feed.event.kind === "spec_check") {
     return {
       ...state,
       timeline: applyFeedItem(state.timeline, feed),
@@ -228,6 +229,7 @@ export interface TerminalLabels {
   parallel: string;
 }
 export interface TerminalCard {
+  verification?: TerminalLine[];
   metrics?: string;
   kind: TimelineItem["kind"];
   color: string;
@@ -452,6 +454,7 @@ export const cardLines = (card: TerminalCard, width: number, elapsedLabel?: stri
     { text: `${card.title}${elapsedLabel === undefined ? "" : ` · ${elapsedLabel}`}`, color: card.color, bold: true },
     ...(card.tag ? [{ text: card.tag, color: card.color }] : []),
     ...(card.metrics ? [{ text: card.metrics, color: TERMINAL_COLORS.muted }] : []),
+    ...(card.verification ?? []),
     ...(card.plan ? [{ text: card.plan, color: TERMINAL_COLORS.muted }] : []),
     ...(card.stepsLabel ? [{ text: `${card.steps ? "▾" : "▸"} ${card.stepsLabel}`, color: TERMINAL_COLORS.muted }] : []),
     ...(card.steps ?? []).map(step => ({ text: `  • ${step}`, color: TERMINAL_COLORS.muted })),
@@ -547,6 +550,21 @@ const MESSAGE_COLORS: Record<MessageType, string> = {
 };
 
 export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, expanded: boolean, metrics: Record<string, TaskMetrics> = {}): TerminalCard => {
+  const verificationLines = (message: AgentMessage): TerminalLine[] => {
+    const verification = formatVerification(message, t);
+    const line = (entry: VerificationLine): TerminalLine => ({ text: entry.text, color: entry.warning ? TERMINAL_COLORS.warn : TERMINAL_COLORS.muted });
+    return [
+      ...verification.checks.map(check => line({ ...check, text: `[${check.text}]` })),
+      ...(verification.changed ? [{ text: `${expanded ? "▾" : "▸"} ${verification.changed}`, color: TERMINAL_COLORS.muted }] : []),
+      ...(expanded ? verification.files.map(line) : []),
+      ...(verification.specCheck
+        ? [
+            line({ ...verification.specCheck, text: `${expanded ? "▾" : "▸"} ${verification.specCheck.text}` }),
+            ...(expanded ? verification.specCheck.output.split("\n").map(text => ({ text, color: TERMINAL_COLORS.muted })) : []),
+          ]
+        : []),
+    ];
+  };
   const messageMetrics = (message: { type: MessageType; id: string }) =>
     message.type === "RESULT" && metrics[message.id] ? formatTaskMetrics(metrics[message.id]!, t) : undefined;
   const messageBody = (message: AgentMessage) =>
@@ -595,6 +613,9 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
       title: `${agentName(item.agent)} · ${labels[item.status]}`,
       headerBackgroundColor: agentHeaderColor(item.agent),
       body: attachments.length ? attachments.join("\n\n") : item.text,
+      ...((item.messages ?? []).some(entry => entry.message.evidence || entry.message.specCheck)
+        ? { verification: (item.messages ?? []).flatMap(entry => verificationLines(entry.message)) }
+        : {}),
       at: item.at,
       ...(item.plan ? { plan: item.plan } : {}),
       ...(steps.length
@@ -614,6 +635,7 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
       tag: `${item.message.type} · ${item.message.taskId}${item.message.auto ? ` · ${labels.auto}` : ""}${item.message.fresh ? ` · ${labels.fresh}` : ""}${item.message.thread ? ` · ${labels.parallel}` : ""}`,
       body: item.message.body,
       metrics: messageMetrics(item.message),
+      ...(item.message.evidence || item.message.specCheck ? { verification: verificationLines(item.message) } : {}),
     };
   if (item.kind === "human")
     return {

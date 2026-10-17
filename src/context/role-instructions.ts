@@ -1,6 +1,6 @@
 // Agent の起動時に system prompt へ追加する定型文と役割（DESIGN.md §13 Roles）
 import { AGENT_IDS, type AgentId, ASK_USER_TOOL, COORDINATOR_MCP_SERVER, READ_CONVERSATION_TOOL, SEND_MESSAGE_TOOL } from "../agents/agent-adapter.js";
-import type { RolesConfig } from "../config/config.js";
+import type { ClodexConfig, RolesConfig } from "../config/config.js";
 import { BODY_FORMAT } from "./context-resolver.js";
 import { type Language, languageDirective } from "./language.js";
 
@@ -68,6 +68,7 @@ const artifactsNote = (dir: string) =>
   "Put any file you want the human to see in your final reply as [name](<full path>). It appears under Shared.";
 
 export interface RoleInstructionOptions {
+  verify?: ClodexConfig["verify"];
   rules?: string;
   language?: Language;
   artifactsDir?: string;
@@ -78,7 +79,7 @@ export interface RoleInstructionOptions {
 export const buildRoleInstructions = (
   agent: AgentId,
   roles: RolesConfig | undefined,
-  { language, artifactsDir, usageHints, brainstorm, rules }: RoleInstructionOptions = {},
+  { language, artifactsDir, usageHints, brainstorm, rules, verify }: RoleInstructionOptions = {},
 ): string => {
   const peer = peerOf(agent);
   if (brainstorm)
@@ -91,6 +92,14 @@ export const buildRoleInstructions = (
     header(agent, peer),
     ...roleLines(agent, peer, roles),
     ...(rules ? [`Rules: ${rules}`] : []),
+    ...(verify && Object.keys(verify).length
+      ? [
+          `Default checks: ${(["implement", "integrate"] as const)
+            .filter(step => verify[step] !== undefined)
+            .map(step => `${step} = ${verify[step]!.join("; ")}`)
+            .join("; ")}. Run the default checks for your step plus any checks the spec adds.`,
+        ]
+      : []),
     PERMISSION_NOTE,
     PLAN_NOTE,
     ASK_USER_NOTE,

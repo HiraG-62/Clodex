@@ -12,7 +12,7 @@ export interface PreparedSend {
   onSent: () => void;
 }
 
-type PrepareSend = (interrupt?: boolean) => PreparedSend;
+type PrepareSend = (interrupt?: boolean) => PreparedSend | Promise<PreparedSend>;
 
 interface QueueItem {
   kind: "send" | "compact" | "model" | "effort";
@@ -348,7 +348,9 @@ export class AgentMailbox {
       }
       await this.ensureRunning();
       if (signal?.aborted) return CANCELED_RESULT;
-      const prepared = prepare?.();
+      const prepared = await prepare?.();
+      if (this.closed) return CLOSED_RESULT;
+      if (signal?.aborted) return CANCELED_RESULT;
       const turn = this.agent.send(`${prepared?.text ?? text}${suffix ?? ""}${this.deliveryNote()}`, images, prepared?.options);
       prepared?.onSent();
       return await turn;

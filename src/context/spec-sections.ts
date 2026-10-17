@@ -11,7 +11,7 @@ interface Section {
   content: string;
 }
 
-const splitSections = (text: string): Section[] => {
+export const splitSections = (text: string): Section[] => {
   const sections: Section[] = [];
   const occurrences = new Map<string, number>();
   let heading = TOP_SECTION;

@@ -2,7 +2,7 @@
 // 人が見ている会話（今の会話）は 1 つ。会話を切り替えても、前の会話の Agent は止めない
 import { randomUUID } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import type { AgentId } from "../agents/agent-adapter.js";
 import type { Coordinator, RequestState } from "../coordinator/coordinator.js";
 import type { CoordinatorEvent, EventBus } from "../coordinator/event-bus.js";
@@ -321,6 +321,13 @@ export class Workspace {
   }
 
   private handleEvent(runtime: ConversationRuntime, event: CoordinatorEvent): void {
+    if (event.kind === "agent" && event.event.type === "tool" && event.event.files?.length) {
+      for (const conversation of this.options.history.list()) {
+        if (conversation.parent?.conversationId !== runtime.conversationId) continue;
+        const child = this.runtimes.get(conversation.id);
+        if (child && relative(runtime.workDir, child.workDir) === "") child.coordinator.recordPeerFiles(event.agent, event.event.files);
+      }
+    }
     const current = this.runtimes.get(this.options.history.currentId) === runtime;
     for (const listener of this.eventListeners) listener(runtime, event, current);
     const used = this.toolUse.get(runtime.conversationId) ?? {};

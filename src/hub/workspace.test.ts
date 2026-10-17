@@ -95,6 +95,28 @@ const setup = (
 };
 
 describe("Workspace", () => {
+  it.each([false, true])("親の編集は同じ作業ディレクトリの子だけに渡す: worktree=%s", async worktree => {
+    const { workspace, created } = setup();
+    await workspace.init();
+    const parent = created[0]!;
+    void parent.coordinator.sendToAgent("codex", "先行作業");
+    await flush();
+    const result = await parent.coordinator.receiveMessageFromTool("claude", {
+      to: "codex",
+      type: "DELEGATE",
+      taskId: "T",
+      body: "並列",
+      parallel: true,
+      worktree,
+    });
+    if (!result.ok) throw new Error(result.error);
+    await flush();
+    const child = created[1]!;
+    const record = vi.spyOn(child.coordinator, "recordPeerFiles");
+    parent.claude.emit({ type: "tool", name: "Edit", input: "", files: ["src/a.ts"] });
+    expect(record).toHaveBeenCalledTimes(worktree ? 0 : 1);
+    if (!worktree) expect(record).toHaveBeenCalledWith("claude", ["src/a.ts"]);
+  });
   it("並列の依頼への ADD・NOTE・CANCEL を子の作業中のターンへ届ける", async () => {
     const { workspace, created } = setup();
     await workspace.init();

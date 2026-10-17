@@ -113,6 +113,31 @@ export type MessageType = (typeof MESSAGE_TYPES)[number];
 export type Issue = z.infer<typeof issueSchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 
+export interface VerificationCheck {
+  command: string;
+  ran: boolean;
+  exitCode?: number;
+  failed?: boolean;
+}
+
+export interface ChangedFile {
+  path: string;
+  scope?: "owned" | "forbidden" | "outside";
+  peer?: true;
+}
+
+export interface VerificationEvidence {
+  checks: VerificationCheck[];
+  changed: ChangedFile[] | { count: number };
+}
+
+export interface SpecCheckResult {
+  command: string;
+  exitCode?: number;
+  timedOut?: boolean;
+  output: string;
+}
+
 export interface AgentMessage extends SendMessageInput {
   id: string;
   from: AgentId;
@@ -120,6 +145,8 @@ export interface AgentMessage extends SendMessageInput {
   createdAt: string;
   specChanges?: string[];
   specHash?: string;
+  evidence?: VerificationEvidence;
+  specCheck?: SpecCheckResult;
   auto?: true;
   thread?: string;
 }

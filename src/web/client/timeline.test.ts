@@ -58,6 +58,18 @@ const answer = (id = "q1", name: "claude" | "codex" = "claude"): Extract<FeedIte
 });
 const run = (items: FeedItem[]) => items.reduce<TimelineItem[]>(applyFeedItem, []);
 
+it.each([false, true])("spec_check は既存カードを更新し、ログ行を増やさない: attached=%s", attached => {
+  const message = formal("claude", "依頼");
+  if (message.type !== "event" || message.event.kind !== "message") throw new Error("message");
+  const items = run([...(attached ? [agent("claude", { type: "turn_started" })] : []), message]);
+  const result = { command: "check", exitCode: 0, output: "ok" };
+  const next = applyFeedItem(items, { type: "event", seq: ++seq, event: { kind: "spec_check", messageId: message.event.message.id, result, at: LATER } });
+  expect(next).toHaveLength(items.length);
+  const card = next[0]!;
+  expect(card.kind === "message" ? card.message.specCheck : card.kind === "turn" ? card.messages?.[0]?.message.specCheck : undefined).toEqual(result);
+  expect(next[0]).not.toBe(items[0]);
+});
+
 it("retry と tool_end では表示中のターンを変更しない", () => {
   const items = run([agent("claude", { type: "turn_started" })]);
   expect(applyFeedItem(items, { type: "event", seq: ++seq, event: { kind: "retry", to: "codex", messageId: "msg_1", attempt: 2, at: AT } })).toEqual(items);

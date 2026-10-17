@@ -40,6 +40,44 @@ const labels = {
   parallel: "並列",
 };
 
+it("証跡を折りたたみ、失敗と範囲外を警告色にする", () => {
+  const item: TimelineItem = {
+    kind: "message",
+    id: "r",
+    at: "now",
+    message: {
+      id: "r",
+      type: "RESULT",
+      from: "codex",
+      to: "claude",
+      taskId: "T",
+      repository: "root",
+      createdAt: "now",
+      body: "完了",
+      evidence: { checks: [{ command: "pnpm test", ran: true, exitCode: 1 }], changed: [{ path: "outside.ts", scope: "outside" }] },
+      specCheck: { command: "check", exitCode: 0, output: "diagnostic" },
+    },
+  };
+  const collapsed = cardLines(formatTimelineItem(item, labels, false), 100);
+  expect(collapsed.some(line => line.parts?.some(part => part.text.includes("pnpm test: exit 1") && part.color === TERMINAL_COLORS.warn))).toBe(true);
+  expect(collapsed.some(line => line.text.includes("outside.ts"))).toBe(false);
+  const expanded = cardLines(formatTimelineItem(item, labels, true), 100);
+  expect(expanded.some(line => line.parts?.some(part => part.text.includes("outside.ts [outside]") && part.color === TERMINAL_COLORS.warn))).toBe(true);
+  expect(expanded.some(line => line.text.includes("diagnostic"))).toBe(true);
+  const first = advanceTerminalFeed(
+    { timeline: [], completed: [] },
+    { type: "event", seq: 1, event: { kind: "message", message: item.message, at: "now" } },
+    false,
+  );
+  const next = advanceTerminalFeed(
+    first,
+    { type: "event", seq: 2, event: { kind: "spec_check", messageId: "r", result: { command: "check", exitCode: 2, output: "new" }, at: "later" } },
+    false,
+  );
+  expect(next.completed).toHaveLength(1);
+  expect(next.completed[0]?.item).toMatchObject({ message: { specCheck: { exitCode: 2 } } });
+});
+
 it("コマンド入力の枠を緑にして上辺にラベルを置き、! を消すと戻す", () => {
   const frame = inputFrame("!pnpm test", "コマンド", 40);
   expect(frame.color).toBe(TERMINAL_COLORS.code);

@@ -29,6 +29,25 @@ describe("recovery store", () => {
     expect(JSON.parse(readFileSync(path, "utf8")).conversations).not.toHaveProperty("c2");
   });
 
+  it("配送待ちの message の証跡と設計書検査を保持する", () => {
+    const { home, project } = setup();
+    const message = {
+      id: "r",
+      type: "RESULT" as const,
+      from: "codex" as const,
+      to: "claude" as const,
+      taskId: "T",
+      body: "完了",
+      repository: project,
+      createdAt: "now",
+      replyTo: "request",
+      evidence: { checks: [{ command: "pnpm test", ran: true, exitCode: 0 }], changed: [{ path: "a.ts", scope: "owned" as const, peer: true as const }] },
+      specCheck: { command: "check", exitCode: 1, output: "diagnostic" },
+    };
+    saveRecovery(home, project, { current: "c", conversations: { c: { interrupted: [], queue: { claude: [{ kind: "message", message }], codex: [] } } } });
+    expect(loadRecovery(home, project)?.conversations.c?.queue.claude[0]).toEqual({ kind: "message", message });
+  });
+
   it("壊れたファイルは空として扱う", () => {
     const { home, project, path } = setup();
     saveRecovery(home, project, { current: "c1", conversations: {} });

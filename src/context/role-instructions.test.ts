@@ -137,3 +137,11 @@ it.each(["claude", "codex"] as const)("%s に人への質問は ask_user を使�
 it.each(["claude", "codex"] as const)("%s に同じ会話の本文を読む方法を伝える", agent => {
   expect(buildRoleInstructions(agent, undefined)).toContain('Use the read_conversation tool of the "clodex" MCP server');
 });
+it("検証プロファイルは定型文に一度だけ入り、ブレストには入らない", () => {
+  const verify = { implement: ["pnpm test", "pnpm typecheck"], integrate: ["pnpm lint"] };
+  const line =
+    "Default checks: implement = pnpm test; pnpm typecheck; integrate = pnpm lint. Run the default checks for your step plus any checks the spec adds.";
+  expect(buildRoleInstructions("codex", undefined, { verify })).toContain(line);
+  expect(buildRoleInstructions("codex", undefined, { verify, brainstorm: true })).not.toContain("Default checks:");
+  expect(buildRoleInstructions("claude", undefined, { verify: { integrate: ["pnpm lint"] } })).toContain("Default checks: integrate = pnpm lint.");
+});

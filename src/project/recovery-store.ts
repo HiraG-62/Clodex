@@ -11,6 +11,16 @@ const messageSchema = z.object(sendMessageShape).extend({
   from: z.enum(AGENT_IDS),
   repository: z.string().min(1),
   createdAt: z.string(),
+  evidence: z
+    .object({
+      checks: z.array(z.object({ command: z.string(), ran: z.boolean(), exitCode: z.number().optional(), failed: z.boolean().optional() })),
+      changed: z.union([
+        z.array(z.object({ path: z.string(), scope: z.enum(["owned", "forbidden", "outside"]).optional(), peer: z.literal(true).optional() })),
+        z.object({ count: z.number() }),
+      ]),
+    })
+    .optional(),
+  specCheck: z.object({ command: z.string(), exitCode: z.number().optional(), timedOut: z.boolean().optional(), output: z.string() }).optional(),
 });
 const itemSchema = z.discriminatedUnion("kind", [
   z.strictObject({

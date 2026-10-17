@@ -6,6 +6,7 @@ import { renderMarkdown } from "./markdown.js";
 import type { ClientContext } from "./store.js";
 import { formatTaskMetrics } from "./task-metrics-format.js";
 import type { TimelineItem } from "./timeline.js";
+import { formatVerification } from "./verification-format.js";
 
 const VISIBLE_REFERENCE_FILES = 3;
 const PLAN_KEY_PREFIX = "plan:";
@@ -318,6 +319,24 @@ export function createLogItem(ctx: ClientContext) {
     node.append(route);
     const metrics = message.type === "RESULT" ? ctx.store.state?.taskMetrics?.results[message.id] : undefined;
     if (metrics) node.append(ctx.el("div", "task-metrics muted", formatTaskMetrics(metrics, ctx.t)));
+    const verification = formatVerification(message, ctx.t);
+    if (verification.checks.length) {
+      const checks = ctx.el("div", "verification-checks");
+      for (const check of verification.checks)
+        checks.append(ctx.el("span", `verification-chip mono${check.warning ? " verification-warning" : ""}`, check.text));
+      node.append(checks);
+    }
+    if (verification.changed) {
+      const files = ctx.el("ul", "verification-list mono");
+      for (const file of verification.files) files.append(ctx.el("li", file.warning ? "verification-warning" : "", file.text));
+      node.append(details(`evidence:${item.id}`, verification.changed, files, "verification-files"));
+    }
+    if (verification.specCheck) {
+      const check = verification.specCheck;
+      const diagnostic = details(`spec-check:${item.id}`, check.text, ctx.el("pre", "", check.output), "spec-check");
+      if (check.warning) diagnostic.classList.add("verification-warning");
+      node.append(diagnostic);
+    }
     node.append(text);
     appendImagePreviews(node, message.body, item.at);
     if (message.spec || message.files?.length) {

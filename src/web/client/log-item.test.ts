@@ -4,6 +4,41 @@ import { t } from "../../i18n/i18n.js";
 import { createLogItem, splitReferenceFiles } from "./log-item.js";
 import type { ClientContext } from "./store.js";
 
+it("証跡のチップ・差分と設計書検査の折りたたみを表示する", () => {
+  const created: Array<{ tag: string; className: string; textContent: string }> = [];
+  const el = (tag: string, className = "", textContent = "") => {
+    const node = { tag, className, textContent, append: () => {}, addEventListener: () => {} };
+    created.push(node);
+    return node;
+  };
+  vi.stubGlobal("document", { addEventListener: () => {} });
+  try {
+    const ctx = { el, mark: () => el("span"), clock: () => "12:00", t, store: { opened: new Map() } } as unknown as ClientContext;
+    createLogItem(ctx).renderMessage({
+      id: "r",
+      at: "now",
+      message: {
+        id: "r",
+        type: "RESULT",
+        taskId: "T",
+        from: "codex",
+        to: "claude",
+        body: "完了",
+        repository: "test",
+        createdAt: "now",
+        evidence: { checks: [{ command: "pnpm test", ran: true, exitCode: 1 }], changed: [{ path: "src/a.ts", scope: "forbidden", peer: true }] },
+        specCheck: { command: "check", exitCode: 0, output: "ok" },
+      },
+    });
+    expect(created.some(node => node.className.includes("verification-warning") && node.textContent.includes("pnpm test"))).toBe(true);
+    expect(created.some(node => node.tag === "details" && node.className === "verification-files")).toBe(true);
+    expect(created.some(node => node.className.includes("verification-warning") && node.textContent.includes("src/a.ts [forbidden]"))).toBe(true);
+    expect(created.some(node => node.tag === "details" && node.className === "spec-check")).toBe(true);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it("RESULT カードに task の累計を表示する", () => {
   const created: Array<{ className: string; textContent: string; append: (...nodes: unknown[]) => void }> = [];
   const el = (_tag: string, className = "", textContent = "") => {

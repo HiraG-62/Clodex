@@ -238,10 +238,14 @@ export const openProject = async ({
           ? { claude: { ...startSettings.claude, permission: "read-only" }, codex: { ...startSettings.codex, permission: "read-only" } }
           : startSettings,
       ...(config.freshThread ? { freshThread: config.freshThread } : {}),
+      ...(config.verify ? { verify: config.verify } : {}),
+      ...(config.specSections ? { specSections: config.specSections } : {}),
+      ...(config.specCheck ? { specCheck: config.specCheck } : {}),
       clearSession: agent => history.clearSession(agent, conversation.id),
       instructions: id =>
         buildRoleInstructions(id, config.roles, {
           rules: config.rules?.[id],
+          verify: config.verify,
           brainstorm: conversation.mode === "brainstorm",
           language: typeof language === "function" ? language() : language,
           artifactsDir,

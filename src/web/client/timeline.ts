@@ -246,6 +246,18 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
     ]);
   }
   if (event.kind === "notice" || event.kind === "retry") return items;
+  if (event.kind === "spec_check")
+    return items.map(entry => {
+      if (entry.kind === "message" && entry.message.id === event.messageId) return { ...entry, message: { ...entry.message, specCheck: event.result } };
+      if (entry.kind === "turn" && entry.messages?.some(attached => attached.message.id === event.messageId))
+        return {
+          ...entry,
+          messages: entry.messages.map(attached =>
+            attached.message.id === event.messageId ? { ...attached, message: { ...attached.message, specCheck: event.result } } : attached,
+          ),
+        };
+      return entry;
+    });
   if (event.kind === "brainstorm") {
     if (event.artifact) {
       const index = items.findLastIndex(entry => entry.kind === "turn" && entry.status === "completed");

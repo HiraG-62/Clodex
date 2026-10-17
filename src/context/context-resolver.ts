@@ -16,6 +16,34 @@ export const BODY_FORMAT = "Write body in Markdown: a one-line summary first, th
 
 const formatIssue = ({ file, line, severity, summary }: Issue): string => `- [${severity}] ${file}${line === undefined ? "" : `:${line}`} ${summary}`;
 
+const evidenceLines = (message: AgentMessage): string[] => {
+  const evidence = message.evidence;
+  if (!evidence) return [];
+  return [
+    "Evidence (recorded by Clodex):",
+    ...evidence.checks.map(
+      check =>
+        `- ${check.command}: ${!check.ran ? "not run" : check.exitCode !== undefined ? `exit ${check.exitCode}` : check.failed ? "failed" : "exit unknown"}`,
+    ),
+    "Changed since the request (working tree):",
+    ...(Array.isArray(evidence.changed)
+      ? evidence.changed.map(file => `- ${file.path}${file.scope ? ` [${file.scope}]` : ""}${file.peer ? ` (also edited by ${message.to})` : ""}`)
+      : [`- ${evidence.changed.count} files`]),
+  ];
+};
+
+const specCheckLines = (message: AgentMessage): string[] => {
+  const check = message.specCheck;
+  if (!check) return [];
+  const fence = "`".repeat(Math.max(3, ...[...check.output.matchAll(/`+/g)].map(match => match[0].length + 1)));
+  return [
+    `Spec check (${check.command}): ${check.timedOut ? "timed out" : check.exitCode !== undefined ? `exit ${check.exitCode}` : "failed"}`,
+    fence,
+    check.output,
+    fence,
+  ];
+};
+
 const specLines = (spec: string, changes: readonly string[] | undefined, hash: string | undefined): string[] => {
   const line = `Spec: ${spec}${hash ? ` (sha256:${hash})` : ""}`;
   if (!changes) return [line];
@@ -64,7 +92,7 @@ export const buildEnvelope = (m: AgentMessage, language?: Language): string => {
   if (m.spec) lines.push(...specLines(m.spec, m.specChanges, m.specHash));
   if (m.files?.length) lines.push("Files:", ...m.files.map(file => `- ${file}`));
   if (m.issues?.length) lines.push("Issues:", ...m.issues.map(formatIssue));
-  lines.push("", m.body, "", ...specInstruction(m), ...replyInstruction(m));
+  lines.push("", m.body, "", ...specCheckLines(m), ...evidenceLines(m), ...specInstruction(m), ...replyInstruction(m));
   if (language) lines.push(languageDirective(language));
   return lines.join("\n");
 };

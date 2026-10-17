@@ -11,7 +11,17 @@ const COMPACT_FACTOR = 2;
 
 export const feedDirPath = (statePath: string): string => join(statePath, "..", `${basename(statePath, extname(statePath))}.feed`);
 
-const EVENT_KINDS: ReadonlySet<unknown> = new Set(["agent", "message", "human", "question", "answer", "steered", "brainstorm", "brainstormReleased"]);
+const EVENT_KINDS: ReadonlySet<unknown> = new Set([
+  "agent",
+  "message",
+  "spec_check",
+  "human",
+  "question",
+  "answer",
+  "steered",
+  "brainstorm",
+  "brainstormReleased",
+]);
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
 // 自分で書いたファイルなので形（画面が分岐に使う type と kind）だけ確かめる。壊れた行は読み飛ばす

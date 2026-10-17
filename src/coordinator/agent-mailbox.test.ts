@@ -13,6 +13,26 @@ const setup = () => {
 };
 
 describe("AgentMailbox", () => {
+  it("非同期の準備を待ち、準備中に閉じた mailbox は送信しない", async () => {
+    const { mailbox, agent } = setup();
+    let finish!: () => void;
+    const prepared = new Promise<void>(resolve => {
+      finish = resolve;
+    });
+    const sent = vi.fn();
+    const pending = mailbox.enqueue("", {
+      prepare: async () => {
+        await prepared;
+        return { text: "依頼", onSent: sent };
+      },
+    });
+    await flush();
+    mailbox.close();
+    finish();
+    expect((await pending).status).toBe("failed");
+    expect(agent.sent).toEqual([]);
+    expect(sent).not.toHaveBeenCalled();
+  });
   it("hold を二重に呼んでも最初の再開時刻と指示を保つ", async () => {
     vi.useFakeTimers();
     try {

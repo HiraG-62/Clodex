@@ -254,10 +254,10 @@ export function createLogView(ctx: ClientContext) {
     const keep = new Set(visibleItems.map(i => i.id));
     const openedKeep = new Set(keep);
     for (const item of visibleItems) {
-      if (item.kind === "message") openedKeep.add(`refs:${item.id}`);
+      if (item.kind === "message") for (const prefix of ["refs", "evidence", "spec-check"]) openedKeep.add(`${prefix}:${item.id}`);
       if (item.kind === "turn") {
         openedKeep.add(`plan:${item.id}`);
-        for (const message of item.messages ?? []) openedKeep.add(`refs:${message.message.id}`);
+        for (const message of item.messages ?? []) for (const prefix of ["refs", "evidence", "spec-check"]) openedKeep.add(`${prefix}:${message.message.id}`);
       }
     }
     const anchor = (() => {

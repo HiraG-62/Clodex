@@ -26,6 +26,9 @@ const configSchema = z.strictObject({
   permission: z.enum(PERMISSION_LEVELS).optional(),
   updateChannel: z.enum(UPDATE_CHANNELS).optional(),
   roles: z.strictObject({ claude: role.optional(), codex: role.optional() }).optional(),
+  verify: z.strictObject({ implement: z.array(z.string().min(1)).optional(), integrate: z.array(z.string().min(1)).optional() }).optional(),
+  specSections: z.strictObject({ owned: z.string().optional(), forbidden: z.string().optional() }).optional(),
+  specCheck: z.string().min(1).optional(),
   rules: z.strictObject({ claude: z.string().optional(), codex: z.string().optional() }).optional(),
   freshThread: z.strictObject({ DELEGATE: z.boolean().optional(), REVIEW_REQUEST: z.boolean().optional() }).optional(),
   usageHints: z.strictObject({ claude: z.boolean().optional(), codex: z.boolean().optional() }).optional(),
@@ -100,7 +103,7 @@ export const ensureUserConfigTemplate = (homeDir: string): void => {
   }
 };
 
-const OBJECT_CONFIG_KEYS = ["roles", "freshThread", "usageHints", "limits", "worktree", "web", "usageAlert"] as const;
+const OBJECT_CONFIG_KEYS = ["roles", "freshThread", "usageHints", "limits", "worktree", "web", "usageAlert", "verify", "specSections"] as const;
 
 export const loadConfigLayers = ({ homeDir, projectRoot }: ConfigPaths): ConfigLayers => {
   const user = readConfigFile(join(homeDir, USER_CONFIG_PATH));

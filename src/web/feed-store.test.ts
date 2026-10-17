@@ -232,3 +232,14 @@ it("質問と回答の event を保存して読み直す", () => {
   for (const item of items) store.append("c1", item);
   expect(store.load("c1")).toEqual(items);
 });
+it("spec_check を保存して再読込する", () => {
+  const dir = mkdtempSync(join(tmpdir(), "clodex-spec-check-feed-"));
+  const store = new FeedStore(dir);
+  const item = {
+    type: "event" as const,
+    seq: 1,
+    event: { kind: "spec_check" as const, messageId: "r", result: { command: "check", exitCode: 1, output: "diagnostic" }, at: "now" },
+  };
+  store.append("c", item);
+  expect(new FeedStore(dir).load("c")).toEqual([item]);
+});

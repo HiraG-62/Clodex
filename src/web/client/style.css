@@ -805,3 +805,37 @@
     body.kbd .working-tabs { display: none; }
     body.kbd .composer { padding-bottom: 6px; }
   }
+.verification-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.verification-chip {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 3px 7px;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.verification-warning {
+  color: var(--warn);
+}
+.verification-files,
+.spec-check {
+  margin: 8px 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.verification-files summary,
+.spec-check summary {
+  cursor: pointer;
+}
+.verification-list {
+  padding-left: 20px;
+  line-height: 1.7;
+}
+.spec-check pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

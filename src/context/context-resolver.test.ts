@@ -16,6 +16,31 @@ const base: AgentMessage = {
 };
 
 describe("buildEnvelope", () => {
+  it("証跡と検査の診断を返信指示より前に出す", () => {
+    const envelope = buildEnvelope({
+      ...base,
+      type: "RESULT",
+      from: "codex",
+      to: "claude",
+      evidence: {
+        checks: [
+          { command: "pnpm test", ran: true, exitCode: 0 },
+          { command: "pnpm lint", ran: true, failed: true },
+          { command: "pnpm typecheck", ran: false },
+        ],
+        changed: [
+          { path: "src/a.ts", scope: "owned", peer: true },
+          { path: "other.ts", scope: "outside" },
+        ],
+      },
+      specCheck: { command: "check spec.md", exitCode: 3, output: "diagnostic" },
+    });
+    expect(envelope).toContain("Evidence (recorded by Clodex):\n- pnpm test: exit 0\n- pnpm lint: failed\n- pnpm typecheck: not run");
+    expect(envelope).toContain("- src/a.ts [owned] (also edited by claude)");
+    expect(envelope).toContain("Spec check (check spec.md): exit 3\n```\ndiagnostic\n```");
+    expect(envelope.indexOf("Evidence (")).toBeLessThan(envelope.indexOf("No reply is required."));
+    expect(buildEnvelope({ ...base, specCheck: { command: "check", timedOut: true, output: "" } })).toContain("Spec check (check): timed out");
+  });
   it("specHash と差分を併記し、effort を表示する", () => {
     const envelope = buildEnvelope({ ...base, spec: "design.md", specHash: "0123456789ab", specChanges: [], effort: "high" });
     expect(envelope).toContain("Spec: design.md (sha256:0123456789ab) (unchanged since you last received it)");

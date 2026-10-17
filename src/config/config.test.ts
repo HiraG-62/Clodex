@@ -40,6 +40,20 @@ describe("saveUserLanguage", () => {
 });
 
 describe("loadConfig", () => {
+  it("検証設定を読み、オブジェクトはキーごとに重ねる", () => {
+    expect(
+      loadConfig(
+        setup({
+          user: { verify: { implement: ["pnpm test"], integrate: ["pnpm lint"] }, specSections: { owned: "所有", forbidden: "禁止" }, specCheck: "old {spec}" },
+          project: { verify: { implement: ["pnpm typecheck"] }, specSections: { owned: "対象" }, specCheck: "check {spec}" },
+        }),
+      ),
+    ).toEqual({
+      verify: { implement: ["pnpm typecheck"], integrate: ["pnpm lint"] },
+      specSections: { owned: "対象", forbidden: "禁止" },
+      specCheck: "check {spec}",
+    });
+  });
   it("threadTokenWarn は数か Agent ごとの数を読む", () => {
     expect(loadConfig(setup({ user: { threadTokenWarn: 150000 } })).threadTokenWarn).toBe(150000);
     expect(loadConfig(setup({ project: { threadTokenWarn: { codex: 200000 } } })).threadTokenWarn).toEqual({ codex: 200000 });

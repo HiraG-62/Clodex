@@ -13,6 +13,7 @@ import {
 } from "../agents/agent-adapter.js";
 import { type ModelCatalog, modelLabel } from "../agents/model-catalog.js";
 import type { StartupProbe } from "../agents/startup-probe.js";
+import type { ClodexConfig } from "../config/config.js";
 import { buildEnvelope } from "../context/context-resolver.js";
 import { CONTEXT_INSTRUCTION } from "../context/conversation-instruction.js";
 import { type Language, languageReminder } from "../context/language.js";
@@ -29,8 +30,10 @@ import { DeliveryNotes, OTHER_AGENT } from "./delivery-notes.js";
 import type { EventBus } from "./event-bus.js";
 import { QuestionStore } from "./question-store.js";
 import { createHandoffPath, handoffInstruction, handoffNotice, hasHandoffDocument } from "./session-handoff.js";
+import { runSpecCheck } from "./spec-check.js";
 import { type ConversationTaskMetrics, TaskMetricsRecorder, TaskMetricsStore } from "./task-metrics.js";
 import { DEFAULT_USAGE_ALERT, limitResetAt, type ThreadTokenWarn, type UsageAlert, UsageMonitor, type UsageSnapshot } from "./usage-monitor.js";
+import { WorkBaselines } from "./work-baseline.js";
 import { WorkRecorder } from "./work-recorder.js";
 
 // 起動時の Agent の設定（DESIGN.md §9 Agent の設定の保存）
@@ -87,6 +90,9 @@ const handoffFallback = (message: AgentMessage, error: string) =>
   `Do not send it again. ${HANDOFF_ACTION[message.type] ?? "Do the work yourself"} and continue the task.`;
 
 export interface CoordinatorOptions {
+  verify?: ClodexConfig["verify"];
+  specSections?: ClodexConfig["specSections"];
+  specCheck?: string;
   artifactsDir?: string;
   conversationId?: string;
   metricsStore?: TaskMetricsStore;
@@ -143,6 +149,9 @@ export class Coordinator {
   private readonly turnInputs: Partial<Record<AgentId, string[]>> = {};
   private readonly questions = new QuestionStore();
   private readonly workRecorder = new WorkRecorder();
+  private readonly workBaselines: WorkBaselines;
+  private readonly requestSpecs = new Map<string, string>();
+  private readonly specChecks = new Map<string, Promise<void>>();
   private readonly deliveryNotes: DeliveryNotes;
   private readonly repliedRequests = new Set<string>();
   private readonly messages = new Map<string, AgentMessage>();
@@ -334,6 +343,7 @@ export class Coordinator {
         } else {
           this.messages.set(item.message.id, item.message);
           this.budget.restore(item.message);
+          this.prepareRequest(item.message);
           this.detach(this.deliver(item.message), item.message.to);
         }
       }
@@ -344,6 +354,7 @@ export class Coordinator {
   }
 
   constructor(private readonly options: CoordinatorOptions) {
+    this.workBaselines = new WorkBaselines(options.projectRoot, options);
     this.metricsStore = options.metricsStore ?? new TaskMetricsStore();
     this.metrics = new TaskMetricsRecorder(options.conversationId ?? "", this.metricsStore);
     options.bus.subscribe(event => {
@@ -375,6 +386,7 @@ export class Coordinator {
         if (event.type === "subagents") this.subagents[id] = [...event.running];
         if (event.type === "background_tasks") this.backgroundTasks[id] = [...event.running];
         const files = this.workRecorder.record(id, event);
+        this.workBaselines.record(id, event);
         this.deliveryNotes.recordPeerFiles(OTHER_AGENT[id], files);
         if (["turn_started", "text", "tool", "turn"].includes(event.type)) this.notifyRecoveryChange();
         const handoff = event.type === "turn" && this.handoffTurns[id] === true;
@@ -507,6 +519,10 @@ export class Coordinator {
     return this.metricsStore.snapshot(this.options.conversationId ?? "");
   }
 
+  recordPeerFiles(agent: AgentId, files: readonly string[]): void {
+    this.workBaselines.recordPeerFiles(agent, files);
+  }
+
   answer(id: string, input: unknown): string | undefined {
     const answer = this.questions.answer(id, input);
     if (!answer.ok) return answer.error;
@@ -585,6 +601,7 @@ export class Coordinator {
   async receiveForwardedMessage(message: AgentMessage): Promise<void> {
     this.messages.set(message.id, message);
     this.options.bus.publish({ kind: "message", message });
+    this.prepareRequest(message);
     if (message.type === "CANCEL" && this.mailboxes[message.to].cancel(message.replyTo ?? "")) return;
     if (message.type === "CANCEL" && message.replyTo && this.requestState(message.replyTo, message.to) === "active") this.repliedRequests.add(message.replyTo);
     await this.deliver(message);
@@ -598,6 +615,7 @@ export class Coordinator {
   }
 
   private forwardChildMessage(result: Extract<CreateMessageResult, { ok: true }>): CreateMessageResult {
+    this.attachEvidence(result.message);
     const forwarded = this.options.forwardToParent?.(result.message);
     if (!forwarded?.ok) return forwarded ?? { ok: false, error: "parallel: parent conversation is unavailable" };
     this.messages.set(result.message.id, result.message);
@@ -709,7 +727,9 @@ export class Coordinator {
     this.messages.set(message.id, message);
     if (!this.options.parallelParent && message.parallel && message.thread && !this.threadSenders.has(message.thread))
       this.threadSenders.set(message.thread, message.from);
+    this.attachEvidence(message);
     bus.publish({ kind: "message", message });
+    this.prepareRequest(message);
     // ACK は記録のみ。配送して Agent を起こさない（DESIGN.md §12, §25）
     if (message.type === "CANCEL" && requestState === "queued" && !message.thread) this.mailboxes[message.to].cancel(message.replyTo ?? "");
     else if (message.type !== "ACK") this.detach(this.deliver(message), message.to);
@@ -735,7 +755,39 @@ export class Coordinator {
     return () => this.specSnapshots.set(key, { content, sessionId });
   }
 
-  private prepareMessage(message: AgentMessage, attempt: number, interrupt = false): PreparedSend {
+  private prepareRequest(message: AgentMessage): void {
+    if (message.thread && this.threadSenders.get(message.thread) === message.from) return;
+    if (message.type !== "DELEGATE" && message.type !== "REVIEW_REQUEST") return;
+    const path = message.spec ? resolveSpecFile(this.options.projectRoot, message.spec) : undefined;
+    if (!path) return;
+    try {
+      this.requestSpecs.set(message.id, readFileSync(path, "utf8"));
+    } catch {
+      // 読み取り失敗は配送を妨げない。
+    }
+    if (!this.options.specCheck || !message.spec || message.specCheck || this.specChecks.has(message.id)) return;
+    this.specChecks.set(
+      message.id,
+      runSpecCheck(this.options.specCheck, message.spec, this.options.projectRoot).then(result => {
+        message.specCheck = result;
+        this.options.bus.publish({ kind: "spec_check", messageId: message.id, result });
+      }),
+    );
+  }
+
+  private attachEvidence(message: AgentMessage): void {
+    if (message.type !== "RESULT") return;
+    let request = this.messages.get(message.replyTo ?? "");
+    if (request?.type === "FIX" || request?.type === "ADD") request = this.messages.get(request.replyTo ?? "");
+    if (!request || request.to !== message.from || request.from !== message.to) return;
+    const evidence = this.workBaselines.finish(request.id);
+    if (evidence) message.evidence = evidence;
+  }
+
+  private async prepareMessage(message: AgentMessage, attempt: number, interrupt = false): Promise<PreparedSend> {
+    await this.specChecks.get(message.id);
+    this.workBaselines.start(message, this.requestSpecs.get(message.id));
+    if ((message.type === "FIX" || message.type === "ADD") && message.replyTo) this.workBaselines.resume(message.replyTo);
     const delivery = { ...message, ...(interrupt ? { interrupt: true } : {}) };
     const onSent = this.prepareSpec(delivery);
     const effort = !interrupt && message.to === "codex" ? message.effort : undefined;
@@ -744,7 +796,10 @@ export class Coordinator {
     return {
       text: `${attempt > 1 ? `${RETRY_NOTE}\n` : ""}${buildEnvelope(delivery, this.language)}`,
       ...(effort && knownEffort ? { options: { effort } } : {}),
-      onSent,
+      onSent: () => {
+        onSent();
+        this.workBaselines.markSent(message.id);
+      },
     };
   }
 
@@ -763,7 +818,7 @@ export class Coordinator {
       (!FOLLOWUP_TYPES.has(message.type) && message.interrupt && mailbox.current?.from === message.from);
     if (message.type === "CANCEL" && !followsCurrentRequest) return;
     if (!message.fresh && steerable) {
-      const prepared = this.prepareMessage(message, attempt, true);
+      const prepared = await this.prepareMessage(message, attempt, true);
       if (await this.steerWithNotice(message.to, prepared.text, message.id)) {
         prepared.onSent();
         this.metrics.steer(message.to, message.taskId);
@@ -816,6 +871,7 @@ export class Coordinator {
     );
     if (!created.ok) return;
     const message: AgentMessage = { ...created.message, auto: true };
+    this.attachEvidence(message);
     if (
       this.options.forwardToParent &&
       message.from === this.options.parallelParent?.to &&
@@ -951,7 +1007,7 @@ export class Coordinator {
     try {
       const sent = await mailbox.steerQueued(id, async queued => {
         const images = queued.images?.length ? `\n\n${STEER_IMAGE_INSTRUCTION}\n${queued.images.join("\n")}` : "";
-        const prepared = queued.prepare?.(true);
+        const prepared = await queued.prepare?.(true);
         const text = prepared?.text ?? `${queued.text}${queued.suffix ?? ""}${images}`;
         const sent = await this.steerWithNotice(target.agent, text, steerId);
         if (sent) {
