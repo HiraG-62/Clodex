@@ -64,6 +64,18 @@ describe("依頼の基準点", () => {
     ]);
   });
 
+  it("設定の文字列で始まる見出しを範囲の節とみなす", () => {
+    const { root, write } = setup();
+    const baselines = new WorkBaselines(root, { specSections: { owned: "所有ファイル", forbidden: "編集禁止" } });
+    baselines.start(request, "## 所有ファイル（自由に編集してよい）\n- `src/**`\n## 編集禁止（読むのは OK）\n- `src/private.*`\n");
+    write("src/a.ts");
+    write("src/private.ts");
+    expect(baselines.finish("r")?.changed).toEqual([
+      { path: "src/a.ts", scope: "owned" },
+      { path: "src/private.ts", scope: "forbidden" },
+    ]);
+  });
+
   it("100 件を超えた差分は件数だけにする", () => {
     const { root, write } = setup();
     const baselines = new WorkBaselines(root);

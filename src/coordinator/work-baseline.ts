@@ -39,7 +39,7 @@ const fileHash = (path: string): string | null => {
 const patterns = (spec: string, heading: string | undefined): string[] => {
   if (heading === undefined) return [];
   return splitSections(spec)
-    .filter(section => section.heading.replace(/^#{1,6}\s+/, "") === heading)
+    .filter(section => section.heading.replace(/^#{1,6}\s+/, "").startsWith(heading))
     .flatMap(section =>
       section.content
         .split(/\r?\n/)

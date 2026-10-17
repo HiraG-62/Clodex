@@ -1025,7 +1025,7 @@ QUESTION と次の依頼の間に設計書へ書き足すと、受け手はど�
 
 - 設定 `verify`: `{ "implement": ["pnpm test", "pnpm typecheck"], "integrate": ["pnpm test", "pnpm typecheck", "pnpm lint"] }`。`implement` は依頼（`DELEGATE`）を受けた側が `RESULT` の前に回す既定の検査、`integrate` は `RESULT` を受けた側が受け入れる前に回す既定の検査。設計書で追加の検査を書いてよい
   - 定型文（§13 Roles）に両方のコマンドを 1 回だけ書く（`Default checks: implement = …; integrate = …. Run the default checks for your step plus any checks the spec adds.`）。envelope には書かない（重複させない）
-- 設定 `specSections`: `{ "owned": "触ってよいファイル", "forbidden": "触らないファイル" }`。設計書の節の見出し（`#` を除いた文字列）。節の中の箇条書きの `` `path` ``（glob 可。`**` を含む）を範囲とする。無ければ分類しない
+- 設定 `specSections`: `{ "owned": "触ってよいファイル", "forbidden": "触らないファイル" }`。設計書の節の見出し（`#` を除いた文字列）の先頭。「所有ファイル（自由に編集してよい）」のように補足の付く見出しも「所有ファイル」で当たる。節の中の箇条書きの `` `path` ``（glob 可。`**` を含む）を範囲とする。無ければ分類しない
 - 基準点: `DELEGATE` を配送したとき（配送の直前。§13 Spec の差分と同じ時点）、宛先の作業ディレクトリで `HEAD` と、変更のあるファイル（`git status --porcelain`。未追跡を含む）の中身の SHA-256 を記録する。記録はメモリだけで、依頼 ID ごと。git の外なら記録しない
 - 証跡（`evidence`）: その依頼への `RESULT`（auto を含む）を受理したとき、Coordinator が次を付ける。Hub の再起動などで基準点が無ければ付けない
   - `checks`: 依頼の配送から `RESULT` までに、宛先の Agent が実行したコマンド（§9 コマンドの記録）のうち、`verify.implement` の各コマンドを含むものの最後の結果（終了コード、無ければ失敗の印、実行していなければ未実行）
