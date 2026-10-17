@@ -1358,7 +1358,7 @@ terminal の表示（「誰が何をしていて、誰が誰に何を頼んだ�
 | 通知（`notice`） | `[CLODEX] ...` | ✓ |
 | 人間の入力（`human`） | ×（入力行が画面に残っているため） | ✓ |
 | ターンの最初の発言（方針。`text`） | ✓ | ✓ |
-| 途中の発言（2 つ目以降の `text`）・`tool`・`tool_end`・`rate_limit`・`session`・`exit`・`retry` | × | ✓ |
+| 途中の発言（2 つ目以降の `text`）・`tool`・`tool_end`・`usage`・`rate_limit`・`session`・`exit`・`retry` | × | ✓ |
 
 log file は project の外（ホームディレクトリ）に置き、project の working tree を汚さない。
 
