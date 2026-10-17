@@ -47,6 +47,7 @@ export interface ShellCoordinator {
   steerOrSend(agent: AgentId, text: string, context?: boolean, shared?: boolean): Promise<"steered" | "queued">;
   interrupt(agent?: AgentId): Promise<void>;
   compact(agent?: AgentId): Promise<unknown>;
+  handoff(agent: AgentId): Promise<void>;
   setPermission(level: PermissionLevel, agent?: AgentId): Promise<void>;
   setModel(model: string, agent: AgentId): Promise<TurnResult | void>;
   setEffort(level: string, agent?: AgentId): Promise<TurnResult | void>;
@@ -554,6 +555,10 @@ export const createShell = ({
     print(t("shell.compactQueued", { target: command.agent ?? t("shell.runningAgents") }));
     return "continue";
   };
+  const handleHandoff = async (command: CommandOf<"handoff">): Promise<ShellOutcome> => {
+    void coordinator().handoff(command.agent);
+    return "continue";
+  };
   const handleResume = async (command: CommandOf<"resume">): Promise<ShellOutcome> => {
     if (command.index === undefined) listConversations();
     else await resumeConversation(command.index);
@@ -713,6 +718,7 @@ export const createShell = ({
     new: { requiresCurrent: true, run: handleNew },
     worktree: { requiresCurrent: true, run: handleWorktree },
     compact: { requiresCurrent: true, run: handleCompact },
+    handoff: { requiresCurrent: true, run: handleHandoff },
     resume: { requiresCurrent: true, run: handleResume },
     solo: { requiresCurrent: true, run: handleSolo },
     rename: { requiresCurrent: true, run: handleRename },

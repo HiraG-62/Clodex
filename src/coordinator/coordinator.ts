@@ -28,6 +28,7 @@ import { type BudgetLimits, BudgetManager, humanBudgetError } from "./budget-man
 import { DeliveryNotes, OTHER_AGENT } from "./delivery-notes.js";
 import type { EventBus } from "./event-bus.js";
 import { QuestionStore } from "./question-store.js";
+import { createHandoffPath, handoffInstruction, handoffNotice, hasHandoffDocument } from "./session-handoff.js";
 import { type ConversationTaskMetrics, TaskMetricsRecorder, TaskMetricsStore } from "./task-metrics.js";
 import { DEFAULT_USAGE_ALERT, limitResetAt, type ThreadTokenWarn, type UsageAlert, UsageMonitor, type UsageSnapshot } from "./usage-monitor.js";
 import { WorkRecorder } from "./work-recorder.js";
@@ -65,6 +66,7 @@ const BRAINSTORM_REJECTED = "brainstorm mode: do not use send_message";
 const STEER_IMAGE_INSTRUCTION = "[Clodex] Attached images (read them with your tools):";
 // 作業を頼む message は、配送したターンが失敗したら一度だけ送り直し、それでも失敗したら送信元に引き取らせる（DESIGN.md §12 配送ルール）
 const RETRIED_TYPES: ReadonlySet<AgentMessage["type"]> = new Set(["DELEGATE", "REVIEW_REQUEST", "QUESTION", "FIX", "ADD"]);
+const HANDOFF_REQUEST_TYPES: ReadonlySet<AgentMessage["type"]> = new Set(["DELEGATE", "REVIEW_REQUEST", "QUESTION"]);
 export type RequestState = "active" | "queued" | "finished";
 const DEFAULT_RETRY_DELAY_MS = 30_000;
 const DEFAULT_LIMIT_RESUME_MARGIN_MS = 60_000;
@@ -85,6 +87,7 @@ const handoffFallback = (message: AgentMessage, error: string) =>
   `Do not send it again. ${HANDOFF_ACTION[message.type] ?? "Do the work yourself"} and continue the task.`;
 
 export interface CoordinatorOptions {
+  artifactsDir?: string;
   conversationId?: string;
   metricsStore?: TaskMetricsStore;
   brainstorm?: BrainstormConfig;
@@ -145,6 +148,7 @@ export class Coordinator {
   private readonly messages = new Map<string, AgentMessage>();
   private readonly threadSenders = new Map<string, AgentId>();
   private readonly handoffTurns: Partial<Record<AgentId, boolean>> = {};
+  private readonly sessionHandoffs = new Set<AgentId>();
   private parallelResultPending = false;
   private parallelStopWaiting = false;
   // 宛先ごと・設計書の実パスごとに、前回渡した中身（DESIGN.md §13 Spec の差分）
@@ -1007,6 +1011,48 @@ export class Coordinator {
   compact(id?: AgentId): Promise<TurnResult[]> {
     const targets = id ? [id] : AGENT_IDS.filter(agent => this.options.agents[agent].status !== "stopped");
     return Promise.all(targets.map(target => this.mailboxes[target].enqueueCompact()));
+  }
+
+  private handoffRejection(id: AgentId): string | undefined {
+    const { status } = this.options.agents[id];
+    const mailbox = this.mailboxes[id];
+    if (status === "busy" || status === "starting" || this.sessionHandoffs.has(id)) return t("notice.sessionHandoffBusy", { agent: id });
+    if ([mailbox.current, ...mailbox.pendingMessages].some(message => message && HANDOFF_REQUEST_TYPES.has(message.type)))
+      return t("notice.sessionHandoffRequests", { agent: id });
+    if (!mailbox.isIdle || mailbox.holding) return t("notice.sessionHandoffPending", { agent: id });
+    if (this.subagents[id].length) return t("notice.sessionHandoffSubagents", { agent: id });
+    if (this.backgroundTasks[id].length) return t("notice.sessionHandoffBackground", { agent: id });
+    return undefined;
+  }
+
+  async handoff(id: AgentId): Promise<void> {
+    const warn = (text: string) => this.options.bus.publish({ kind: "notice", level: "warn", text });
+    const rejected = this.handoffRejection(id);
+    if (rejected) return warn(rejected);
+    this.sessionHandoffs.add(id);
+    try {
+      let path: string | undefined;
+      if (this.options.agents[id].status !== "stopped" && this.mailboxes[id].sessionId) {
+        if (!this.options.artifactsDir) return warn(t("notice.sessionHandoffFailed", { agent: id }));
+        path = createHandoffPath(this.options.artifactsDir, id);
+        const result = await this.sendToAgent(id, handoffInstruction(path), [], false, true);
+        if (result.status !== "completed" || !hasHandoffDocument(path)) return warn(t("notice.sessionHandoffFailed", { agent: id }));
+      }
+      if (this.mailboxes[id].isClosed || this.subagents[id].length || this.backgroundTasks[id].length)
+        return warn(t("notice.sessionHandoffFailed", { agent: id }));
+      const error = await this.switchSessions({}, [id]);
+      if (error) return warn(t("notice.sessionHandoffFailed", { agent: id }));
+      this.options.clearSession?.(id);
+      if (path) this.deliveryNotes.queueNotice(id, handoffNotice(path));
+      this.options.bus.publish({
+        kind: "notice",
+        text: path ? t("notice.sessionHandoffDone", { agent: id, path }) : t("shell.agentFresh", { agent: id }),
+      });
+    } catch {
+      warn(t("notice.sessionHandoffFailed", { agent: id }));
+    } finally {
+      this.sessionHandoffs.delete(id);
+    }
   }
 
   // Agent 指定なしは、Agent 間のやり取りも止める: 配送待ちの formal message を破棄し、chain を閉じる

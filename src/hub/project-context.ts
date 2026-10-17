@@ -210,6 +210,7 @@ export const openProject = async ({
       conversationId: conversation.id,
       metricsStore,
       projectRoot: workDir,
+      artifactsDir,
       agents: createAgents?.() ?? { claude: new ClaudeAdapter(spawn), codex: new CodexAdapter(spawn) },
       permissionLocked: () => sandbox.enabled,
       canStart: () => sandbox.usable,

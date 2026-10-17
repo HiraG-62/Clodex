@@ -37,6 +37,7 @@ export type ShellCommand =
   | { kind: "new"; agent?: AgentId; worktree?: true }
   | { kind: "worktree" }
   | { kind: "compact"; agent?: AgentId }
+  | { kind: "handoff"; agent: AgentId }
   | { kind: "answer"; id: string; text: string }
   | { kind: "cancel"; id?: string }
   | { kind: "steerQueued"; id: string }
@@ -217,6 +218,8 @@ const parseCommand = (name: string, arg: string, primary: AgentId): ShellCommand
     case "compact":
       if (!arg) return { kind: name };
       return isAgentId(arg) ? { kind: name, agent: arg } : unknownAgent(arg);
+    case "handoff":
+      return isAgentId(arg) ? { kind: name, agent: arg } : usage(`/handoff <${AGENT_IDS.join("|")}>`);
     case "cancel":
       if (!arg) return { kind: "cancel" };
       return /^\S+$/.test(arg) ? { kind: "cancel", id: arg } : usage("/cancel [id]");

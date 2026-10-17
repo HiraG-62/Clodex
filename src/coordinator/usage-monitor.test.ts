@@ -144,6 +144,7 @@ describe("UsageMonitor", () => {
     context(151000);
     context(180000);
     expect(notices).toHaveLength(1);
+    expect(notices[0]).toContain("/handoff codex");
     expect(levels).toEqual(["warn"]);
     expect(monitor.snapshot("codex")).toMatchObject({ inputTotal: 900000, contextWarning: true });
     bus.publish({ kind: "agent", agent: "codex", event: { type: "session", sessionId: "second" } });

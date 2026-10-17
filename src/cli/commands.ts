@@ -1,5 +1,6 @@
 // スラッシュコマンドの一覧（DESIGN.md §8）。/help・サジェスト・Tab 補完で共有する
 
+import { AGENT_IDS } from "../agents/agent-adapter.js";
 import { ROLE_PRESET_NAMES } from "../config/role-presets.js";
 import { LANGUAGES } from "../context/language.js";
 import { LIMIT_NAMES } from "../coordinator/budget-manager.js";
@@ -43,6 +44,7 @@ const SPECS: readonly SlashCommandSpec[] = [
   { name: "brainstorm", args: "[1-5] <topic>", description: "cmd.brainstorm" },
   { name: "worktree", args: "", description: "cmd.worktree" },
   { name: "compact", args: "[agent]", description: "cmd.compact" },
+  { name: "handoff", args: "<agent>", argumentValues: AGENT_IDS, description: "cmd.handoff" },
   { name: "sandbox", args: "[on|off|uninstall]", argumentValues: ["on", "off", "uninstall"], description: "cmd.sandbox" },
   { name: "permission", args: "[agent] <read-only|edit|full>", description: "cmd.permission" },
   { name: "model", args: "<agent> <model>", description: "cmd.model" },
@@ -62,6 +64,7 @@ export const commandUsage = ({ name, args }: Pick<SlashCommand, "name" | "args">
 
 // readline の completer。コマンド名の入力中だけ補完する
 export const completeCommand = (line: string): [string[], string] => {
+  if (line.startsWith("/handoff ")) return [AGENT_IDS.map(value => `/handoff ${value} `).filter(value => value.startsWith(line)), line];
   if (line.startsWith("/role preset ")) return [ROLE_PRESET_NAMES.map(value => `/role preset ${value} `).filter(value => value.startsWith(line)), line];
   if (line.startsWith("/role ")) return [["preset", "claude", "codex"].map(value => `/role ${value} `).filter(value => value.startsWith(line)), line];
   if (line.startsWith("/language ")) return [LANGUAGES.map(value => `/language ${value} `).filter(value => value.startsWith(line)), line];

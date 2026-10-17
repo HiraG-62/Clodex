@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandUsage, completeCommand, SLASH_COMMAND_NAMES } from "./commands.js";
+import { commandUsage, completeCommand, SLASH_COMMAND_NAMES, slashCommands } from "./commands.js";
 import { parseInput } from "./input.js";
 
 describe("SLASH_COMMAND_NAMES", () => {
@@ -17,6 +17,12 @@ describe("SLASH_COMMAND_NAMES", () => {
 });
 
 describe("completeCommand", () => {
+  it("/handoff の Agent 名を補完する", () => {
+    expect(completeCommand("/hand")).toEqual([["/handoff "], "/hand"]);
+    expect(completeCommand("/handoff ")).toEqual([["/handoff claude ", "/handoff codex "], "/handoff "]);
+    expect(completeCommand("/handoff co")).toEqual([["/handoff codex "], "/handoff co"]);
+    expect(slashCommands().find(command => command.name === "handoff")).toMatchObject({ args: "<agent>", argumentValues: ["claude", "codex"] });
+  });
   it("/language の値を補完する", () => {
     expect(completeCommand("/lang")).toEqual([["/language "], "/lang"]);
     expect(completeCommand("/language j")).toEqual([["/language ja "], "/language j"]);
