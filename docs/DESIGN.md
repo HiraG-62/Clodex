@@ -804,6 +804,8 @@ Agent が指定するフィールド:
 | `spec` | | `DELEGATE` / `REVIEW_REQUEST` / `FIX` / `ADD` / `NOTE` / `ANSWER` / `RESULT` のみ。依頼の仕様を書いた設計書の path（project root からの相対パス）。`ANSWER` では、`QUESTION` に答えるために更新した設計書を渡す。送信時に通常ファイルとして存在しなければ拒否する（project root の外も拒否） |
 | `status` | | RESULT のみ。`approved` / `changes_requested` / `done` / `failed` / `canceled`（`CANCEL` で取りやめた） |
 | `issues` | | RESULT / ISSUE のみ。`{ file, line?, severity, summary }` の配列。severity は `low` / `medium` / `high` / `critical` |
+| `rework` | | `DELEGATE` / `FIX` / `ADD` のみ。同じ task の再依頼の理由。`spec`（設計の不足・誤り）/ `impl`（実装の誤り）/ `check`（検証の不足）。§17 task 単位の計測に使う |
+| `relatesTo` | | `DELEGATE` / `REVIEW_REQUEST` のみ。別の `taskId` で出した、関係する前の task の ID（作り直し・続き）。§17 task 単位の計測に使う |
 
 Coordinator が付与するフィールド（Agent の自己申告は使わない）:
 
@@ -1318,6 +1320,21 @@ Coordinator 内の observable event は in-memory の Event Bus（`coordinator/e
 全 event に Coordinator が `at`（ISO 8601）を付ける。購読者の例外は他の購読者と publish 元に波及させない。
 
 WorkRecorder は Agent ごとに、今のターンで実行したコマンド（コマンド・`cwd`・終了コードか失敗の印）を順に持つ（1 ターン 200 件まで。古いものから捨てる）。`tool_end` は `toolId` で同じターンのコマンドに結び付ける
+
+## task 単位の計測
+
+改善の効果を感覚ではなく task 単位の数字で比べるため、Coordinator がターンと message を `taskId` に結び付けて記録する。内容は解釈しない（数えるだけ）。
+
+- 保存先: `~/.clodex/metrics/<project の state のキー>.jsonl`（Event Log と別。消さない）。1 行 1 レコード。集計は読むときに行う
+  - `turn`: ターンが終わるたびに 1 行。会話 ID・Agent・`taskId`（無ければ未割当）・開始と終了の時刻・状態・入力 token（キャッシュから読んだ分を除く）・キャッシュから読んだ入力 token・出力 token
+  - `message`: Coordinator が受理した formal message ごとに 1 行。会話 ID・ID・type・`taskId`・from / to・`replyTo`・`status`・`rework`・`relatesTo`・`auto`・`fresh`
+  - `delivery`: 依頼系の message（`DELEGATE`・`REVIEW_REQUEST`・`QUESTION`・`ANSWER`・`RESULT`）の配送を始めたときに 1 行。message ID と待ち時間（受理から配送開始まで）
+- ターンの `taskId`: そのターンで配送した envelope の message の `taskId`。人の入力・自発ターン・`/compact` のターンは未割当。実行中のターンに別の task の message を足した（割り込み）ターンは未割当にする（1 つのターンを複数の task に分けない）
+- token はターンの前後の session 累計の差で出す（Claude は `result` の usage、Codex は `thread/tokenUsage/updated` の `total`）。session が変わったターンは、新しい session の累計をそのまま使う
+- 集計（task ごと）: ターン数・入力 token（キャッシュ分は別）・出力 token・所要時間（ターンの時間の合計）・待ち時間の合計・最初から最後までの時間・`QUESTION` 数・`RESULT` 回数・再依頼数（同じ `taskId` の 2 回目以降の `DELEGATE`、と `FIX`・`ADD`）・`rework` の内訳。未割当のターンは会話ごとに別に合計する
+- 受入: task の最後の `RESULT` が `done` / `approved` で、その後に同じ `taskId` の `DELEGATE`・`FIX`・`ADD` が無ければ「受入完了」とみなす。`RESULT` が 1 回だけで受入完了なら「初回受入」
+- 画面: `RESULT` の message カードに、その時点の task の累計（ターン数・入力 token・所要時間・`QUESTION` 数）を小さく出す。`/status` に今の会話の最近の task（5 件）の累計を出す
+- 基準値: `scripts/task-metrics-baseline.ts` が過去の Event Log から同じ集計を推定する（ターンと message の対応は記録に無いので、宛先の mailbox の順で推定する）。導入前の Event Log は `~/.clodex/metrics-baseline/logs/` に写してある
 
 ## Event Log（v0.1）
 
