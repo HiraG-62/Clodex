@@ -984,10 +984,9 @@ refresh token の race condition をレビュー
 Read the spec before you start and follow it. If the spec conflicts with the code or is unclear, ask with a QUESTION instead of guessing.
 Reply with the send_message tool of the "clodex" MCP server (not a shell command): to="claude", type="RESULT", taskId="AUTH-142", replyTo="msg_1a2b3c4d".
 Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.
-Write body in Markdown: a one-line summary first, then bullet points. Do not write one long paragraph.
 ```
 
-- 依頼系（`QUESTION` / `REVIEW_REQUEST` / `DELEGATE`）には返信方法を指示する。返信の body の書式（Markdown で 1 行の要約 → 箇条書き。長い 1 段落にしない）も添え、Agent ごとに書き方がばらつかないようにする
+- 依頼系（`QUESTION` / `REVIEW_REQUEST` / `DELEGATE`）には返信方法を指示する。返信の body の書式（Markdown で 1 行の要約 → 箇条書き）は定型文（§13 Roles）にあるので envelope には書かない（毎回送り直す token を減らす）。言語の 1 行だけは、長い会話で忘れないよう envelope にも添える
 - 末尾に、人が読む文章の言語（下記 Language）を 1 行で添える。長い会話でも依頼のたびに思い出させる
 - `ANSWER` / `RESULT` / `ISSUE` には返信を求めない（返信の連鎖を作らない）
 - `FIX` / `ADD` の返信方法は、元の依頼への `RESULT`（`replyTo` は元の依頼の ID）。作業を終えたときに 1 つ送る。`NOTE` は返信を求めない。`CANCEL` は `RESULT`（`status: canceled`、やったことと残したもの）
@@ -1123,9 +1122,13 @@ AGENTS.md → Codex
 - 優先順位: 起動オプション > project の設定 > ユーザーの設定 > 既定値（primary: `claude`、roles: なし）。重ね方は上の「設定の層」
 - Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」「権限は人が `/permission` で変えるので、拒否されたらそう伝えること」「依頼を受けたら、作業に入る前に何をするかを 1〜2 文で書くこと」「`send_message` の body は Markdown で 1 行の要約 → 箇条書きで書くこと」「依頼（`DELEGATE` / `REVIEW_REQUEST`）は基本的に設計書を書いて `spec` で渡し、body だけにするのは数行で済む簡単な依頼に限ること。QUESTION には ANSWER で答え、設計書を直したら ANSWER の `spec` で渡すこと（上の Spec）。RESULT は依頼の作業を終えたときに使うこと」「人が読む文章の言語（下記 Language）」を伝える
 - 役割が無い Agent には、相手の Agent がいることだけを伝える
+- **定型文の作法**（`role-instructions.ts`。手戻りと往復を減らす）
+  - QUESTION の body は 3 行で書く: `Decide:`（決めてほしい点）/ `Blocked:`（回答を待つ作業）/ `Continuing:`（回答を待たずに進める作業）。回答に依存する作業は止める
+  - 設計書は「固定」（挙動・不変条件・公開インターフェース・編集してよい範囲）と「裁量」（実装の方法など、受け手が決めてよいこと）の節に分けて書く。受け手は固定の節に反することをする前に QUESTION する
+  - `send_message` で RESULT を送ったら、ターンの最終応答は 1 行にする（同じ内容を二度書かない）
 - **使用量を減らす作法**（`usageHints`）: 待ち方とファイルの読み方の作法を定型文に足す（英語）。tool の呼び出しのたびにコンテキスト全体を送り直すので、呼び出しの回数がそのまま使用量になるため。役割の分け方は人によって違う（Claude が実装する運用もある）ので、Agent ごとに人が設定で ON にする。既定は両方 OFF
   - 設定: `"usageHints": { "claude": false, "codex": false }`。反映は次に始める session から（system prompt に入るため）
-  - 共通: 小刻みにポーリングしない（`sleep` で待つ・subagent の完了を細かく確かめる、を繰り返さない）。ファイルは関係する範囲をまとめて読む。数十行ずつ読まない
+  - 共通: 小刻みにポーリングしない（`sleep` で待つ・subagent の完了を細かく確かめる、を繰り返さない）。ファイルは関係する範囲をまとめて読む。数十行ずつ読まない。同じ内容を読み直さない。何も変えていないのに同じコマンド（テスト・型チェック）を回し直さない
   - Codex: 長いコマンド（テスト・ビルド）は `yield_time_ms` を十分長くして、1 回の呼び出しで終わるまで待つ。`wait`・`write_stdin` で細かくポーリングしない
   - Claude: 長いコマンドは Bash の `timeout` を十分長くして（最大 600000ms）、1 回の呼び出しで終わるまで待つ。`run_in_background` にしたコマンドを `sleep` や出力の読み直しで細かく確かめない
 - **プリセット**: よくある分担の役割の文章を、選ぶだけで設定できるようにする（役割が空のままだと分業が起きず、初めて使う人に価値が伝わらないため）。文章を選ぶのは人なので、分け方を固定しない原則（§3.1）とは矛盾しない
@@ -2309,8 +2312,8 @@ Agent の設定（model・effort・権限）:
 - `/brainstorm [周回数] <テーマ>` で、今の project にブレスト用の会話を作って今の会話にし、最後まで自動で進める（人は途中で止めない）。周回数は案を出す回数（既定 2、1〜5）。Web UI は会話の一覧の「新しい会話」の横の「ブレスト」から、テーマと周回数を入れて始める
 - 進め方（Coordinator が順に送る。Agent 同士の `send_message` は使わない）
   1. **広げる**（1 周目）: 両 Agent に同時にテーマを送り、互いの案を見ずに案を出させる
-  2. **重ねる**（2 周目以降）: 各 Agent に、相手の前の周の発言を渡し、発展・組み合わせ・批評と新しい案を出させる。両 Agent に同時に送る
-  3. **まとめる**: primary の Agent に、両 Agent の全周の発言を渡し、論点・案の一覧（どちらの案か）・有望な案とその理由・未解決の問いにまとめさせる
+  2. **重ねる**（2 周目以降）: 各 Agent に、相手の前の周の発言を渡し、発展・組み合わせ・批評と新しい案を出させる。両 Agent に同時に送る。案には Agent ごとの ID（Claude は `C1`・`C2`…、Codex は `X1`・`X2`…。周をまたいで通し番号）を付けさせ、批評は ID で指す
+  3. **まとめる**: primary の Agent に、両 Agent の全周の発言を渡し、論点・案の一覧・有望な案とその理由・未解決の問いにまとめさせる。案の一覧は表で、列は ID・提案者・現状（採用 / 修正して採用 / 保留 / 却下）・根拠（実測・コード・相手の批評など）
 - ブレスト用の会話
   - 会話の履歴に `mode: "brainstorm"` を記録する。会話の一覧・タブに「ブレスト」の印を出す
   - 両 Agent を `read-only` で起動する（コードや資料を読んで案の材料にしてよいが、編集しない）。役割（`roles`）は使わず、ブレスト用の定型文を渡す（相手の Agent もブレストに加わっていること、案は箇条書きで具体的に、`send_message` と `ask_user` は使わない）。言語の指示は今どおり
