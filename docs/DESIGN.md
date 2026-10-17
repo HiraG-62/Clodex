@@ -820,6 +820,8 @@ Coordinator が付与するフィールド（Agent の自己申告は使わな�
 | `specChanges` | `spec` があり、宛先に同じ設計書を前に渡しているときだけ付ける。前回から変わった節の見出し（下記 Spec の差分）。変わっていなければ空配列 |
 | `auto` | Coordinator が依頼の最終応答から作った `RESULT` / `ANSWER` にだけ付ける（§12 配送ルール） |
 | `specHash` | `spec` の配送した中身の SHA-256 の先頭 12 桁（§13 Spec の差分） |
+| `evidence` | `RESULT` のみ。Coordinator が記録から付ける検査の結果と依頼開始後の作業ツリーの差分（§13 検証の証跡） |
+| `specCheck` | `DELEGATE` / `REVIEW_REQUEST` のみ。設計書の検査の結果（§13 設計書の検査） |
 
 例:
 
@@ -1018,6 +1020,26 @@ QUESTION と次の依頼の間に設計書へ書き足すと、受け手はど�
 - 全文の diff ではなく見出しにするのは、envelope を短く保つため（§3.3）。中身は受け手が設計書を開いて読む
 - 並べる節は 20 件まで。超えた分は `…and N more` の 1 行にまとめる
 
+### 検証の証跡
+
+「テストを通した」「設計書に従った」を Agent の自己申告だけに頼らない。Coordinator が記録から分かる事実を `RESULT` に添える。受入の判断はしない（統合役が行う。§3.9）。
+
+- 設定 `verify`: `{ "implement": ["pnpm test", "pnpm typecheck"], "integrate": ["pnpm test", "pnpm typecheck", "pnpm lint"] }`。`implement` は依頼（`DELEGATE`）を受けた側が `RESULT` の前に回す既定の検査、`integrate` は `RESULT` を受けた側が受け入れる前に回す既定の検査。設計書で追加の検査を書いてよい
+  - 定型文（§13 Roles）に両方のコマンドを 1 回だけ書く（`Default checks: implement = …; integrate = …. Run the default checks for your step plus any checks the spec adds.`）。envelope には書かない（重複させない）
+- 設定 `specSections`: `{ "owned": "触ってよいファイル", "forbidden": "触らないファイル" }`。設計書の節の見出し（`#` を除いた文字列）。節の中の箇条書きの `` `path` ``（glob 可。`**` を含む）を範囲とする。無ければ分類しない
+- 基準点: `DELEGATE` を配送したとき（配送の直前。§13 Spec の差分と同じ時点）、宛先の作業ディレクトリで `HEAD` と、変更のあるファイル（`git status --porcelain`。未追跡を含む）の中身の SHA-256 を記録する。記録はメモリだけで、依頼 ID ごと。git の外なら記録しない
+- 証跡（`evidence`）: その依頼への `RESULT`（auto を含む）を受理したとき、Coordinator が次を付ける。Hub の再起動などで基準点が無ければ付けない
+  - `checks`: 依頼の配送から `RESULT` までに、宛先の Agent が実行したコマンド（§9 コマンドの記録）のうち、`verify.implement` の各コマンドを含むものの最後の結果（終了コード、無ければ失敗の印、実行していなければ未実行）
+  - `changed`: 基準点の後に変わったファイル（基準点の `HEAD` からの差分と今の変更のあるファイルを合わせ、基準点と中身が同じものを除く）。各ファイルに、設計書（依頼の `spec`）の範囲による分類（`owned` / `forbidden` / `outside`。`specSections` か `spec` が無ければ付けない）と、依頼の間に依頼元の Agent が編集した印（`tool` event の `files`）を付ける。誰が変えたかの証明にはならない（人や別の作業も含む）ので「依頼開始後の作業ツリーの差分」と表示する
+  - 100 件を超えたら件数だけにする
+- envelope: `RESULT` の末尾に `Evidence (recorded by Clodex):` に続けて検査の行（`pnpm test: exit 0` / `failed` / `not run`）と、変わったファイルの行（分類と印）。画面: `RESULT` の message カードに同じ内容を折りたためる形で出す
+
+### 設計書の検査
+
+- 設定 `specCheck`: 設計書を検査する project のコマンド（例: `pnpm spec:scope {spec}`。`{spec}` は設計書の path に置き換える）。無ければ何もしない
+- `spec` 付きの `DELEGATE` / `REVIEW_REQUEST` を受理したら、宛先の作業ディレクトリで実行する（60 秒で打ち切る）。終わるまで配送を待つ
+- 最初は診断だけにする: 結果（終了コードと出力の末尾 20 行）を envelope に `Spec check (<command>): exit <code>` として添え、配送は止めない。画面の message カードにも出す。失敗の扱い（拒否に切り替えるか）は誤検出の数を見てから決める
+
 ## Native configuration
 
 以下を巨大な共通 prompt に結合しない。
@@ -1093,6 +1115,7 @@ AGENTS.md → Codex
 - `freshThread` は `send_message` の `fresh` の type ごとの既定（§12「新しい session で届ける」）
 - `usageHints` は使用量を減らす作法を Agent ごとに ON にする（下記。既定は両方 OFF）
 - `threadTokenWarn` は、Agent のコンテキストの大きさがこれを超えたら警告する token 数（§14「session の大きさ」）。既定は無し（警告しない）。数か Agent ごとの数（`{ "claude": 150000, "codex": 150000 }`）
+- `verify`・`specSections`・`specCheck` は §13 検証の証跡・設計書の検査
 - `updateChannel`（`stable` / `dev`、既定 `stable`）は GUI の更新の取得先（§28 GUI の自動更新）。GUI はユーザーの設定だけを読む
 - `~/.clodex/config.json` が無ければ、起動時に役割を空にしたひな形を作る（`{ "roles": { "claude": "", "codex": "" } }`）。役割の文章は書かない（書くのは人）。既にあれば触らない。作れなくても起動は続ける
 - 役割の空文字は未設定として扱う（ひな形のままでも、役割が無いのと同じ）
