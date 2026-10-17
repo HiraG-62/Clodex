@@ -483,6 +483,7 @@ Internal command（v0.1）:
 | `/pin <番号>` | 会話のピン止めを切り替える（`/resume` の番号。§18） |
 | `/compact [claude\|codex]` | 会話を要約してコンテキストを減らす。1 ターンとして mailbox で直列に送る。停止中の Agent には何もしない（docs/spikes/compact.md） |
 | `/new [claude\|codex]` | 新しい session で始め直す。省略時は両 Agent を新しい会話として、指定時はその Agent だけを今の会話の中で始め直す（§18） |
+| `/handoff <claude\|codex>` | その Agent に引き継ぎの資料を書かせてから、その Agent だけを新しい session で始め直す（§14 session の大きさ） |
 | `/worktree` | 今の会話を新しい worktree に移す。Agent は今の session のまま続ける（§28 D1） |
 | `/permission [claude\|codex] <read-only\|edit\|full>` | Agent（省略時は両方）の権限レベルを切り替える（§9 Permission） |
 | `/model <claude\|codex> <model>` | Agent の model を切り替える（§9 Model / Effort） |
@@ -1164,7 +1165,13 @@ Agent Adapter の `rate_limit` event（Claude: `rate_limit_event`、Codex: `acco
 - コンテキストの大きさは、その Agent の session が変わったとき（`session` event、`/new`、`/resume`）と compact したとき（`compacted` event）に unknown に戻す
 - **session の大きさ**: Agent ごとに、今の session の累計の入力 token（キャッシュから読んだ分を含む）を持つ。コンテキストの大きさと合わせて、Web UI の利用状況（ポップオーバーと右の列）、スマホの Agent のシート、TUI の下の行、`/status` に出す
   - Codex は `thread/tokenUsage/updated` の `total`、Claude はターンの結果の usage（入力・キャッシュの作成・読み取り）を足していく。session が変わったら 0 から数え直す。Hub を再起動したら Claude は 0 から（Codex は届いた `total` を使う）
-  - `threadTokenWarn` を設定していれば、コンテキストの大きさがそれを超えたら、その session で 1 回だけ warn の `toast`（「{agent} の文脈が {tokens} を超過。/new {agent} を検討」）を出し、Agent のカードのコンテキストのゲージを警告の色にする。session が変わったら再び警告できる
+  - `threadTokenWarn` を設定していれば、コンテキストの大きさがそれを超えたら、その session で 1 回だけ warn の `toast`（「{agent} の文脈が {tokens} を超過。/handoff {agent} を検討」）を出し、Agent のカードのコンテキストのゲージを警告の色にする。session が変わったら再び警告できる
+- **引き継ぎ**（`/handoff <agent>`）: 統合役の session が大きいまま何日も続くと、tool の呼び出しのたびに大量の token を送り直す。`/new <agent>` だけでは決定事項や未解決の点が失われるので、人が区切りで引き継ぎを指示できるようにする
+  - 受け付けるのは、その Agent が idle で、その Agent の mailbox に配送待ちが無く、その Agent 宛ての依頼（`DELEGATE`・`REVIEW_REQUEST`・`QUESTION`）に終わっていないものが無く、subagent・background task が動いていないときだけ。満たさなければ理由を warn で出して何もしない。その Agent が送って返事を待っている依頼はあってよい（資料に書かせる）
+  - 1. 固定の指示（英語）を人の入力と同じく 1 ターン送る。資料の path は Coordinator が決める（`<artifacts>/handoff-<agent>-<時刻>.md`）。書かせる内容: 決定事項・未解決の点・人の最新の判断・証跡（commit・設計書・スクリーンショット）の path・返事を待っている依頼（message ID と taskId）。最終応答は path の 1 行だけ
+  - 2. ターンが `completed` で、資料が空でないファイルとしてあれば、`/new <agent>` と同じ処理をする。失敗・中断・資料が無いときは切り替えずに warn を出す
+  - 3. 新しい session への最初の配送（人の入力でも message でも）に、`[Clodex] Handoff: your previous session wrote <path>. Read it before continuing.` を添える。添えるだけで、ターンは起こさない（§3.6 の表は増やさない）。Hub を再起動したら添えない（資料は残るので、人が path を渡せる）
+  - 自動では引き継がない。自動の compact も入れない（task 単位の計測の数字を見てから決める）
 - Clodex の起動時に、model の一覧と同じ短命のプロセスで両 Agent の利用状況も取得し、Agent の Lazy Start を待たずに表示する（docs/spikes/model-list.md）。ターンを送らないので利用枠を消費しない。取得は Hub で 1 回、全 project の UsageMonitor に `rate_limit` event と同じ形で渡す（通知の判定も同じ経路）
   - Claude: `control_request` の `get_usage` の `rate_limits.five_hour` / `seven_day`。`utilization` は 0〜100 の percent、`resets_at` は ISO 8601 の文字列（`rate_limit_event` の比率・epoch 秒とは形式が違うので変換する）
   - Codex: `account/rateLimits/read` の `rateLimits.primary` / `secondary`（`windowDurationMins` で 5 時間・週を見分ける。今の Adapter と同じ変換）
