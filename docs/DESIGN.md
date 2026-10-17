@@ -1330,7 +1330,7 @@ WorkRecorder は Agent ごとに、今のターンで実行したコマンド（
   - `message`: Coordinator が受理した formal message ごとに 1 行。会話 ID・ID・type・`taskId`・from / to・`replyTo`・`status`・`rework`・`relatesTo`・`auto`・`fresh`
   - `delivery`: 依頼系の message（`DELEGATE`・`REVIEW_REQUEST`・`QUESTION`・`ANSWER`・`RESULT`）の配送を始めたときに 1 行。message ID と待ち時間（受理から配送開始まで）
 - ターンの `taskId`: そのターンで配送した envelope の message の `taskId`。人の入力・自発ターン・`/compact` のターンは未割当。実行中のターンに別の task の message を足した（割り込み）ターンは未割当にする（1 つのターンを複数の task に分けない）
-- token はターンの前後の session 累計の差で出す（Claude は `result` の usage、Codex は `thread/tokenUsage/updated` の `total`）。session が変わったターンは、新しい session の累計をそのまま使う
+- token は、ターンの間に届いた 1 回分の usage を足して出す（Claude は `result` の usage、Codex は `thread/tokenUsage/updated` の `last`。`last` は直前の通知からの `total` の増分と一致する）。session の累計の差は使わない（Codex の `total` は resume した thread の過去の分を含むので、Hub の再起動や `/resume` の後の最初のターンが過大になる）
 - 集計（task ごと）: ターン数・入力 token（キャッシュ分は別）・出力 token・所要時間（ターンの時間の合計）・待ち時間の合計・最初から最後までの時間・`QUESTION` 数・`RESULT` 回数・再依頼数（同じ `taskId` の 2 回目以降の `DELEGATE`、と `FIX`・`ADD`）・`rework` の内訳。未割当のターンは会話ごとに別に合計する
 - 受入: task の最後の `RESULT` が `done` / `approved` で、その後に同じ `taskId` の `DELEGATE`・`FIX`・`ADD` が無ければ「受入完了」とみなす。`RESULT` が 1 回だけで受入完了なら「初回受入」
 - 画面: `RESULT` の message カードに、task の累計（ターン数・入力 token・所要時間・`QUESTION` 数）を小さく出す。累計は `RESULT` を送ったターンの終了時まで反映して固定し、その後の再依頼の分は前のカードに足さない。`/status` に今の会話の最近の task（5 件）の累計を出す
