@@ -710,7 +710,11 @@ export class Coordinator {
     }
     if (message.spec !== undefined) {
       const specPath = resolveSpecFile(message.repository, message.spec);
-      if (!specPath) return { ok: false, error: "spec: must be a relative path to an existing regular file inside the project root" };
+      if (!specPath)
+        return {
+          ok: false,
+          error: `spec: must be a path relative to ${message.repository} of an existing regular file inside it (for a worktree under it, include the worktree directory)`,
+        };
     }
 
     // 送信元が処理中の message を親として chain を決める（DESIGN.md §14）

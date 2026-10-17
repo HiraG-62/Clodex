@@ -101,8 +101,11 @@ const sendMessageSchema = z.object(sendMessageShape).superRefine((input, ctx) =>
   if (input.parallel === true && !TYPES_ALLOWING_FRESH.has(input.type)) {
     ctx.addIssue({ code: "custom", path: ["parallel"], message: "allowed only for DELEGATE or REVIEW_REQUEST" });
   }
-  if (input.parallel === true && (input.interrupt === true || input.fresh === true)) {
-    ctx.addIssue({ code: "custom", path: ["parallel"], message: "cannot be combined with interrupt or fresh" });
+  if (input.parallel === true && input.fresh === true) {
+    ctx.addIssue({ code: "custom", path: ["parallel"], message: "already starts in a new session; omit fresh" });
+  }
+  if (input.parallel === true && input.interrupt === true) {
+    ctx.addIssue({ code: "custom", path: ["parallel"], message: "cannot be combined with interrupt" });
   }
   if (input.worktree === true && input.parallel !== true) {
     ctx.addIssue({ code: "custom", path: ["worktree"], message: "requires parallel: true" });

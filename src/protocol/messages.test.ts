@@ -94,6 +94,12 @@ describe("createMessage", () => {
   it.each([{ worktree: true }, { parallel: true, fresh: true }, { parallel: true, interrupt: true }])("parallel の併用条件を検証する: %j", fields => {
     expect(createMessage({ ...reviewRequest, ...fields }, context)).toMatchObject({ ok: false });
   });
+  it("parallel と fresh の併用は、parallel が新しい session で始まることを伝えて拒否する", () => {
+    expect(createMessage({ ...reviewRequest, parallel: true, fresh: true }, context)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("already starts in a new session"),
+    });
+  });
   it("thread は Agent の入力から保持しない", () => {
     const result = createMessage({ ...reviewRequest, thread: "fake" }, context);
     expect(result).toMatchObject({ ok: true });

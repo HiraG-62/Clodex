@@ -2128,7 +2128,10 @@ describe("Coordinator の spec 検証", () => {
     "%s は記録・配送せず拒否する",
     async spec => {
       const { coordinator, codex, events } = setup(project);
-      expect(coordinator.receiveMessage("claude", { ...reviewRequest, spec })).toMatchObject({ ok: false, error: expect.stringContaining("spec") });
+      expect(coordinator.receiveMessage("claude", { ...reviewRequest, spec })).toMatchObject({
+        ok: false,
+        error: expect.stringContaining(`relative to ${project}`),
+      });
       await flush();
       expect(events.filter(e => e.kind === "message")).toEqual([]);
       expect(codex.sent).toEqual([]);
