@@ -10,14 +10,14 @@ export const handoffInstruction = (path: string): string => HANDOFF_INSTRUCTION.
 
 export const handoffNotice = (path: string): string => `[Clodex] Handoff: your previous session wrote ${path}. Read it before continuing.`;
 
-export const createHandoffPath = (artifactsDir: string, agent: AgentId): string => {
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const localStamp = (d: Date) =>
+  `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+
+export const createHandoffPath = (artifactsDir: string, agent: AgentId, now = new Date()): string => {
   mkdirSync(artifactsDir, { recursive: true });
-  for (let time = Date.now(); ; time += SECOND_MS) {
-    const stamp = new Date(time)
-      .toISOString()
-      .replace(/[-:]/g, "")
-      .replace("T", "-")
-      .replace(/\.\d+Z$/, "");
+  for (let time = now.getTime(); ; time += SECOND_MS) {
+    const stamp = localStamp(new Date(time));
     const path = join(artifactsDir, `handoff-${agent}-${stamp}.md`);
     if (!existsSync(path)) return path;
   }

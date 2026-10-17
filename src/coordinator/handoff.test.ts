@@ -7,6 +7,7 @@ import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { MESSAGES } from "../i18n/i18n.js";
 import { Coordinator } from "./coordinator.js";
 import { type CoordinatorEvent, EventBus } from "./event-bus.js";
+import { createHandoffPath } from "./session-handoff.js";
 
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 const setup = () => {
@@ -237,5 +238,13 @@ describe("session の引き継ぎ", () => {
 
   it.each(["ja", "en"] as const)("%s の token 警告は handoff を勧める", language => {
     expect(MESSAGES[language]["notice.threadTokenWarn"]).toContain("/handoff {agent}");
+  });
+});
+
+describe("引き継ぎの資料の名前", () => {
+  it("端末の時間帯の時刻を付ける", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clodex-handoff-name-"));
+    const now = new Date(2026, 9, 18, 0, 18, 25);
+    expect(basename(createHandoffPath(dir, "claude", now))).toBe("handoff-claude-20261018-001825.md");
   });
 });
