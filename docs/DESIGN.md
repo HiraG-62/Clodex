@@ -1333,7 +1333,7 @@ WorkRecorder は Agent ごとに、今のターンで実行したコマンド（
 - token はターンの前後の session 累計の差で出す（Claude は `result` の usage、Codex は `thread/tokenUsage/updated` の `total`）。session が変わったターンは、新しい session の累計をそのまま使う
 - 集計（task ごと）: ターン数・入力 token（キャッシュ分は別）・出力 token・所要時間（ターンの時間の合計）・待ち時間の合計・最初から最後までの時間・`QUESTION` 数・`RESULT` 回数・再依頼数（同じ `taskId` の 2 回目以降の `DELEGATE`、と `FIX`・`ADD`）・`rework` の内訳。未割当のターンは会話ごとに別に合計する
 - 受入: task の最後の `RESULT` が `done` / `approved` で、その後に同じ `taskId` の `DELEGATE`・`FIX`・`ADD` が無ければ「受入完了」とみなす。`RESULT` が 1 回だけで受入完了なら「初回受入」
-- 画面: `RESULT` の message カードに、その時点の task の累計（ターン数・入力 token・所要時間・`QUESTION` 数）を小さく出す。`/status` に今の会話の最近の task（5 件）の累計を出す
+- 画面: `RESULT` の message カードに、task の累計（ターン数・入力 token・所要時間・`QUESTION` 数）を小さく出す。累計は `RESULT` を送ったターンの終了時まで反映して固定し、その後の再依頼の分は前のカードに足さない。`/status` に今の会話の最近の task（5 件）の累計を出す
 - 基準値: `scripts/task-metrics-baseline.ts` が過去の Event Log から同じ集計を推定する（ターンと message の対応は記録に無いので、宛先の mailbox の順で推定する）。導入前の Event Log は `~/.clodex/metrics-baseline/logs/` に写してある
 
 ## Event Log（v0.1）
