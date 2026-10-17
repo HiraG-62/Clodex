@@ -16,6 +16,11 @@ const base: AgentMessage = {
 };
 
 describe("buildEnvelope", () => {
+  it("specHash と差分を併記し、effort を表示する", () => {
+    const envelope = buildEnvelope({ ...base, spec: "design.md", specHash: "0123456789ab", specChanges: [], effort: "high" });
+    expect(envelope).toContain("Spec: design.md (sha256:0123456789ab) (unchanged since you last received it)");
+    expect(envelope).toContain("Effort: high");
+  });
   it("再依頼の理由と関係する task を含む", () => {
     expect(buildEnvelope({ ...base, type: "DELEGATE", rework: "check", relatesTo: "previous" })).toContain("Rework: check\nRelates-To: previous");
   });

@@ -109,7 +109,10 @@ export class ConversationTranscript {
     const end = before === undefined ? entries.length : Math.max(0, Math.min(entries.length, Math.floor(before)));
     const size = Number.isFinite(limit) ? Math.max(1, Math.min(MAX_PAGE_SIZE, Math.floor(limit))) : DEFAULT_PAGE_SIZE;
     const start = Math.max(0, end - size);
-    return { entries: entries.slice(start, end).map(({ id: _id, ...entry }) => entry), ...(start > 0 ? { nextBefore: start } : {}) };
+    return {
+      entries: entries.slice(start, end).map(({ id, ...entry }) => ({ ...entry, ...(entry.kind === "message" && id ? { id } : {}) })),
+      ...(start > 0 ? { nextBefore: start } : {}),
+    };
   }
 
   private readEntries(): ConversationEntry[] {

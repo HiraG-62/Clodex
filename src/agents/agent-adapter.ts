@@ -31,6 +31,10 @@ export interface TurnResult {
   text: string;
 }
 
+export interface AgentSendOptions {
+  effort?: string;
+}
+
 export interface RateLimitWindow {
   usedPercent: number;
   resetsAt: number; // epoch seconds
@@ -73,7 +77,7 @@ export interface AgentAdapter {
 
   start(options: AgentStartOptions): Promise<void>;
   // images: 画像のファイル（実パス）。Agent に画像として渡す（DESIGN.md §28 v0.3 C）
-  send(text: string, images?: readonly string[]): Promise<TurnResult>;
+  send(text: string, images?: readonly string[], options?: AgentSendOptions): Promise<TurnResult>;
   // 手動 compact。1 ターンとして扱う（docs/spikes/compact.md）
   compact(): Promise<TurnResult>;
   // 実行中のターンに指示を足す。足せなければ false（DESIGN.md §28 v0.3 C）

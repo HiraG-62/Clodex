@@ -446,6 +446,7 @@ export const en = {
   // 通知・拒否
   "notice.discarded": "discarded {count} queued agent message(s)",
   "notice.handoffFailed": "{type} to {to} failed twice. {from} continues on its own",
+  "notice.unknownEffort": "Codex default effort unknown; request effort ignored",
   "notice.limitHold": "{agent} hit its usage limit. Resuming at {time}",
   "notice.weeklyPace": "{agent} is ahead of weekly pace (+{pace}). Try /primary {peer}",
   "notice.fiveHour": "{agent} 5h usage: {percent}%",
@@ -898,6 +899,7 @@ export const ja: Messages = {
   "error.generic": "エラー: {message}",
   "notice.discarded": "Agent 間の送信待ちのメッセージを {count} 件破棄しました",
   "notice.handoffFailed": "{to} への {type} が 2 回失敗。{from} が自分で進める",
+  "notice.unknownEffort": "codex の既定の effort が不明。依頼の effort を無視",
   "notice.limitHold": "{agent} が利用枠の上限。{time} に再開",
   "notice.weeklyPace": "{agent} の週の利用がペースを超過（+{pace}）。/primary {peer} も検討",
   "notice.fiveHour": "{agent} の 5 時間枠: {percent}%",

@@ -3,6 +3,7 @@ import {
   type AgentEvent,
   type AgentEventHandler,
   type AgentId,
+  type AgentSendOptions,
   type AgentStartOptions,
   type AgentStatus,
   DEFAULT_PERMISSION,
@@ -58,7 +59,7 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
     this.effort = level;
   }
   protected abstract handleMessage(message: unknown): void;
-  protected abstract writeTurn(text: string, images: readonly string[]): void;
+  protected abstract writeTurn(text: string, images: readonly string[], options?: AgentSendOptions): void;
   protected abstract writeCompact(): void;
 
   onEvent(handler: AgentEventHandler): () => void {
@@ -66,8 +67,8 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
     return () => this.handlers.delete(handler);
   }
 
-  send(text: string, images: readonly string[] = []): Promise<TurnResult> {
-    return this.beginTurn(() => this.writeTurn(text, images));
+  send(text: string, images: readonly string[] = [], options?: AgentSendOptions): Promise<TurnResult> {
+    return this.beginTurn(() => this.writeTurn(text, images, options));
   }
 
   protected sendQuietly(text: string): Promise<TurnResult> {

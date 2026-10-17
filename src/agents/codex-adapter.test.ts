@@ -61,6 +61,37 @@ const agentMessage = (text: string) => ({
 });
 
 describe("CodexAdapter", () => {
+  it("基準の effort が不明な場合は依頼の effort を送らない", async () => {
+    const { adapter, started, proc } = await setup();
+    await started;
+    const request = adapter.send("依頼", [], { effort: "high" });
+    expect(proc.writtenWith("method", "turn/start")[0]!.params).not.toHaveProperty("effort");
+    expect(adapter.effort).toBeUndefined();
+    proc.emit(turnCompleted("completed"));
+    await request;
+    const human = adapter.send("人の入力");
+    expect(proc.writtenWith("method", "turn/start")[1]!.params).not.toHaveProperty("effort");
+    proc.emit(turnCompleted("completed"));
+    await human;
+  });
+  it.each([undefined, "low"])("依頼の effort を次のターンへ持ち越さず、設定 %s または thread の既定を毎回送る", async configured => {
+    const responder = defaultResponder();
+    const spawner = createFakeSpawner(message =>
+      message.method === "thread/start" ? { thread: { id: THREAD_ID }, reasoningEffort: "medium" } : responder(message),
+    );
+    const adapter = new CodexAdapter(spawner.spawn);
+    if (configured) await adapter.setEffort(configured);
+    await adapter.start({ cwd: "C:\\dev\\app" });
+    const overridden = adapter.send("依頼", [], { effort: "high" });
+    expect(spawner.last.writtenWith("method", "turn/start")[0]!.params).toMatchObject({ effort: "high" });
+    expect(adapter.effort).toBe(configured ?? "medium");
+    spawner.last.emit(turnCompleted("completed"));
+    await overridden;
+    const human = adapter.send("人の入力");
+    expect(spawner.last.writtenWith("method", "turn/start")[1]!.params).toMatchObject({ effort: configured ?? "medium" });
+    spawner.last.emit(turnCompleted("completed"));
+    await human;
+  });
   it.each([0, 3, null])("コマンドの全文・ID・cwd・終了コード %s を completed から記録する", async exitCode => {
     const { adapter, started, proc, events } = await setup();
     await started;

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  type AgentSendOptions,
   type AgentStartOptions,
   type BackgroundTaskState,
   COORDINATOR_MCP_SERVER,
@@ -219,7 +220,7 @@ export class CodexAdapter extends BaseAgentAdapter {
     this.undeliveredSteers = [];
   }
 
-  protected writeTurn(text: string, images: readonly string[] = []): void {
+  protected writeTurn(text: string, images: readonly string[] = [], options?: AgentSendOptions): void {
     this.resetTurnState();
     const sandbox = this.pendingSandbox;
     this.pendingSandbox = undefined;
@@ -229,7 +230,7 @@ export class CodexAdapter extends BaseAgentAdapter {
       input: [{ type: "text", text, text_elements: [] }, ...images.map(path => ({ type: "localImage", path }))],
       ...(sandbox ? { sandboxPolicy: SANDBOX_POLICY[sandbox] } : {}),
       ...(this.model ? { model: this.model } : {}),
-      ...(this.effort ? { effort: this.effort } : {}),
+      ...(this.effort ? { effort: options?.effort ?? this.effort } : {}),
     })
       .then(response => this.setTurnId(parseResponse("turn/start", turnResponse, response).turn.id))
       .catch((error: Error) => this.finishTurn({ status: "failed", text: error.message }));

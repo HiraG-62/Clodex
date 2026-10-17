@@ -71,6 +71,8 @@ describe("startMcpServer", () => {
     const client = await connect(server.urlFor("claude"));
     const { tools } = await client.listTools();
     expect(tools.map(t => t.name)).toEqual(["send_message", "ask_user", "read_conversation"]);
+    expect(tools.find(tool => tool.name === "read_conversation")?.description).toContain("message id");
+    expect(tools.find(tool => tool.name === "send_message")?.inputSchema.properties).toHaveProperty("effort");
 
     const result = await client.callTool({
       name: "send_message",

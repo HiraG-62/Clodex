@@ -1,10 +1,18 @@
 // Agent ごとの FIFO キュー。人間の入力と formal message を直列に送る（DESIGN.md §12 配送ルール）
-import type { AgentAdapter, AgentStartOptions, TurnResult } from "../agents/agent-adapter.js";
+import type { AgentAdapter, AgentSendOptions, AgentStartOptions, TurnResult } from "../agents/agent-adapter.js";
 import type { RecoveryItem } from "../project/recovery-store.js";
 import type { AgentMessage } from "../protocol/messages.js";
 
 const CLOSED_RESULT: TurnResult = { status: "failed", text: "mailbox is closed" };
 const CANCELED_RESULT: TurnResult = { status: "interrupted", text: "canceled before delivery" };
+
+export interface PreparedSend {
+  text: string;
+  options?: AgentSendOptions;
+  onSent: () => void;
+}
+
+type PrepareSend = (interrupt?: boolean) => PreparedSend;
 
 interface QueueItem {
   kind: "send" | "compact" | "model" | "effort";
@@ -16,10 +24,12 @@ interface QueueItem {
   context?: true;
   fresh?: true;
   signal?: AbortSignal;
+  prepare?: PrepareSend;
   resolve: (result: TurnResult) => void;
 }
 
 export interface EnqueueOptions {
+  prepare?: PrepareSend;
   message?: AgentMessage;
   inputId?: string;
   images?: readonly string[];
@@ -30,6 +40,7 @@ export interface EnqueueOptions {
 }
 
 export interface QueuedSend {
+  prepare?: PrepareSend;
   text: string;
   message: AgentMessage | undefined;
   images?: readonly string[];
@@ -75,7 +86,7 @@ export class AgentMailbox {
   ) {}
 
   // 失敗しても reject せず failed の TurnResult を返す（呼び出し側は待たずに投げてよい）
-  enqueue(text: string, { message, inputId, images, suffix, context, fresh, signal }: EnqueueOptions = {}): Promise<TurnResult> {
+  enqueue(text: string, { message, inputId, images, suffix, context, fresh, signal, prepare }: EnqueueOptions = {}): Promise<TurnResult> {
     if (this.closed) return Promise.resolve(CLOSED_RESULT);
     return this.push({
       kind: "send",
@@ -87,6 +98,7 @@ export class AgentMailbox {
       ...(context ? { context } : {}),
       ...(fresh ? { fresh } : {}),
       ...(signal ? { signal } : {}),
+      ...(prepare ? { prepare } : {}),
     });
   }
 
@@ -297,7 +309,7 @@ export class AgentMailbox {
               ? await this.compact()
               : item.kind === "model" || item.kind === "effort"
                 ? await this.setting(item.kind, item.text)
-                : await this.deliver(`${item.text}${item.suffix ?? ""}`, item.images, item.fresh, item.signal);
+                : await this.deliver(item);
           item.resolve(result);
           const hold = item.kind === "send" && result.status === "failed" ? this.limitHold() : undefined;
           if (hold) this.hold(hold);
@@ -326,7 +338,7 @@ export class AgentMailbox {
     }
   }
 
-  private async deliver(text: string, images?: readonly string[], fresh?: true, signal?: AbortSignal): Promise<TurnResult> {
+  private async deliver({ text, images, fresh, signal, suffix, prepare }: QueueItem): Promise<TurnResult> {
     try {
       if (signal?.aborted) return CANCELED_RESULT;
       if (fresh && this.sessionId) {
@@ -336,7 +348,10 @@ export class AgentMailbox {
       }
       await this.ensureRunning();
       if (signal?.aborted) return CANCELED_RESULT;
-      return await this.agent.send(`${text}${this.deliveryNote()}`, images);
+      const prepared = prepare?.();
+      const turn = this.agent.send(`${prepared?.text ?? text}${suffix ?? ""}${this.deliveryNote()}`, images, prepared?.options);
+      prepared?.onSent();
+      return await turn;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.onError(message);

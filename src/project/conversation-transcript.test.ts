@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { appendFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -19,7 +19,7 @@ it("UTC の時刻を端末の時間帯のオフセット付き ISO 8601 にす�
 
 it("会話の本文だけを時系列で保存し、別の Agent とユーザーのやり取りも返す", () => {
   const transcript = new ConversationTranscript(path());
-  transcript.append(event({ kind: "human", agent: "claude", text: "要件" }));
+  transcript.append(event({ kind: "human", agent: "claude", text: "要件", inputId: "in1" }));
   transcript.append(event({ kind: "agent", agent: "claude", event: { type: "text", text: "作業中" } }));
   transcript.append(event({ kind: "agent", agent: "claude", event: { type: "turn", result: { status: "completed", text: "設計案" } } }));
   transcript.append(event({ kind: "human", agent: "codex", text: "追加の依頼" }));
@@ -41,7 +41,7 @@ it("formal message と質問・回答の本文を返し、古いページへた�
   transcript.append(
     event({
       kind: "message",
-      message: { id: "m1", from: "claude", to: "codex", type: "DELEGATE", taskId: "T", body: "実装して", repository: "C:\\app", createdAt: at },
+      message: { id: "msg_1", from: "claude", to: "codex", type: "DELEGATE", taskId: "T", body: "実装して", repository: "C:\\app", createdAt: at },
     }),
   );
   transcript.append(
@@ -57,7 +57,7 @@ it("formal message と質問・回答の本文を返し、古いページへた�
     nextBefore: 1,
   });
   expect(transcript.page({ before: newer.nextBefore, limit: 2 })).toEqual({
-    entries: [{ at, kind: "message", from: "claude", to: "codex", body: "実装して" }],
+    entries: [{ at, kind: "message", from: "claude", to: "codex", body: "実装して", id: "msg_1" }],
   });
 });
 
@@ -68,6 +68,14 @@ it("保存済み feed から初期化し、続く event を重複なく足す", 
   transcript.seed(history);
   transcript.append(event({ kind: "agent", agent: "claude", event: { type: "turn", result: { status: "completed", text: "今の返答" } } }));
   expect(transcript.page().entries.map(entry => entry.body)).toEqual(["以前の入力", "今の返答"]);
+});
+
+it("保存済みの formal message に ID がなければ補わない", () => {
+  const transcript = new ConversationTranscript(path());
+  transcript.seed([]);
+  const entry = { at, kind: "message", from: "claude", to: "codex", body: "以前の依頼" };
+  appendFileSync(transcript.filePath, `${JSON.stringify(entry)}\n`);
+  expect(transcript.page().entries).toEqual([entry]);
 });
 
 it("会話 ID ごとに保存先を分け、途中の作業と出力は初期履歴にも含めない", () => {

@@ -18,6 +18,22 @@ const reviewRequest = {
 };
 
 describe("createMessage", () => {
+  it.each(["DELEGATE", "REVIEW_REQUEST"])("Codex 宛の %s は effort を保持する", type => {
+    expect(createMessage({ ...reviewRequest, type, effort: "minimal" }, context)).toMatchObject({ ok: true, message: { effort: "minimal" } });
+  });
+  it.each(["FIX", "ADD", "NOTE", "CANCEL", "ANSWER", "RESULT", "QUESTION", "ISSUE", "ACK"])("%s の effort は拒否する", type => {
+    expect(createMessage({ ...reviewRequest, type, replyTo: "msg_original", effort: "high" }, context)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("effort"),
+    });
+  });
+  it("Claude 宛と空の effort は拒否する", () => {
+    expect(createMessage({ ...reviewRequest, to: "claude", effort: "high" }, { ...context, from: "codex" })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("effort"),
+    });
+    expect(createMessage({ ...reviewRequest, effort: "" }, context).ok).toBe(false);
+  });
   it.each(["DELEGATE", "FIX", "ADD"])("%s の rework を受け付ける", type => {
     expect(createMessage({ ...reviewRequest, type, replyTo: "original", rework: "impl" }, context)).toMatchObject({ ok: true, message: { rework: "impl" } });
   });

@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { ConversationHistory } from "../project/conversation-history.js";
-import { type CreateMessageResult, MAX_BODY_LENGTH } from "../protocol/messages.js";
+import { MAX_BODY_LENGTH } from "../protocol/messages.js";
 import { Coordinator, type SoloMode } from "./coordinator.js";
 import { type CoordinatorEvent, EventBus } from "./event-bus.js";
 
@@ -32,6 +33,54 @@ const setup = (projectRoot = PROJECT_ROOT, knownInputIds: readonly string[] = []
 };
 
 const reviewRequest = { to: "codex", type: "REVIEW_REQUEST", taskId: "T-1", body: "review please", files: ["a.ts"] };
+
+describe("依頼の effort", () => {
+  it.each(["DELEGATE", "REVIEW_REQUEST"])("%s の配送時に effort を渡し、人の入力には持ち越さない", async type => {
+    const { coordinator, codex, events } = setup();
+    const start = codex.start.bind(codex);
+    codex.start = async options => {
+      await start(options);
+      codex.effort = "low";
+    };
+    const send = vi.spyOn(codex, "send");
+    coordinator.receiveMessage("claude", { ...reviewRequest, type, effort: "high" });
+    await flush();
+    expect(send).toHaveBeenLastCalledWith(expect.stringContaining("Effort: high"), undefined, { effort: "high" });
+    expect(events.some(event => event.kind === "notice" && event.level === "warn")).toBe(false);
+    codex.completeTurn({ status: "completed", text: "" });
+    await flush();
+    void coordinator.sendToAgent("codex", "人の入力");
+    await flush();
+    expect(send).toHaveBeenLastCalledWith("人の入力", undefined, undefined);
+    expect(codex.effort).toBe("low");
+    codex.completeTurn();
+  });
+
+  it("基準の effort が不明なら配送時に警告し、上書きを渡さない", async () => {
+    const { coordinator, codex, events } = setup();
+    const send = vi.spyOn(codex, "send");
+    coordinator.receiveMessage("claude", { ...reviewRequest, effort: "high" });
+    await flush();
+    expect(send).toHaveBeenLastCalledWith(expect.any(String), undefined, undefined);
+    expect(events.filter(event => event.kind === "notice" && event.level === "warn")).toMatchObject([
+      { text: "Codex default effort unknown; request effort ignored" },
+    ]);
+    codex.completeTurn({ status: "completed", text: "" });
+  });
+
+  it("steer では effort の変更や不明の警告を出さない", async () => {
+    const { coordinator, codex, events } = setup();
+    const send = vi.spyOn(codex, "send");
+    coordinator.receiveMessage("claude", reviewRequest);
+    await flush();
+    coordinator.receiveMessage("claude", { ...reviewRequest, effort: "high", interrupt: true });
+    await flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(codex.steered[0]).toContain("Effort: high");
+    expect(events.some(event => event.kind === "notice" && event.level === "warn")).toBe(false);
+    codex.completeTurn({ status: "completed", text: "" });
+  });
+});
 
 describe("task 計測と mailbox", () => {
   it("配送したターンを割り当て、別 task の割り込みと人のターンを未割当にする", async () => {
@@ -601,10 +650,10 @@ describe("自動 RESULT", () => {
       type: "RESULT",
       taskId: "T-1",
       replyTo: request.message.id,
-      status: "done",
       body: "実装しました",
       auto: true,
     });
+    expect(messages[1]).not.toHaveProperty("status");
     expect(claude.sent[0]).toContain("Auto: the recipient ended its turn without send_message; this is its final reply.");
   });
 
@@ -2088,30 +2137,204 @@ describe("Coordinator の spec 検証", () => {
 });
 
 describe("Coordinator の spec の差分", () => {
-  const project = mkdtempSync(join(tmpdir(), "clodex-spec-diff-"));
-  const write = (text: string) => writeFileSync(join(project, "design.md"), text);
-  const changesOf = (result: CreateMessageResult) => (result.ok ? result.message.specChanges : "rejected");
-  const send = (coordinator: ReturnType<typeof setup>["coordinator"], from: "claude" | "codex" = "claude") =>
-    changesOf(coordinator.receiveMessage(from, { ...reviewRequest, to: from === "claude" ? "codex" : "claude", spec: "design.md" }));
+  const initial = "# 設計\n本文\n";
+  const changed = `${initial}## 追記\n足した\n`;
+  const hash = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 12);
+  const specSetup = () => {
+    const project = mkdtempSync(join(tmpdir(), "clodex-spec-diff-"));
+    const file = join(project, "design.md");
+    const write = (text: string) => writeFileSync(file, text);
+    write(initial);
+    const state = setup(project);
+    const send = (extra: Record<string, unknown> = {}) => {
+      const result = state.coordinator.receiveMessage("claude", { ...reviewRequest, spec: "design.md", ...extra });
+      if (!result.ok) throw new Error(result.error);
+      return result.message;
+    };
+    const complete = async () => {
+      state.codex.completeTurn({ status: "completed", text: "" });
+      await flush();
+    };
+    return { ...state, file, write, send, complete };
+  };
 
-  it("宛先に前回渡した中身と比べて、変わった節の見出しを付ける", () => {
-    const { coordinator } = setup(project);
-    write("# 設計\n本文\n");
-    expect(send(coordinator)).toBeUndefined();
-    expect(send(coordinator)).toEqual([]);
-    write("# 設計\n本文\n## 追記\n足した\n");
-    expect(send(coordinator)).toEqual(["## 追記"]);
+  it("同じ session の直前の配送と比べ、イベントの message は受理時のままにする", async () => {
+    const { codex, events, send, complete, write } = specSetup();
+    send({ specChanges: ["偽"], specHash: "偽" });
+    await flush();
+    expect(codex.sent[0]).toContain(`Spec: design.md (sha256:${hash(initial)})`);
+    expect(codex.sent[0]).not.toContain("since you last received it");
+    await complete();
+    send();
+    await flush();
+    expect(codex.sent[1]).toContain("unchanged since you last received it");
+    await complete();
+    write(changed);
+    send();
+    await flush();
+    expect(codex.sent[2]).toContain(`(sha256:${hash(changed)})\nSpec changes since you last received it:\n- ## 追記`);
+    for (const event of events)
+      if (event.kind === "message") {
+        expect(event.message).not.toHaveProperty("specChanges");
+        expect(event.message).not.toHaveProperty("specHash");
+      }
+    await complete();
   });
-  it("宛先ごとに記録する", () => {
-    const { coordinator } = setup(project);
-    write("# 設計\n本文\n");
-    send(coordinator);
-    expect(send(coordinator, "codex")).toBeUndefined();
+
+  it.each(["fresh", "new", "resume"])("%s 後の session には差分を付けない", async mode => {
+    const { coordinator, codex, send, complete, write } = specSetup();
+    codex.status = "idle";
+    codex.sessionId = "previous-session";
+    send();
+    await flush();
+    await complete();
+    write(changed);
+    if (mode !== "fresh") await coordinator.switchSessions(mode === "resume" ? { codex: "other-session" } : {}, ["codex"]);
+    send(mode === "fresh" ? { fresh: true } : {});
+    await flush();
+    expect(codex.sent[1]).toContain(`(sha256:${hash(changed)})`);
+    expect(codex.sent[1]).not.toContain("since you last received it");
+    await complete();
   });
-  it("Agent が送った specChanges は使わない", () => {
-    const { coordinator } = setup(project);
-    write("# 設計\n本文\n");
-    expect(changesOf(coordinator.receiveMessage("claude", { ...reviewRequest, spec: "design.md", specChanges: ["偽"] }))).toBeUndefined();
+
+  it.each(["cancelInput", "CANCEL"])("%s で取り消した版は次の差分の比較元にしない", async mode => {
+    const { coordinator, codex, send, complete, write } = specSetup();
+    send();
+    await flush();
+    write(changed);
+    const canceled = send();
+    if (mode === "cancelInput") expect(coordinator.cancelInput(canceled.id)).toBeDefined();
+    else
+      expect(coordinator.receiveMessage("claude", { to: "codex", type: "CANCEL", taskId: canceled.taskId, replyTo: canceled.id, body: "取消" }).ok).toBe(true);
+    write(`${initial}## 別の節\n次の版\n`);
+    send();
+    await complete();
+    expect(codex.sent[1]).toContain("Spec changes since you last received it:\n- ## 別の節");
+    expect(codex.sent[1]).not.toContain("追記");
+    await complete();
+  });
+
+  it("受理後の編集を配送時に読み直し、chain が交互でも直前の配送と比べる", async () => {
+    const { codex, send, complete, write } = specSetup();
+    send({ taskId: "A" });
+    await flush();
+    send({ taskId: "B" });
+    write(changed);
+    await complete();
+    expect(codex.sent[1]).toContain(`(sha256:${hash(changed)})`);
+    expect(codex.sent[1]).toContain("- ## 追記");
+    send({ taskId: "A" });
+    write(initial);
+    await complete();
+    expect(codex.sent[2]).toContain("- (removed) ## 追記");
+    await complete();
+  });
+
+  it("別の宛先と記録のない Coordinator には差分を付けない", async () => {
+    const { coordinator, claude, codex, file, send, complete } = specSetup();
+    send();
+    await flush();
+    expect(coordinator.receiveMessage("codex", { ...reviewRequest, to: "claude", spec: "design.md" }).ok).toBe(true);
+    await flush();
+    expect(claude.sent[0]).not.toContain("since you last received it");
+    const restarted = setup(join(file, ".."));
+    restarted.codex.sessionId = codex.sessionId;
+    expect(restarted.coordinator.receiveMessage("claude", { ...reviewRequest, spec: "design.md" }).ok).toBe(true);
+    await flush();
+    expect(restarted.codex.sent[0]).not.toContain("since you last received it");
+    restarted.codex.completeTurn({ status: "completed", text: "" });
+    claude.completeTurn({ status: "completed", text: "" });
+    await complete();
+  });
+
+  it("配送時に読めない spec の差分と hash は省く", async () => {
+    const { codex, file, send, complete } = specSetup();
+    send();
+    await flush();
+    send();
+    renameSync(file, `${file}.moved`);
+    await complete();
+    expect(codex.sent[1]).toContain("Spec: design.md\n");
+    expect(codex.sent[1]).not.toContain("sha256:");
+    expect(codex.sent[1]).not.toContain("since you last received it");
+    await complete();
+  });
+
+  it.each(["direct", "queued"])("%s の steer 直前に差分を計算する", async mode => {
+    const { coordinator, codex, send, complete, write } = specSetup();
+    send();
+    await flush();
+    if (mode === "queued") {
+      const queued = send();
+      write(changed);
+      expect(await coordinator.steerQueued(queued.id)).toEqual({ ok: true });
+    } else {
+      write(changed);
+      send({ interrupt: true });
+      await flush();
+    }
+    expect(codex.steered[0]).toContain(`(sha256:${hash(changed)})`);
+    expect(codex.steered[0]).toContain("- ## 追記");
+    send();
+    await complete();
+    expect(codex.sent[1]).toContain("unchanged since you last received it");
+    await complete();
+  });
+
+  it("失敗した steer は記録せず、通常配送で再計算する", async () => {
+    const { codex, send, complete, write } = specSetup();
+    send();
+    await flush();
+    codex.steer = async () => false;
+    write(changed);
+    send({ interrupt: true });
+    await flush();
+    write(initial);
+    await complete();
+    expect(codex.sent[1]).toContain("unchanged since you last received it");
+    await complete();
+  });
+
+  it("再送のたびに spec を読み直す", async () => {
+    vi.useFakeTimers();
+    try {
+      const { codex, send, write } = specSetup();
+      send();
+      await vi.advanceTimersByTimeAsync(0);
+      codex.completeTurn({ status: "failed", text: "一時的な失敗" });
+      await vi.advanceTimersByTimeAsync(0);
+      write(changed);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(codex.sent).toHaveLength(2);
+      expect(codex.sent[1]).toContain(`(sha256:${hash(changed)})`);
+      expect(codex.sent[1]).toContain("- ## 追記");
+      codex.completeTurn({ status: "completed", text: "" });
+      await vi.advanceTimersByTimeAsync(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["RESULT", "ANSWER"])("%s の spec にも配送時の hash を付ける", async type => {
+    const { coordinator, codex, claude, send, write, complete } = specSetup();
+    if (type === "RESULT") {
+      send();
+      await flush();
+      await complete();
+    }
+    const request = coordinator.receiveMessage("codex", {
+      ...reviewRequest,
+      to: "claude",
+      type: type === "ANSWER" ? "QUESTION" : "DELEGATE",
+    });
+    if (!request.ok) throw new Error(request.error);
+    await flush();
+    write(changed);
+    send({ type, replyTo: request.message.id });
+    await flush();
+    expect(codex.sent.at(-1)).toContain(`(sha256:${hash(changed)})`);
+    claude.completeTurn({ status: "completed", text: "" });
+    await complete();
   });
 });
 

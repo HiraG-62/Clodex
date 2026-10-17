@@ -64,7 +64,7 @@ const buildMcpServer = (from: AgentId, handler: McpHandlers): McpServer => {
     READ_CONVERSATION_TOOL,
     {
       description:
-        "Read message bodies from this conversation, including the human's exchanges with both agents and formal messages between agents. Returns the latest page in chronological order; pass nextBefore as before to read older messages. Intermediate work and tool activity are excluded.",
+        "Read message bodies from this conversation, including the human's exchanges with both agents and formal messages between agents. Formal messages include their message id. Returns the latest page in chronological order; pass nextBefore as before to read older messages. Intermediate work and tool activity are excluded.",
       inputSchema: { before: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(100).optional() },
     },
     async args => {

@@ -1,5 +1,5 @@
 // Agent 間の routing と lifecycle を決定論的に行う（DESIGN.md §3.9, §12）
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -22,7 +22,7 @@ import type { ConversationRecovery } from "../project/recovery-store.js";
 import { resolveSpecFile } from "../project/spec-file.js";
 import { type AgentMessage, type CreateMessageResult, createMessage, FOLLOWUP_TYPES, MAX_BODY_LENGTH } from "../protocol/messages.js";
 import type { AskUserResult, PendingQuestion } from "../protocol/questions.js";
-import { AgentMailbox } from "./agent-mailbox.js";
+import { AgentMailbox, type PreparedSend } from "./agent-mailbox.js";
 import { type BrainstormConfig, type BrainstormResponse, roundPrompt, summaryPrompt } from "./brainstorm.js";
 import { type BudgetLimits, BudgetManager, humanBudgetError } from "./budget-manager.js";
 import { DeliveryNotes, OTHER_AGENT } from "./delivery-notes.js";
@@ -74,6 +74,7 @@ const MAX_DELIVERY_ATTEMPTS = 2;
 const RETRY_NOTE =
   "[Clodex] Retry: your previous attempt at this message failed partway. Check the current state of the files before continuing; do not redo finished work.";
 const ERROR_LINE_LENGTH = 200;
+const SPEC_HASH_LENGTH = 12;
 const HANDOFF_ACTION: Partial<Record<AgentMessage["type"], string>> = {
   DELEGATE: "Implement it yourself",
   REVIEW_REQUEST: "Review the changes yourself",
@@ -147,7 +148,7 @@ export class Coordinator {
   private parallelResultPending = false;
   private parallelStopWaiting = false;
   // 宛先ごと・設計書の実パスごとに、前回渡した中身（DESIGN.md §13 Spec の差分）
-  private readonly specSnapshots = new Map<string, string>();
+  private readonly specSnapshots = new Map<string, { content: string; sessionId: string | undefined }>();
   private readonly liveUsage = new Set<AgentId>();
   private readonly subagents: Record<AgentId, SubagentState[]> = { claude: [], codex: [] };
   private readonly backgroundTasks: Record<AgentId, SubagentState[]> = { claude: [], codex: [] };
@@ -685,13 +686,9 @@ export class Coordinator {
       if (requestState === "active") message.interrupt = true;
       else delete message.interrupt;
     }
-    let specSnapshot: { key: string; content: string } | undefined;
     if (message.spec !== undefined) {
       const specPath = resolveSpecFile(message.repository, message.spec);
       if (!specPath) return { ok: false, error: "spec: must be a relative path to an existing regular file inside the project root" };
-      specSnapshot = { key: `${message.to}\0${specPath}`, content: readFileSync(specPath, "utf8") };
-      const previous = this.specSnapshots.get(specSnapshot.key);
-      if (previous !== undefined) message.specChanges = changedSections(previous, specSnapshot.content);
     }
 
     // 送信元が処理中の message を親として chain を決める（DESIGN.md §14）
@@ -705,7 +702,6 @@ export class Coordinator {
     if (parent && RETRIED_TYPES.has(parent.type) && message.to === parent.from) this.repliedRequests.add(parent.id);
     if (message.type === "CANCEL" && requestState === "active" && message.replyTo && !message.thread) this.repliedRequests.add(message.replyTo);
     if (!forwarded && message.type !== "ACK" && this.handoffTurns[message.from] !== undefined) this.handoffTurns[message.from] = true;
-    if (specSnapshot) this.specSnapshots.set(specSnapshot.key, specSnapshot.content);
     this.messages.set(message.id, message);
     if (!this.options.parallelParent && message.parallel && message.thread && !this.threadSenders.has(message.thread))
       this.threadSenders.set(message.thread, message.from);
@@ -714,6 +710,38 @@ export class Coordinator {
     if (message.type === "CANCEL" && requestState === "queued" && !message.thread) this.mailboxes[message.to].cancel(message.replyTo ?? "");
     else if (message.type !== "ACK") this.detach(this.deliver(message), message.to);
     return result;
+  }
+
+  private prepareSpec(message: AgentMessage): () => void {
+    delete message.specChanges;
+    delete message.specHash;
+    const path = message.spec ? resolveSpecFile(message.repository, message.spec) : undefined;
+    if (!path) return () => {};
+    let content: string;
+    try {
+      content = readFileSync(path, "utf8");
+    } catch {
+      return () => {};
+    }
+    const key = `${message.to}\0${path}`;
+    const sessionId = this.options.agents[message.to].sessionId;
+    const previous = this.specSnapshots.get(key);
+    if (sessionId !== undefined && previous?.sessionId === sessionId) message.specChanges = changedSections(previous.content, content);
+    message.specHash = createHash("sha256").update(content).digest("hex").slice(0, SPEC_HASH_LENGTH);
+    return () => this.specSnapshots.set(key, { content, sessionId });
+  }
+
+  private prepareMessage(message: AgentMessage, attempt: number, interrupt = false): PreparedSend {
+    const delivery = { ...message, ...(interrupt ? { interrupt: true } : {}) };
+    const onSent = this.prepareSpec(delivery);
+    const effort = !interrupt && message.to === "codex" ? message.effort : undefined;
+    const knownEffort = this.options.agents[message.to].effort !== undefined;
+    if (effort && !knownEffort) this.options.bus.publish({ kind: "notice", text: t("notice.unknownEffort"), level: "warn" });
+    return {
+      text: `${attempt > 1 ? `${RETRY_NOTE}\n` : ""}${buildEnvelope(delivery, this.language)}`,
+      ...(effort && knownEffort ? { options: { effort } } : {}),
+      onSent,
+    };
   }
 
   // interrupt: 宛先が送信元からの message を処理中なら、そのターンに足す。足せなければキューに積む（DESIGN.md §28 v0.3 C）
@@ -729,14 +757,21 @@ export class Coordinator {
       (message.type === "ANSWER" && this.options.agents[message.to].status === "busy") ||
       followsCurrentRequest ||
       (!FOLLOWUP_TYPES.has(message.type) && message.interrupt && mailbox.current?.from === message.from);
-    const envelope = `${attempt > 1 ? `${RETRY_NOTE}\n` : ""}${buildEnvelope(followsCurrentRequest ? { ...message, interrupt: true } : message, this.language)}`;
     if (message.type === "CANCEL" && !followsCurrentRequest) return;
-    if (!message.fresh && steerable && (await this.steerWithNotice(message.to, envelope, message.id))) {
-      this.metrics.steer(message.to, message.taskId);
-      this.metrics.deliver(message);
-      return;
+    if (!message.fresh && steerable) {
+      const prepared = this.prepareMessage(message, attempt, true);
+      if (await this.steerWithNotice(message.to, prepared.text, message.id)) {
+        prepared.onSent();
+        this.metrics.steer(message.to, message.taskId);
+        this.metrics.deliver(message);
+        return;
+      }
     }
-    const result = await mailbox.enqueue(envelope, { message, ...(message.fresh && attempt === 1 ? { fresh: true } : {}) });
+    const result = await mailbox.enqueue("", {
+      message,
+      prepare: interrupt => this.prepareMessage(message, attempt, interrupt),
+      ...(message.fresh && attempt === 1 ? { fresh: true } : {}),
+    });
     const replied = this.repliedRequests.delete(message.id);
     if (RETRIED_TYPES.has(message.type) && result.status === "completed" && result.text.trim() && !replied && !mailbox.isClosed && !mailbox.holding)
       this.autoReply(message, result.text);
@@ -771,7 +806,6 @@ export class Coordinator {
         type: answer ? "ANSWER" : "RESULT",
         taskId: request.taskId,
         replyTo: request.type === "FIX" || request.type === "ADD" ? request.replyTo : request.id,
-        ...(answer ? {} : { status: "done" as const }),
         body,
       },
       { from: request.to, repository: this.options.projectRoot, ...(this.options.createMessageId ? { createId: this.options.createMessageId } : {}) },
@@ -913,9 +947,11 @@ export class Coordinator {
     try {
       const sent = await mailbox.steerQueued(id, async queued => {
         const images = queued.images?.length ? `\n\n${STEER_IMAGE_INSTRUCTION}\n${queued.images.join("\n")}` : "";
-        const text = queued.message ? buildEnvelope({ ...queued.message, interrupt: true }, this.language) : `${queued.text}${queued.suffix ?? ""}${images}`;
+        const prepared = queued.prepare?.(true);
+        const text = prepared?.text ?? `${queued.text}${queued.suffix ?? ""}${images}`;
         const sent = await this.steerWithNotice(target.agent, text, steerId);
         if (sent) {
+          prepared?.onSent();
           this.metrics.steer(target.agent, queued.message?.taskId);
           if (queued.message) this.metrics.deliver(queued.message);
         }
