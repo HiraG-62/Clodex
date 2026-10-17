@@ -50,6 +50,8 @@ const describeAgentEvent = (event: AgentEvent): string => {
       return `context ${event.tokens} tokens${event.window ? ` / ${event.window}` : ""}`;
     case "input_total":
       return `input total ${event.total} tokens`;
+    case "usage":
+      return `usage input=${event.input} cached=${event.cachedInput} output=${event.output}`;
     case "exit":
       return `exited (code ${event.code})`;
     case "error":

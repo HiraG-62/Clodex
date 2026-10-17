@@ -1,9 +1,11 @@
 // Ink に渡す前の分類と編集操作。端末 I/O を含めない。
 
 import { marked, type Token, type Tokens } from "marked";
+import type { TaskMetrics } from "../coordinator/task-metrics-summary.js";
 import { t } from "../i18n/i18n.js";
-import type { MessageType } from "../protocol/messages.js";
+import type { AgentMessage, MessageType } from "../protocol/messages.js";
 import { isShellInput } from "../web/client/shell-input.js";
+import { formatTaskMetrics } from "../web/client/task-metrics-format.js";
 import { applyFeedItem, type TimelineItem } from "../web/client/timeline.js";
 import type { FeedItem } from "../web/web-feed.js";
 
@@ -226,6 +228,7 @@ export interface TerminalLabels {
   parallel: string;
 }
 export interface TerminalCard {
+  metrics?: string;
   kind: TimelineItem["kind"];
   color: string;
   title: string;
@@ -448,6 +451,7 @@ export const cardLines = (card: TerminalCard, width: number, elapsedLabel?: stri
   const content: TerminalLine[] = [
     { text: `${card.title}${elapsedLabel === undefined ? "" : ` · ${elapsedLabel}`}`, color: card.color, bold: true },
     ...(card.tag ? [{ text: card.tag, color: card.color }] : []),
+    ...(card.metrics ? [{ text: card.metrics, color: TERMINAL_COLORS.muted }] : []),
     ...(card.plan ? [{ text: card.plan, color: TERMINAL_COLORS.muted }] : []),
     ...(card.stepsLabel ? [{ text: `${card.steps ? "▾" : "▸"} ${card.stepsLabel}`, color: TERMINAL_COLORS.muted }] : []),
     ...(card.steps ?? []).map(step => ({ text: `  • ${step}`, color: TERMINAL_COLORS.muted })),
@@ -498,19 +502,28 @@ export const cardLines = (card: TerminalCard, width: number, elapsedLabel?: stri
 
 export class CardLineCache {
   private readonly cache = new WeakMap<TimelineItem, Map<string, TerminalLine[]>>();
-  lines(item: TimelineItem, labels: TerminalLabels, expanded: boolean, width: number, elapsedLabel?: string): TerminalLine[] {
+  lines(
+    item: TimelineItem,
+    labels: TerminalLabels,
+    expanded: boolean,
+    width: number,
+    elapsedLabel?: string,
+    metrics: Record<string, TaskMetrics> = {},
+  ): TerminalLine[] {
     if (item.kind === "turn" && item.status === "working") {
-      return cardLines(formatTimelineItem(item, labels, expanded), width, elapsedLabel);
+      return cardLines(formatTimelineItem(item, labels, expanded, metrics), width, elapsedLabel);
     }
     let entries = this.cache.get(item);
     if (!entries) {
       entries = new Map();
       this.cache.set(item, entries);
     }
-    const key = `${width}:${expanded}:${elapsedLabel ?? ""}`;
+    const messages = item.kind === "message" ? [item.message] : item.kind === "turn" ? (item.messages ?? []).map(entry => entry.message) : [];
+    const metricsKey = messages.map(message => (metrics[message.id] ? formatTaskMetrics(metrics[message.id]!, t) : "")).join(";");
+    const key = `${width}:${expanded}:${elapsedLabel ?? ""}:${metricsKey}`;
     const existing = entries.get(key);
     if (existing) return existing;
-    const lines = cardLines(formatTimelineItem(item, labels, expanded), width, elapsedLabel);
+    const lines = cardLines(formatTimelineItem(item, labels, expanded, metrics), width, elapsedLabel);
     entries.set(key, lines);
     return lines;
   }
@@ -533,7 +546,13 @@ const MESSAGE_COLORS: Record<MessageType, string> = {
   ACK: TERMINAL_COLORS.muted,
 };
 
-export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, expanded: boolean): TerminalCard => {
+export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, expanded: boolean, metrics: Record<string, TaskMetrics> = {}): TerminalCard => {
+  const messageMetrics = (message: { type: MessageType; id: string }) =>
+    message.type === "RESULT" && metrics[message.id] ? formatTaskMetrics(metrics[message.id]!, t) : undefined;
+  const messageBody = (message: AgentMessage) =>
+    [message.thread ? labels.parallel : undefined, message.fresh ? labels.fresh : undefined, messageMetrics(message), message.body]
+      .filter(part => part !== undefined)
+      .join("\n");
   const questionBody = (entry: Extract<TimelineItem, { kind: "question" }>) =>
     [
       entry.context,
@@ -563,19 +582,9 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
     };
   if (item.kind === "turn") {
     const attachments = item.attachmentOrder?.flatMap(attached => {
-      if (attached.kind === "message")
-        return (
-          item.messages
-            ?.filter(entry => entry.message.id === attached.id)
-            .map(entry => `${entry.message.thread ? `${labels.parallel}\n` : ""}${entry.message.fresh ? `${labels.fresh}\n` : ""}${entry.message.body}`) ?? []
-        );
+      if (attached.kind === "message") return item.messages?.filter(entry => entry.message.id === attached.id).map(entry => messageBody(entry.message)) ?? [];
       return item.questions?.filter(entry => entry.id === attached.id).map(questionBody) ?? [];
-    }) ?? [
-      ...(item.messages ?? []).map(
-        entry => `${entry.message.thread ? `${labels.parallel}\n` : ""}${entry.message.fresh ? `${labels.fresh}\n` : ""}${entry.message.body}`,
-      ),
-      ...(item.questions ?? []).map(questionBody),
-    ];
+    }) ?? [...(item.messages ?? []).map(entry => messageBody(entry.message)), ...(item.questions ?? []).map(questionBody)];
     const steps = [
       ...item.steps.map(step => (step.kind === "say" ? step.text : `${step.name}: ${step.input}`)),
       ...(attachments.length && item.text ? [item.text] : []),
@@ -604,6 +613,7 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
       title: `${agentName(item.message.from)} → ${agentName(item.message.to)}`,
       tag: `${item.message.type} · ${item.message.taskId}${item.message.auto ? ` · ${labels.auto}` : ""}${item.message.fresh ? ` · ${labels.fresh}` : ""}${item.message.thread ? ` · ${labels.parallel}` : ""}`,
       body: item.message.body,
+      metrics: messageMetrics(item.message),
     };
   if (item.kind === "human")
     return {

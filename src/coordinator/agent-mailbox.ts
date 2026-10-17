@@ -71,6 +71,7 @@ export class AgentMailbox {
     private readonly limitHold: () => LimitHold | undefined = () => undefined,
     private readonly deliveryNote: () => string = () => "",
     private readonly onFreshSession: () => void = () => {},
+    private readonly onDelivery: (message: AgentMessage) => void = () => {},
   ) {}
 
   // 失敗しても reject せず failed の TurnResult を返す（呼び出し側は待たずに投げてよい）
@@ -288,6 +289,7 @@ export class AgentMailbox {
         this.activeSend = item.kind === "send";
         this.currentInputId = item.inputId;
         this.current = item.message;
+        if (item.message) this.onDelivery(item.message);
         this.onChange();
         try {
           const result =

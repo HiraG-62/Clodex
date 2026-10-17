@@ -53,6 +53,7 @@ export type AgentEvent =
   | { type: "rate_limit"; fiveHour?: RateLimitWindow; weekly?: RateLimitWindow }
   | { type: "context"; tokens: number; window?: number; inputTotal?: number }
   | { type: "input_total"; total: number }
+  | { type: "usage"; input: number; cachedInput: number; output: number }
   | { type: "compacted" }
   | { type: "subagents"; running: SubagentState[] }
   | { type: "background_tasks"; running: BackgroundTaskState[] }

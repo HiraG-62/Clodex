@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { TaskMetricsRecorder, TaskMetricsStore } from "../coordinator/task-metrics.js";
 import type { AgentEvent } from "./agent-adapter.js";
 import { CodexAdapter } from "./codex-adapter.js";
 import { createFakeSpawner, flush, type JsonObject } from "./fake-agent-process.js";
@@ -510,13 +511,65 @@ describe("CodexAdapter", () => {
         threadId: THREAD_ID,
         turnId: TURN_ID,
         tokenUsage: {
-          total: { totalTokens: 90000, inputTokens: 87000, cachedInputTokens: 30000 },
+          total: { totalTokens: 90000, inputTokens: 87000, cachedInputTokens: 30000, outputTokens: 3000 },
           last: { totalTokens: 30000 },
           modelContextWindow: 258000,
         },
       },
     });
     expect(events).toContainEqual({ type: "context", tokens: 30000, window: 258000, inputTotal: 87000 });
+    expect(events.some(event => event.type === "usage")).toBe(false);
+  });
+
+  it("resume 直後のターンは thread の累計を含めず last の usage だけを合計する", async () => {
+    const { adapter, started, proc, events } = await setup({ resumeSessionId: THREAD_ID });
+    await started;
+    const store = new TaskMetricsStore();
+    const recorder = new TaskMetricsRecorder("resumed", store);
+    adapter.onEvent(event => {
+      if (event.type === "turn_started") recorder.start("codex", "T");
+      recorder.record({ kind: "agent", agent: "codex", event, at: new Date().toISOString() });
+    });
+    const turn = adapter.send("再開後の作業");
+    proc.emit({
+      method: "thread/tokenUsage/updated",
+      params: {
+        threadId: THREAD_ID,
+        tokenUsage: {
+          last: { totalTokens: 110, inputTokens: 100, cachedInputTokens: 40, outputTokens: 10 },
+          total: { inputTokens: 10_000_100, cachedInputTokens: 9_000_040, outputTokens: 200_010 },
+        },
+      },
+    });
+    proc.emit({
+      method: "thread/tokenUsage/updated",
+      params: {
+        threadId: THREAD_ID,
+        tokenUsage: {
+          last: { totalTokens: 220, inputTokens: 200, cachedInputTokens: 50, outputTokens: 20 },
+          total: { inputTokens: 10_000_300, cachedInputTokens: 9_000_090, outputTokens: 200_030 },
+        },
+      },
+    });
+    proc.emit(turnCompleted("completed"));
+    await turn;
+    expect(events.filter(event => event.type === "usage")).toEqual([
+      { type: "usage", input: 60, cachedInput: 40, output: 10 },
+      { type: "usage", input: 150, cachedInput: 50, output: 20 },
+    ]);
+    expect(events).toContainEqual({ type: "context", tokens: 220, inputTotal: 10_000_300 });
+    expect(store.snapshot("resumed").tasks[0]).toMatchObject({ turns: 1, inputTokens: 210, cachedInputTokens: 90, outputTokens: 30 });
+    await adapter.stop();
+  });
+
+  it("context の大きさがなくても last の usage を通知する", async () => {
+    const { started, proc, events } = await setup();
+    await started;
+    proc.emit({
+      method: "thread/tokenUsage/updated",
+      params: { threadId: THREAD_ID, tokenUsage: { last: { inputTokens: 20, cachedInputTokens: 5, outputTokens: 2 } } },
+    });
+    expect(events).toContainEqual({ type: "usage", input: 15, cachedInput: 5, output: 2 });
   });
 
   it("account/rateLimits/updated を正規化して流す", async () => {
@@ -641,7 +694,10 @@ describe("CodexAdapter の subagent（docs/spikes/steer-image-subagent.md）", (
     });
     proc.emit({ method: "turn/started", params: { threadId: SUB, turn: { id: "turn-sub" } } });
     proc.emit({ method: "item/completed", params: { threadId: SUB, item: { type: "agentMessage", text: "SUB-DONE" } } });
-    proc.emit({ method: "thread/tokenUsage/updated", params: { threadId: SUB, tokenUsage: { last: { totalTokens: 5 } } } });
+    proc.emit({
+      method: "thread/tokenUsage/updated",
+      params: { threadId: SUB, tokenUsage: { last: { totalTokens: 5, inputTokens: 3, cachedInputTokens: 1, outputTokens: 2 } } },
+    });
     proc.emit({ method: "turn/completed", params: { threadId: SUB, turn: { id: "turn-sub", status: "completed" } } });
     expect(adapter.status).toBe("busy");
 
@@ -651,6 +707,7 @@ describe("CodexAdapter の subagent（docs/spikes/steer-image-subagent.md）", (
     expect(events).toContainEqual({ type: "tool", name: "subagent", input: "started /root/reply" });
     expect(events).not.toContainEqual({ type: "text", text: "SUB-DONE" });
     expect(events.some(e => e.type === "context")).toBe(false);
+    expect(events.some(e => e.type === "usage")).toBe(false);
   });
 });
 

@@ -558,20 +558,25 @@ describe("ClaudeAdapter", () => {
     const first = adapter.send("one");
     proc.emit(init());
     proc.emit({ type: "assistant", message: { content: [], usage: { input_tokens: 100 } } });
-    proc.emit({ ...result("one"), usage: { input_tokens: 100, cache_creation_input_tokens: 200, cache_read_input_tokens: 300 } });
+    proc.emit({ ...result("one"), usage: { input_tokens: 100, cache_creation_input_tokens: 200, cache_read_input_tokens: 300, output_tokens: 40 } });
     await first;
     expect(events).toContainEqual({ type: "context", tokens: 100, inputTotal: 600 });
+    expect(events).toContainEqual({ type: "usage", input: 300, cachedInput: 300, output: 40 });
     const second = adapter.send("two");
     proc.emit({ type: "assistant", message: { content: [], usage: { input_tokens: 50 } } });
     proc.emit({ ...result("two"), usage: { input_tokens: 50, cache_read_input_tokens: 100 } });
     await second;
     expect(events).toContainEqual({ type: "context", tokens: 50, inputTotal: 750 });
+    expect(events).toContainEqual({ type: "usage", input: 50, cachedInput: 100, output: 0 });
     await adapter.stop();
     await adapter.start({ cwd: "C:\\dev\\app", resumeSessionId: "next-session" });
     const third = adapter.send("three");
     spawner.last.emit({ ...result("three"), usage: { input_tokens: 25 } });
     await third;
     expect(events).toContainEqual({ type: "input_total", total: 25 });
+    expect(events).toContainEqual({ type: "usage", input: 25, cachedInput: 0, output: 0 });
+    expect(events.filter(event => event.type === "usage")).toHaveLength(3);
+    expect(events.findIndex(event => event.type === "usage")).toBeLessThan(events.findIndex(event => event.type === "turn"));
   });
 
   it("rate_limit_event を % に正規化して流す", async () => {

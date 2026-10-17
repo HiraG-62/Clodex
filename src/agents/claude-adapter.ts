@@ -325,6 +325,12 @@ export class ClaudeAdapter extends BaseAgentAdapter {
   private emitContext(event: ClaudeEvent): void {
     if (event.usage) {
       this.inputTotal += (event.usage.input_tokens ?? 0) + (event.usage.cache_creation_input_tokens ?? 0) + (event.usage.cache_read_input_tokens ?? 0);
+      this.emit({
+        type: "usage",
+        input: (event.usage.input_tokens ?? 0) + (event.usage.cache_creation_input_tokens ?? 0),
+        cachedInput: event.usage.cache_read_input_tokens ?? 0,
+        output: event.usage.output_tokens ?? 0,
+      });
     }
     const usage = this.lastUsage;
     this.lastUsage = undefined;
@@ -335,7 +341,12 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     const tokens = (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.output_tokens ?? 0);
     const windows = Object.values(event.modelUsage ?? {}).map(m => m.contextWindow ?? 0);
     const window = windows.length ? Math.max(...windows) : 0;
-    this.emit({ type: "context", tokens, ...(window ? { window } : {}), ...(event.usage ? { inputTotal: this.inputTotal } : {}) });
+    this.emit({
+      type: "context",
+      tokens,
+      ...(window ? { window } : {}),
+      ...(event.usage ? { inputTotal: this.inputTotal } : {}),
+    });
   }
 
   private handleAssistant(event: ClaudeEvent): void {

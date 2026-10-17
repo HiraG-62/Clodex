@@ -16,6 +16,9 @@ const base: AgentMessage = {
 };
 
 describe("buildEnvelope", () => {
+  it("再依頼の理由と関係する task を含む", () => {
+    expect(buildEnvelope({ ...base, type: "DELEGATE", rework: "check", relatesTo: "previous" })).toContain("Rework: check\nRelates-To: previous");
+  });
   it("ADD は元の依頼への RESULT、NOTE は返信不要、CANCEL は中止結果を求める", () => {
     const followup = { ...base, replyTo: "msg_original" };
     const add = buildEnvelope({ ...followup, type: "ADD" });

@@ -353,11 +353,18 @@ export const TuiApp = ({
   const nowSeconds = (at: string) => Math.max(0, Math.floor((now - Date.parse(at)) / 1000));
   const logLines = [
     ...feed.completed.flatMap(({ item, elapsedSeconds }) =>
-      cache.lines(item, cardLabels, expanded, size.columns, elapsedSeconds === undefined ? undefined : t("tui.elapsed", { seconds: elapsedSeconds })),
+      cache.lines(
+        item,
+        cardLabels,
+        expanded,
+        size.columns,
+        elapsedSeconds === undefined ? undefined : t("tui.elapsed", { seconds: elapsedSeconds }),
+        state.taskMetrics?.results,
+      ),
     ),
     ...feed.timeline
       .filter(item => item.kind === "turn")
-      .flatMap(item => cache.lines(item, cardLabels, expanded, size.columns, t("tui.elapsed", { seconds: nowSeconds(item.at) }))),
+      .flatMap(item => cache.lines(item, cardLabels, expanded, size.columns, t("tui.elapsed", { seconds: nowSeconds(item.at) }), state.taskMetrics?.results)),
   ];
   const agentRows = state.agents.reduce(
     (count, agent) => count + 1 + (feed.timeline.some(item => item.kind === "turn" && item.agent === agent.id && item.status === "working") ? 1 : 0),

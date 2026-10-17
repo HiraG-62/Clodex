@@ -76,7 +76,11 @@ interface CodexItem {
 interface CodexNotificationParams {
   threadId?: string;
   item?: CodexItem;
-  tokenUsage?: { last?: { totalTokens?: number }; total?: { inputTokens?: number }; modelContextWindow?: number | null };
+  tokenUsage?: {
+    last?: { totalTokens?: number; inputTokens?: number; cachedInputTokens?: number; outputTokens?: number };
+    total?: { inputTokens?: number };
+    modelContextWindow?: number | null;
+  };
   turn?: { id?: string; status?: string; error?: { message?: string } | null };
   rateLimits?: CodexRateLimits;
   message?: string;
@@ -286,11 +290,25 @@ export class CodexAdapter extends BaseAgentAdapter {
       case "account/rateLimits/updated":
         return this.emitRateLimits(params.rateLimits);
       case "thread/tokenUsage/updated": {
-        const tokens = params.tokenUsage?.last?.totalTokens;
+        const last = params.tokenUsage?.last;
+        if (last?.inputTokens !== undefined) {
+          this.emit({
+            type: "usage",
+            input: last.inputTokens - (last.cachedInputTokens ?? 0),
+            cachedInput: last.cachedInputTokens ?? 0,
+            output: last.outputTokens ?? 0,
+          });
+        }
+        const tokens = last?.totalTokens;
         if (tokens === undefined) return;
         const window = params.tokenUsage?.modelContextWindow;
         const inputTotal = params.tokenUsage?.total?.inputTokens;
-        this.emit({ type: "context", tokens, ...(window ? { window } : {}), ...(inputTotal !== undefined ? { inputTotal } : {}) });
+        this.emit({
+          type: "context",
+          tokens,
+          ...(window ? { window } : {}),
+          ...(inputTotal !== undefined ? { inputTotal } : {}),
+        });
         return;
       }
       case "turn/completed": {

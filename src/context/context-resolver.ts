@@ -52,6 +52,8 @@ export const buildEnvelope = (m: AgentMessage, language?: Language): string => {
   const lines = [`[Clodex] Message ${m.id} from ${m.from}`, `Type: ${m.type}`, `Task: ${m.taskId}`];
   if (m.replyTo) lines.push(`Reply-To: ${m.replyTo}`);
   if (m.status) lines.push(`Status: ${m.status}`);
+  if (m.rework) lines.push(`Rework: ${m.rework}`);
+  if (m.relatesTo) lines.push(`Relates-To: ${m.relatesTo}`);
   if (m.auto) lines.push("Auto: the recipient ended its turn without send_message; this is its final reply.");
   if (m.parallel && m.thread) lines.push("Parallel: yes (a separate conversation; your other work continues elsewhere)");
   if (m.interrupt && !m.fresh) lines.push("Interrupt: yes");

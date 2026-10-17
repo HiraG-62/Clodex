@@ -33,7 +33,7 @@ const message = {
 } as const;
 
 describe("connectWebFeed", () => {
-  it("retry と tool_end は feed と履歴に残さない", () => {
+  it("retry・tool_end・usage は feed と履歴に残さない", () => {
     const bus = new EventBus();
     const recorded: FeedItem[] = [];
     const delivered: FeedItem[] = [];
@@ -43,6 +43,7 @@ describe("connectWebFeed", () => {
     const events = [
       { kind: "retry", to: "codex", messageId: "msg_1", attempt: 2, at: "x" } as const,
       { kind: "agent", agent: "claude", event: { type: "tool_end", toolId: "bash", failed: false }, at: "x" } as const,
+      { kind: "agent", agent: "codex", event: { type: "usage", input: 60, cachedInput: 40, output: 10 }, at: "x" } as const,
     ];
     for (const event of events) {
       bus.publish(event);

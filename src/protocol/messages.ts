@@ -16,6 +16,7 @@ export const FOLLOWUP_TYPES: ReadonlySet<MessageType> = new Set(["FIX", "ADD", "
 const TYPES_REQUIRING_REPLY_TO = new Set<MessageType>([...FOLLOWUP_TYPES, "ANSWER", "RESULT", "ACK"]);
 const TYPES_ALLOWING_ISSUES = new Set<MessageType>(["RESULT", "ISSUE"]);
 const TYPES_ALLOWING_FRESH = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST"]);
+const TYPES_ALLOWING_REWORK = new Set<MessageType>(["DELEGATE", "FIX", "ADD"]);
 
 const issueSchema = z.object({
   file: z.string().min(1),
@@ -33,6 +34,8 @@ export const sendMessageShape = {
       "FIX corrects, ADD adds requirements to, NOTE informs about, CANCEL withdraws a DELEGATE / REVIEW_REQUEST you sent (replyTo = that request). Delivered into the recipient's running turn when it is working on it. ANSWER replies to a QUESTION; RESULT reports completed delegated work. Follow-ups, ANSWER, RESULT and ACK require replyTo",
     ),
   taskId: z.string().min(1).describe("Task ID"),
+  rework: z.enum(["spec", "impl", "check"]).optional().describe("Why this task is requested again: spec, impl or check"),
+  relatesTo: z.string().min(1).optional().describe("Related previous task ID (DELEGATE or REVIEW_REQUEST only)"),
   body: z.string().min(1).max(MAX_BODY_LENGTH).describe("Request, question, or result summary. Reference commit/files instead of pasting large content"),
   replyTo: z.string().min(1).optional().describe("ID of the message this replies to"),
   commit: z.string().min(1).optional().describe("Commit hash to look at"),
@@ -71,6 +74,12 @@ export const sendMessageShape = {
 
 const TYPES_ALLOWING_SPEC = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST", "FIX", "ADD", "NOTE", "RESULT", "ANSWER"]);
 const sendMessageSchema = z.object(sendMessageShape).superRefine((input, ctx) => {
+  if (input.rework !== undefined && !TYPES_ALLOWING_REWORK.has(input.type)) {
+    ctx.addIssue({ code: "custom", path: ["rework"], message: "allowed only for DELEGATE, FIX or ADD" });
+  }
+  if (input.relatesTo !== undefined && !TYPES_ALLOWING_FRESH.has(input.type)) {
+    ctx.addIssue({ code: "custom", path: ["relatesTo"], message: "allowed only for DELEGATE or REVIEW_REQUEST" });
+  }
   if (FOLLOWUP_TYPES.has(input.type)) {
     for (const field of ["fresh", "parallel", "worktree"] as const) {
       if (input[field] !== undefined) ctx.addIssue({ code: "custom", path: [field], message: `not allowed for ${input.type}` });

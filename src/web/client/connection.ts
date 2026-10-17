@@ -136,6 +136,7 @@ export function createConnection(ctx: ClientContext) {
           ctx.closeSheet();
         }
         commitReplay();
+        const metricsChanged = JSON.stringify(ctx.store.state?.taskMetrics?.results) !== JSON.stringify(item.state.taskMetrics?.results);
         ctx.store.state = item.state;
         const projectRoot = ctx.store.state.projects?.find(project => project.current)?.projectRoot;
         const conversationId = ctx.store.state.conversations.find(conversation => conversation.current)?.id;
@@ -166,7 +167,7 @@ export function createConnection(ctx: ClientContext) {
         ctx.$("#reload").hidden = true;
         ctx.$("#conn-spinner").hidden = false;
         ctx.renderState();
-        ctx.renderLog();
+        ctx.renderLog(metricsChanged);
         if (ctx.store.replayAnchor) {
           const node = ctx.store.rendered.get(ctx.store.replayAnchor.id)?.node;
           if (node) ctx.log.scrollTop += node.getBoundingClientRect().top - ctx.store.replayAnchor.top;

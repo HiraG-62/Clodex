@@ -28,6 +28,7 @@ import { type BudgetLimits, BudgetManager, humanBudgetError } from "./budget-man
 import { DeliveryNotes, OTHER_AGENT } from "./delivery-notes.js";
 import type { EventBus } from "./event-bus.js";
 import { QuestionStore } from "./question-store.js";
+import { type ConversationTaskMetrics, TaskMetricsRecorder, TaskMetricsStore } from "./task-metrics.js";
 import { DEFAULT_USAGE_ALERT, limitResetAt, type ThreadTokenWarn, type UsageAlert, UsageMonitor, type UsageSnapshot } from "./usage-monitor.js";
 import { WorkRecorder } from "./work-recorder.js";
 
@@ -83,6 +84,8 @@ const handoffFallback = (message: AgentMessage, error: string) =>
   `Do not send it again. ${HANDOFF_ACTION[message.type] ?? "Do the work yourself"} and continue the task.`;
 
 export interface CoordinatorOptions {
+  conversationId?: string;
+  metricsStore?: TaskMetricsStore;
   brainstorm?: BrainstormConfig;
   brainstormArtifactsDir?: string;
   brainstormPrimary?: AgentId;
@@ -127,6 +130,8 @@ export interface CoordinatorOptions {
 }
 
 export class Coordinator {
+  private readonly metricsStore: TaskMetricsStore;
+  private readonly metrics: TaskMetricsRecorder;
   private readonly mailboxes: Record<AgentId, AgentMailbox>;
   private readonly budget: BudgetManager;
   private readonly usage: UsageMonitor;
@@ -334,6 +339,13 @@ export class Coordinator {
   }
 
   constructor(private readonly options: CoordinatorOptions) {
+    this.metricsStore = options.metricsStore ?? new TaskMetricsStore();
+    this.metrics = new TaskMetricsRecorder(options.conversationId ?? "", this.metricsStore);
+    options.bus.subscribe(event => {
+      if (event.kind === "agent" && event.event.type === "turn_started")
+        this.metrics.start(event.agent, this.mailboxes?.[event.agent]?.current?.taskId, event.at);
+      this.metrics.record(event);
+    });
     if (options.brainstormComplete) this.brainstormPhase = "done";
     const { agents, bus, mcpUrlFor, instructions, limits, settings } = options;
     for (const inputId of options.knownInputIds ?? []) this.rememberInputId(inputId);
@@ -414,6 +426,7 @@ export class Coordinator {
           this.options.clearSession?.(id);
           this.usage.clearContext(id);
         },
+        message => this.metrics.deliver(message),
       );
     };
     this.mailboxes = { claude: createMailbox("claude"), codex: createMailbox("codex") };
@@ -483,6 +496,10 @@ export class Coordinator {
 
   pendingQuestions(): PendingQuestion[] {
     return this.questions.pending();
+  }
+
+  taskMetrics(): ConversationTaskMetrics {
+    return this.metricsStore.snapshot(this.options.conversationId ?? "");
   }
 
   answer(id: string, input: unknown): string | undefined {
@@ -714,7 +731,11 @@ export class Coordinator {
       (!FOLLOWUP_TYPES.has(message.type) && message.interrupt && mailbox.current?.from === message.from);
     const envelope = `${attempt > 1 ? `${RETRY_NOTE}\n` : ""}${buildEnvelope(followsCurrentRequest ? { ...message, interrupt: true } : message, this.language)}`;
     if (message.type === "CANCEL" && !followsCurrentRequest) return;
-    if (!message.fresh && steerable && (await this.steerWithNotice(message.to, envelope, message.id))) return;
+    if (!message.fresh && steerable && (await this.steerWithNotice(message.to, envelope, message.id))) {
+      this.metrics.steer(message.to, message.taskId);
+      this.metrics.deliver(message);
+      return;
+    }
     const result = await mailbox.enqueue(envelope, { message, ...(message.fresh && attempt === 1 ? { fresh: true } : {}) });
     const replied = this.repliedRequests.delete(message.id);
     if (RETRIED_TYPES.has(message.type) && result.status === "completed" && result.text.trim() && !replied && !mailbox.isClosed && !mailbox.holding)
@@ -781,6 +802,7 @@ export class Coordinator {
   async steerOrSend(id: AgentId, text: string, context = false, shared = false): Promise<"steered" | "queued"> {
     const steerId = randomUUID();
     if (await this.steerWithNotice(id, `${text}${this.inputSuffix(context)}`, steerId)) {
+      this.metrics.steer(id);
       this.turnInputs[id]?.push(steerId);
       this.options.bus.publish({ kind: "human", agent: id, text, steer: true, steerId });
       if (!shared) this.deliveryNotes.queueHumanContext(id, text);
@@ -889,10 +911,15 @@ export class Coordinator {
     if (this.options.agents[target.agent].status !== "busy") return { ok: false, reason: "idle", agent: target.agent };
     const steerId = input ? randomUUID() : id;
     try {
-      const sent = await mailbox.steerQueued(id, queued => {
+      const sent = await mailbox.steerQueued(id, async queued => {
         const images = queued.images?.length ? `\n\n${STEER_IMAGE_INSTRUCTION}\n${queued.images.join("\n")}` : "";
         const text = queued.message ? buildEnvelope({ ...queued.message, interrupt: true }, this.language) : `${queued.text}${queued.suffix ?? ""}${images}`;
-        return this.steerWithNotice(target.agent, text, steerId);
+        const sent = await this.steerWithNotice(target.agent, text, steerId);
+        if (sent) {
+          this.metrics.steer(target.agent, queued.message?.taskId);
+          if (queued.message) this.metrics.deliver(queued.message);
+        }
+        return sent;
       });
       if (!sent) return { ok: false, reason: "rejected", agent: target.agent };
       if (input) {

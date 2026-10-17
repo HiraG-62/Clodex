@@ -4,6 +4,7 @@ import { displayPath, findImagePaths, splitImagePaths } from "./artifacts.js";
 import { diffTurn } from "./log-diff.js";
 import { renderMarkdown } from "./markdown.js";
 import type { ClientContext } from "./store.js";
+import { formatTaskMetrics } from "./task-metrics-format.js";
 import type { TimelineItem } from "./timeline.js";
 
 const VISIBLE_REFERENCE_FILES = 3;
@@ -314,7 +315,10 @@ export function createLogItem(ctx: ClientContext) {
     route.append(ctx.el("span", "task mono", `${message.taskId} · ${ctx.clock(item.at)}`));
     const text = ctx.el("div", "text md");
     text.innerHTML = renderMarkdown(message.body);
-    node.append(route, text);
+    node.append(route);
+    const metrics = message.type === "RESULT" ? ctx.store.state?.taskMetrics?.results[message.id] : undefined;
+    if (metrics) node.append(ctx.el("div", "task-metrics muted", formatTaskMetrics(metrics, ctx.t)));
+    node.append(text);
     appendImagePreviews(node, message.body, item.at);
     if (message.spec || message.files?.length) {
       const refs = ctx.el("div", "refs");

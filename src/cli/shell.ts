@@ -7,6 +7,7 @@ import { isRolePresetName, ROLE_PRESET_NAMES, ROLE_PRESETS, type RolePresetName 
 import type { Language } from "../context/language.js";
 import { type BudgetLimits, DEFAULT_LIMITS, LIMIT_KEYS, LIMIT_NAMES, type LimitName } from "../coordinator/budget-manager.js";
 import type { PendingMessage, SoloMode } from "../coordinator/coordinator.js";
+import type { ConversationTaskMetrics } from "../coordinator/task-metrics.js";
 import type { UsageSnapshot } from "../coordinator/usage-monitor.js";
 import type { HubProjectEntry, ProjectRemoveError } from "../hub/hub.js";
 import type { WorktreeMoveResult } from "../hub/workspace.js";
@@ -15,6 +16,7 @@ import type { MessageKey } from "../i18n/messages.js";
 import type { ProcessManager } from "../process/process-manager.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
 import type { PendingQuestion } from "../protocol/questions.js";
+import { formatTaskMetrics, recentTaskMetrics } from "../web/client/task-metrics-format.js";
 import { formatTokens } from "../web/client/token-format.js";
 import { commandResultMessage } from "./command-result.js";
 import type { CommandResult } from "./command-runner.js";
@@ -38,6 +40,7 @@ export interface AgentState {
 }
 
 export interface ShellCoordinator {
+  taskMetrics?(): ConversationTaskMetrics;
   readonly brainstormState?: { phase: string; round: number; total: number };
   addBrainstormInput?(agent: AgentId, text: string, targets?: readonly AgentId[]): void;
   sendToAgent(agent: AgentId, text: string, images?: readonly string[], context?: boolean, shared?: boolean): Promise<TurnResult>;
@@ -408,6 +411,7 @@ export const createShell = ({
       print(formatInputTotal(usage));
     }
     for (const input of coordinator().pendingInputs()) print(t("shell.queued", { id: input.id, agent: input.agent, text: input.text }));
+    for (const task of recentTaskMetrics(coordinator().taskMetrics?.().tasks ?? [])) print(`${task.taskId} · ${formatTaskMetrics(task, t)}`);
     for (const message of coordinator().pendingMessages())
       print(
         t("shell.queuedMessage", {

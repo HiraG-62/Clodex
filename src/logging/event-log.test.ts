@@ -38,6 +38,7 @@ describe("formatEvent（verbose）", () => {
     ["text", agentEvent("codex", { type: "text", text: "hello" }), "14:32:10 [CODEX] hello"],
     ["tool", agentEvent("claude", { type: "tool", name: "Read", input: '{"file_path":"a.ts"}' }), '14:32:10 [CLAUDE] tool Read {"file_path":"a.ts"}'],
     ["turn_started", agentEvent("codex", { type: "turn_started" }), "14:32:10 [CODEX] working..."],
+    ["usage", agentEvent("codex", { type: "usage", input: 60, cachedInput: 40, output: 10 }), "14:32:10 [CODEX] usage input=60 cached=40 output=10"],
     ["turn", agentEvent("codex", { type: "turn", result: { status: "interrupted", text: "" } }), "14:32:10 [CODEX] turn interrupted"],
     ["exit", agentEvent("claude", { type: "exit", code: 0 }), "14:32:10 [CLAUDE] exited (code 0)"],
     ["error", agentEvent("codex", { type: "error", message: "boom" }), "14:32:10 [CODEX] ERROR boom"],
@@ -97,6 +98,7 @@ describe("formatEvent（既定）", () => {
 
   it.each<[string, CoordinatorEvent]>([
     ["text", agentEvent("claude", { type: "text", text: "途中の発言" })],
+    ["usage", agentEvent("codex", { type: "usage", input: 60, cachedInput: 40, output: 10 })],
     ["tool", agentEvent("claude", { type: "tool", name: "Bash", input: "ls" })],
     ["rate_limit", agentEvent("claude", { type: "rate_limit", weekly: { usedPercent: 1, resetsAt: 0 } })],
     ["session", agentEvent("codex", { type: "session", sessionId: "s" })],

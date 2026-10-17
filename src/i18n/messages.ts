@@ -1,6 +1,9 @@
 // 画面の文言カタログ（DESIGN.md §28 v0.3 i18n）。en がキーを決め、ja は同じキーをすべて持つ（欠けは型エラー）。
 // {name} は translate の params で置き換える。Agent 向けの指示（定型文・envelope・Budget のエラー）は英語のままで、ここには入れない
 export const en = {
+  "metrics.summary": "{turns} turns · in {input} · {minutes} min · {questions}",
+  "metrics.question": "{count} question",
+  "metrics.questions": "{count} questions",
   "cmd.brainstorm": "brainstorm with Claude and Codex",
   "shell.brainstormReadOnly": "Brainstorm · read-only",
   "notice.brainstormStopped": "Brainstorm stopped",
@@ -463,6 +466,9 @@ export type MessageKey = keyof typeof en;
 export type Messages = Record<MessageKey, string>;
 
 export const ja: Messages = {
+  "metrics.summary": "{turns} ターン · 入力 {input} · {minutes} 分 · {questions}",
+  "metrics.question": "質問 {count}",
+  "metrics.questions": "質問 {count}",
   "cmd.brainstorm": "Claude と Codex でブレスト",
   "shell.brainstormReadOnly": "ブレスト · 読み取り専用",
   "notice.brainstormStopped": "ブレスト中断",

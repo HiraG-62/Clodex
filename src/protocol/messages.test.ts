@@ -18,6 +18,18 @@ const reviewRequest = {
 };
 
 describe("createMessage", () => {
+  it.each(["DELEGATE", "FIX", "ADD"])("%s の rework を受け付ける", type => {
+    expect(createMessage({ ...reviewRequest, type, replyTo: "original", rework: "impl" }, context)).toMatchObject({ ok: true, message: { rework: "impl" } });
+  });
+  it.each(["QUESTION", "ANSWER", "RESULT", "NOTE", "CANCEL", "ACK", "ISSUE", "REVIEW_REQUEST"])("%s の rework を拒否する", type => {
+    expect(createMessage({ ...reviewRequest, type, replyTo: "original", rework: "spec" }, context).ok).toBe(false);
+  });
+  it.each(["DELEGATE", "REVIEW_REQUEST"])("%s の relatesTo を受け付ける", type => {
+    expect(createMessage({ ...reviewRequest, type, relatesTo: "previous" }, context)).toMatchObject({ ok: true, message: { relatesTo: "previous" } });
+  });
+  it.each(["QUESTION", "ANSWER", "RESULT", "FIX", "ADD", "NOTE", "CANCEL", "ACK", "ISSUE"])("%s の relatesTo を拒否する", type => {
+    expect(createMessage({ ...reviewRequest, type, replyTo: "original", relatesTo: "previous" }, context).ok).toBe(false);
+  });
   it.each(["ADD", "NOTE", "CANCEL"] as const)("%s は元の依頼を指定して送れる", type => {
     expect(createMessage({ ...reviewRequest, type, replyTo: "msg_original" }, context)).toMatchObject({
       ok: true,

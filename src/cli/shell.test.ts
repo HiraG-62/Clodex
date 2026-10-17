@@ -3,6 +3,7 @@ import type { AgentId, PermissionLevel, TurnResult } from "../agents/agent-adapt
 import type { ConfigSources } from "../config/config.js";
 import { DEFAULT_LIMITS, LIMIT_KEYS } from "../coordinator/budget-manager.js";
 import type { PendingMessage, SoloMode } from "../coordinator/coordinator.js";
+import { emptyTaskMetrics } from "../coordinator/task-metrics-summary.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
 import type { CommandResult } from "./command-runner.js";
 import { type AgentState, type ConversationList, createShell, type PendingInput, type ShellCoordinator } from "./shell.js";
@@ -87,6 +88,10 @@ class FakeHistory implements ConversationList {
 }
 
 class FakeCoordinator implements ShellCoordinator {
+  metricsTasks = [] as ReturnType<typeof emptyTaskMetrics>[];
+  taskMetrics() {
+    return { tasks: this.metricsTasks, results: {} };
+  }
   questions = [{ id: "q1", agent: "claude" as const, questions: [{ question: "方針", options: [{ label: "A" }, { label: "B" }] }] }];
   answers: Array<{ id: string; value: unknown }> = [];
   answerError: string | undefined;
@@ -736,6 +741,23 @@ describe("createShell", () => {
       "  input total: unknown",
       "queued: in2 -> codex: queued",
     ]);
+  });
+
+  it("/status は最近の task を5件まで表示する", async () => {
+    const { printed, shell, coordinator } = setup();
+    coordinator.metricsTasks = Array.from({ length: 6 }, (_, index) => ({
+      ...emptyTaskMetrics("c", `T-${index}`, ""),
+      lastMessageAt: String(index),
+      turns: 4,
+      inputTokens: 1_200_000,
+      durationMs: 2_280_000,
+      questions: 1,
+    }));
+    await shell.handleLine("/status");
+    const lines = printed.filter(line => line.startsWith("T-"));
+    expect(lines).toHaveLength(5);
+    expect(lines[0]).toBe("T-5 · 4 turns · in 1.2M · 38 min · 1 question");
+    expect(lines.at(-1)).toContain("T-1");
   });
 
   it("/status と /cancel に配送待ちの Agent 間メッセージを含める", async () => {

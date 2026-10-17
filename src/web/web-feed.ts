@@ -6,6 +6,7 @@ import type { AgentState } from "../cli/shell.js";
 import type { ConfigSources } from "../config/config.js";
 import type { PendingMessage } from "../coordinator/coordinator.js";
 import type { CoordinatorEvent } from "../coordinator/event-bus.js";
+import type { ConversationTaskMetrics } from "../coordinator/task-metrics.js";
 import type { HubProjectEntry } from "../hub/hub.js";
 import type { HubNotification } from "../hub/notify-format.js";
 import type { ConversationTab } from "../hub/tabs.js";
@@ -24,6 +25,7 @@ import { type BudgetLimits, DEFAULT_LIMITS, LIMIT_KEYS, type LimitName } from ".
 import type { ConversationActivity } from "../hub/workspace.js";
 
 export interface WebState {
+  taskMetrics?: ConversationTaskMetrics;
   language: Language;
   sandbox: { enabled: boolean; ready: boolean };
   limits: Record<LimitName, { value: number; default: number }>;

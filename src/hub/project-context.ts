@@ -14,6 +14,7 @@ import { buildRoleInstructions } from "../context/role-instructions.js";
 import { type BudgetLimits, DEFAULT_LIMITS, LIMIT_KEYS, type LimitName, UNLIMITED_LIMITS } from "../coordinator/budget-manager.js";
 import { Coordinator } from "../coordinator/coordinator.js";
 import { EventBus } from "../coordinator/event-bus.js";
+import { TaskMetricsStore, taskMetricsPath } from "../coordinator/task-metrics.js";
 import { t } from "../i18n/i18n.js";
 import { attachEventLog, type DisplayMode, defaultLogPath } from "../logging/event-log.js";
 import { startMcpServer } from "../mcp/server.js";
@@ -115,6 +116,7 @@ export const openProject = async ({
   let { config, sources } = loadConfigLayers({ homeDir, projectRoot });
   const primary = args.primary ?? config.primary ?? DEFAULT_PRIMARY;
   const statePath = conversationStatePath(homeDir, projectRoot);
+  const metricsStore = new TaskMetricsStore(taskMetricsPath(homeDir, statePath));
   // この project のターンはまだ動いていない。前の Hub が残した終わっていないターンを、復旧より先に閉じる（DESIGN.md §17）
   const feedStore = new FeedStore(feedDirPath(statePath));
   feedStore.closeUnfinished();
@@ -205,6 +207,8 @@ export const openProject = async ({
       readConversation: (_from, input) => transcript.page(input),
     });
     coordinator = new Coordinator({
+      conversationId: conversation.id,
+      metricsStore,
       projectRoot: workDir,
       agents: createAgents?.() ?? { claude: new ClaudeAdapter(spawn), codex: new CodexAdapter(spawn) },
       permissionLocked: () => sandbox.enabled,

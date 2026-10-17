@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { emptyTaskMetrics } from "../coordinator/task-metrics-summary.js";
 import type { TimelineItem } from "../web/client/timeline.js";
 import {
   advanceTerminalFeed,
@@ -195,6 +196,12 @@ describe("formatTimelineItem", () => {
       },
     };
     expect(formatTimelineItem(message, labels, false)).toMatchObject({ title: "Claude → Codex", tag: "DELEGATE · T-1", body: "実装して" });
+    const result = { ...message, message: { ...message.message, type: "RESULT" as const } };
+    const metrics = { x: { ...emptyTaskMetrics("c", "T-1", ""), turns: 4, inputTokens: 1_200_000, durationMs: 2_280_000, questions: 1 } };
+    expect(formatTimelineItem(result, labels, false, metrics).metrics).toBe("4 turns · in 1.2M · 38 min · 1 question");
+    expect(formatTimelineItem({ ...turn, messages: [{ message: result.message }] }, labels, false, metrics).body).toContain(
+      "4 turns · in 1.2M · 38 min · 1 question",
+    );
     expect(formatTimelineItem({ ...message, message: { ...message.message, auto: true } }, labels, false).tag).toBe("DELEGATE · T-1 · 自動");
     expect(formatTimelineItem({ ...message, message: { ...message.message, fresh: true } }, labels, false).tag).toContain("新しい session");
     expect(formatTimelineItem({ ...message, message: { ...message.message, thread: "child" } }, labels, false).tag).toContain("並列");

@@ -33,6 +33,35 @@ const setup = (projectRoot = PROJECT_ROOT, knownInputIds: readonly string[] = []
 
 const reviewRequest = { to: "codex", type: "REVIEW_REQUEST", taskId: "T-1", body: "review please", files: ["a.ts"] };
 
+describe("task 計測と mailbox", () => {
+  it("配送したターンを割り当て、別 task の割り込みと人のターンを未割当にする", async () => {
+    const { coordinator, codex } = setup();
+    coordinator.receiveMessage("claude", reviewRequest);
+    await flush();
+    codex.emit({ type: "turn_started" });
+    codex.emit({ type: "context", tokens: 10, inputTotal: 10_000_100 });
+    codex.emit({ type: "usage", input: 80, cachedInput: 20, output: 5 });
+    codex.emit({ type: "turn", result: { status: "completed", text: "" } });
+    codex.completeTurn({ status: "completed", text: "" });
+    await flush();
+    expect(coordinator.taskMetrics().tasks[0]).toMatchObject({ taskId: "T-1", turns: 1, inputTokens: 80, cachedInputTokens: 20 });
+    coordinator.receiveMessage("claude", { ...reviewRequest, taskId: "T-2" });
+    await flush();
+    codex.emit({ type: "turn_started" });
+    coordinator.receiveMessage("claude", { ...reviewRequest, taskId: "T-3", interrupt: true });
+    await flush();
+    codex.emit({ type: "turn", result: { status: "completed", text: "" } });
+    codex.completeTurn({ status: "completed", text: "" });
+    await flush();
+    void coordinator.sendToAgent("codex", "人の入力");
+    await flush();
+    codex.emit({ type: "turn_started" });
+    codex.emit({ type: "turn", result: { status: "completed", text: "" } });
+    codex.completeTurn({ status: "completed", text: "" });
+    expect(coordinator.taskMetrics().unassigned?.turns).toBe(2);
+  });
+});
+
 describe("fresh の配送", () => {
   const freshSetup = (freshThread?: { DELEGATE?: boolean; REVIEW_REQUEST?: boolean }) => {
     const claude = new FakeAgentAdapter("claude");
