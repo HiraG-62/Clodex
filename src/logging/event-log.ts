@@ -30,6 +30,8 @@ const describeAgentEvent = (event: AgentEvent): string => {
       return event.text;
     case "tool":
       return `tool ${event.name} ${event.input}`;
+    case "tool_end":
+      return `tool_end ${event.toolId}${event.exitCode !== undefined ? ` exit=${event.exitCode}` : ""}${event.failed !== undefined ? ` failed=${event.failed}` : ""}`;
     case "turn_started":
       return "working...";
     case "turn":
@@ -89,6 +91,8 @@ export const formatEvent = (event: CoordinatorEvent, mode: DisplayMode): string 
   switch (event.kind) {
     case "message":
       return `${time} ${formatMessage(event.message, mode)}`;
+    case "retry":
+      return mode === "verbose" ? `${time} [CLODEX] retry to=${event.to} id=${event.messageId} attempt=${event.attempt}` : undefined;
     case "notice":
       return `${time} [CLODEX] ${event.text}`;
     case "human":

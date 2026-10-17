@@ -25,6 +25,77 @@ const result = (text: string, subtype = "success") => ({
 });
 
 describe("ClaudeAdapter", () => {
+  it.each([false, true])("Bash の全文と ID を保持し、結果の is_error=%s を tool_end にする", async failed => {
+    const { adapter, proc, events } = await setup();
+    const turn = adapter.send("test");
+    const command = `echo ${"x".repeat(300)}`;
+    const input = { command };
+    proc.emit({ type: "assistant", message: { content: [{ type: "tool_use", id: "bash-1", name: "Bash", input }] } });
+    expect(events).toContainEqual({ type: "tool", name: "Bash", input: JSON.stringify(input).slice(0, 200), command, toolId: "bash-1" });
+    proc.emit({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "bash-1", is_error: failed, content: failed ? "Exit code 3" : "" }] } });
+    expect(events.filter(event => event.type === "tool_end")).toEqual([{ type: "tool_end", toolId: "bash-1", failed }]);
+    proc.emit(result("done"));
+    await turn;
+  });
+
+  it("背景 Bash の起動結果に終了コードを補完しない", async () => {
+    const { adapter, proc, events } = await setup();
+    const turn = adapter.send("test");
+    proc.emit({
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id: "bg", name: "Bash", input: { command: "sleep 12", run_in_background: true } }] },
+    });
+    proc.emit({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "bg", is_error: false, content: "Running in background" }] } });
+    expect(events.filter(event => event.type === "tool_end")).toEqual([{ type: "tool_end", toolId: "bg", failed: false }]);
+    proc.emit(result("done"));
+    await turn;
+  });
+
+  it("subagent・Bash 以外・重複・過去ターンの結果を記録しない", async () => {
+    const { adapter, proc, events } = await setup();
+    const turn = adapter.send("first");
+    const toolResult = (id: string, parent_tool_use_id?: string) => ({
+      type: "user",
+      parent_tool_use_id,
+      message: { content: [{ type: "tool_result", tool_use_id: id, is_error: false }] },
+    });
+    proc.emit({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", id: "bash", name: "Bash", input: { command: "exit 0" } },
+          { type: "tool_use", id: "read", name: "Read", input: { file_path: "a.ts" } },
+          { type: "tool_use", id: "old", name: "Bash", input: { command: "exit 0" } },
+        ],
+      },
+    });
+    proc.emit(toolResult("bash", "child"));
+    proc.emit(toolResult("read"));
+    proc.emit(toolResult("unknown"));
+    expect(events.filter(event => event.type === "tool_end")).toEqual([]);
+    proc.emit(toolResult("bash"));
+    proc.emit(toolResult("bash"));
+    proc.emit(result("done"));
+    await turn;
+    proc.emit(toolResult("old"));
+    const next = adapter.send("second");
+    proc.emit(toolResult("old"));
+    expect(events.filter(event => event.type === "tool_end")).toEqual([{ type: "tool_end", toolId: "bash", failed: false }]);
+    proc.emit(result("done"));
+    await next;
+  });
+
+  it("プロセス終了で Bash の対応表を捨てる", async () => {
+    const { adapter, proc, spawner, events } = await setup();
+    const turn = adapter.send("first");
+    proc.emit({ type: "assistant", message: { content: [{ type: "tool_use", id: "old", name: "Bash", input: { command: "exit 0" } }] } });
+    proc.exit(1);
+    await turn;
+    await adapter.start({ cwd: "C:\\dev\\app" });
+    spawner.last.emit({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "old", is_error: false }] } });
+    expect(events.filter(event => event.type === "tool_end")).toEqual([]);
+  });
+
   it("入力の書き込み失敗を failed で返し、次のターンを受け付ける", async () => {
     const { adapter, proc, events } = await setup();
     vi.spyOn(proc, "write").mockImplementationOnce(() => {

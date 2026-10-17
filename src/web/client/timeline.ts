@@ -245,7 +245,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
       },
     ]);
   }
-  if (event.kind === "notice") return items;
+  if (event.kind === "notice" || event.kind === "retry") return items;
   if (event.kind === "brainstorm") {
     if (event.artifact) {
       const index = items.findLastIndex(entry => entry.kind === "turn" && entry.status === "completed");

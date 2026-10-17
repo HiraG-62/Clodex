@@ -66,6 +66,8 @@ interface CodexItem {
   tool?: string;
   arguments?: unknown;
   command?: string;
+  cwd?: string;
+  exitCode?: number | null;
   kind?: string;
   agentPath?: string;
   agentThreadId?: string;
@@ -333,7 +335,16 @@ export class CodexAdapter extends BaseAgentAdapter {
       this.emit({ type: "subagents", running: [...this.subagents.values()] });
     }
     if (item.type === "commandExecution") {
-      if (this.status === "busy") this.emit({ type: "tool", name: "command", input: summarizeToolInput(item.command ?? "") });
+      if (this.status === "busy")
+        this.emit({
+          type: "tool",
+          name: "command",
+          input: summarizeToolInput(item.command ?? ""),
+          ...(item.command !== undefined ? { command: item.command } : {}),
+          ...(item.id ? { toolId: item.id } : {}),
+          ...(item.cwd !== undefined ? { cwd: item.cwd } : {}),
+          ...(item.exitCode != null ? { exitCode: item.exitCode } : {}),
+        });
     }
   }
 

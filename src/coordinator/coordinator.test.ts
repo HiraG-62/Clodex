@@ -1179,9 +1179,10 @@ describe("Coordinator", () => {
     const delegate = { to: "codex", type: "DELEGATE", taskId: "T-1", body: "implement" };
 
     it("1 回失敗したら再送の印を付け、成功時は自動 RESULT を返す", async () => {
-      const { claude, codex, coordinator } = setupRetry();
+      const { claude, codex, events, coordinator } = setupRetry();
       coordinator.receiveMessage("claude", delegate);
       await flush();
+      expect(events.filter(event => event.kind === "retry")).toEqual([]);
       codex.completeTurn({ status: "failed", text: "server overloaded" });
       await flush();
       await flush();
@@ -1189,6 +1190,7 @@ describe("Coordinator", () => {
       expect(codex.sent[0]).not.toContain("[Clodex] Retry:");
       expect(codex.sent[1]).toContain("[Clodex] Retry: your previous attempt at this message failed partway.");
       expect(codex.sent[1]).toContain(codex.sent[0]);
+      expect(events.filter(event => event.kind === "retry")).toEqual([{ kind: "retry", to: "codex", messageId: "msg_00000001", attempt: 2, at: NOW }]);
       codex.completeTurn();
       await flush();
       expect(claude.sent[0]).toContain("Auto: the recipient ended its turn without send_message");

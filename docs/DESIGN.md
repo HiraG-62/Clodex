@@ -559,9 +559,9 @@ interface AgentAdapter {
 
 **コマンドの記録**: 「テストを通した」を Agent の自己申告に頼らず、実際に実行したコマンドと結果を Coordinator が持つ
 
-- `tool` に任意の `toolId`（CLI の tool 呼び出しの ID）と `cwd`（コマンドの作業ディレクトリ）を付ける
+- `tool` に任意の `toolId`（CLI の tool 呼び出しの ID）・`command`（要約前のコマンド）・`cwd`（コマンドの作業ディレクトリ）を付ける
 - Codex: `commandExecution` は `item/completed` で 1 回だけ届くので、`tool`（name: `command`）に `toolId`・`cwd`・`exitCode` をまとめて付け、`tool_end` は出さない。終了コードが `null`（中断など）なら付けない
-- Claude: `tool_use` の `id` を `toolId` にする。`Bash` の結果（`user` の `tool_result`）が届いたら、`tool_use_id` で `tool_end` を出す。終了コードは spike の実測（docs/spikes/command-exit.md）で取れる形が確かめられた場合だけ付け、取れなければ `is_error` を `failed` にする（「実行の試み」として扱う）
+- Claude: `tool_use` の `id` を `toolId` にする。`Bash` の結果（`user` の `tool_result`）が届いたら、`tool_use_id` で `tool_end` を出す。終了コードは構造化されていないので付けず、`is_error` を `failed` にする（「実行の試み」として扱う。docs/spikes/command-exit.md）
 - subagent の中の tool（`parent_tool_use_id` 付き）は出さない（上の `tool` と同じ）
 
 Spike の結果、v0.1 で使う操作（送信・interrupt・resume・MCP）は両 CLI とも対応しているため、capabilities は持たない。機能差が必要になった時点で追加する。
