@@ -1190,7 +1190,7 @@ Agent Adapter の `rate_limit` event（Claude: `rate_limit_event`、Codex: `acco
   - Codex は `thread/tokenUsage/updated` の `total`、Claude はターンの結果の usage（入力・キャッシュの作成・読み取り）を足していく。session が変わったら 0 から数え直す。Hub を再起動したら Claude は 0 から（Codex は届いた `total` を使う）
   - `threadTokenWarn` を設定していれば、コンテキストの大きさがそれを超えたら、その session で 1 回だけ warn の `toast`（「{agent} の文脈が {tokens} を超過。/handoff {agent} を検討」）を出し、Agent のカードのコンテキストのゲージを警告の色にする。session が変わったら再び警告できる
 - **引き継ぎ**（`/handoff <agent>`）: 統合役の session が大きいまま何日も続くと、tool の呼び出しのたびに大量の token を送り直す。`/new <agent>` だけでは決定事項や未解決の点が失われるので、人が区切りで引き継ぎを指示できるようにする
-  - 受け付けるのは、その Agent が idle で、その Agent の mailbox に配送待ちが無く、その Agent 宛ての依頼（`DELEGATE`・`REVIEW_REQUEST`・`QUESTION`）に終わっていないものが無く、subagent・background task が動いていないときだけ。満たさなければ理由を warn で出して何もしない。その Agent が送って返事を待っている依頼はあってよい（資料に書かせる）
+  - 受け付けるのは、その Agent が idle で、その Agent の mailbox に配送待ちが無く、その Agent 宛ての依頼（`DELEGATE`・`REVIEW_REQUEST`・`QUESTION`）を mailbox で処理中・配送待ちでなく（返事の有無では見ない。返事の無いまま終わった古い依頼で使えなくならないように）、subagent・background task が動いていないときだけ。満たさなければ理由を warn で出して何もしない。その Agent が送って返事を待っている依頼はあってよい（資料に書かせる）
   - 1. 固定の指示（英語）を人の入力と同じく 1 ターン送る。資料の path は Coordinator が決める（`<artifacts>/handoff-<agent>-<時刻>.md`）。書かせる内容: 決定事項・未解決の点・人の最新の判断・証跡（commit・設計書・スクリーンショット）の path・返事を待っている依頼（message ID と taskId）。最終応答は path の 1 行だけ
   - 2. ターンが `completed` で、資料が空でないファイルとしてあれば、`/new <agent>` と同じ処理をする。失敗・中断・資料が無いときは切り替えずに warn を出す
   - 3. 新しい session への最初の配送（人の入力でも message でも）に、`[Clodex] Handoff: your previous session wrote <path>. Read it before continuing.` を添える。添えるだけで、ターンは起こさない（§3.6 の表は増やさない）。Hub を再起動したら添えない（資料は残るので、人が path を渡せる）
