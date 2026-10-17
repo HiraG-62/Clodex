@@ -60,6 +60,31 @@ const agentMessage = (text: string) => ({
 });
 
 describe("CodexAdapter", () => {
+  it.each([0, 3, null])("コマンドの全文・ID・cwd・終了コード %s を completed から記録する", async exitCode => {
+    const { adapter, started, proc, events } = await setup();
+    await started;
+    const turn = adapter.send("test");
+    const command = `echo ${"x".repeat(300)}`;
+    proc.emit({
+      method: "item/completed",
+      params: { threadId: THREAD_ID, item: { type: "commandExecution", id: "exec-1", command, cwd: "C:\\dev\\app", exitCode } },
+    });
+    expect(events.filter(event => event.type === "tool")).toEqual([
+      {
+        type: "tool",
+        name: "command",
+        input: command.slice(0, 200),
+        command,
+        toolId: "exec-1",
+        cwd: "C:\\dev\\app",
+        ...(exitCode === null ? {} : { exitCode }),
+      },
+    ]);
+    expect(events.some(event => event.type === "tool_end")).toBe(false);
+    proc.emit(turnCompleted("completed"));
+    await turn;
+  });
+
   it("codex.exe が PATH に無い場合は分かりやすい error event と起動エラーを出す", async () => {
     const missing = Object.assign(new Error("spawn codex ENOENT"), { code: "ENOENT" });
     const spawner = createFakeSpawner(undefined, { spawnError: missing });
@@ -358,7 +383,7 @@ describe("CodexAdapter", () => {
     await expect(turn).resolves.toEqual({ status: "completed", text: "PONG" });
     expect(adapter.status).toBe("idle");
     expect(events).toContainEqual({ type: "tool", name: "clodex.send_message", input: '{"to":"claude"}' });
-    expect(events).toContainEqual({ type: "tool", name: "command", input: "git diff" });
+    expect(events).toContainEqual({ type: "tool", name: "command", input: "git diff", command: "git diff" });
     expect(events).toContainEqual({ type: "text", text: "PONG" });
   });
 

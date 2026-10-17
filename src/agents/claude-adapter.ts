@@ -68,6 +68,9 @@ const PERMISSION_MODE: Record<PermissionLevel, string> = {
 
 interface ContentBlock {
   type: string;
+  id?: string;
+  tool_use_id?: string;
+  is_error?: boolean;
   text?: string;
   name?: string;
   input?: unknown;
@@ -117,6 +120,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
   private settingTurn: SettingKind | undefined;
   private subagents: SubagentState[] = [];
   private backgroundTasks: BackgroundTaskState[] = [];
+  private readonly bashToolIds = new Set<string>();
 
   constructor(
     private readonly spawnProcess: SpawnAgentProcess = spawnAgentProcess,
@@ -128,6 +132,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
   async start(options: AgentStartOptions): Promise<void> {
     const { cwd, resumeSessionId, mcpUrl, instructions } = options;
     if (this.status !== "stopped") throw new Error(`claude is ${this.status}`);
+    this.bashToolIds.clear();
     // session ID を Coordinator 側で決めておくと、最初のターン前から resume 用 ID が確定する
     const sessionId = resumeSessionId ?? this.createId();
     if (this.sessionId !== sessionId) this.inputTotal = 0;
@@ -227,6 +232,7 @@ export class ClaudeAdapter extends BaseAgentAdapter {
   }
 
   protected writeTurn(text: string, images: readonly string[] = []): void {
+    this.bashToolIds.clear();
     this.interruptRequested = false;
     const content = images.length ? [...images.map(imageBlock), { type: "text", text }] : text;
     this.proc?.write(JSON.stringify({ type: "user", message: { role: "user", content } }));
@@ -245,7 +251,8 @@ export class ClaudeAdapter extends BaseAgentAdapter {
       case "assistant":
         return this.handleAssistant(event);
       case "user":
-        return this.handleReplay(event);
+        this.handleReplay(event);
+        return this.handleToolResults(event);
       case "rate_limit_event": {
         const windows = event.rate_limit_info?.unifiedWindows;
         const fiveHour = toRateLimitWindow(windows?.five_hour);
@@ -268,6 +275,14 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     if (!steerId) return;
     this.undeliveredSteers.delete(event.uuid);
     this.emit({ type: "steer_delivered", steerId });
+  }
+
+  private handleToolResults(event: ClaudeEvent): void {
+    if (event.parent_tool_use_id || event.isReplay) return;
+    for (const block of event.message?.content ?? []) {
+      if (block.type !== "tool_result" || !block.tool_use_id || !this.bashToolIds.delete(block.tool_use_id)) continue;
+      this.emit({ type: "tool_end", toolId: block.tool_use_id, ...(block.is_error !== undefined ? { failed: block.is_error } : {}) });
+    }
   }
 
   private handleSystem(event: ClaudeEvent): void {
@@ -330,7 +345,17 @@ export class ClaudeAdapter extends BaseAgentAdapter {
       if (block.type === "text" && block.text) this.emit({ type: "text", text: block.text });
       if (block.type === "tool_use" && block.name) {
         const files = editedFiles(block.name, block.input);
-        this.emit({ type: "tool", name: block.name, input: summarizeToolInput(block.input), ...(files ? { files } : {}) });
+        const input = typeof block.input === "object" && block.input !== null ? (block.input as Record<string, unknown>) : undefined;
+        const command = block.name === "Bash" && typeof input?.command === "string" ? input.command : undefined;
+        if (block.name === "Bash" && block.id) this.bashToolIds.add(block.id);
+        this.emit({
+          type: "tool",
+          name: block.name,
+          input: summarizeToolInput(block.input),
+          ...(block.id ? { toolId: block.id } : {}),
+          ...(command !== undefined ? { command } : {}),
+          ...(files ? { files } : {}),
+        });
       }
     }
   }
@@ -339,6 +364,11 @@ export class ClaudeAdapter extends BaseAgentAdapter {
     const acknowledged = !setting || (event.result ?? "").startsWith(setting === "model" ? MODEL_SUCCESS : EFFORT_SUCCESS);
     if (event.subtype === "success" && !event.is_error && acknowledged) return "completed" as const;
     return this.interruptRequested ? ("interrupted" as const) : ("failed" as const);
+  }
+
+  protected finishTurn(result: TurnResult): void {
+    this.bashToolIds.clear();
+    super.finishTurn(result);
   }
 
   protected handleExit(code: number | null): void {

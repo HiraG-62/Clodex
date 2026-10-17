@@ -58,6 +58,12 @@ const answer = (id = "q1", name: "claude" | "codex" = "claude"): Extract<FeedIte
 });
 const run = (items: FeedItem[]) => items.reduce<TimelineItem[]>(applyFeedItem, []);
 
+it("retry と tool_end では表示中のターンを変更しない", () => {
+  const items = run([agent("claude", { type: "turn_started" })]);
+  expect(applyFeedItem(items, { type: "event", seq: ++seq, event: { kind: "retry", to: "codex", messageId: "msg_1", attempt: 2, at: AT } })).toEqual(items);
+  expect(applyFeedItem(items, agent("claude", { type: "tool_end", toolId: "bash", failed: false }))).toEqual(items);
+});
+
 it("取り消した入力と formal message を履歴と画面から除く", () => {
   const input: Extract<FeedItem, { type: "event" }> = {
     type: "event",

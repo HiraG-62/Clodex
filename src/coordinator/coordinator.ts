@@ -707,6 +707,7 @@ export class Coordinator {
     }
     const mailbox = this.mailboxes[message.to];
     const followsCurrentRequest = FOLLOWUP_TYPES.has(message.type) && mailbox.current?.id === message.replyTo;
+    if (attempt > 1) this.options.bus.publish({ kind: "retry", to: message.to, messageId: message.id, attempt });
     const steerable =
       (message.type === "ANSWER" && this.options.agents[message.to].status === "busy") ||
       followsCurrentRequest ||

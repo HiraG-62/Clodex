@@ -17,7 +17,7 @@ export interface EventSource {
   subscribe(listener: (event: CoordinatorEvent) => void): unknown;
 }
 
-const isFeedEvent = (event: CoordinatorEvent) => event.kind !== "agent" || FEED_AGENT_EVENTS.has(event.event.type);
+const isFeedEvent = (event: CoordinatorEvent) => event.kind !== "retry" && (event.kind !== "agent" || FEED_AGENT_EVENTS.has(event.event.type));
 const envelopeOf = (event: CoordinatorEvent, language?: Language) => (event.kind === "message" ? buildEnvelope(event.message, language) : undefined);
 
 // 今の会話でない会話の event を、その会話の feed に保存する形にする（DESIGN.md §28 D1）。流さない event なら undefined

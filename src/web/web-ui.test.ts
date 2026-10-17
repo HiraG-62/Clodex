@@ -31,6 +31,26 @@ const message = {
 } as const;
 
 describe("connectWebFeed", () => {
+  it("retry と tool_end は feed と履歴に残さない", () => {
+    const bus = new EventBus();
+    const recorded: FeedItem[] = [];
+    const delivered: FeedItem[] = [];
+    const feed = new WebFeed(100, item => recorded.push(item));
+    connectWebFeed(bus, feed, () => STATE);
+    feed.subscribe(item => delivered.push(item));
+    const events = [
+      { kind: "retry", to: "codex", messageId: "msg_1", attempt: 2, at: "x" } as const,
+      { kind: "agent", agent: "claude", event: { type: "tool_end", toolId: "bash", failed: false }, at: "x" } as const,
+    ];
+    for (const event of events) {
+      bus.publish(event);
+      expect(historyItemOf(event)).toBeUndefined();
+    }
+    expect(feed.recent()).toEqual([]);
+    expect(recorded).toEqual([]);
+    expect(delivered).toEqual([]);
+  });
+
   it("notice は level に応じた toast だけを配り、履歴に保存しない", () => {
     const bus = new EventBus();
     const recorded: FeedItem[] = [];

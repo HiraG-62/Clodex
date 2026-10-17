@@ -46,7 +46,8 @@ export type BackgroundTaskState = SubagentState;
 export type AgentEvent =
   | { type: "session"; sessionId: string }
   | { type: "text"; text: string }
-  | { type: "tool"; name: string; input: string; files?: string[] } // files: 変更したファイル（成果物の一覧に使う）
+  | { type: "tool"; name: string; input: string; files?: string[]; toolId?: string; command?: string; cwd?: string; exitCode?: number } // files: 変更したファイル（成果物の一覧に使う）
+  | { type: "tool_end"; toolId: string; exitCode?: number; failed?: boolean }
   | { type: "turn_started" }
   | { type: "turn"; result: TurnResult }
   | { type: "rate_limit"; fiveHour?: RateLimitWindow; weekly?: RateLimitWindow }

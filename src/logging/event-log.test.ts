@@ -135,6 +135,31 @@ describe("defaultLogPath", () => {
 });
 
 describe("attachEventLog", () => {
+  it("tool_end と retry は JSONL に常に記録し、terminal は verbose でだけ表示する", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "clodex-log-")), "log.jsonl");
+    const bus = new EventBus(() => new Date(AT));
+    const printed: string[] = [];
+    let mode: "normal" | "verbose" = "normal";
+    const detach = attachEventLog(bus, { path, print: line => printed.push(line), mode: () => mode });
+    const ended = agentEvent("claude", { type: "tool_end", toolId: "bash", failed: true });
+    const retry: CoordinatorEvent = { kind: "retry", to: "codex", messageId: "msg_1", attempt: 2, at: AT };
+    bus.publish(ended);
+    bus.publish(retry);
+    expect(printed).toEqual([]);
+    mode = "verbose";
+    bus.publish(ended);
+    bus.publish(retry);
+    detach();
+    expect(printed).toEqual(["14:32:10 [CLAUDE] tool_end bash failed=true", "14:32:10 [CLODEX] retry to=codex id=msg_1 attempt=2"]);
+    expect(
+      readFileSync(path, "utf8")
+        .trim()
+        .split("\n")
+        .map(line => JSON.parse(line)),
+    ).toEqual([ended, retry, ended, retry]);
+    expect(formatEvent(agentEvent("codex", { type: "tool_end", toolId: "exec", exitCode: 0 }), "verbose")).toBe("14:32:10 [CODEX] tool_end exec exit=0");
+  });
+
   it("全 event を JSONL に保存し、表示モードに合う行だけ印字する", () => {
     const path = join(mkdtempSync(join(tmpdir(), "clodex-log-")), "log.jsonl");
     const bus = new EventBus(() => new Date(AT));

@@ -6,6 +6,7 @@ import type { UserQuestion } from "../protocol/questions.js";
 export type CoordinatorEventInput =
   | { kind: "agent"; agent: AgentId; event: AgentEvent; handoff?: true; inputIds?: string[] }
   | { kind: "message"; message: AgentMessage }
+  | { kind: "retry"; to: AgentId; messageId: string; attempt: number }
   | { kind: "human"; agent: AgentId; text: string; inputId?: string; steer?: boolean; steerId?: string; nextRound?: true } // steer: 実行中のターンに足した
   | { kind: "canceled"; id: string; agent?: AgentId; text?: string }
   | { kind: "steered"; inputId: string; steerId: string }
