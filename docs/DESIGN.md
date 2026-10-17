@@ -1036,8 +1036,8 @@ QUESTION と次の依頼の間に設計書へ書き足すと、受け手はど�
 ### 設計書の検査
 
 - 設定 `specCheck`: 設計書を検査する project のコマンド（例: `pnpm spec:scope {spec}`。`{spec}` は設計書の path に置き換える）。無ければ何もしない
-- `spec` 付きの `DELEGATE` / `REVIEW_REQUEST` を受理したら、宛先の作業ディレクトリで実行する（60 秒で打ち切る）。終わるまで配送を待つ
-- 最初は診断だけにする: 結果（終了コードと出力の末尾 20 行）を envelope に `Spec check (<command>): exit <code>` として添え、配送は止めない。画面の message カードにも出す。失敗の扱い（拒否に切り替えるか）は誤検出の数を見てから決める
+- `spec` 付きの `DELEGATE` / `REVIEW_REQUEST` を受理したら、宛先の作業ディレクトリで実行する（60 秒で打ち切る）。受理と mailbox への積み込みは今どおりで、配送の直前に検査の完了を待つ（配送の順を崩さない）
+- 最初は診断だけにする: 結果（終了コードと出力の末尾 20 行）を envelope に `Spec check (<command>): exit <code>` として添え、配送は止めない。画面へは、検査が終わったら Event Bus に `spec_check` を出し、message カードに結び付けて出す（`message` の publish の順は変えない）。失敗の扱い（拒否に切り替えるか）は誤検出の数を見てから決める
 
 ## Native configuration
 
@@ -1353,6 +1353,7 @@ Coordinator 内の observable event は in-memory の Event Bus（`coordinator/e
 | `human` | 人間の入力と送り先 Agent |
 | `notice` | Coordinator から人への通知（利用枠の偏り等。§14） |
 | `retry` | 依頼の再送（§12 配送ルール）。宛先・message ID・何回目か |
+| `spec_check` | 設計書の検査の結果（§13 設計書の検査）。message ID と結果。feed に保存し、画面は message カードに結び付ける |
 
 全 event に Coordinator が `at`（ISO 8601）を付ける。購読者の例外は他の購読者と publish 元に波及させない。
 
