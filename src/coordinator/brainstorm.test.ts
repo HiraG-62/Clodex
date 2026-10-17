@@ -3,10 +3,40 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
+import { roundPrompt, summaryPrompt } from "./brainstorm.js";
 import { Coordinator } from "./coordinator.js";
 import { EventBus } from "./event-bus.js";
 
 const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+
+describe("ブレストのプロンプト", () => {
+  it.each([
+    { peer: "codex", prefix: "C" },
+    { peer: "claude", prefix: "X" },
+  ] as const)("相手が $peer のとき自分の案に $prefix の通し番号を付け、次の周から ID で批評する", ({ peer, prefix }) => {
+    for (const round of [1, 2, 3]) {
+      const prompt = roundPrompt({ topic: "新機能", rounds: 3 }, round, peer, "相手の案", []);
+      expect(prompt).toContain(`Assign IDs to your ideas: ${prefix}1, ${prefix}2, ...`);
+      expect(prompt).toContain("Continue numbering across rounds");
+      if (round === 1) {
+        expect(prompt).not.toContain("相手の案");
+      } else {
+        expect(prompt).toContain("Refer to the other agent's ideas by ID when critiquing them");
+        expect(prompt).toContain(`${peer}'s previous response:\n相手の案`);
+      }
+    }
+  });
+
+  it("まとめは案の ID・提案者・現状・根拠の表と、従来の論点・有望な案・未解決の問いを求める", () => {
+    const prompt = summaryPrompt({ topic: "新機能", rounds: 2 }, [], []);
+    expect(prompt).toContain("ID | Proposer | Status | Basis");
+    expect(prompt).toContain("adopted / adopted with changes / on hold / rejected");
+    expect(prompt).toContain("measurements, code, or the other agent's critique");
+    expect(prompt).toContain("key questions");
+    expect(prompt).toContain("promising ideas with reasons");
+    expect(prompt).toContain("unresolved questions");
+  });
+});
 
 const setup = (rounds: number) => {
   const claude = new FakeAgentAdapter("claude");

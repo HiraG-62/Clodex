@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "../protocol/messages.js";
-import { buildEnvelope } from "./context-resolver.js";
+import { BODY_FORMAT, buildEnvelope } from "./context-resolver.js";
 
 const base: AgentMessage = {
   id: "msg_1a2b3c4d",
@@ -85,7 +85,6 @@ describe("buildEnvelope", () => {
         "",
         'Reply with the send_message tool of the "clodex" MCP server (not a shell command): to="claude", type="RESULT", taskId="AUTH-142", replyTo="msg_1a2b3c4d".',
         "Send RESULT when the requested work is complete. Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.",
-        "Write body in Markdown: a one-line summary first, then bullet points. Do not write one long paragraph.",
       ].join("\n"),
     );
   });
@@ -129,6 +128,12 @@ describe("buildEnvelope の割り込み", () => {
 });
 
 describe("buildEnvelope の言語", () => {
+  it.each(["QUESTION", "REVIEW_REQUEST", "DELEGATE", "FIX", "ADD"] as const)("%s は body の書式を重複させず、言語を残す", type => {
+    const envelope = buildEnvelope({ ...base, type, replyTo: "msg_original" }, "ja");
+    expect(envelope).not.toContain(BODY_FORMAT);
+    expect(envelope.split("\n").at(-1)).toContain("Japanese");
+  });
+
   it("言語の指定があれば末尾に 1 行添える", () => {
     const lines = buildEnvelope(base, "ja").split("\n");
     expect(lines.at(-1)).toContain("Japanese");

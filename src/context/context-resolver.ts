@@ -72,7 +72,6 @@ const replyInstruction = (m: AgentMessage): string[] => {
             ? "Send RESULT once when the corrected work is complete. Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits."
             : "Send RESULT when the requested work is complete. Put findings in issues (file, line, severity, summary). Do not paste large content; reference files and commits.",
         ]),
-    BODY_FORMAT,
   ];
 };
 

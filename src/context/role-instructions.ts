@@ -26,7 +26,8 @@ const PARALLEL_NOTE =
   "If the peer is busy and a request is independent of its current work, you may use parallel: true. " +
   "If it touches the same files, set worktree: true or wait until the peer finishes.";
 const USAGE_NOTE =
-  "Do not poll in small steps with repeated sleep or by checking subagents again and again. Read the relevant range of a file at once, not a few dozen lines at a time.";
+  "Do not poll in small steps with repeated sleep or by checking subagents again and again. Read the relevant range of a file at once, not a few dozen lines at a time. " +
+  "Do not re-read content you already read. Do not rerun the same tests or type checks when nothing has changed.";
 const CODEX_USAGE_NOTE = "Run long commands (tests, builds) with a long enough yield_time_ms to finish in one call. Do not poll with wait or write_stdin.";
 const CLAUDE_USAGE_NOTE =
   "Run long commands with a long enough Bash timeout (up to 600000 ms) to finish in one call. " +
@@ -42,7 +43,12 @@ const SPEC_NOTE =
   "Answer a QUESTION with ANSWER. When you update the design document to answer a QUESTION, set spec on the ANSWER. " +
   "Use RESULT when delegated work is complete. " +
   "In the spec, include the files that generation commands (build, codegen, dictionary updates) rewrite in the files the implementer may change. " +
-  "Updating files rewritten by generation commands is allowed by default.";
+  "Updating files rewritten by generation commands is allowed by default. " +
+  'Split the spec into "Fixed" (behavior, invariants, public interfaces, files that may be edited) and "Discretion" (what the implementer may decide). Before doing anything against a Fixed section, ask with a QUESTION.';
+
+const QUESTION_NOTE =
+  'Write a QUESTION body in three lines: "Decide:" (what you need decided), "Blocked:" (work waiting for the answer), "Continuing:" (work you continue meanwhile). Stop work that depends on the answer.';
+const RESULT_NOTE = "After sending RESULT with send_message, keep your final reply to one line.";
 
 const ASK_USER_NOTE = `When you need a decision from the human, ask with the ${ASK_USER_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server instead of writing the question in your reply, then end your turn.`;
 const READ_CONVERSATION_NOTE = `Use the ${READ_CONVERSATION_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server when you need the message bodies from this conversation, including exchanges between the human and the other agent.`;
@@ -106,6 +112,8 @@ export const buildRoleInstructions = (
     READ_CONVERSATION_NOTE,
     SPEC_NOTE,
     BODY_FORMAT,
+    QUESTION_NOTE,
+    RESULT_NOTE,
     INTERRUPT_NOTE,
     FRESH_NOTE,
     PARALLEL_NOTE,

@@ -108,6 +108,31 @@ it("send_message の body の書式を伝える", () => {
   expect(buildRoleInstructions("codex", undefined)).toContain("Write body in Markdown");
 });
 
+it.each(["claude", "codex"] as const)("%s に QUESTION・設計書・RESULT の作法を伝え、ブレストでは省く", agent => {
+  const instructions = [
+    'Write a QUESTION body in three lines: "Decide:" (what you need decided), "Blocked:" (work waiting for the answer), "Continuing:" (work you continue meanwhile). Stop work that depends on the answer.',
+    'Split the spec into "Fixed" (behavior, invariants, public interfaces, files that may be edited) and "Discretion" (what the implementer may decide). Before doing anything against a Fixed section, ask with a QUESTION.',
+    "After sending RESULT with send_message, keep your final reply to one line.",
+  ];
+  for (const roles of [undefined, { claude: "設計", codex: "実装" }]) {
+    const text = buildRoleInstructions(agent, roles, { rules: "テスト" });
+    const brainstorm = buildRoleInstructions(agent, roles, { brainstorm: true });
+    for (const instruction of instructions) {
+      expect(text).toContain(instruction);
+      expect(text.indexOf(instruction)).toBeGreaterThan(text.indexOf("Rules: テスト"));
+      expect(brainstorm).not.toContain(instruction);
+    }
+  }
+});
+
+it.each(["claude", "codex"] as const)("%s の usageHints が ON のときだけ再読・再検証を避ける指示を足す", agent => {
+  const instruction = "Do not re-read content you already read. Do not rerun the same tests or type checks when nothing has changed.";
+  expect(buildRoleInstructions(agent, undefined, { usageHints: true })).toContain(instruction);
+  expect(buildRoleInstructions(agent, undefined)).not.toContain(instruction);
+  expect(buildRoleInstructions(agent, undefined, { usageHints: false })).not.toContain(instruction);
+  expect(buildRoleInstructions(agent, undefined, { usageHints: true, brainstorm: true })).not.toContain(instruction);
+});
+
 it("fresh の使い方は両 Agent に、使用量の作法は設定で有効にした Agent にだけ伝える", () => {
   const claude = buildRoleInstructions("claude", undefined);
   const codex = buildRoleInstructions("codex", undefined);
