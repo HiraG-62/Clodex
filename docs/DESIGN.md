@@ -548,6 +548,7 @@ interface AgentAdapter {
 | `session` | session ID の確定 |
 | `text` | Agent の発言テキスト |
 | `tool` | tool 呼び出し（名前と入力の要約）。Codex のファイル編集（`fileChange` item）は `name: "fileChange"`、入力は変更したファイルのパス |
+| `tool_end` | tool の終了。`toolId` で `tool` と突き合わせる。コマンドなら終了コード（`exitCode`）、取れなければ失敗かどうか（`failed`）だけ（下記「コマンドの記録」） |
 | `turn_started` | ターン開始（Agent が busy になった）。自発ターン（下記）も含む |
 | `turn` | ターン完了（`TurnResult`）。自発ターンも含む |
 | `rate_limit` | 5 時間 / 7 日の利用率（%）と reset 時刻。プランに無い枠は含めない（Codex は枠の長さ `windowDurationMins` で見分ける。Pro は週の枠だけ） |
@@ -555,6 +556,13 @@ interface AgentAdapter {
 | `context` | 今のコンテキストの大きさ（token）と上限。Claude は最後の API 呼び出しの usage と `modelUsage[].contextWindow`、Codex は `thread/tokenUsage/updated` の `last.totalTokens` と `modelContextWindow` |
 | `exit` | プロセス終了 |
 | `error` | 認証違反・プロトコルエラー等 |
+
+**コマンドの記録**: 「テストを通した」を Agent の自己申告に頼らず、実際に実行したコマンドと結果を Coordinator が持つ
+
+- `tool` に任意の `toolId`（CLI の tool 呼び出しの ID）と `cwd`（コマンドの作業ディレクトリ）を付ける
+- Codex: `commandExecution` は `item/completed` で 1 回だけ届くので、`tool`（name: `command`）に `toolId`・`cwd`・`exitCode` をまとめて付け、`tool_end` は出さない。終了コードが `null`（中断など）なら付けない
+- Claude: `tool_use` の `id` を `toolId` にする。`Bash` の結果（`user` の `tool_result`）が届いたら、`tool_use_id` で `tool_end` を出す。終了コードは spike の実測（docs/spikes/command-exit.md）で取れる形が確かめられた場合だけ付け、取れなければ `is_error` を `failed` にする（「実行の試み」として扱う）
+- subagent の中の tool（`parent_tool_use_id` 付き）は出さない（上の `tool` と同じ）
 
 Spike の結果、v0.1 で使う操作（送信・interrupt・resume・MCP）は両 CLI とも対応しているため、capabilities は持たない。機能差が必要になった時点で追加する。
 
@@ -1047,7 +1055,7 @@ AGENTS.md → Codex
 | ファイル | 用途 |
 |---|---|
 | `~/.clodex/config.json` | ユーザー全体の既定 |
-| `<project root>/.clodex.json` | project ごとの上書き（トップレベルのキー単位で上書き） |
+| `<project root>/.clodex.json` | project ごとの上書き（下記「設定の層」） |
 
 ```json
 {
@@ -1056,9 +1064,22 @@ AGENTS.md → Codex
   "roles": {
     "claude": "設計とレビューを担当する。実装は codex に DELEGATE する。",
     "codex": "実装を担当する。設計に迷ったら claude に QUESTION する。"
+  },
+  "rules": {
+    "claude": "コミットメッセージは日本語で書く。",
+    "codex": "変えたファイルのテストだけを回す。"
   }
 }
 ```
+
+- **設定の層**: project の設定はユーザーの設定にキー単位で重ねる
+  - 値がオブジェクトの設定（`roles`・`freshThread`・`usageHints`・`limits`・`worktree`・`web`・`usageAlert`）は、1 段下のキーごとに上書きする。project に `roles.codex` だけを書いても、ユーザーの `roles.claude` は残る
+  - `threadTokenWarn` は、両方がオブジェクトのときだけキーごとに上書きする。どちらかが数なら project の値をそのまま使う
+  - `rules` だけは上書きせず、Agent ごとにユーザーの分の後に project の分を足す（改行でつなぐ）
+  - それ以外の値は project の値で上書きする
+- `rules`（Agent ごとの文字列）は、役割と別に、どの役割でも守らせる共通の作法（コミットの書き方・テストの回し方など）。空文字は未設定。役割の行の後に `Rules:` に続けて入れる。ブレストの会話には入れない
+- 設定元: 役割は実効値と設定元（`user` / `project`）を、`rules` は層ごとの文字列と設定元を持つ。`/role` は役割の後に `(project)` / `(user)` を付け、`rules` を設定元ごとに出す。Web UI の設定は役割の欄に設定元の印を出し、`rules` を読み取り専用で出す（編集は設定ファイルで行う）
+- `/role <agent> <text>` で保存したら設定を読み直す（project に片方だけ書いても、もう片方の実効値は層どおりに決まる）
 
 - `permission` は起動時の権限レベル（§9 Permission）。両 Agent に同じレベルを使う
 - `worktree.setup` は `/new worktree` の直後に worktree で実行する command（§28 D1）
@@ -1069,7 +1090,7 @@ AGENTS.md → Codex
 - `~/.clodex/config.json` が無ければ、起動時に役割を空にしたひな形を作る（`{ "roles": { "claude": "", "codex": "" } }`）。役割の文章は書かない（書くのは人）。既にあれば触らない。作れなくても起動は続ける
 - 役割の空文字は未設定として扱う（ひな形のままでも、役割が無いのと同じ）
 - UTF-8（BOM の有無は問わない。Windows PowerShell 5.1 は BOM 付きで書く）
-- 優先順位: 起動オプション > project の設定 > ユーザーの設定 > 既定値（primary: `claude`、roles: なし）
+- 優先順位: 起動オプション > project の設定 > ユーザーの設定 > 既定値（primary: `claude`、roles: なし）。重ね方は上の「設定の層」
 - Coordinator は Agent の起動時に、固定の定型文と役割を system prompt に追加する（Claude: `--append-system-prompt`、Codex: thread の `developerInstructions`）。定型文は「相手の Agent がいること」「自分と相手の役割」「相手の役割の作業は `send_message` で依頼すること」「権限は人が `/permission` で変えるので、拒否されたらそう伝えること」「依頼を受けたら、作業に入る前に何をするかを 1〜2 文で書くこと」「`send_message` の body は Markdown で 1 行の要約 → 箇条書きで書くこと」「依頼（`DELEGATE` / `REVIEW_REQUEST`）は基本的に設計書を書いて `spec` で渡し、body だけにするのは数行で済む簡単な依頼に限ること。QUESTION には ANSWER で答え、設計書を直したら ANSWER の `spec` で渡すこと（上の Spec）。RESULT は依頼の作業を終えたときに使うこと」「人が読む文章の言語（下記 Language）」を伝える
 - 役割が無い Agent には、相手の Agent がいることだけを伝える
 - **使用量を減らす作法**（`usageHints`）: 待ち方とファイルの読み方の作法を定型文に足す（英語）。tool の呼び出しのたびにコンテキスト全体を送り直すので、呼び出しの回数がそのまま使用量になるため。役割の分け方は人によって違う（Claude が実装する運用もある）ので、Agent ごとに人が設定で ON にする。既定は両方 OFF
@@ -1292,8 +1313,11 @@ Coordinator 内の observable event は in-memory の Event Bus（`coordinator/e
 | `message` | Coordinator が受理した formal message（§11） |
 | `human` | 人間の入力と送り先 Agent |
 | `notice` | Coordinator から人への通知（利用枠の偏り等。§14） |
+| `retry` | 依頼の再送（§12 配送ルール）。宛先・message ID・何回目か |
 
 全 event に Coordinator が `at`（ISO 8601）を付ける。購読者の例外は他の購読者と publish 元に波及させない。
+
+WorkRecorder は Agent ごとに、今のターンで実行したコマンド（コマンド・`cwd`・終了コードか失敗の印）を順に持つ（1 ターン 200 件まで。古いものから捨てる）。`tool_end` は `toolId` で同じターンのコマンドに結び付ける
 
 ## Event Log（v0.1）
 
@@ -1317,7 +1341,7 @@ terminal の表示（「誰が何をしていて、誰が誰に何を頼んだ�
 | 通知（`notice`） | `[CLODEX] ...` | ✓ |
 | 人間の入力（`human`） | ×（入力行が画面に残っているため） | ✓ |
 | ターンの最初の発言（方針。`text`） | ✓ | ✓ |
-| 途中の発言（2 つ目以降の `text`）・`tool`・`rate_limit`・`session`・`exit` | × | ✓ |
+| 途中の発言（2 つ目以降の `text`）・`tool`・`tool_end`・`rate_limit`・`session`・`exit`・`retry` | × | ✓ |
 
 log file は project の外（ホームディレクトリ）に置き、project の working tree を汚さない。
 
