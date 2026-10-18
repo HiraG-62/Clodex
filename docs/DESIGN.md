@@ -1027,11 +1027,12 @@ QUESTION と次の依頼の間に設計書へ書き足すと、受け手はど�
   - 定型文（§13 Roles）に両方のコマンドを 1 回だけ書く（`Default checks: implement = …; integrate = …. Run the default checks for your step plus any checks the spec adds.`）。envelope には書かない（重複させない）
 - 設定 `specSections`: `{ "owned": "触ってよいファイル", "forbidden": "触らないファイル" }`。設計書の節の見出し（`#` を除いた文字列）の先頭。「所有ファイル（自由に編集してよい）」のように補足の付く見出しも「所有ファイル」で当たる。節の中の箇条書きの `` `path` ``（glob 可。`**` を含む）を範囲とする。無ければ分類しない
 - 基準点: `DELEGATE` を配送したとき（配送の直前。§13 Spec の差分と同じ時点）、宛先の作業ディレクトリで `HEAD` と、変更のあるファイル（`git status --porcelain`。未追跡を含む）の中身の SHA-256 を記録する。記録はメモリだけで、依頼 ID ごと。git の外なら記録しない
+  - 依頼の `spec` が作業ディレクトリと別の git の作業ツリー（project の中の git worktree など。`git rev-parse --show-toplevel` が違う）の中にあれば、その作業ツリーを基準点と差分の計算・`specCheck` の実行の場所にする。範囲の glob もその作業ツリーからの相対 path で当てる（Agent が会話の作業ディレクトリの外の worktree で作業していても証跡が働くように）
 - 証跡（`evidence`）: その依頼への `RESULT`（auto を含む）を受理したとき、Coordinator が次を付ける。Hub の再起動などで基準点が無ければ付けない
   - `checks`: 依頼の配送から `RESULT` までに、宛先の Agent が実行したコマンド（§9 コマンドの記録）のうち、`verify.implement` の各コマンドを含むものの最後の結果（終了コード、無ければ失敗の印、実行していなければ未実行）
   - `changed`: 基準点の後に変わったファイル（基準点の `HEAD` からの差分と今の変更のあるファイルを合わせ、基準点と中身が同じものを除く）。各ファイルに、設計書（依頼の `spec`）の範囲による分類（`owned` / `forbidden` / `outside`。`specSections` か `spec` が無ければ付けない）と、依頼の間に依頼元の Agent が編集した印（`tool` event の `files`）を付ける。誰が変えたかの証明にはならない（人や別の作業も含む）ので「依頼開始後の作業ツリーの差分」と表示する
   - 100 件を超えたら件数だけにする
-- envelope: `RESULT` の末尾に `Evidence (recorded by Clodex):` に続けて検査の行（`pnpm test: exit 0` / `failed` / `not run`）と、変わったファイルの行（分類と印）。画面: `RESULT` の message カードに同じ内容を折りたためる形で出す
+- envelope: `RESULT` の末尾に `Evidence (recorded by Clodex):` に続けて検査の行（`pnpm test: exit 0` / `failed` / `not run`）と、変わったファイルの行（分類と印）。差分を計算した場所（作業ツリーの path）を添え、変わったファイルが無ければ `(none)` と書く（空の見出しで終わらせない）。画面: `RESULT` の message カードに同じ内容を折りたためる形で出す
 
 ### 設計書の検査
 
@@ -1126,6 +1127,7 @@ AGENTS.md → Codex
   - QUESTION の body は 3 行で書く: `Decide:`（決めてほしい点）/ `Blocked:`（回答を待つ作業）/ `Continuing:`（回答を待たずに進める作業）。回答に依存する作業は止める
   - 設計書は「固定」（挙動・不変条件・公開インターフェース・編集してよい範囲）と「裁量」（実装の方法など、受け手が決めてよいこと）の節に分けて書く。受け手は固定の節に反することをする前に QUESTION する
   - `send_message` で RESULT を送ったら、ターンの最終応答は 1 行にする（同じ内容を二度書かない）
+  - 同じ task のやり直しを頼むときは、新しい taskId を作らず同じ taskId で送り、`rework` に理由を付ける（task 単位の計測で再依頼として数えるため）
 - **使用量を減らす作法**（`usageHints`）: 待ち方とファイルの読み方の作法を定型文に足す（英語）。tool の呼び出しのたびにコンテキスト全体を送り直すので、呼び出しの回数がそのまま使用量になるため。役割の分け方は人によって違う（Claude が実装する運用もある）ので、Agent ごとに人が設定で ON にする。既定は両方 OFF
   - 設定: `"usageHints": { "claude": false, "codex": false }`。反映は次に始める session から（system prompt に入るため）
   - 共通: 小刻みにポーリングしない（`sleep` で待つ・subagent の完了を細かく確かめる、を繰り返さない）。ファイルは関係する範囲をまとめて読む。数十行ずつ読まない。同じ内容を読み直さない。何も変えていないのに同じコマンド（テスト・型チェック）を回し直さない
@@ -1202,7 +1204,7 @@ Agent Adapter の `rate_limit` event（Claude: `rate_limit_event`、Codex: `acco
   - Claude: `control_request` の `get_usage` の `rate_limits.five_hour` / `seven_day`。`utilization` は 0〜100 の percent、`resets_at` は ISO 8601 の文字列（`rate_limit_event` の比率・epoch 秒とは形式が違うので変換する）
   - Codex: `account/rateLimits/read` の `rateLimits.primary` / `secondary`（`windowDurationMins` で 5 時間・週を見分ける。今の Adapter と同じ変換）
 - その後はターン中の `rate_limit` event で更新する。起動時に取得した値より新しい event が来れば上書きする
-- 次の条件を初めて満たしたとき、1 回だけ通知する（同じ条件では繰り返さない。reset 後は再び通知できる）
+- 次の条件を初めて満たしたとき、1 回だけ通知する（同じ条件では繰り返さない。reset 後は再び通知できる）。「1 回」は Hub 全体で数える（会話ごと・並列の子の会話ごとに重ねて出さない）
 
 | 条件 | 既定の閾値 | 通知例 |
 |---|---|---|
@@ -1373,6 +1375,7 @@ WorkRecorder は Agent ごとに、今のターンで実行したコマンド（
 - 受入: task の最後の `RESULT` が `done` / `approved` で、その後に同じ `taskId` の `DELEGATE`・`FIX`・`ADD` が無ければ「受入完了」とみなす。`RESULT` が 1 回だけで受入完了なら「初回受入」
 - 画面: `RESULT` の message カードに、task の累計（ターン数・入力 token・所要時間・`QUESTION` 数）を小さく出す。累計は `RESULT` を送ったターンの終了時まで反映して固定し、その後の再依頼の分は前のカードに足さない。`/status` に今の会話の最近の task（5 件）の累計を出す
 - 基準値: `scripts/task-metrics-baseline.ts` が過去の Event Log から同じ集計を推定する（ターンと message の対応は記録に無いので、宛先の mailbox の順で推定する）。導入前の Event Log は `~/.clodex/metrics-baseline/logs/` に写してある
+- 並列の子の会話の message は、子と親の両方の会話に記録される（それぞれの会話の表示に要る）。project 全体で集計するとき（基準値の script を含む）は message ID で重複を除く
 
 ## Event Log（v0.1）
 
