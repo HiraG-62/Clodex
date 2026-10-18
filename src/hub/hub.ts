@@ -29,10 +29,11 @@ export interface HubProject {
 export interface HubOptions<T extends HubProject> {
   homeDir: string;
   cwd: string;
-  openProject(projectRoot: string): Promise<T>;
+  openProject(projectRoot: string, usageNotifications: Set<string>): Promise<T>;
 }
 
 export class Hub<T extends HubProject> {
+  private readonly usageNotifications = new Set<string>();
   private readonly contexts = new Map<string, T>();
   private readonly opening = new Map<string, Promise<T>>();
   private readonly closedConversations = new Map<string, { modified: number; size: number; conversations: Conversation[] }>();
@@ -149,7 +150,7 @@ export class Hub<T extends HubProject> {
     if (!context) {
       let opening = this.opening.get(projectRoot);
       if (!opening) {
-        opening = this.options.openProject(projectRoot).then(created => {
+        opening = this.options.openProject(projectRoot, this.usageNotifications).then(created => {
           this.contexts.set(projectRoot, created);
           return created;
         });

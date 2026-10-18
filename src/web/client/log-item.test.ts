@@ -4,7 +4,7 @@ import { t } from "../../i18n/i18n.js";
 import { createLogItem, splitReferenceFiles } from "./log-item.js";
 import type { ClientContext } from "./store.js";
 
-it("証跡のチップ・差分と設計書検査の折りたたみを表示する", () => {
+it.each([false, true])("証跡の場所・差分と設計書検査を表示する: 空=%s", empty => {
   const created: Array<{ tag: string; className: string; textContent: string }> = [];
   const el = (tag: string, className = "", textContent = "") => {
     const node = { tag, className, textContent, append: () => {}, addEventListener: () => {} };
@@ -26,13 +26,19 @@ it("証跡のチップ・差分と設計書検査の折りたたみを表示す�
         body: "完了",
         repository: "test",
         createdAt: "now",
-        evidence: { checks: [{ command: "pnpm test", ran: true, exitCode: 1 }], changed: [{ path: "src/a.ts", scope: "forbidden", peer: true }] },
+        evidence: {
+          root: "C:/project/worktree",
+          checks: [{ command: "pnpm test", ran: true, exitCode: 1 }],
+          changed: empty ? [] : [{ path: "src/a.ts", scope: "forbidden", peer: true }],
+        },
         specCheck: { command: "check", exitCode: 0, output: "ok" },
       },
     });
     expect(created.some(node => node.className.includes("verification-warning") && node.textContent.includes("pnpm test"))).toBe(true);
     expect(created.some(node => node.tag === "details" && node.className === "verification-files")).toBe(true);
-    expect(created.some(node => node.className.includes("verification-warning") && node.textContent.includes("src/a.ts [forbidden]"))).toBe(true);
+    expect(created.some(node => node.tag === "small" && node.textContent === "C:/project/worktree")).toBe(true);
+    if (empty) expect(created.some(node => node.tag === "li" && node.textContent === "None")).toBe(true);
+    else expect(created.some(node => node.className.includes("verification-warning") && node.textContent.includes("src/a.ts [forbidden]"))).toBe(true);
     expect(created.some(node => node.tag === "details" && node.className === "spec-check")).toBe(true);
   } finally {
     vi.unstubAllGlobals();

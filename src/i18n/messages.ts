@@ -2,6 +2,7 @@
 // {name} は translate の params で置き換える。Agent 向けの指示（定型文・envelope・Budget のエラー）は英語のままで、ここには入れない
 export const en = {
   "verification.changed": "Changed since request · {count}",
+  "verification.none": "None",
   "verification.peer": "also edited by {agent}",
   "verification.notRun": "not run",
   "verification.failed": "failed",
@@ -483,6 +484,7 @@ export type Messages = Record<MessageKey, string>;
 
 export const ja: Messages = {
   "verification.changed": "依頼開始後の差分 · {count} 件",
+  "verification.none": "なし",
   "verification.peer": "{agent} も編集",
   "verification.notRun": "未実行",
   "verification.failed": "失敗",

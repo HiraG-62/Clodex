@@ -49,6 +49,7 @@ const SPEC_NOTE =
 const QUESTION_NOTE =
   'Write a QUESTION body in three lines: "Decide:" (what you need decided), "Blocked:" (work waiting for the answer), "Continuing:" (work you continue meanwhile). Stop work that depends on the answer.';
 const RESULT_NOTE = "After sending RESULT with send_message, keep your final reply to one line.";
+const REWORK_NOTE = "To request rework of a task, send it with the same taskId and set rework (spec, impl or check); do not create a new taskId.";
 
 const ASK_USER_NOTE = `When you need a decision from the human, ask with the ${ASK_USER_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server instead of writing the question in your reply, then end your turn.`;
 const READ_CONVERSATION_NOTE = `Use the ${READ_CONVERSATION_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server when you need the message bodies from this conversation, including exchanges between the human and the other agent.`;
@@ -114,6 +115,7 @@ export const buildRoleInstructions = (
     BODY_FORMAT,
     QUESTION_NOTE,
     RESULT_NOTE,
+    REWORK_NOTE,
     INTERRUPT_NOTE,
     FRESH_NOTE,
     PARALLEL_NOTE,

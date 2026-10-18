@@ -29,6 +29,38 @@ const setup = () => {
 };
 
 describe("依頼の基準点", () => {
+  it("本体の中の ignored worktree を依頼ごとに選び、範囲と peer を相対化する", () => {
+    const { root, git, write } = setup();
+    write(".gitignore", ".claude/\n");
+    const worktree = join(root, ".claude", "worktrees", "task");
+    git("worktree", "add", "--detach", worktree);
+    writeFileSync(join(worktree, "spec.md"), "## 対象\n- `src/**`\n");
+    const baselines = new WorkBaselines(root, { specSections: { owned: "対象" } });
+    baselines.start({ ...request, spec: ".claude/worktrees/task/spec.md" }, "## 対象\n- `src/**`\n");
+    baselines.start({ ...request, id: "main", spec: undefined });
+    baselines.recordPeerFiles("claude", [".claude/worktrees/task/src/a.ts", join(root, "src", "other.ts")]);
+    writeFileSync(join(worktree, "src", "a.ts"), "changed");
+    writeFileSync(join(worktree, "src", "other.ts"), "changed");
+    expect(baselines.finish("r")).toMatchObject({
+      root: worktree,
+      changed: [
+        { path: "src/a.ts", scope: "owned", peer: true },
+        { path: "src/other.ts", scope: "owned" },
+      ],
+    });
+    expect(baselines.finish("main")).toMatchObject({ root, changed: [] });
+  });
+
+  it("同じ作業ツリーの spec と存在しない spec は会話の場所を保つ", () => {
+    const { root, write } = setup();
+    write("spec.md", "設計");
+    const baselines = new WorkBaselines(root);
+    baselines.start(request);
+    baselines.start({ ...request, id: "missing", spec: "missing/spec.md" });
+    expect(baselines.finish("r")).toMatchObject({ root, changed: [] });
+    expect(baselines.finish("missing")).toMatchObject({ root, changed: [] });
+  });
+
   it("元から dirty な同一内容を除き、commit・削除・rename・未追跡・復元を集める", () => {
     const { root, git, write } = setup();
     write("dirty.txt");

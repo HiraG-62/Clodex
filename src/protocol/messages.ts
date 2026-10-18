@@ -35,7 +35,7 @@ export const sendMessageShape = {
     ),
   taskId: z.string().min(1).describe("Task ID"),
   effort: z.string().min(1).optional().describe("Reasoning effort for the turn that handles this request (codex only)"),
-  rework: z.enum(["spec", "impl", "check"]).optional().describe("Why this task is requested again: spec, impl or check"),
+  rework: z.enum(["spec", "impl", "check"]).optional().describe("Why this task is requested again with the same taskId: spec, impl or check"),
   relatesTo: z.string().min(1).optional().describe("Related previous task ID (DELEGATE or REVIEW_REQUEST only)"),
   body: z.string().min(1).max(MAX_BODY_LENGTH).describe("Request, question, or result summary. Reference commit/files instead of pasting large content"),
   replyTo: z.string().min(1).optional().describe("ID of the message this replies to"),
@@ -130,6 +130,7 @@ export interface ChangedFile {
 }
 
 export interface VerificationEvidence {
+  root?: string;
   checks: VerificationCheck[];
   changed: ChangedFile[] | { count: number };
 }

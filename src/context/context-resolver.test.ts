@@ -16,6 +16,12 @@ const base: AgentMessage = {
 };
 
 describe("buildEnvelope", () => {
+  it("差分が空でも場所と (none) を明示する", () => {
+    expect(buildEnvelope({ ...base, type: "RESULT", evidence: { root: base.repository, checks: [], changed: [] } })).toContain(
+      `Changed since the request (working tree ${base.repository}):\n- (none)`,
+    );
+    expect(buildEnvelope({ ...base, type: "RESULT", evidence: { checks: [], changed: [] } })).toContain("Changed since the request (working tree):\n- (none)");
+  });
   it("証跡と検査の診断を返信指示より前に出す", () => {
     const envelope = buildEnvelope({
       ...base,
@@ -23,6 +29,7 @@ describe("buildEnvelope", () => {
       from: "codex",
       to: "claude",
       evidence: {
+        root: base.repository,
         checks: [
           { command: "pnpm test", ran: true, exitCode: 0 },
           { command: "pnpm lint", ran: true, failed: true },

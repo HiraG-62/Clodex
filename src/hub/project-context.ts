@@ -81,6 +81,7 @@ export interface ProjectContext {
 }
 
 export interface OpenProjectOptions {
+  usageNotifications?: Set<string>;
   projectRoot: string;
   homeDir: string;
   args: CliArgs;
@@ -98,6 +99,7 @@ export interface OpenProjectOptions {
 }
 
 export const openProject = async ({
+  usageNotifications,
   projectRoot,
   homeDir,
   args,
@@ -207,6 +209,7 @@ export const openProject = async ({
       readConversation: (_from, input) => transcript.page(input),
     });
     coordinator = new Coordinator({
+      usageNotifications,
       conversationId: conversation.id,
       metricsStore,
       projectRoot: workDir,

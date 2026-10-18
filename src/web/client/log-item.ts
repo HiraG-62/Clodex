@@ -327,6 +327,7 @@ export function createLogItem(ctx: ClientContext) {
       node.append(checks);
     }
     if (verification.changed) {
+      if (verification.root) node.append(ctx.el("small", "verification-root muted mono", verification.root));
       const files = ctx.el("ul", "verification-list mono");
       for (const file of verification.files) files.append(ctx.el("li", file.warning ? "verification-warning" : "", file.text));
       node.append(details(`evidence:${item.id}`, verification.changed, files, "verification-files"));

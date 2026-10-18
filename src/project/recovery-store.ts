@@ -13,6 +13,7 @@ const messageSchema = z.object(sendMessageShape).extend({
   createdAt: z.string(),
   evidence: z
     .object({
+      root: z.string().optional(),
       checks: z.array(z.object({ command: z.string(), ran: z.boolean(), exitCode: z.number().optional(), failed: z.boolean().optional() })),
       changed: z.union([
         z.array(z.object({ path: z.string(), scope: z.enum(["owned", "forbidden", "outside"]).optional(), peer: z.literal(true).optional() })),

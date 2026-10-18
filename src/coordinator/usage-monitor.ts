@@ -66,14 +66,16 @@ export class UsageMonitor {
   private readonly sessions = new Map<AgentId, string>();
   private readonly warnedSessions = new Set<AgentId>();
   // 同じ枠（reset 時刻）では 1 回だけ通知する
-  private readonly notified = new Set<string>();
+  private readonly notified: Set<string>;
 
   constructor(
     private readonly bus: EventBus,
     private readonly alert: UsageAlert = DEFAULT_USAGE_ALERT,
     private readonly now: () => Date = () => new Date(),
     private readonly threadTokenWarn?: ThreadTokenWarn,
+    notified = new Set<string>(),
   ) {
+    this.notified = notified;
     bus.subscribe(event => {
       if (event.kind !== "agent") return;
       const { agent, event: agentEvent } = event;

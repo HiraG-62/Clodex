@@ -13,15 +13,18 @@ export const formatVerification = (message: AgentMessage, translate: typeof t) =
   }));
   const changed = evidence?.changed;
   const files: VerificationLine[] = Array.isArray(changed)
-    ? changed.map(file => ({
-        text: `${file.path}${file.scope ? ` [${file.scope}]` : ""}${file.peer ? ` (${translate("verification.peer", { agent: message.to })})` : ""}`,
-        warning: file.scope === "outside" || file.scope === "forbidden",
-      }))
+    ? changed.length
+      ? changed.map(file => ({
+          text: `${file.path}${file.scope ? ` [${file.scope}]` : ""}${file.peer ? ` (${translate("verification.peer", { agent: message.to })})` : ""}`,
+          warning: file.scope === "outside" || file.scope === "forbidden",
+        }))
+      : [{ text: translate("verification.none"), warning: false }]
     : [];
   const check = message.specCheck;
   return {
     checks,
     files,
+    ...(evidence ? { root: evidence.root } : {}),
     ...(changed ? { changed: translate("verification.changed", { count: Array.isArray(changed) ? changed.length : changed.count }) } : {}),
     ...(check
       ? {

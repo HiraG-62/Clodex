@@ -38,6 +38,23 @@ const setup = (check?: string) => {
 };
 afterEach(() => vi.restoreAllMocks());
 
+it("別の worktree の specCheck と証跡を同じ場所で取得する", async () => {
+  const run = vi.spyOn(specCheck, "runSpecCheck").mockResolvedValue({ command: "check spec.md", exitCode: 0, output: "" });
+  const { coordinator, root, result } = setup("check {spec}");
+  const worktree = join(root, ".claude", "worktrees", "task");
+  writeFileSync(join(root, ".gitignore"), ".claude/\n");
+  execFileSync("git", ["worktree", "add", "--detach", worktree], { cwd: root, stdio: "pipe" });
+  writeFileSync(join(worktree, "spec.md"), "## 対象\n- `*.txt`\n");
+  const accepted = coordinator.receiveMessage("claude", { ...request, spec: ".claude/worktrees/task/spec.md" });
+  if (!accepted.ok) throw new Error(accepted.error);
+  await flush();
+  expect(run).toHaveBeenCalledExactlyOnceWith("check {spec}", "spec.md", worktree);
+  writeFileSync(join(worktree, "a.txt"), "changed");
+  coordinator.receiveMessage("codex", { to: "claude", type: "RESULT", taskId: "T", body: "完了", replyTo: accepted.message.id });
+  expect(result()?.evidence).toMatchObject({ root: worktree, changed: [{ path: "a.txt", scope: "owned" }] });
+  await coordinator.stop();
+});
+
 it.each([false, true])("明示 RESULT / auto RESULT に配送以後の証跡を付ける: auto=%s", async auto => {
   const { coordinator, agents, root, result } = setup();
   const accepted = coordinator.receiveMessage("claude", request);
@@ -48,7 +65,7 @@ it.each([false, true])("明示 RESULT / auto RESULT に配送以後の証跡を�
   if (auto) agents.codex.completeTurn({ status: "completed", text: "完了" });
   else coordinator.receiveMessage("codex", { to: "claude", type: "RESULT", taskId: "T", body: "完了", replyTo: accepted.message.id, evidence: { fake: true } });
   await flush();
-  expect(result()?.evidence).toEqual({ checks: [{ command: "pnpm test", ran: true, exitCode: 0 }], changed: [{ path: "a.txt", scope: "owned" }] });
+  expect(result()?.evidence).toEqual({ root, checks: [{ command: "pnpm test", ran: true, exitCode: 0 }], changed: [{ path: "a.txt", scope: "owned" }] });
   await coordinator.stop();
 });
 
@@ -63,7 +80,7 @@ it("queued DELEGATE の基準点は配送直前に取る", async () => {
   agents.codex.completeTurn({ status: "completed", text: "" });
   await flush();
   coordinator.receiveMessage("codex", { to: "claude", type: "RESULT", taskId: "T", body: "完了", replyTo: accepted.message.id });
-  expect(result()?.evidence).toEqual({ checks: [{ command: "pnpm test", ran: false }], changed: [] });
+  expect(result()?.evidence).toEqual({ root, checks: [{ command: "pnpm test", ran: false }], changed: [] });
   await coordinator.stop();
 });
 

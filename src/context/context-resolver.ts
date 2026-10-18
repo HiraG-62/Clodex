@@ -25,9 +25,11 @@ const evidenceLines = (message: AgentMessage): string[] => {
       check =>
         `- ${check.command}: ${!check.ran ? "not run" : check.exitCode !== undefined ? `exit ${check.exitCode}` : check.failed ? "failed" : "exit unknown"}`,
     ),
-    "Changed since the request (working tree):",
+    `Changed since the request (working tree${evidence.root ? ` ${evidence.root}` : ""}):`,
     ...(Array.isArray(evidence.changed)
-      ? evidence.changed.map(file => `- ${file.path}${file.scope ? ` [${file.scope}]` : ""}${file.peer ? ` (also edited by ${message.to})` : ""}`)
+      ? evidence.changed.length
+        ? evidence.changed.map(file => `- ${file.path}${file.scope ? ` [${file.scope}]` : ""}${file.peer ? ` (also edited by ${message.to})` : ""}`)
+        : ["- (none)"]
       : [`- ${evidence.changed.count} files`]),
   ];
 };

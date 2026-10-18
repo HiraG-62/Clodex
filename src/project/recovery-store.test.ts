@@ -29,7 +29,7 @@ describe("recovery store", () => {
     expect(JSON.parse(readFileSync(path, "utf8")).conversations).not.toHaveProperty("c2");
   });
 
-  it("配送待ちの message の証跡と設計書検査を保持する", () => {
+  it.each([false, true])("配送待ちの message の証跡と設計書検査を保持する: root=%s", withRoot => {
     const { home, project } = setup();
     const message = {
       id: "r",
@@ -41,7 +41,11 @@ describe("recovery store", () => {
       repository: project,
       createdAt: "now",
       replyTo: "request",
-      evidence: { checks: [{ command: "pnpm test", ran: true, exitCode: 0 }], changed: [{ path: "a.ts", scope: "owned" as const, peer: true as const }] },
+      evidence: {
+        ...(withRoot ? { root: project } : {}),
+        checks: [{ command: "pnpm test", ran: true, exitCode: 0 }],
+        changed: [{ path: "a.ts", scope: "owned" as const, peer: true as const }],
+      },
       specCheck: { command: "check", exitCode: 1, output: "diagnostic" },
     };
     saveRecovery(home, project, { current: "c", conversations: { c: { interrupted: [], queue: { claude: [{ kind: "message", message }], codex: [] } } } });

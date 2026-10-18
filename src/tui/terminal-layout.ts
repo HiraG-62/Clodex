@@ -556,6 +556,7 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
     return [
       ...verification.checks.map(check => line({ ...check, text: `[${check.text}]` })),
       ...(verification.changed ? [{ text: `${expanded ? "▾" : "▸"} ${verification.changed}`, color: TERMINAL_COLORS.muted }] : []),
+      ...(expanded && verification.root ? [{ text: verification.root, color: TERMINAL_COLORS.muted }] : []),
       ...(expanded ? verification.files.map(line) : []),
       ...(verification.specCheck
         ? [

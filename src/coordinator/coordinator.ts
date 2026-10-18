@@ -1,7 +1,7 @@
 // Agent 間の routing と lifecycle を決定論的に行う（DESIGN.md §3.9, §12）
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import {
   AGENT_IDS,
   type AgentAdapter,
@@ -90,6 +90,7 @@ const handoffFallback = (message: AgentMessage, error: string) =>
   `Do not send it again. ${HANDOFF_ACTION[message.type] ?? "Do the work yourself"} and continue the task.`;
 
 export interface CoordinatorOptions {
+  usageNotifications?: Set<string>;
   verify?: ClodexConfig["verify"];
   specSections?: ClodexConfig["specSections"];
   specCheck?: string;
@@ -373,7 +374,7 @@ export class Coordinator {
         this.threadSenders.set(message.thread, message.from);
       }
     }
-    this.usage = new UsageMonitor(bus, { ...DEFAULT_USAGE_ALERT, ...options.usageAlert }, undefined, options.threadTokenWarn);
+    this.usage = new UsageMonitor(bus, { ...DEFAULT_USAGE_ALERT, ...options.usageAlert }, undefined, options.threadTokenWarn, options.usageNotifications);
     for (const id of AGENT_IDS) {
       agents[id].onEvent(event => {
         if (event.type === "turn_started") {
@@ -770,9 +771,10 @@ export class Coordinator {
       // 読み取り失敗は配送を妨げない。
     }
     if (!this.options.specCheck || !message.spec || message.specCheck || this.specChecks.has(message.id)) return;
+    const root = this.workBaselines.rootFor(message);
     this.specChecks.set(
       message.id,
-      runSpecCheck(this.options.specCheck, message.spec, this.options.projectRoot).then(result => {
+      runSpecCheck(this.options.specCheck, relative(root, path), root).then(result => {
         message.specCheck = result;
         this.options.bus.publish({ kind: "spec_check", messageId: message.id, result });
       }),

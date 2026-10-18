@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { buildRoleInstructions } from "./role-instructions.js";
 
 describe("buildRoleInstructions", () => {
+  it("再依頼では同じ taskId と rework を使う", () => {
+    expect(buildRoleInstructions("codex", undefined)).toContain(
+      "To request rework of a task, send it with the same taskId and set rework (spec, impl or check); do not create a new taskId.",
+    );
+  });
   it("rules を役割の行の直後に複数行のまま挿入する", () => {
     const text = buildRoleInstructions("codex", { codex: "実装" }, { rules: "テスト\n型チェック" });
     expect(text).toContain("Small edits (typos, formatting, trivial fixes) you may do yourself.\nRules: テスト\n型チェック\nThe human");

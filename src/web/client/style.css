@@ -821,6 +821,11 @@
 .verification-warning {
   color: var(--warn);
 }
+.verification-root {
+  display: block;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
 .verification-files,
 .spec-check {
   margin: 8px 0;

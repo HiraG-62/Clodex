@@ -300,9 +300,10 @@ const main = async (): Promise<void> => {
   hub = new Hub({
     homeDir,
     cwd,
-    openProject: async projectRoot => {
+    openProject: async (projectRoot, usageNotifications) => {
       let context: ProjectContext;
       context = await openProject({
+        usageNotifications,
         projectRoot,
         homeDir,
         args,

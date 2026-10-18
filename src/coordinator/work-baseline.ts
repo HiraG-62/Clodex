@@ -1,11 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readlinkSync } from "node:fs";
-import { isAbsolute, join, matchesGlob, relative } from "node:path";
+import { dirname, isAbsolute, join, matchesGlob, relative, resolve } from "node:path";
 import type { AgentEvent, AgentId } from "../agents/agent-adapter.js";
 import type { ClodexConfig } from "../config/config.js";
 import { splitSections } from "../context/spec-sections.js";
 import { safeGitArgs } from "../project/safe-git.js";
+import { resolveSpecFile } from "../project/spec-file.js";
 import type { AgentMessage, ChangedFile, VerificationCheck, VerificationEvidence } from "../protocol/messages.js";
 
 const GIT_TIMEOUT_MS = 10_000;
@@ -13,6 +14,7 @@ const MAX_CHANGED_FILES = 100;
 const STATUS_PATH_OFFSET = 3;
 type CheckRecord = VerificationCheck & { toolId?: string };
 interface Baseline {
+  root: string;
   head: string;
   dirty: Map<string, string | null>;
   from: AgentId;
@@ -50,18 +52,37 @@ const patterns = (spec: string, heading: string | undefined): string[] => {
 
 export class WorkBaselines {
   private readonly baselines = new Map<string, Baseline>();
+  private readonly roots = new Map<string, string>();
   private readonly delivered = new Set<string>();
   constructor(
     private readonly root: string,
     private readonly config: Pick<ClodexConfig, "verify" | "specSections"> = {},
   ) {}
 
-  private git(...args: string[]): Buffer {
-    return execFileSync("git", safeGitArgs(args), { cwd: this.root, timeout: GIT_TIMEOUT_MS, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  private git(root: string, ...args: string[]): Buffer {
+    return execFileSync("git", safeGitArgs(args), { cwd: root, timeout: GIT_TIMEOUT_MS, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   }
 
-  private status(): string[] {
-    const entries = this.git("status", "--porcelain=v1", "-z", "--untracked-files=all").toString("utf8").split("\0");
+  rootFor(message: AgentMessage): string {
+    const cached = this.roots.get(message.id);
+    if (cached) return cached;
+    let root = resolve(this.root);
+    const spec = message.spec ? resolveSpecFile(this.root, message.spec) : undefined;
+    if (spec) {
+      try {
+        const top = (cwd: string) => resolve(this.git(cwd, "rev-parse", "--show-toplevel").toString("utf8").trim());
+        const specRoot = top(dirname(spec));
+        if (specRoot !== top(this.root)) root = specRoot;
+      } catch {
+        // git の外の設計書でも会話の作業場所で配送する。
+      }
+    }
+    this.roots.set(message.id, root);
+    return root;
+  }
+
+  private status(root: string): string[] {
+    const entries = this.git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all").toString("utf8").split("\0");
     const paths: string[] = [];
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i]!;
@@ -76,10 +97,12 @@ export class WorkBaselines {
     if (message.type !== "DELEGATE" || this.delivered.has(message.id)) return;
     this.baselines.delete(message.id);
     try {
-      const head = this.git("rev-parse", "HEAD").toString("utf8").trim();
-      const dirty = new Map(this.status().map(path => [path, fileHash(join(this.root, path))]));
+      const root = this.rootFor(message);
+      const head = this.git(root, "rev-parse", "HEAD").toString("utf8").trim();
+      const dirty = new Map(this.status(root).map(path => [path, fileHash(join(root, path))]));
       const sections = this.config.specSections;
       this.baselines.set(message.id, {
+        root,
         head,
         dirty,
         from: message.from,
@@ -134,7 +157,11 @@ export class WorkBaselines {
   recordPeerFiles(agent: AgentId, files: readonly string[]): void {
     for (const baseline of this.baselines.values()) {
       if (!baseline.active || baseline.from !== agent) continue;
-      for (const file of files) baseline.peer.add(normalize(isAbsolute(file) ? relative(this.root, file) : file));
+      for (const file of files) {
+        const path = normalize(relative(baseline.root, resolve(this.root, file)));
+        if (path === ".." || path.startsWith("../") || isAbsolute(path)) continue;
+        baseline.peer.add(path);
+      }
     }
   }
 
@@ -144,19 +171,19 @@ export class WorkBaselines {
     baseline.active = false;
     try {
       const candidates = new Set([
-        ...this.git("diff", "--name-only", "-z", baseline.head, "--").toString("utf8").split("\0").filter(Boolean),
-        ...this.status(),
+        ...this.git(baseline.root, "diff", "--name-only", "-z", baseline.head, "--").toString("utf8").split("\0").filter(Boolean),
+        ...this.status(baseline.root),
         ...baseline.dirty.keys(),
       ]);
-      const tracked = new Set(this.git("ls-tree", "-r", "--name-only", "-z", baseline.head).toString("utf8").split("\0"));
+      const tracked = new Set(this.git(baseline.root, "ls-tree", "-r", "--name-only", "-z", baseline.head).toString("utf8").split("\0"));
       const changed: ChangedFile[] = [];
       for (const path of [...candidates].sort()) {
         let previous = baseline.dirty.get(path);
         if (previous === undefined) {
           // 新しいファイルは基準点の tree に存在しない。
-          previous = tracked.has(path) ? hash(this.git("show", `${baseline.head}:${path}`)) : null;
+          previous = tracked.has(path) ? hash(this.git(baseline.root, "show", `${baseline.head}:${path}`)) : null;
         }
-        if (fileHash(join(this.root, path)) === previous) continue;
+        if (fileHash(join(baseline.root, path)) === previous) continue;
         const scope = baseline.scope;
         changed.push({
           path,
@@ -173,6 +200,7 @@ export class WorkBaselines {
         });
       }
       return {
+        root: baseline.root,
         checks: baseline.checks.map(({ toolId: _toolId, ...check }) => check),
         changed: changed.length > MAX_CHANGED_FILES ? { count: changed.length } : changed,
       };

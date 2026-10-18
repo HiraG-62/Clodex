@@ -54,7 +54,11 @@ it("証跡を折りたたみ、失敗と範囲外を警告色にする", () => {
       repository: "root",
       createdAt: "now",
       body: "完了",
-      evidence: { checks: [{ command: "pnpm test", ran: true, exitCode: 1 }], changed: [{ path: "outside.ts", scope: "outside" }] },
+      evidence: {
+        root: "C:/project/worktree",
+        checks: [{ command: "pnpm test", ran: true, exitCode: 1 }],
+        changed: [{ path: "outside.ts", scope: "outside" }],
+      },
       specCheck: { command: "check", exitCode: 0, output: "diagnostic" },
     },
   };
@@ -62,6 +66,7 @@ it("証跡を折りたたみ、失敗と範囲外を警告色にする", () => {
   expect(collapsed.some(line => line.parts?.some(part => part.text.includes("pnpm test: exit 1") && part.color === TERMINAL_COLORS.warn))).toBe(true);
   expect(collapsed.some(line => line.text.includes("outside.ts"))).toBe(false);
   const expanded = cardLines(formatTimelineItem(item, labels, true), 100);
+  expect(expanded.some(line => line.text.includes("C:/project/worktree"))).toBe(true);
   expect(expanded.some(line => line.parts?.some(part => part.text.includes("outside.ts [outside]") && part.color === TERMINAL_COLORS.warn))).toBe(true);
   expect(expanded.some(line => line.text.includes("diagnostic"))).toBe(true);
   const first = advanceTerminalFeed(

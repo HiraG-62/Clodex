@@ -40,6 +40,7 @@ export const percentile = (values: number[], p: number): number | null => {
 
 export const analyzeBaseline = (sources: Source[]) => {
   const records: TaskMetricRecord[] = [];
+  const messageIds = new Set<string>();
   const projectData = new Map<string, { messages: Message[]; contexts: number[]; resultInputs: number[] }>();
   let turns = 0;
   let missingTokenTurns = 0;
@@ -60,8 +61,11 @@ export const analyzeBaseline = (sources: Source[]) => {
       lastAt = !lastAt || event.at > lastAt ? event.at : lastAt;
       if (event.kind === "message" && event.message) {
         const message = event.message;
-        data.messages.push(message);
-        records.push({ ...message, kind: "message", conversationId, at: event.at } as TaskMetricRecord);
+        if (!messageIds.has(message.id)) {
+          messageIds.add(message.id);
+          data.messages.push(message);
+          records.push({ ...message, kind: "message", conversationId, at: event.at } as TaskMetricRecord);
+        }
         if (DELIVERED_TYPES.has(message.type)) queues.set(message.to, [...(queues.get(message.to) ?? []), message]);
       }
       const agent = event.agent;

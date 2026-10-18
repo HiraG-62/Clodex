@@ -8,7 +8,78 @@ import { EMPTY_MODEL_CATALOG } from "../agents/startup-probe.js";
 import { saveProjectRole } from "../project/role-settings.js";
 import { applyFeedItem, rebuildTimeline } from "../web/client/timeline.js";
 import { WebFeed } from "../web/web-feed.js";
+import { Hub } from "./hub.js";
 import { openProject, protectRecoverySave } from "./project-context.js";
+
+it("Hub の利用枠通知は親子と別 project で共有し、session の警告は共有しない", async () => {
+  const homeDir = mkdtempSync(join(tmpdir(), "clodex-usage-hub-"));
+  const hub = new Hub({
+    homeDir,
+    cwd: homeDir,
+    openProject: async (projectRoot, usageNotifications) => {
+      mkdirSync(projectRoot);
+      writeFileSync(join(projectRoot, ".clodex.json"), JSON.stringify({ threadTokenWarn: 100 }));
+      return openProject({
+        projectRoot,
+        homeDir,
+        usageNotifications,
+        args: { models: {}, resume: false, web: false, serve: false },
+        language: "ja",
+        printTerminal: () => {},
+        notify: () => {},
+        notifyAgent: () => {},
+        displayMode: () => "normal",
+        isCurrent: () => true,
+        modelCatalog: EMPTY_MODEL_CATALOG,
+        registerCoordinator: () => () => {},
+        createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") }),
+      });
+    },
+  });
+  try {
+    const first = await hub.open("one");
+    const parent = first.workspace.current;
+    const child = await first.workspace.startParallel(parent.conversationId, {
+      id: "d",
+      from: "claude",
+      to: "codex",
+      type: "DELEGATE",
+      taskId: "T",
+      body: "実装",
+      repository: first.projectRoot,
+      createdAt: new Date().toISOString(),
+    });
+    if ("error" in child) throw new Error(child.error);
+    const second = await hub.open("two");
+    const runtimes = [...first.workspace.allRuntimes(), second.workspace.current];
+    const notices: string[] = [];
+    for (const runtime of runtimes)
+      runtime.bus.subscribe(event => {
+        if (event.kind === "notice") notices.push(event.text);
+      });
+    const resetsAt = Math.floor(Date.now() / 1000) + 3600;
+    const report = (reset: number) => {
+      for (const runtime of runtimes)
+        runtime.bus.publish({
+          kind: "agent",
+          agent: "claude",
+          event: {
+            type: "rate_limit",
+            fiveHour: { usedPercent: 95, resetsAt: reset },
+            weekly: { usedPercent: 95, resetsAt: reset + 7 * 86400 },
+          },
+        });
+    };
+    report(resetsAt);
+    expect(notices).toHaveLength(2);
+    report(resetsAt + 3600);
+    expect(notices).toHaveLength(4);
+    for (const runtime of runtimes) runtime.bus.publish({ kind: "agent", agent: "claude", event: { type: "context", tokens: 101 } });
+    expect(notices).toHaveLength(4 + runtimes.length);
+  } finally {
+    await hub.closeAll();
+  }
+});
 
 it("Hub 再起動後の新しい入力の取消で、保存済み feed の発言を残す", async () => {
   const homeDir = mkdtempSync(join(tmpdir(), "clodex-input-seq-"));
