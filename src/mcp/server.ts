@@ -74,7 +74,7 @@ const buildMcpServer = (from: AgentId, handler: McpHandlers): McpServer => {
     TELL_USER_TOOL,
     {
       description:
-        "Show the human something they should read while you work: findings, decisions you made, risks, or actions the human must take. Do not use it for routine progress notes. Do not repeat it in your final reply. Continue your work after calling this tool.",
+        "Show the human, in a few lines, what they should know now: a root cause you found, a plan change, a judgment call you made, a check or test result that matters, a risk or something the human must do, or that you are about to wait on a long command. Your intermediate text is collapsed in the UI. Do not use it for routine progress notes. Do not repeat it in your final reply. Continue your work after calling this tool.",
       inputSchema: tellUserShape,
     },
     async args => {

@@ -3,7 +3,7 @@ import { buildRoleInstructions } from "./role-instructions.js";
 
 it.each(["claude", "codex"] as const)("%s に tell_user の使い分けを伝え、ブレストでは省く", agent => {
   const note =
-    'While working, send anything the human should read before your turn ends (findings, decisions you made, risks, actions the human must take) with the tell_user tool of the "clodex" MCP server. Do not use it for routine progress notes. Do not repeat it in your final reply.';
+    'Your intermediate text is collapsed in the UI, so the human usually does not read it. Call the tell_user tool of the "clodex" MCP server in a few lines whenever you: find a root cause, change your plan, make a judgment call on your own, get a check or test result that matters, hit a risk or something the human must do, or are about to wait on a long command. Do this even when you will also report to the peer. Do not use it for routine progress notes. Do not repeat it in your final reply.';
   expect(buildRoleInstructions(agent, undefined)).toContain(note);
   expect(buildRoleInstructions(agent, undefined, { brainstorm: true })).not.toContain(note);
 });

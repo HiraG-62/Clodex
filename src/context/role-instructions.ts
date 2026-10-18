@@ -62,7 +62,7 @@ const REWORK_NOTE = "To request rework of a task, send it with the same taskId a
 const COMMAND_SHELL_NOTE = "When you show the human a command to run, write it for PowerShell, even if your own shell is bash.";
 
 const ASK_USER_NOTE = `When you need a decision from the human, ask with the ${ASK_USER_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server instead of writing the question in your reply, then end your turn.`;
-const TELL_USER_NOTE = `While working, send anything the human should read before your turn ends (findings, decisions you made, risks, actions the human must take) with the ${TELL_USER_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server. Do not use it for routine progress notes. Do not repeat it in your final reply.`;
+const TELL_USER_NOTE = `Your intermediate text is collapsed in the UI, so the human usually does not read it. Call the ${TELL_USER_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server in a few lines whenever you: find a root cause, change your plan, make a judgment call on your own, get a check or test result that matters, hit a risk or something the human must do, or are about to wait on a long command. Do this even when you will also report to the peer. Do not use it for routine progress notes. Do not repeat it in your final reply.`;
 const READ_CONVERSATION_NOTE = `Use the ${READ_CONVERSATION_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server when you need the message bodies from this conversation, including exchanges between the human and the other agent.`;
 
 const PLAN_NOTE = "When you receive a request, state in one or two sentences what you will do before you start working.";
