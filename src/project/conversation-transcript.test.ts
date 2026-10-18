@@ -11,6 +11,17 @@ const at = "2026-10-08T00:00:00.000Z";
 const event = (item: CoordinatorEventInput): CoordinatorEvent => ({ ...item, at });
 const path = () => transcriptPath(join(mkdtempSync(join(tmpdir(), "clodex-transcript-")), "conversations.json"), "conversation-1");
 
+it("tell の本文と ID を保存し、feed からの初期化と再読み込みでも返す", () => {
+  const transcript = new ConversationTranscript(path());
+  const note = { kind: "tell", id: "tell_1", agent: "codex", body: "**発見**\n方針", at } as const;
+  transcript.seed([{ type: "event", seq: 1, event: note }]);
+  transcript.append({ ...note, id: "tell_2" });
+  expect(new ConversationTranscript(transcript.filePath).page().entries).toEqual([
+    { at, kind: "tell", id: "tell_1", from: "codex", to: "human", body: note.body },
+    { at, kind: "tell", id: "tell_2", from: "codex", to: "human", body: note.body },
+  ]);
+});
+
 it("UTC の時刻を端末の時間帯のオフセット付き ISO 8601 にする", () => {
   expect(toLocalIso("2026-10-09T00:30:12.874Z", -540)).toBe("2026-10-09T09:30:12+09:00");
   expect(toLocalIso("2026-10-09T00:30:12.874Z", 300)).toBe("2026-10-08T19:30:12-05:00");

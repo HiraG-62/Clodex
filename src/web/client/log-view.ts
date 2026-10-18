@@ -73,6 +73,8 @@ export function createLogView(ctx: ClientContext) {
       }
       case "question":
         return ctx.renderQuestion(item);
+      case "tell":
+        return ctx.renderTell(item);
       case "turn":
         return ctx.renderTurn(item);
       case "message":

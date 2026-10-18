@@ -40,6 +40,30 @@ const labels = {
   parallel: "並列",
 };
 
+it("tell の本文を添付順でターンに出し、単独なら Agent の発言にする", () => {
+  const tell: Extract<TimelineItem, { kind: "tell" }> = { kind: "tell", id: "tell_1", agent: "codex", at: "now", body: "**発見**\n本文" };
+  const turn: Extract<TimelineItem, { kind: "turn" }> = {
+    kind: "turn",
+    id: "t",
+    agent: "codex",
+    at: "now",
+    status: "completed",
+    steps: [],
+    text: "最終応答",
+    tells: [tell, { ...tell, id: "tell_2", body: "判断" }],
+    questions: [{ kind: "question", id: "q1", agent: "codex", at: "now", questions: [{ question: "方針", options: [{ label: "A" }, { label: "B" }] }] }],
+    attachmentOrder: [
+      { kind: "tell", id: "tell_2" },
+      { kind: "question", id: "q1" },
+      { kind: "tell", id: "tell_1" },
+    ],
+  };
+  const card = formatTimelineItem(turn, labels, true);
+  expect(card.body).toBe("判断\n\n方針\n1. A\n2. B\n\n**発見**\n本文");
+  expect(card.steps).toEqual(["最終応答"]);
+  expect(formatTimelineItem(tell, labels, false)).toMatchObject({ title: "Codex", body: tell.body });
+});
+
 it("証跡を折りたたみ、失敗と範囲外を警告色にする", () => {
   const item: TimelineItem = {
     kind: "message",

@@ -24,6 +24,7 @@ export function diffTurn(previous: Turn, next: Turn) {
       previous.steps.length > next.steps.length ||
       previous.messages !== next.messages ||
       previous.questions !== next.questions ||
+      previous.tells !== next.tells ||
       previous.attachmentOrder !== next.attachmentOrder ||
       previous.status !== "working" ||
       next.status !== "working",

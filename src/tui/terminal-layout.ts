@@ -46,7 +46,7 @@ export const advanceTerminalFeed = (state: TerminalFeed, feed: FeedItem, expande
       completed: state.completed.map(entry => ({ ...entry, item: applyFeedItem([entry.item], feed)[0] ?? entry.item })),
     };
   }
-  if (feed.event.kind === "question") {
+  if (feed.event.kind === "question" || feed.event.kind === "tell") {
     const question = feed.event;
     if (!state.timeline.some(item => item.kind === "turn" && item.agent === question.agent && item.status === "working")) {
       const last = state.completed.at(-1);
@@ -591,6 +591,7 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
     ]
       .filter(Boolean)
       .join("\n\n");
+  if (item.kind === "tell") return { kind: item.kind, color: agentColor(item.agent), title: agentName(item.agent), body: item.body };
   if (item.kind === "question")
     return {
       kind: item.kind,
@@ -602,8 +603,13 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
   if (item.kind === "turn") {
     const attachments = item.attachmentOrder?.flatMap(attached => {
       if (attached.kind === "message") return item.messages?.filter(entry => entry.message.id === attached.id).map(entry => messageBody(entry.message)) ?? [];
+      if (attached.kind === "tell") return item.tells?.filter(entry => entry.id === attached.id).map(entry => entry.body) ?? [];
       return item.questions?.filter(entry => entry.id === attached.id).map(questionBody) ?? [];
-    }) ?? [...(item.messages ?? []).map(entry => messageBody(entry.message)), ...(item.questions ?? []).map(questionBody)];
+    }) ?? [
+      ...(item.messages ?? []).map(entry => messageBody(entry.message)),
+      ...(item.questions ?? []).map(questionBody),
+      ...(item.tells ?? []).map(entry => entry.body),
+    ];
     const steps = [
       ...item.steps.map(step => (step.kind === "say" ? step.text : `${step.name}: ${step.input}`)),
       ...(attachments.length && item.text ? [item.text] : []),

@@ -59,7 +59,9 @@ export function collectArtifacts(items: readonly TimelineItem[]): Artifact[] {
         if (lastSay?.kind === "say") presented(lastSay.text, lastSay.at || item.finalAt || item.at);
       }
       for (const { message } of item.messages ?? []) addMessage(message, message.createdAt);
+      for (const tell of item.tells ?? []) presented(tell.body, tell.at);
     }
+    if (item.kind === "tell") presented(item.body, item.at);
     if (item.kind === "message") addMessage(item.message, item.at);
   }
   return [...found.values()].reverse().sort((a, b) => (a.group === b.group ? 0 : a.group === "presented" ? -1 : 1));

@@ -1,7 +1,31 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "../../protocol/messages.js";
 import { classifyDiffLine, collectArtifacts, displayPath, findImagePaths, splitImagePaths } from "./artifacts.js";
+import { hasNewShared } from "./shared-unread.js";
 import type { TimelineItem } from "./timeline.js";
+
+it.each([false, true])("tell の画像と資料を提示済み成果物と未読に含める: 添付=%s", attached => {
+  const tell: Extract<TimelineItem, { kind: "tell" }> = {
+    kind: "tell",
+    id: "tell_1",
+    agent: "codex",
+    at: "2",
+    body: "C:/artifacts/shot.png [資料](<C:/artifacts/report.md>)",
+  };
+  const items: TimelineItem[] = attached
+    ? [{ kind: "turn", id: "t", agent: "codex", at: "1", status: "completed", steps: [], text: "", tells: [tell] }]
+    : [tell];
+  const artifacts = collectArtifacts(items);
+  expect(artifacts).toHaveLength(2);
+  expect(artifacts).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: "C:/artifacts/shot.png", kind: "image", group: "presented", at: "2" }),
+      expect.objectContaining({ path: "C:/artifacts/report.md", kind: "referenced", group: "presented", at: "2" }),
+    ]),
+  );
+  expect(hasNewShared(artifacts, "1")).toBe(true);
+  expect(hasNewShared(artifacts, "2")).toBe(false);
+});
 
 const message = (files: string[], body: string): AgentMessage => ({
   id: "m",

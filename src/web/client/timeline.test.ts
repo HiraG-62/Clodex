@@ -58,6 +58,49 @@ const answer = (id = "q1", name: "claude" | "codex" = "claude"): Extract<FeedIte
 });
 const run = (items: FeedItem[]) => items.reduce<TimelineItem[]>(applyFeedItem, []);
 
+const tell = (id = "tell_1", name: "claude" | "codex" = "claude"): Extract<FeedItem, { type: "event" }> => ({
+  type: "event",
+  seq: ++seq,
+  event: { kind: "tell", id, agent: name, body: "人への発言", at: LATER },
+});
+
+it("tell はターンを区切って添付し、直前の発言を移さず最終応答を作業へ畳む", () => {
+  const items = run([
+    agent("claude", { type: "turn_started" }),
+    agent("claude", { type: "text", text: "方針" }),
+    agent("claude", { type: "text", text: "途中の作業" }),
+    tell(),
+  ]);
+  expect(items).toHaveLength(2);
+  expect(items[0]).toMatchObject({
+    kind: "turn",
+    segment: "closed",
+    status: "completed",
+    plan: "方針",
+    steps: [{ kind: "say", text: "途中の作業" }],
+    tells: [{ kind: "tell", id: "tell_1", body: "人への発言" }],
+    attachmentOrder: [{ kind: "tell", id: "tell_1" }],
+  });
+  expect(items[1]).toMatchObject({ kind: "turn", status: "working", continuation: true });
+  const completed = applyFeedItem(items, agent("claude", { type: "turn", result: { status: "completed", text: "完了" } }));
+  expect(completed).toHaveLength(1);
+  expect(completed[0]).toMatchObject({ text: "", steps: [{ text: "途中の作業" }, { text: "完了" }] });
+});
+
+it("tell は質問・message と添付順を保ち、ターンが無ければ独立した発言になる", () => {
+  expect(run([tell()])).toMatchObject([{ kind: "tell", agent: "claude", body: "人への発言" }]);
+  const items = run([agent("claude", { type: "turn_started" }), tell(), question(), formal("claude", "依頼"), tell("tell_2")]);
+  expect(items).toHaveLength(2);
+  expect(items[0]).toMatchObject({ attachmentOrder: [{ kind: "tell" }, { kind: "question" }, { kind: "message" }, { kind: "tell" }] });
+  expect(announcementKind(tell())).toBeUndefined();
+});
+
+it("ターン完了後の tell は同じ Agent の最後の枠に添付する", () => {
+  expect(run([agent("claude", { type: "turn", result: { status: "completed", text: "完了" } }), tell()])).toMatchObject([
+    { kind: "turn", tells: [{ id: "tell_1" }], attachmentOrder: [{ kind: "tell", id: "tell_1" }] },
+  ]);
+});
+
 it.each([false, true])("spec_check は既存カードを更新し、ログ行を増やさない: attached=%s", attached => {
   const message = formal("claude", "依頼");
   if (message.type !== "event" || message.event.kind !== "message") throw new Error("message");

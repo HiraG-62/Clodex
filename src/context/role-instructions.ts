@@ -1,5 +1,13 @@
 // Agent の起動時に system prompt へ追加する定型文と役割（DESIGN.md §13 Roles）
-import { AGENT_IDS, type AgentId, ASK_USER_TOOL, COORDINATOR_MCP_SERVER, READ_CONVERSATION_TOOL, SEND_MESSAGE_TOOL } from "../agents/agent-adapter.js";
+import {
+  AGENT_IDS,
+  type AgentId,
+  ASK_USER_TOOL,
+  COORDINATOR_MCP_SERVER,
+  READ_CONVERSATION_TOOL,
+  SEND_MESSAGE_TOOL,
+  TELL_USER_TOOL,
+} from "../agents/agent-adapter.js";
 import type { ClodexConfig, RolesConfig } from "../config/config.js";
 import { BODY_FORMAT } from "./context-resolver.js";
 import { type Language, languageDirective } from "./language.js";
@@ -52,6 +60,7 @@ const RESULT_NOTE = "After sending RESULT with send_message, keep your final rep
 const REWORK_NOTE = "To request rework of a task, send it with the same taskId and set rework (spec, impl or check); do not create a new taskId.";
 
 const ASK_USER_NOTE = `When you need a decision from the human, ask with the ${ASK_USER_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server instead of writing the question in your reply, then end your turn.`;
+const TELL_USER_NOTE = `While working, send anything the human should read before your turn ends (findings, decisions you made, risks, actions the human must take) with the ${TELL_USER_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server. Do not use it for routine progress notes. Do not repeat it in your final reply.`;
 const READ_CONVERSATION_NOTE = `Use the ${READ_CONVERSATION_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server when you need the message bodies from this conversation, including exchanges between the human and the other agent.`;
 
 const PLAN_NOTE = "When you receive a request, state in one or two sentences what you will do before you start working.";
@@ -70,7 +79,7 @@ const roleLines = (agent: AgentId, peer: AgentId, roles: RolesConfig | undefined
 
 // 証跡の画像は project の外に置かせ、Web UI の成果物に出す（DESIGN.md §28 v0.3 B）
 const artifactsNote = (dir: string) =>
-  `To show the human an image, save it under ${dir} and write its full path in your final reply or in an ask_user question, ` +
+  `To show the human an image, save it under ${dir} and write its full path in your final reply, a tell_user note or an ask_user question, ` +
   "either as the plain path or as a Markdown link [name](<full path>). It is shown as a preview. Paths in intermediate progress notes are not shown. " +
   "Put any file you want the human to see in your final reply as [name](<full path>). It appears under Shared.";
 
@@ -92,7 +101,7 @@ export const buildRoleInstructions = (
   if (brainstorm)
     return [
       header(agent, peer),
-      `You and ${peer} are brainstorming together. Offer concrete ideas in bullet points. Read code and documents if useful, but do not edit files. Do not use send_message or ask_user.`,
+      `You and ${peer} are brainstorming together. Offer concrete ideas in bullet points. Read code and documents if useful, but do not edit files. Do not use send_message, ask_user or tell_user.`,
       ...(language ? [languageDirective(language)] : []),
     ].join("\n");
   return [
@@ -110,6 +119,7 @@ export const buildRoleInstructions = (
     PERMISSION_NOTE,
     PLAN_NOTE,
     ASK_USER_NOTE,
+    TELL_USER_NOTE,
     READ_CONVERSATION_NOTE,
     SPEC_NOTE,
     BODY_FORMAT,

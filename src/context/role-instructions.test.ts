@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { buildRoleInstructions } from "./role-instructions.js";
 
+it.each(["claude", "codex"] as const)("%s に tell_user の使い分けを伝え、ブレストでは省く", agent => {
+  const note =
+    'While working, send anything the human should read before your turn ends (findings, decisions you made, risks, actions the human must take) with the tell_user tool of the "clodex" MCP server. Do not use it for routine progress notes. Do not repeat it in your final reply.';
+  expect(buildRoleInstructions(agent, undefined)).toContain(note);
+  expect(buildRoleInstructions(agent, undefined, { brainstorm: true })).not.toContain(note);
+});
+
 describe("buildRoleInstructions", () => {
   it("再依頼では同じ taskId と rework を使う", () => {
     expect(buildRoleInstructions("codex", undefined)).toContain(
@@ -18,7 +25,7 @@ describe("buildRoleInstructions", () => {
     const text = buildRoleInstructions("codex", { codex: "実装", claude: "設計" }, { brainstorm: true, language: "ja" });
     expect(text).toContain("brainstorming together");
     expect(text).toContain("do not edit files");
-    expect(text).toContain("Do not use send_message or ask_user");
+    expect(text).toContain("Do not use send_message, ask_user or tell_user");
     expect(text).not.toContain("Your role:");
   });
   it("自分と相手の役割と、相手の役割の作業は send_message で依頼することを伝える", () => {
@@ -75,7 +82,7 @@ describe("buildRoleInstructions の方針と言語", () => {
     expect(text).toContain("save it under C:\\home\\.clodex\\artifacts\\p");
     expect(text).toContain("[name](<full path>)");
     expect(text).toContain("It appears under Shared.");
-    expect(text).toContain("final reply or in an ask_user question");
+    expect(text).toContain("final reply, a tell_user note or an ask_user question");
     expect(text).toContain("plain path or as a Markdown link [name](<full path>)");
     expect(text).toContain("Paths in intermediate progress notes are not shown.");
   });

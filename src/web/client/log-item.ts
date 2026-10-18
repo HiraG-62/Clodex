@@ -242,7 +242,8 @@ export function createLogItem(ctx: ClientContext) {
     if (item.plan) {
       node.append(renderPlan(item));
     }
-    const finalStep = (item.messages?.length || item.questions?.length) && item.text ? [{ kind: "say" as const, text: item.text, at: item.at }] : [];
+    const finalStep =
+      (item.messages?.length || item.questions?.length || item.tells?.length) && item.text ? [{ kind: "say" as const, text: item.text, at: item.at }] : [];
     const steps = [...item.steps, ...finalStep];
     if (steps.length) {
       const list = ctx.el("ol");
@@ -250,16 +251,20 @@ export function createLogItem(ctx: ClientContext) {
       node.append(details(item.id, ctx.t("web.turn.steps", { count: steps.length }), list, "steps"));
     }
     if (item.status === "working" && item.segment !== "closed") node.append(nowLine(item));
-    if (item.messages?.length || item.questions?.length) {
+    if (item.messages?.length || item.questions?.length || item.tells?.length) {
       const body = ctx.el("div", "body");
       const order = item.attachmentOrder ?? [
         ...(item.messages ?? []).map(entry => ({ kind: "message" as const, id: entry.message.id })),
         ...(item.questions ?? []).map(entry => ({ kind: "question" as const, id: entry.id })),
+        ...(item.tells ?? []).map(entry => ({ kind: "tell" as const, id: entry.id })),
       ];
       for (const attached of order) {
         if (attached.kind === "message") {
           const entry = item.messages?.find(message => message.message.id === attached.id);
           if (entry) body.append(renderMessage({ ...entry, id: entry.message.id, at: entry.message.createdAt }));
+        } else if (attached.kind === "tell") {
+          const entry = item.tells?.find(tell => tell.id === attached.id);
+          if (entry) body.append(renderTell(entry, true));
         } else {
           const entry = item.questions?.find(question => question.id === attached.id);
           if (entry) {
@@ -416,5 +421,18 @@ export function createLogItem(ctx: ClientContext) {
     appendImagePreviews(node, previewText, item.at);
     return node;
   };
-  return { appendImagePreviews, elapsedText, renderQuestion, renderTurn, renderMessage, updateTurn };
+  const renderTell = (item: Extract<TimelineItem, { kind: "tell" }>, embedded = false): HTMLElement => {
+    const node = ctx.el(embedded ? "div" : "article", embedded ? "" : "entry");
+    if (!embedded) {
+      const head = ctx.el("div", "head");
+      head.append(ctx.el("b", `c-${item.agent}`, ctx.AGENTS[item.agent].name), ctx.el("time", "mono", ctx.clock(item.at)));
+      node.append(ctx.mark(item.agent), head);
+    }
+    const body = ctx.el("div", embedded ? "md" : "body md");
+    body.innerHTML = renderMarkdown(item.body);
+    node.append(body);
+    appendImagePreviews(node, item.body, item.at);
+    return node;
+  };
+  return { appendImagePreviews, elapsedText, renderQuestion, renderTell, renderTurn, renderMessage, updateTurn };
 }

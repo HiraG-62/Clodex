@@ -34,6 +34,23 @@ const setup = (projectRoot = PROJECT_ROOT, knownInputIds: readonly string[] = []
 
 const reviewRequest = { to: "codex", type: "REVIEW_REQUEST", taskId: "T-1", body: "review please", files: ["a.ts"] };
 
+it("tellUser は本文を publish し、復旧状態と Agent の作業を変えない", () => {
+  const { coordinator, events, codex } = setup();
+  const recoveryChanged = vi.fn();
+  coordinator.onRecoveryChange(recoveryChanged);
+  const before = coordinator.recoveryState();
+  const result = coordinator.tellUser("codex", { body: "**発見**\n修正方針" });
+  expect(result).toEqual({ ok: true, id: expect.stringMatching(/^tell_/) });
+  if (!result.ok) throw new Error(result.error);
+  expect(events).toEqual([{ kind: "tell", id: result.id, agent: "codex", body: "**発見**\n修正方針", at: NOW }]);
+  expect(coordinator.recoveryState()).toEqual(before);
+  expect(recoveryChanged).not.toHaveBeenCalled();
+  expect(codex.sent).toEqual([]);
+  for (const body of ["", " \n\t", "x".repeat(MAX_BODY_LENGTH + 1)]) expect(coordinator.tellUser("codex", { body }).ok).toBe(false);
+  expect(events).toHaveLength(1);
+  expect(coordinator.tellUser("claude", { body: "x".repeat(MAX_BODY_LENGTH) }).ok).toBe(true);
+});
+
 describe("依頼の effort", () => {
   it.each(["DELEGATE", "REVIEW_REQUEST"])("%s の配送時に effort を渡し、人の入力には持ち越さない", async type => {
     const { coordinator, codex, events } = setup();

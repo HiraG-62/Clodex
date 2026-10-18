@@ -4,6 +4,61 @@ import { t } from "../../i18n/i18n.js";
 import { createLogItem, splitReferenceFiles } from "./log-item.js";
 import type { ClientContext } from "./store.js";
 
+it.each([false, true])("tell を省略しない Markdown と画像プレビューで表示する: 添付=%s", embedded => {
+  interface TestNode {
+    tag: string;
+    className: string;
+    textContent: string;
+    innerHTML: string;
+    dataset: Record<string, string>;
+    children: TestNode[];
+    append: (...children: TestNode[]) => void;
+    addEventListener: () => void;
+  }
+  const created: TestNode[] = [];
+  const el = (tag: string, className = "", textContent = ""): TestNode => {
+    const node: TestNode = {
+      tag,
+      className,
+      textContent,
+      innerHTML: "",
+      dataset: {},
+      children: [],
+      append: (...children) => node.children.push(...children),
+      addEventListener: () => {},
+    };
+    created.push(node);
+    return node;
+  };
+  vi.stubGlobal("document", { addEventListener: () => {}, createElement: el, createTreeWalker: () => ({ nextNode: () => false }) });
+  vi.stubGlobal("NodeFilter", { SHOW_TEXT: 4 });
+  try {
+    const ctx = {
+      el,
+      mark: () => el("span", "mark"),
+      clock: () => "12:00",
+      t,
+      AGENTS: { codex: { name: "Codex" } },
+      TURN_LABEL: {},
+      store: { opened: new Map() },
+      fileUrl: () => "/preview",
+    } as unknown as ClientContext;
+    const renderer = createLogItem(ctx);
+    const body = `**発見**\n${"長い本文".repeat(200)}\nC:/artifacts/shot.png`;
+    const tell = { kind: "tell" as const, id: "tell_1", agent: "codex" as const, at: "now", body };
+    const node = embedded
+      ? renderer.renderTurn({ kind: "turn", id: "t", at: "now", agent: "codex", status: "completed", steps: [], text: "", tells: [tell] })
+      : renderer.renderTell(tell);
+    expect(node).toBeDefined();
+    expect(created.some(entry => entry.innerHTML.includes("<strong>発見</strong>") && entry.innerHTML.includes("長い本文".repeat(200)))).toBe(true);
+    expect(created.filter(entry => entry.className === "mark")).toHaveLength(1);
+    expect(created.some(entry => entry.className === "image-preview" && entry.dataset.path === "C:/artifacts/shot.png")).toBe(true);
+    expect(created.some(entry => ["handoff", "question-card", "route"].includes(entry.className))).toBe(false);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it.each([false, true])("証跡の場所・差分と設計書検査を表示する: 空=%s", empty => {
   const created: Array<{ tag: string; className: string; textContent: string }> = [];
   const el = (tag: string, className = "", textContent = "") => {

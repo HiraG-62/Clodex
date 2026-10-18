@@ -10,6 +10,7 @@ export { isCanceledHistoryItem, withoutCanceledHistoryItem } from "../web-feed.j
 export type TimelineStep = { kind: "say"; text: string; at: string } | { kind: "tool"; name: string; input: string; files?: string[] };
 
 export type TimelineItem =
+  | { kind: "tell"; id: string; at: string; agent: AgentId; body: string }
   | { kind: "question"; id: string; at: string; agent: AgentId; questions: UserQuestion[]; context?: string; answers?: string[][] }
   | {
       kind: "human";
@@ -41,7 +42,8 @@ export type TimelineItem =
       planAt?: string;
       messages?: Array<{ message: AgentMessage; envelope?: string }>;
       questions?: Array<Extract<TimelineItem, { kind: "question" }>>;
-      attachmentOrder?: Array<{ kind: "message" | "question"; id: string }>;
+      tells?: Array<Extract<TimelineItem, { kind: "tell" }>>;
+      attachmentOrder?: Array<{ kind: "message" | "question" | "tell"; id: string }>;
     }
   | { kind: "message"; id: string; at: string; message: AgentMessage; envelope?: string }
   | { kind: "notice"; id: string; at: string; text: string; compactAgent?: AgentId }
@@ -114,20 +116,31 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   const limit = (list: TimelineItem[]) => (list.length > MAX_ITEMS ? list.slice(list.length - MAX_ITEMS) : list);
   type Turn = Extract<TimelineItem, { kind: "turn" }>;
   type Question = Extract<TimelineItem, { kind: "question" }>;
-  type Attachment = { kind: "message"; entry: { message: AgentMessage; envelope?: string } } | { kind: "question"; entry: Question };
-  const hasAttachments = (turn: Turn) => Boolean(turn.messages?.length || turn.questions?.length);
-  const appendAttachment = (turn: Turn, attachment: Attachment): Turn =>
-    attachment.kind === "message"
-      ? {
-          ...turn,
-          messages: [...(turn.messages ?? []), attachment.entry],
-          attachmentOrder: [...(turn.attachmentOrder ?? []), { kind: "message", id: attachment.entry.message.id }],
-        }
-      : {
-          ...turn,
-          questions: [...(turn.questions ?? []), attachment.entry],
-          attachmentOrder: [...(turn.attachmentOrder ?? []), { kind: "question", id: attachment.entry.id }],
-        };
+  type Tell = Extract<TimelineItem, { kind: "tell" }>;
+  type Attachment =
+    | { kind: "message"; entry: { message: AgentMessage; envelope?: string } }
+    | { kind: "question"; entry: Question }
+    | { kind: "tell"; entry: Tell };
+  const hasAttachments = (turn: Turn) => Boolean(turn.messages?.length || turn.questions?.length || turn.tells?.length);
+  const appendAttachment = (turn: Turn, attachment: Attachment): Turn => {
+    if (attachment.kind === "message")
+      return {
+        ...turn,
+        messages: [...(turn.messages ?? []), attachment.entry],
+        attachmentOrder: [...(turn.attachmentOrder ?? []), { kind: "message", id: attachment.entry.message.id }],
+      };
+    if (attachment.kind === "tell")
+      return {
+        ...turn,
+        tells: [...(turn.tells ?? []), attachment.entry],
+        attachmentOrder: [...(turn.attachmentOrder ?? []), { kind: "tell", id: attachment.entry.id }],
+      };
+    return {
+      ...turn,
+      questions: [...(turn.questions ?? []), attachment.entry],
+      attachmentOrder: [...(turn.attachmentOrder ?? []), { kind: "question", id: attachment.entry.id }],
+    };
+  };
   const attachToTurn = (index: number, attachment: Attachment, at: string, split: boolean): TimelineItem[] => {
     const turn = items[index];
     if (turn?.kind !== "turn") return items;
@@ -192,6 +205,13 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
 
   const id = `e${item.seq}`;
   const { event } = item;
+  if (event.kind === "tell") {
+    let index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === event.agent && entry.status === "working" && entry.segment !== "closed");
+    const last = items.at(-1);
+    if (index < 0 && last?.kind === "turn" && last.agent === event.agent && last.status === "completed") index = items.length - 1;
+    const tell: Tell = { kind: "tell", id: event.id, agent: event.agent, at: event.at, body: event.body };
+    return index < 0 ? limit([...items, tell]) : attachToTurn(index, { kind: "tell", entry: tell }, event.at, true);
+  }
   if (event.kind === "question") {
     let index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === event.agent && entry.status === "working" && entry.segment !== "closed");
     const last = items.at(-1);

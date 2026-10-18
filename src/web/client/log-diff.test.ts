@@ -14,6 +14,11 @@ const turn = (changes: Partial<Extract<TimelineItem, { kind: "turn" }>> = {}): E
 });
 
 describe("diffTurn", () => {
+  it("tell の追加では枠を再描画する", () => {
+    const previous = turn();
+    const next = { ...previous, tells: [{ kind: "tell" as const, id: "tell_1", agent: "claude" as const, at: "now", body: "発見" }] };
+    expect(diffTurn(previous, next).replace).toBe(true);
+  });
   it("追加ステップと変更ステップだけを返す", () => {
     const previous = turn({
       steps: [
