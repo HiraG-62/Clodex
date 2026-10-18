@@ -9,6 +9,7 @@ export default defineConfig({
   test: {
     fileParallelism: !runE2e,
     testTimeout: TEST_TIMEOUT_MS,
+    globalSetup: ["./vitest.global-setup.ts"],
     // spikes/ は CLI や OS の挙動を実測したときのテスト。製品のコードを確かめないので、pnpm test では実行しない
     projects: [
       { extends: true, test: { name: "unit", include: ["src/**/*.test.ts", "scripts/**/*.test.ts"] } },
