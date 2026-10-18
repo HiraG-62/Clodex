@@ -9,6 +9,11 @@ it.each(["claude", "codex"] as const)("%s に tell_user の使い分けを伝え
 });
 
 describe("buildRoleInstructions", () => {
+  it.each(["claude", "codex"] as const)("%s に人へ示すコマンドを PowerShell で書かせる", agent => {
+    expect(buildRoleInstructions(agent, undefined)).toContain(
+      "When you show the human a command to run, write it for PowerShell, even if your own shell is bash.",
+    );
+  });
   it("再依頼では同じ taskId と rework を使う", () => {
     expect(buildRoleInstructions("codex", undefined)).toContain(
       "To request rework of a task, send it with the same taskId and set rework (spec, impl or check); do not create a new taskId.",

@@ -58,6 +58,8 @@ const QUESTION_NOTE =
   'Write a QUESTION body in three lines: "Decide:" (what you need decided), "Blocked:" (work waiting for the answer), "Continuing:" (work you continue meanwhile). Stop work that depends on the answer.';
 const RESULT_NOTE = "After sending RESULT with send_message, keep your final reply to one line.";
 const REWORK_NOTE = "To request rework of a task, send it with the same taskId and set rework (spec, impl or check); do not create a new taskId.";
+// 人の terminal は PowerShell（DESIGN.md §13 定型文の作法）
+const COMMAND_SHELL_NOTE = "When you show the human a command to run, write it for PowerShell, even if your own shell is bash.";
 
 const ASK_USER_NOTE = `When you need a decision from the human, ask with the ${ASK_USER_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server instead of writing the question in your reply, then end your turn.`;
 const TELL_USER_NOTE = `While working, send anything the human should read before your turn ends (findings, decisions you made, risks, actions the human must take) with the ${TELL_USER_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server. Do not use it for routine progress notes. Do not repeat it in your final reply.`;
@@ -126,6 +128,7 @@ export const buildRoleInstructions = (
     QUESTION_NOTE,
     RESULT_NOTE,
     REWORK_NOTE,
+    COMMAND_SHELL_NOTE,
     INTERRUPT_NOTE,
     FRESH_NOTE,
     PARALLEL_NOTE,
