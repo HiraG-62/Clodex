@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync, readlinkSync } from "node:fs";
+import { lstatSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, matchesGlob, relative, resolve } from "node:path";
 import type { AgentEvent, AgentId } from "../agents/agent-adapter.js";
 import type { ClodexConfig } from "../config/config.js";
@@ -50,14 +50,26 @@ const patterns = (spec: string, heading: string | undefined): string[] => {
     );
 };
 
+// git の --show-toplevel と比べるので、8.3 の短い名前を長い名前にそろえる
+const canonicalRoot = (root: string): string => {
+  try {
+    return realpathSync.native(root);
+  } catch {
+    return resolve(root);
+  }
+};
+
 export class WorkBaselines {
   private readonly baselines = new Map<string, Baseline>();
   private readonly roots = new Map<string, string>();
   private readonly delivered = new Set<string>();
+  private readonly root: string;
   constructor(
-    private readonly root: string,
+    root: string,
     private readonly config: Pick<ClodexConfig, "verify" | "specSections"> = {},
-  ) {}
+  ) {
+    this.root = canonicalRoot(root);
+  }
 
   private git(root: string, ...args: string[]): Buffer {
     return execFileSync("git", safeGitArgs(args), { cwd: root, timeout: GIT_TIMEOUT_MS, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });

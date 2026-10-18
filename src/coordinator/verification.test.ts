@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -12,7 +12,7 @@ import * as specCheck from "./spec-check.js";
 const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 const request = { to: "codex", type: "DELEGATE", taskId: "T", body: "実装", spec: "spec.md" };
 const setup = (check?: string) => {
-  const root = mkdtempSync(join(tmpdir(), "clodex-verify-"));
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "clodex-verify-")));
   execFileSync("git", ["init"], { cwd: root, stdio: "pipe" });
   execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--allow-empty", "-m", "初期化"], { cwd: root, stdio: "pipe" });
   writeFileSync(join(root, "spec.md"), "## 対象\n- `*.txt`\n");

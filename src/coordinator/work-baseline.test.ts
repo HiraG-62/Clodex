@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -18,24 +18,25 @@ const request: AgentMessage = {
   spec: "spec.md",
 };
 const setup = () => {
-  const root = mkdtempSync(join(tmpdir(), "clodex-baseline-"));
+  const raw = mkdtempSync(join(tmpdir(), "clodex-baseline-"));
+  const root = realpathSync.native(raw);
   const git = (...args: string[]) => execFileSync("git", args, { cwd: root, stdio: "pipe" });
   git("init");
   mkdirSync(join(root, "src"));
   for (const path of ["dirty.txt", "removed.txt", "renamed.txt", "src/a.ts"]) writeFileSync(join(root, path), "base");
   git("add", ".");
   git("-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-m", "初期化");
-  return { root, git, write: (path: string, content = "changed") => writeFileSync(join(root, path), content) };
+  return { raw, root, git, write: (path: string, content = "changed") => writeFileSync(join(root, path), content) };
 };
 
 describe("依頼の基準点", () => {
   it("本体の中の ignored worktree を依頼ごとに選び、範囲と peer を相対化する", () => {
-    const { root, git, write } = setup();
+    const { raw, root, git, write } = setup();
     write(".gitignore", ".claude/\n");
     const worktree = join(root, ".claude", "worktrees", "task");
     git("worktree", "add", "--detach", worktree);
     writeFileSync(join(worktree, "spec.md"), "## 対象\n- `src/**`\n");
-    const baselines = new WorkBaselines(root, { specSections: { owned: "対象" } });
+    const baselines = new WorkBaselines(raw, { specSections: { owned: "対象" } });
     baselines.start({ ...request, spec: ".claude/worktrees/task/spec.md" }, "## 対象\n- `src/**`\n");
     baselines.start({ ...request, id: "main", spec: undefined });
     baselines.recordPeerFiles("claude", [".claude/worktrees/task/src/a.ts", join(root, "src", "other.ts")]);
@@ -141,7 +142,7 @@ describe("依頼の基準点", () => {
   });
 
   it("基準点がない・git の外なら証跡を付けない", () => {
-    const root = mkdtempSync(join(tmpdir(), "clodex-no-git-"));
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "clodex-no-git-")));
     const baselines = new WorkBaselines(root);
     baselines.start(request);
     expect(baselines.finish("r")).toBeUndefined();
