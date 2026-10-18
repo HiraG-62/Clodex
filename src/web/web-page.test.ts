@@ -12,6 +12,16 @@ import { buildWebPage, ICON_SVG, MANIFEST } from "./web-page.js";
 const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(match => match[1] ?? "");
 
 describe("buildWebPage", () => {
+  it("添付一覧を枠内の本文より上に置き、独立したアップロードチップを出さない", () => {
+    const html = buildWebPage("ja").html;
+    const box = html.slice(html.indexOf('<div class="box">'), html.indexOf('<div class="bar">'));
+    expect(box).toContain('id="composer-attachments" hidden');
+    expect(box.indexOf('id="suggest"')).toBeLessThan(box.indexOf('id="composer-attachments"'));
+    expect(box.indexOf('id="composer-attachments"')).toBeLessThan(box.indexOf('class="input-wrap"'));
+    expect(html).not.toContain("upload-status");
+    expect(html).not.toContain("web.upload.loading");
+    expect(html).toContain(".box > .composer-attachments { grid-column: 1 / -1; grid-row: 3; }");
+  });
   it("資料のボタンを成果物の前に置く", () => {
     const html = buildWebPage("ja").html;
     expect(html).toContain('id="open-shared"');

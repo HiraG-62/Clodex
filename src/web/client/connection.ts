@@ -145,7 +145,10 @@ export function createConnection(ctx: ClientContext) {
           if (ctx.store.currentDraftKey) ctx.saveDraft(ctx.store.currentDraftKey, ctx.input.value);
           ctx.store.currentDraftKey = nextDraftKey;
           ctx.input.value = nextDraftKey ? (ctx.storage.get(nextDraftKey) ?? "") : "";
+          ctx.restoreAttachments();
           ctx.onInputChanged();
+        } else if (projectChanged || conversationChanged) {
+          ctx.restoreAttachments();
         }
         if (projectRoot) {
           for (const key of staleDraftKeys(

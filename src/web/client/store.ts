@@ -201,6 +201,7 @@ export interface ClientContext extends ClientDeps {
   HISTORY_THRESHOLD_PX: 200;
   RELOAD_DELAY_MS: 350;
   saveDraft: (key: string, value: string) => void;
+  restoreAttachments: () => void;
   loadFiles: () => Promise<void>;
   runGuiCommand: (action: GuiAction) => Promise<undefined>;
   announcements: HTMLElement;

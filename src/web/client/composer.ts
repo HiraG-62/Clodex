@@ -1,6 +1,7 @@
 import type { AgentId } from "../../agents/agent-adapter.js";
 import type { HistoryPage } from "../web-feed.js";
 import { composeInputLine } from "./compose-input.js";
+import { canSubmitAttachments, composeAttachmentText, createComposerAttachments } from "./composer-attachments.js";
 import type { Suggestion } from "./input-assist.js";
 import { createInputAssist } from "./input-assist.js";
 import { isSendKey } from "./send-key.js";
@@ -25,15 +26,18 @@ export function createComposer(ctx: ClientContext) {
   };
   // 送信に成功してから入力欄を空にする（失敗しても書いた内容を失わない）
   const sendButton = ctx.$("#composer .send") as HTMLButtonElement;
+  const attachments = createComposerAttachments(ctx);
   const submit = async () => {
     const text = ctx.input.value.trim();
-    if (!text || sendButton.disabled || ctx.store.uploading > 0) return;
+    const paths = attachments.paths();
+    if (sendButton.disabled || !canSubmitAttachments(text, paths, ctx.store.uploading)) return;
     const submittedDraftKey = ctx.store.currentDraftKey;
     const to = ctx.store.target ?? ctx.store.state?.primary;
-    const sent = await ctx.send(composeInputLine(text, to), sendButton);
+    const sent = await ctx.send(composeInputLine(composeAttachmentText(text, paths), to), sendButton);
     sendButton.disabled = ctx.store.uploading > 0;
     if (!sent) return;
     if (submittedDraftKey) ctx.storage.remove(submittedDraftKey);
+    if (!isShellInput(text)) attachments.clearSubmitted(paths, submittedDraftKey);
     if (ctx.store.currentDraftKey === submittedDraftKey && ctx.input.value.trim() === text) ctx.input.value = "";
     onInputChanged();
     ctx.scrollToBottom();
@@ -187,45 +191,17 @@ export function createComposer(ctx: ClientContext) {
     if (/(?:^|\s)@/.test(ctx.input.value)) void loadFiles();
   }
 
-  // ---- 画像の添付（DESIGN.md §28 v0.3 C）: 保存してから @<パス> を入力欄に足す ----
-  const insertAtCaret = (text: string) => {
-    const start = ctx.input.selectionStart;
-    const before = ctx.input.value.slice(0, start);
-    const spacer = before && !/\s$/.test(before) ? " " : "";
-    ctx.input.value = `${before}${spacer}${text}${ctx.input.value.slice(ctx.input.selectionEnd)}`;
-    const caret = before.length + spacer.length + text.length;
-    ctx.input.setSelectionRange(caret, caret);
-    onInputChanged();
-  };
-  const attach = async (file: Blob) => {
-    const generation = ctx.store.liveGeneration;
-    ctx.store.uploading++;
-    ctx.$("#upload-status").hidden = false;
-    sendButton.disabled = true;
-    try {
-      const response = await fetch("/api/upload", { method: "POST", headers: { "content-type": file.type }, body: file });
-      if (!response.ok) return ctx.showToast(ctx.t("web.upload.failed"));
-      const { path } = (await response.json()) as { path: string };
-      if (generation === ctx.store.liveGeneration) insertAtCaret(`@${path} `);
-    } catch {
-      ctx.showToast(ctx.t("web.upload.failed"));
-    } finally {
-      ctx.store.uploading--;
-      ctx.$("#upload-status").hidden = ctx.store.uploading === 0;
-      sendButton.disabled = ctx.store.uploading > 0 || sendButton.classList.contains("is-loading");
-    }
-  };
   const fileInput = document.querySelector<HTMLInputElement>("#attach-file")!;
   ctx.$("#attach").addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", () => {
-    for (const file of fileInput.files ?? []) void attach(file);
+    for (const file of fileInput.files ?? []) void attachments.attach(file);
     fileInput.value = "";
   });
   ctx.input.addEventListener("paste", e => {
     const images = [...(e.clipboardData?.files ?? [])].filter(file => file.type.startsWith("image/"));
     if (!images.length) return;
     e.preventDefault();
-    for (const image of images) void attach(image);
+    for (const image of images) void attachments.attach(image);
   });
 
   ctx.input.addEventListener("input", onInputChanged);
@@ -313,5 +289,5 @@ export function createComposer(ctx: ClientContext) {
     ctx.syncNewer();
     if (ctx.log.scrollTop <= ctx.HISTORY_THRESHOLD_PX) void loadHistory();
   });
-  return { syncTargetButtons, onInputChanged, saveDraft, loadFiles };
+  return { syncTargetButtons, onInputChanged, saveDraft, loadFiles, restoreAttachments: attachments.restoreAttachments };
 }

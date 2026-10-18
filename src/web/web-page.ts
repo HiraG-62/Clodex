@@ -58,10 +58,10 @@ ${UI_ICONS}
   </div>
   <form class="composer" id="composer">
     <section class="question-dock" id="question-dock" aria-label="${m("web.question.title")}" hidden></section>
-    <div class="upload-status" id="upload-status" role="status" hidden><span class="spin"></span>${m("web.upload.loading")}</div>
     <div class="box">
       <ul class="pending" id="pending" aria-label="${m("web.pending.label")}" hidden></ul>
       <ul class="suggest" id="suggest" role="listbox" aria-label="${m("web.suggest.label")}" hidden></ul>
+      <div class="composer-attachments" id="composer-attachments" hidden></div>
       ${button("target-toggle", "refresh", "web.to.label", "mobile-only to-mark")}
       <div class="input-wrap">
         <div class="input-highlight" id="input-highlight" aria-hidden="true"></div>
