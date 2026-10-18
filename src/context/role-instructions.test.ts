@@ -1,6 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { buildRoleInstructions } from "./role-instructions.js";
 
+it.each(["claude", "codex"] as const)("%s に index を変更できる役割を伝え、ブレストでは省く", agent => {
+  const note =
+    "Only the agent that commits changes the git index (git add, git rm, git mv, git stash). Otherwise delete or move files with normal file operations.";
+  for (const roles of [undefined, { claude: "設計", codex: "実装" }]) {
+    expect(buildRoleInstructions(agent, roles)).toContain(note);
+    expect(buildRoleInstructions(agent, roles, { brainstorm: true })).not.toContain(note);
+  }
+});
+
+it.each([{ owned: "所有", forbidden: "禁止" }, { owned: "所有" }, { forbidden: "禁止" }])("設定した範囲の節だけ書き方を伝える: %j", specSections => {
+  const text = buildRoleInstructions("codex", undefined, { specSections });
+  expect(text).toContain("backticked paths or globs in bullet items define the scope. Write exceptions as `!glob`.");
+  for (const heading of Object.values(specSections)) expect(text).toContain(`"${heading}"`);
+  expect(text).not.toContain("undefined");
+  expect(buildRoleInstructions("codex", undefined, { specSections, brainstorm: true })).not.toContain("Write exceptions");
+});
+
+it("範囲の節の設定がなければ書き方を追加しない", () => {
+  expect(buildRoleInstructions("codex", undefined)).not.toContain("Write exceptions");
+  expect(buildRoleInstructions("codex", undefined, { specSections: {} })).not.toContain("Write exceptions");
+});
+
 it.each(["claude", "codex"] as const)("%s に tell_user の使い分けを伝え、ブレストでは省く", agent => {
   const note =
     'Your intermediate text is collapsed in the UI, so the human usually does not read it. Call the tell_user tool of the "clodex" MCP server in a few lines whenever you: find a root cause, change your plan, make a judgment call on your own, get a check or test result that matters, hit a risk or something the human must do, or are about to wait on a long command. Do this even when you will also report to the peer. Do not use it for routine progress notes. Do not repeat it in your final reply.';

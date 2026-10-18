@@ -60,6 +60,8 @@ const RESULT_NOTE = "After sending RESULT with send_message, keep your final rep
 const REWORK_NOTE = "To request rework of a task, send it with the same taskId and set rework (spec, impl or check); do not create a new taskId.";
 // 人の terminal は PowerShell（DESIGN.md §13 定型文の作法）
 const COMMAND_SHELL_NOTE = "When you show the human a command to run, write it for PowerShell, even if your own shell is bash.";
+const GIT_INDEX_NOTE =
+  "Only the agent that commits changes the git index (git add, git rm, git mv, git stash). Otherwise delete or move files with normal file operations.";
 
 const ASK_USER_NOTE = `When you need a decision from the human, ask with the ${ASK_USER_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server instead of writing the question in your reply, then end your turn.`;
 const TELL_USER_NOTE = `Your intermediate text is collapsed in the UI, so the human usually does not read it. Call the ${TELL_USER_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server in a few lines whenever you: find a root cause, change your plan, make a judgment call on your own, get a check or test result that matters, hit a risk or something the human must do, or are about to wait on a long command. Do this even when you will also report to the peer. Do not use it for routine progress notes. Do not repeat it in your final reply.`;
@@ -87,6 +89,7 @@ const artifactsNote = (dir: string) =>
 
 export interface RoleInstructionOptions {
   verify?: ClodexConfig["verify"];
+  specSections?: ClodexConfig["specSections"];
   rules?: string;
   language?: Language;
   artifactsDir?: string;
@@ -97,7 +100,7 @@ export interface RoleInstructionOptions {
 export const buildRoleInstructions = (
   agent: AgentId,
   roles: RolesConfig | undefined,
-  { language, artifactsDir, usageHints, brainstorm, rules, verify }: RoleInstructionOptions = {},
+  { language, artifactsDir, usageHints, brainstorm, rules, verify, specSections }: RoleInstructionOptions = {},
 ): string => {
   const peer = peerOf(agent);
   if (brainstorm)
@@ -106,6 +109,7 @@ export const buildRoleInstructions = (
       `You and ${peer} are brainstorming together. Offer concrete ideas in bullet points. Read code and documents if useful, but do not edit files. Do not use send_message, ask_user or tell_user.`,
       ...(language ? [languageDirective(language)] : []),
     ].join("\n");
+  const scopeHeadings = [specSections?.owned, specSections?.forbidden].filter(heading => heading !== undefined);
   return [
     header(agent, peer),
     ...roleLines(agent, peer, roles),
@@ -124,11 +128,17 @@ export const buildRoleInstructions = (
     TELL_USER_NOTE,
     READ_CONVERSATION_NOTE,
     SPEC_NOTE,
+    ...(scopeHeadings.length
+      ? [
+          `In the ${scopeHeadings.map(heading => `"${heading}"`).join(" and ")} ${scopeHeadings.length === 1 ? "section" : "sections"} of a spec, backticked paths or globs in bullet items define the scope. Write exceptions as \`!glob\`.`,
+        ]
+      : []),
     BODY_FORMAT,
     QUESTION_NOTE,
     RESULT_NOTE,
     REWORK_NOTE,
     COMMAND_SHELL_NOTE,
+    GIT_INDEX_NOTE,
     INTERRUPT_NOTE,
     FRESH_NOTE,
     PARALLEL_NOTE,

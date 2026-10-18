@@ -13,6 +13,10 @@ const GIT_TIMEOUT_MS = 10_000;
 const MAX_CHANGED_FILES = 100;
 const STATUS_PATH_OFFSET = 3;
 type CheckRecord = VerificationCheck & { toolId?: string };
+interface ScopePatterns {
+  included: string[];
+  excluded: string[];
+}
 interface Baseline {
   root: string;
   head: string;
@@ -22,7 +26,7 @@ interface Baseline {
   active: boolean;
   checks: CheckRecord[];
   peer: Set<string>;
-  scope?: { owned: string[]; forbidden: string[] };
+  scope?: { owned: ScopePatterns; forbidden: ScopePatterns };
 }
 
 const normalize = (path: string) => path.replaceAll("\\", "/").replace(/^\.\//, "");
@@ -38,17 +42,26 @@ const fileHash = (path: string): string | null => {
   }
 };
 
-const patterns = (spec: string, heading: string | undefined): string[] => {
-  if (heading === undefined) return [];
-  return splitSections(spec)
+const patterns = (spec: string, heading: string | undefined): ScopePatterns => {
+  const scope: ScopePatterns = { included: [], excluded: [] };
+  if (heading === undefined) return scope;
+  const lines = splitSections(spec)
     .filter(section => section.heading.replace(/^#{1,6}\s+/, "").startsWith(heading))
-    .flatMap(section =>
-      section.content
-        .split(/\r?\n/)
-        .filter(line => /^\s*[-*+]\s/.test(line))
-        .flatMap(line => [...line.matchAll(/`([^`]+)`/g)].map(match => normalize(match[1]!))),
-    );
+    .flatMap(section => section.content.split(/\r?\n/).filter(line => /^\s*[-*+]\s/.test(line)));
+  for (const line of lines) {
+    for (const match of line.matchAll(/`([^`]+)`(\s*以外)?/g)) {
+      const token = match[1]!;
+      if (token.startsWith("!")) scope.excluded.push(normalize(token.slice(1)));
+      else if (match[2]) scope.excluded.push(normalize(token));
+      else scope.included.push(normalize(token));
+    }
+  }
+  if (!scope.included.length && scope.excluded.length) scope.included.push("**");
+  return scope;
 };
+
+const matchesScope = (path: string, scope: ScopePatterns): boolean =>
+  scope.included.some(pattern => matchesGlob(path, pattern)) && !scope.excluded.some(pattern => matchesGlob(path, pattern));
 
 // git の --show-toplevel と比べるので、8.3 の短い名前を長い名前にそろえる
 const canonicalRoot = (root: string): string => {
@@ -201,9 +214,9 @@ export class WorkBaselines {
           path,
           ...(scope
             ? {
-                scope: scope.forbidden.some(pattern => matchesGlob(path, pattern))
+                scope: matchesScope(path, scope.forbidden)
                   ? ("forbidden" as const)
-                  : scope.owned.some(pattern => matchesGlob(path, pattern))
+                  : matchesScope(path, scope.owned)
                     ? ("owned" as const)
                     : ("outside" as const),
               }

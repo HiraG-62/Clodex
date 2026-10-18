@@ -582,7 +582,7 @@ export class Coordinator {
     )
       return this.forwardChildMessage(result);
     const mailbox = this.mailboxes[message.to];
-    if (message.parallel && (this.options.agents[message.to].status === "busy" || !mailbox.isIdle)) {
+    if (message.parallel && (message.worktree || this.options.agents[message.to].status === "busy" || !mailbox.isIdle)) {
       if (!this.options.startParallel) return { ok: false, error: "parallel: unavailable" };
       const budgetError = this.budget.preview(message, this.mailboxes[from].current);
       if (budgetError) return { ok: false, error: budgetError };

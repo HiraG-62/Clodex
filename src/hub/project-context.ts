@@ -250,6 +250,7 @@ export const openProject = async ({
         buildRoleInstructions(id, config.roles, {
           rules: config.rules?.[id],
           verify: config.verify,
+          specSections: config.specSections,
           brainstorm: conversation.mode === "brainstorm",
           language: typeof language === "function" ? language() : language,
           artifactsDir,

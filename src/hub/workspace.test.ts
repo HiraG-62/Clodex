@@ -195,6 +195,7 @@ describe("Workspace", () => {
   it("作業中でなければ parallel でも今の会話に配送する", async () => {
     const { workspace, history, created } = setup();
     await workspace.init();
+    const startParallel = vi.spyOn(workspace, "startParallel");
     const sent = await workspace.current.coordinator.receiveMessageFromTool("claude", {
       to: "codex",
       type: "DELEGATE",
@@ -205,10 +206,38 @@ describe("Workspace", () => {
     expect(sent).toMatchObject({ ok: true, message: { parallel: true } });
     if (sent.ok) expect(sent.message.thread).toBeUndefined();
     expect(history.list().filter(conversation => conversation.parent)).toHaveLength(0);
+    expect(startParallel).not.toHaveBeenCalled();
     await flush();
     expect(created).toHaveLength(1);
     expect(created[0]!.codex.sent[0]).toContain("通常配送");
     created[0]!.codex.completeTurn();
+  });
+
+  it("待機中でも parallel と worktree の指定があれば子の会話に配送する", async () => {
+    const { workspace, history, created } = setup();
+    await workspace.init();
+    const parent = created[0]!;
+    await parent.codex.start({ cwd: ROOT });
+    expect(parent.codex.status).toBe("idle");
+    const startParallel = vi.spyOn(workspace, "startParallel");
+    const sent = await parent.coordinator.receiveMessageFromTool("claude", {
+      to: "codex",
+      type: "DELEGATE",
+      taskId: "P-IDLE-WT",
+      body: "独立した作業",
+      parallel: true,
+      worktree: true,
+    });
+    expect(sent).toMatchObject({ ok: true, message: { thread: expect.any(String) } });
+    expect(startParallel).toHaveBeenCalledOnce();
+    if (!sent.ok) throw new Error(sent.error);
+    expect(history.currentId).toBe(parent.conversationId);
+    await flush();
+    const child = created.find(runtime => runtime.conversationId === sent.message.thread)!;
+    expect(child.codex.starts[0]?.cwd).toBe("C:\\dev\\app-wt");
+    expect(child.codex.sent[0]).toContain("独立した作業");
+    expect(parent.codex.sent).toHaveLength(0);
+    child.codex.completeTurn();
   });
 
   it("worktree の準備に失敗したら受理せず子の会話を残さない", async () => {

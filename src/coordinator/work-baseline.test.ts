@@ -109,6 +109,54 @@ describe("依頼の基準点", () => {
     ]);
   });
 
+  it("編集禁止の説明にある「以外」を範囲に含めない", () => {
+    const { root, write } = setup();
+    mkdirSync(join(root, "src/system"), { recursive: true });
+    mkdirSync(join(root, "src/map/layout"), { recursive: true });
+    const baselines = new WorkBaselines(root, { specSections: { owned: "所有", forbidden: "編集禁止" } });
+    baselines.start(
+      request,
+      "## 所有\n- `src/**/*.test.ts`\n## 編集禁止\n- 本体（`*.test.ts` 以外）すべて。`src/map/layout/**` は並行の B2c が worktree で編集中\n",
+    );
+    write("src/system/foo.test.ts");
+    write("src/map/layout/a.ts");
+    write("foo.test.ts");
+    expect(baselines.finish("r")?.changed).toEqual([
+      { path: "foo.test.ts", scope: "outside" },
+      { path: "src/map/layout/a.ts", scope: "forbidden" },
+      { path: "src/system/foo.test.ts", scope: "owned" },
+    ]);
+  });
+
+  it.each(["`!src/private.*`", "`src/private.*`以外", "`src/private.*` 以外", "`src/private.*`　以外"])(
+    "owned と forbidden の両方で除外を範囲から引く: %s",
+    exception => {
+      const { root, write } = setup();
+      const baselines = new WorkBaselines(root, { specSections: { owned: "所有", forbidden: "禁止" } });
+      baselines.start(request, `## 所有\n- \`src/**\`\n- ${exception}\n## 禁止\n- \`src/**\`\n- ${exception}\n`);
+      write("src/a.ts");
+      write("src/private.ts");
+      expect(baselines.finish("r")?.changed).toEqual([
+        { path: "src/a.ts", scope: "forbidden" },
+        { path: "src/private.ts", scope: "outside" },
+      ]);
+    },
+  );
+
+  it.each(["所有", "禁止"])("除外だけの節は全体から引き、空の節は範囲を増やさない: %s", heading => {
+    const { root, write } = setup();
+    const baselines = new WorkBaselines(root, { specSections: { owned: "所有", forbidden: "禁止" } });
+    baselines.start(request, `## 所有\n## 禁止\n## ${heading}\n- \`!**/*.test.ts\`\n`);
+    write("src/a.ts");
+    write("src/a.test.ts");
+    write("other.txt");
+    expect(baselines.finish("r")?.changed).toEqual([
+      { path: "other.txt", scope: heading === "所有" ? "owned" : "forbidden" },
+      { path: "src/a.test.ts", scope: "outside" },
+      { path: "src/a.ts", scope: heading === "所有" ? "owned" : "forbidden" },
+    ]);
+  });
+
   it("100 件を超えた差分は件数だけにする", () => {
     const { root, write } = setup();
     const baselines = new WorkBaselines(root);
