@@ -913,7 +913,7 @@ MCP message を受け取った後、
 - Coordinator は `127.0.0.1` のランダムポートで Streamable HTTP の MCP server を起動する
 - URL は `http://127.0.0.1:<port>/mcp/<token>`。`<token>` は起動ごと・Agent ごとのランダム値
 - 送信元（`from`）は `<token>` から決める。Agent ごとに token を分けるので、同じ PC の他プロセスや相手 Agent が送信元を偽れない
-- tool は `send_message`（入力 schema は §11）、`ask_user`（下記）、`read_conversation`（下記）
+- tool は `send_message`（入力 schema は §11）、`ask_user`（下記）、`tell_user`（下記）、`read_conversation`（下記）
 
 ## 配送ルール（v0.1）
 
@@ -955,10 +955,20 @@ Agent が人に判断を求めるとき、文章の中に質問を書かせず�
 - 人が回答せずに普通の入力を送ってもよい（質問は未回答のまま残る）
 - Claude の組み込みの `AskUserQuestion` は `--disallowedTools AskUserQuestion` で使わせない（stream-json では人が答えられないため）。両 Agent の指示（§13 Roles と同じ場所）に「人に判断を求めるときは `ask_user` を使う」と書く
 
+## 人への発言（`tell_user`）
+
+ターンの途中の発言には、作業の独り言（「〜を確認する」）と、人に読んでほしいこと（見つけた問題・自分で決めたこと・危険・人の作業が要ること）が混ざる。画面は 2 つ目以降の発言を畳んだ「作業」に入れるため、後者が埋もれる。Coordinator は文章から種類を推測せず（§3.9）、Agent が人に向けた発言を tool で明示する。`ask_user` の待たない版にあたる。
+
+- 入力: `{ body: string }`（Markdown。空は拒否。`MAX_BODY_LENGTH` まで）
+- tool は待たずにすぐ返し（受理した ID）、ターンは続く
+- Coordinator は Event Bus の `tell` event（`{ id, agent, body }`）を出す。feed に流して保存し、画面はそのターンの枠の本文に出す（§17 画面）。会話本文（`read_conversation`）に含める。Web Push・toast は出さない（作業中の発言で通知を増やさない。終わりは最終応答と質問の通知で分かる）
+- 両 Agent の指示（§13 Roles と同じ場所）に「作業中に人に読んでほしいこと（見つけた問題・自分で決めたこと・危険・人の作業が要ること）は `tell_user` で出す。途中経過の独り言には使わない。最終応答で繰り返さない」と書く。ブレストでは使わせない
+- 成果物の画像のパスは、最終応答・質問と同じく `tell_user` の本文でもプレビューにする
+
 ## 会話本文の参照（`read_conversation`）
 
 - 同じ会話の Agent は MCP tool `read_conversation` で、その会話の本文を必要なときに読む。自分への入力に加え、ユーザーともう一方の Agent のやり取り、Agent 間の formal message、質問と回答を含む。別の会話の本文は返さない
-- 返すのはユーザーの入力、Agent の最終応答、formal message の body、質問・回答の本文だけ。formal message には message の `id`（`msg_…`）を付ける（`replyTo` に使えるように）。途中の text・tool・作業ログ、通知、設定用ターンは含めない
+- 返すのはユーザーの入力、Agent の最終応答、formal message の body、質問・回答・`tell_user` の本文だけ。formal message には message の `id`（`msg_…`）を付ける（`replyTo` に使えるように）。途中の text・tool・作業ログ、通知、設定用ターンは含めない
 - 各本文の時刻（`at`）は、Hub のある端末の時間帯のオフセット付き ISO 8601（例: `2026-10-09T22:13:38+09:00`）で返す。保存は今どおり UTC。Agent が UTC の時刻をそのまま人に伝え、画面の時刻（端末の時間帯）と食い違うのを防ぐため
 - 入力は `{ before?: number, limit?: number }`。新しい順のページを取得し、各ページの本文は時系列で返す。`before` は前の応答の `nextBefore`、`limit` は既定 50・最大 100。全件を system prompt や Task envelope に自動挿入しない
 - Event Bus から選んだ本文を会話 ID ごとの JSONL に保存し、Hub の再起動後も読めるようにする。既存の会話は保存済みの feed から読める範囲を初期値にする。MCP server は ConversationRuntime ごとに作るので、tool に会話 ID を指定させない
@@ -1534,6 +1544,7 @@ terminal の文字列ではなく、構造化したデータを JSON で送る�
     - 続きの枠の見出しは Agent 名と状態だけ（方針は出さない。最初の発言は作業として並べる）
     - 区切った後に作業（発言・tool）も message も無いままターンが終わったら、続きの枠は出さず、最終応答は最後に固定した枠の畳んだ「作業」の最後に入れる（依頼して終えるターンが 1 つの枠にまとまるように）
     - 続けて message を送り、その間に作業が無ければ、同じ枠に並べる（区切りを細かくしない）
+- 人への発言（§12 `tell_user`）も、formal message と同じくそのターンの枠の本文に出す（Markdown。長さで切らない。ログに別の項目として並べない）。区切り・最終応答の移し方・送ったターンが無いときの扱いも message と同じ。TUI もターンの本文として出す
 - 人への質問（`ask_user`）も、formal message と同じくそのターンの枠の本文に出す（質問のカード: 質問・選択肢・回答待ち / 回答。ログに別の項目として並べない）。区切り・最終応答の移し方・送ったターンが無いときの扱いも message と同じ。回答は同じカードに出す
   - 質問の直前の発言（前の質問・message の後から質問までの最後の発言）は、質問の意図を説明していることが多いので、畳んだ「作業」から移して質問のカードの上に本文として出す（Markdown。長さで切らない）。直前に発言が無ければ出さない
 - Agent の応答・Agent 間の message の本文・人間の入力は GFM（GitHub Flavored Markdown）として表示する。解析は自前で書かず `marked` を使い、Web UI と TUI で同じ解析結果を使う
