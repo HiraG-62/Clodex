@@ -866,8 +866,8 @@ Coordinator が付与するフィールド（Agent の自己申告は使わな�
 ```
 
 - `interrupt`（省略可、boolean）: 宛先が送信元からの message を処理中なら、そのターンに足す（§28 v0.3 C）。それ以外は通常どおり配送する
-- `parallel`（省略可、boolean）: `DELEGATE` / `REVIEW_REQUEST` のみ。宛先が作業中（実行中のターンか配送待ちがある）なら、子の会話を立ててそこで受けさせる（§28 D1「子の会話で並列に受ける」）。作業中でなければ通常どおり配送する。`interrupt`・`fresh` と両方 `true` なら拒否する（子の会話は常に新しい session）
-- `worktree`（省略可、boolean）: `parallel` のときだけ。子の会話を新しい worktree で作業させる（同じファイルに触る危険の判断は送る側が行う）
+- `parallel`（省略可、boolean）: `DELEGATE` / `REVIEW_REQUEST` のみ。宛先が作業中（実行中のターンか配送待ちがある）なら、子の会話を立ててそこで受けさせる（§28 D1「子の会話で並列に受ける」）。作業中でなければ通常どおり配送する（`worktree: true` を除く。下記）。`interrupt`・`fresh` と両方 `true` なら拒否する（子の会話は常に新しい session）
+- `worktree`（省略可、boolean）: `parallel` のときだけ。子の会話を新しい worktree で作業させる（同じファイルに触る危険の判断は送る側が行う）。`worktree: true` なら、宛先が作業中でなくても子の会話を立てる（送る側が作業場所を分けるよう求めているので、本体の作業ツリーで動かさない）
 - `fresh`（省略可、boolean）: `DELEGATE` / `REVIEW_REQUEST` のみ（ほかの type は拒否する）。`true` なら、宛先の session を新しくしてから届ける（下記 §12「新しい session で届ける」）。省略時は設定の `freshThread` の既定（無ければ `false`）。`interrupt` と両方 `true` なら拒否する（新しい session には割り込めない）
 - 続きの message（`FIX` / `ADD` / `NOTE` / `CANCEL`）は `interrupt` の指定によらず、宛先が元の依頼（`replyTo`）を処理中なら、そのターンに足す。`fresh`・`parallel` は付けられない
   - `FIX` / `ADD` / `NOTE`: 処理中でなければ（まだ配送待ち・もう終えた）、今の session に通常どおり配送する（`fresh` にはしない。前の作業を覚えている session で受けるため）
@@ -1037,6 +1037,8 @@ QUESTION と次の依頼の間に設計書へ書き足すと、受け手はど�
 - 設定 `verify`: `{ "implement": ["pnpm test", "pnpm typecheck"], "integrate": ["pnpm test", "pnpm typecheck", "pnpm lint"] }`。`implement` は依頼（`DELEGATE`）を受けた側が `RESULT` の前に回す既定の検査、`integrate` は `RESULT` を受けた側が受け入れる前に回す既定の検査。設計書で追加の検査を書いてよい
   - 定型文（§13 Roles）に両方のコマンドを 1 回だけ書く（`Default checks: implement = …; integrate = …. Run the default checks for your step plus any checks the spec adds.`）。envelope には書かない（重複させない）
 - 設定 `specSections`: `{ "owned": "触ってよいファイル", "forbidden": "触らないファイル" }`。設計書の節の見出し（`#` を除いた文字列）の先頭。「所有ファイル（自由に編集してよい）」のように補足の付く見出しも「所有ファイル」で当たる。節の中の箇条書きの `` `path` ``（glob 可。`**` を含む）を範囲とする。無ければ分類しない
+  - 除外: `` `!glob` ``と、直後に「以外」が続く `` `glob` ``（「（`*.test.ts` 以外）」）は、その節の除外にする（範囲に足さない）。節の範囲は「どれかの範囲に当たり、どの除外にも当たらない」ファイル。除外だけで範囲の無い節は、すべて（`**`）から除外を引く。書き手が地の文でバッククォートを使っても、除外が編集禁止の範囲に化けないように
+  - `specSections` を設定したときは、定型文に節の書き方を 1 行足す（`In the "<owned>" and "<forbidden>" sections of a spec, backticked paths or globs in bullet items define the scope. Write exceptions as `!glob`.`）
 - 基準点: `DELEGATE` を配送したとき（配送の直前。§13 Spec の差分と同じ時点）、宛先の作業ディレクトリで `HEAD` と、変更のあるファイル（`git status --porcelain`。未追跡を含む）の中身の SHA-256 を記録する。記録はメモリだけで、依頼 ID ごと。git の外なら記録しない
   - 依頼の `spec` が作業ディレクトリと別の git の作業ツリー（project の中の git worktree など。`git rev-parse --show-toplevel` が違う）の中にあれば、その作業ツリーを基準点と差分の計算・`specCheck` の実行の場所にする。範囲の glob もその作業ツリーからの相対 path で当てる（Agent が会話の作業ディレクトリの外の worktree で作業していても証跡が働くように）
 - 証跡（`evidence`）: その依頼への `RESULT`（auto を含む）を受理したとき、Coordinator が次を付ける。Hub の再起動などで基準点が無ければ付けない
@@ -1140,6 +1142,7 @@ AGENTS.md → Codex
   - `send_message` で RESULT を送ったら、ターンの最終応答は 1 行にする（同じ内容を二度書かない）
   - 同じ task のやり直しを頼むときは、新しい taskId を作らず同じ taskId で送り、`rework` に理由を付ける（task 単位の計測で再依頼として数えるため）
   - 人に実行してもらうコマンドは PowerShell の書き方で示す（Clodex は Windows ネイティブで、人の terminal は PowerShell。Agent の shell が Git Bash でも、示すコマンドは合わせない）
+  - git の index を変える操作（`git add`・`git rm`・`git mv`・`git stash`）は、コミットする Agent だけが行う。ほかの Agent はファイルの削除・移動を普通のファイル操作で行う（実装役が `git rm` でステージした削除が、統合役の別のコミットに混ざったことがあるため）
 - **使用量を減らす作法**（`usageHints`）: 待ち方とファイルの読み方の作法を定型文に足す（英語）。tool の呼び出しのたびにコンテキスト全体を送り直すので、呼び出しの回数がそのまま使用量になるため。役割の分け方は人によって違う（Claude が実装する運用もある）ので、Agent ごとに人が設定で ON にする。既定は両方 OFF
   - 設定: `"usageHints": { "claude": false, "codex": false }`。反映は次に始める session から（system prompt に入るため）
   - 共通: 小刻みにポーリングしない（`sleep` で待つ・subagent の完了を細かく確かめる、を繰り返さない）。ファイルは関係する範囲をまとめて読む。数十行ずつ読まない。同じ内容を読み直さない。何も変えていないのに同じコマンド（テスト・型チェック）を回し直さない
@@ -2134,7 +2137,7 @@ D1 の詳細（1 つのプロセスの中の複数の会話）:
 - 同じ作業場所で別の会話の Agent が作業中のときに入力したら、`/new worktree` を勧める `toast` を出す（止めはしない）
 - Web UI の会話の一覧に、各会話の状態（作業中・待機中・停止中）と worktree の印を出す
 - **子の会話で並列に受ける**（`send_message` の `parallel`）: 作業中の Agent に独立した依頼を渡すとき、ロール文で「メインは待機し、作業はサブエージェントで」と書くと、親が subagent の完了を待ち続けて同じコンテキストを二重に読む。Clodex が同じ Agent を別の会話で動かし、並列に受けさせる
-  - 受け付けたとき宛先が作業中なら、同じ project に子の会話を作る（今の会話は切り替えない）。子の会話の履歴に親（会話 ID・依頼の message ID・送信元・宛先）を記録する。作業場所は、`worktree: true` なら新しい worktree（`/new worktree` と同じ名前の付け方）、そうでなければ親の会話と同じ作業場所。名前は「{taskId}（並列）」
+  - 受け付けたとき宛先が作業中か、`worktree: true` なら、同じ project に子の会話を作る（今の会話は切り替えない）。子の会話の履歴に親（会話 ID・依頼の message ID・送信元・宛先）を記録する。作業場所は、`worktree: true` なら新しい worktree（`/new worktree` と同じ名前の付け方）、そうでなければ親の会話と同じ作業場所。名前は「{taskId}（並列）」
   - 子の会話の runtime を作り、宛先の Agent を新しい session で起動して、依頼の envelope を届ける（Task envelope に `Parallel: yes (a separate conversation; your other work continues elsewhere)` の 1 行）
   - 子の会話の Agent が相手の Agent に送る formal message（`QUESTION`・`RESULT`・`ISSUE` など）と自動の `RESULT` / `ANSWER` は、子の会話の相手の Agent ではなく、親の会話の送信元へ届ける。親の会話では message に `thread`（子の会話 ID）を付けて出し、画面は message のカードに「並列: {子の会話名}」の印（押すと子の会話へ切り替える）を出す
   - 親の会話から `thread` のある message への返信（`ANSWER` など。`replyTo` で判定）は、子の会話の宛先へ届ける。子の会話の相手の Agent は起動しない
