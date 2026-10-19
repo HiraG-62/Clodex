@@ -232,6 +232,12 @@ it("質問と回答の event を保存して読み直す", () => {
   for (const item of items) store.append("c1", item);
   expect(store.load("c1")).toEqual(items);
 });
+it("人への発言の event を保存して読み直す", () => {
+  const store = new FeedStore(makeDir());
+  const item: HistoryItem = { type: "event", seq: 1, event: { kind: "tell", id: "tell_1", agent: "codex", at: "now", body: "原因を特定" } };
+  store.append("c1", item);
+  expect(store.load("c1")).toEqual([item]);
+});
 it("spec_check を保存して再読込する", () => {
   const dir = mkdtempSync(join(tmpdir(), "clodex-spec-check-feed-"));
   const store = new FeedStore(dir);
