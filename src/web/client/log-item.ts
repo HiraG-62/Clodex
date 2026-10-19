@@ -242,8 +242,8 @@ export function createLogItem(ctx: ClientContext) {
     if (item.plan) {
       node.append(renderPlan(item));
     }
-    const finalStep =
-      (item.messages?.length || item.questions?.length || item.tells?.length) && item.text ? [{ kind: "say" as const, text: item.text, at: item.at }] : [];
+    const foldFinal = Boolean(item.messages?.length || item.questions?.length);
+    const finalStep = foldFinal && item.text ? [{ kind: "say" as const, text: item.text, at: item.at }] : [];
     const steps = [...item.steps, ...finalStep];
     if (steps.length) {
       const list = ctx.el("ol");
@@ -276,6 +276,11 @@ export function createLogItem(ctx: ClientContext) {
             body.append(renderQuestion(entry, true));
           }
         }
+      }
+      if (!foldFinal && item.text) {
+        const final = ctx.el("div", "md");
+        final.innerHTML = renderMarkdown(item.text);
+        body.append(final);
       }
       node.append(body);
     } else {
@@ -422,7 +427,7 @@ export function createLogItem(ctx: ClientContext) {
     return node;
   };
   const renderTell = (item: Extract<TimelineItem, { kind: "tell" }>, embedded = false): HTMLElement => {
-    const node = ctx.el(embedded ? "div" : "article", embedded ? "" : "entry");
+    const node = ctx.el(embedded ? "div" : "article", embedded ? "tell" : "entry");
     if (!embedded) {
       const head = ctx.el("div", "head");
       head.append(ctx.el("b", `c-${item.agent}`, ctx.AGENTS[item.agent].name), ctx.el("time", "mono", ctx.clock(item.at)));

@@ -610,16 +610,17 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
       ...(item.questions ?? []).map(questionBody),
       ...(item.tells ?? []).map(entry => entry.body),
     ];
+    const foldFinal = Boolean(item.messages?.length || item.questions?.length);
     const steps = [
       ...item.steps.map(step => (step.kind === "say" ? step.text : `${step.name}: ${step.input}`)),
-      ...(attachments.length && item.text ? [item.text] : []),
+      ...(foldFinal && item.text ? [item.text] : []),
     ];
     return {
       kind: item.kind,
       color: agentColor(item.agent),
       title: `${agentName(item.agent)} · ${labels[item.status]}`,
       headerBackgroundColor: agentHeaderColor(item.agent),
-      body: attachments.length ? attachments.join("\n\n") : item.text,
+      body: [...attachments, ...(!foldFinal && item.text ? [item.text] : [])].join("\n\n"),
       ...((item.messages ?? []).some(entry => entry.message.evidence || entry.message.specCheck)
         ? { verification: (item.messages ?? []).flatMap(entry => verificationLines(entry.message)) }
         : {}),

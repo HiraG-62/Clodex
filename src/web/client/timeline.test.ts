@@ -64,35 +64,57 @@ const tell = (id = "tell_1", name: "claude" | "codex" = "claude"): Extract<FeedI
   event: { kind: "tell", id, agent: name, body: "人への発言", at: LATER },
 });
 
-it("tell はターンを区切って添付し、直前の発言を移さず最終応答を作業へ畳む", () => {
+it("tell は tool・text を挟んでも同じ枠に順番に添付し、最終応答を本文に残す", () => {
   const items = run([
     agent("claude", { type: "turn_started" }),
     agent("claude", { type: "text", text: "方針" }),
     agent("claude", { type: "text", text: "途中の作業" }),
     tell(),
+    agent("claude", { type: "tool", name: "Read", input: "src/main.ts" }),
+    tell("tell_2"),
+    agent("claude", { type: "text", text: "確認中" }),
+    tell("tell_3"),
   ]);
-  expect(items).toHaveLength(2);
+  expect(items).toHaveLength(1);
   expect(items[0]).toMatchObject({
     kind: "turn",
-    segment: "closed",
-    status: "completed",
+    status: "working",
     plan: "方針",
-    steps: [{ kind: "say", text: "途中の作業" }],
-    tells: [{ kind: "tell", id: "tell_1", body: "人への発言" }],
-    attachmentOrder: [{ kind: "tell", id: "tell_1" }],
+    steps: [
+      { kind: "say", text: "途中の作業" },
+      { kind: "tool", name: "Read" },
+      { kind: "say", text: "確認中" },
+    ],
+    tells: [{ id: "tell_1" }, { id: "tell_2" }, { id: "tell_3" }],
+    attachmentOrder: [
+      { kind: "tell", id: "tell_1" },
+      { kind: "tell", id: "tell_2" },
+      { kind: "tell", id: "tell_3" },
+    ],
   });
-  expect(items[1]).toMatchObject({ kind: "turn", status: "working", continuation: true });
-  const completed = applyFeedItem(items, agent("claude", { type: "turn", result: { status: "completed", text: "完了" } }));
+  const withFinal = applyFeedItem(items, agent("claude", { type: "text", text: "完了" }));
+  const completed = applyFeedItem(withFinal, agent("claude", { type: "turn", result: { status: "completed", text: "完了" } }));
   expect(completed).toHaveLength(1);
-  expect(completed[0]).toMatchObject({ text: "", steps: [{ text: "途中の作業" }, { text: "完了" }] });
+  expect(completed[0]).toMatchObject({ status: "completed", text: "完了", steps: [{ text: "途中の作業" }, { name: "Read" }, { text: "確認中" }] });
 });
 
 it("tell は質問・message と添付順を保ち、ターンが無ければ独立した発言になる", () => {
   expect(run([tell()])).toMatchObject([{ kind: "tell", agent: "claude", body: "人への発言" }]);
   const items = run([agent("claude", { type: "turn_started" }), tell(), question(), formal("claude", "依頼"), tell("tell_2")]);
   expect(items).toHaveLength(2);
-  expect(items[0]).toMatchObject({ attachmentOrder: [{ kind: "tell" }, { kind: "question" }, { kind: "message" }, { kind: "tell" }] });
+  expect(items[0]).toMatchObject({ segment: "closed", attachmentOrder: [{ kind: "tell" }, { kind: "question" }, { kind: "message" }] });
+  expect(items[1]).toMatchObject({ continuation: true, attachmentOrder: [{ kind: "tell", id: "tell_2" }] });
   expect(announcementKind(tell())).toBeUndefined();
+});
+
+it("tell の後の message で枠を区切り、続きの tell と最終応答を同じ枠に残す", () => {
+  const items = run([agent("claude", { type: "turn_started" }), tell(), formal("claude", "依頼"), tell("tell_2")]);
+  expect(items).toHaveLength(2);
+  expect(items[0]).toMatchObject({ segment: "closed", tells: [{ id: "tell_1" }], messages: [{ message: { body: "依頼" } }] });
+  expect(items[1]).toMatchObject({ status: "working", continuation: true, steps: [], tells: [{ id: "tell_2" }] });
+  const completed = applyFeedItem(items, agent("claude", { type: "turn", result: { status: "completed", text: "完了" } }));
+  expect(completed).toHaveLength(2);
+  expect(completed[1]).toMatchObject({ status: "completed", continuation: true, steps: [], text: "完了", tells: [{ id: "tell_2" }] });
 });
 
 it("ターン完了後の tell は同じ Agent の最後の枠に添付する", () => {

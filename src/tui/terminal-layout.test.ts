@@ -64,6 +64,29 @@ it("tell の本文を添付順でターンに出し、単独なら Agent の発�
   expect(formatTimelineItem(tell, labels, false)).toMatchObject({ title: "Codex", body: tell.body });
 });
 
+it.each([false, true])("tell だけの枠は最終応答を本文の最後に出す: 展開=%s", expanded => {
+  const card = formatTimelineItem(
+    {
+      kind: "turn",
+      id: "t",
+      agent: "codex",
+      at: "now",
+      status: "completed",
+      steps: [{ kind: "tool", name: "Read", input: "src/main.ts" }],
+      text: "最終応答",
+      tells: [
+        { kind: "tell", id: "t1", agent: "codex", at: "now", body: "発見" },
+        { kind: "tell", id: "t2", agent: "codex", at: "later", body: "判断" },
+      ],
+    },
+    labels,
+    expanded,
+  );
+  expect(card.body).toBe("発見\n\n判断\n\n最終応答");
+  expect(card.stepsLabel).toBe("作業 1 件");
+  expect(card.steps).toEqual(expanded ? ["Read: src/main.ts"] : undefined);
+});
+
 it("証跡を折りたたみ、失敗と範囲外を警告色にする", () => {
   const item: TimelineItem = {
     kind: "message",
@@ -264,6 +287,10 @@ describe("formatTimelineItem", () => {
     };
     expect(formatTimelineItem(message, labels, false)).toMatchObject({ title: "Claude → Codex", tag: "DELEGATE · T-1", body: "実装して" });
     const result = { ...message, message: { ...message.message, type: "RESULT" as const } };
+    expect(formatTimelineItem({ ...turn, messages: [{ message: result.message }] }, labels, true)).toMatchObject({
+      body: "実装して",
+      steps: ["Read: a.ts", "終わりました"],
+    });
     const metrics = { x: { ...emptyTaskMetrics("c", "T-1", ""), turns: 4, inputTokens: 1_200_000, durationMs: 2_280_000, questions: 1 } };
     expect(formatTimelineItem(result, labels, false, metrics).metrics).toBe("4 turns · in 1.2M · 38 min · 1 question");
     expect(formatTimelineItem({ ...turn, messages: [{ message: result.message }] }, labels, false, metrics).body).toContain(

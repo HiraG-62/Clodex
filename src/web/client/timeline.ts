@@ -210,7 +210,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
     const last = items.at(-1);
     if (index < 0 && last?.kind === "turn" && last.agent === event.agent && last.status === "completed") index = items.length - 1;
     const tell: Tell = { kind: "tell", id: event.id, agent: event.agent, at: event.at, body: event.body };
-    return index < 0 ? limit([...items, tell]) : attachToTurn(index, { kind: "tell", entry: tell }, event.at, true);
+    return index < 0 ? limit([...items, tell]) : attachToTurn(index, { kind: "tell", entry: tell }, event.at, false);
   }
   if (event.kind === "question") {
     let index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === event.agent && entry.status === "working" && entry.segment !== "closed");

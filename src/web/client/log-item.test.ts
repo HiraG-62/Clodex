@@ -3,6 +3,76 @@ import { emptyTaskMetrics } from "../../coordinator/task-metrics-summary.js";
 import { t } from "../../i18n/i18n.js";
 import { createLogItem, splitReferenceFiles } from "./log-item.js";
 import type { ClientContext } from "./store.js";
+import type { TimelineItem } from "./timeline.js";
+
+it.each(["tell", "message", "question"] as const)("最終応答の表示先を添付で分ける: %s", attachment => {
+  interface TestNode {
+    className: string;
+    textContent: string;
+    innerHTML: string;
+    children: TestNode[];
+    append: (...children: TestNode[]) => void;
+    addEventListener: () => void;
+  }
+  const el = (_tag: string, className = "", textContent = ""): TestNode => {
+    const node: TestNode = {
+      className,
+      textContent,
+      innerHTML: "",
+      children: [],
+      append: (...children) => node.children.push(...children),
+      addEventListener: () => {},
+    };
+    return node;
+  };
+  const contents = (node: TestNode): string => [node.textContent, node.innerHTML, ...node.children.map(contents)].join("\n");
+  vi.stubGlobal("document", { addEventListener: () => {} });
+  try {
+    const ctx = {
+      el,
+      mark: () => el("span", "mark"),
+      clock: () => "12:00",
+      t,
+      AGENTS: { codex: { name: "Codex" } },
+      TURN_LABEL: {},
+      store: { opened: new Map() },
+    } as unknown as ClientContext;
+    const turn: Extract<TimelineItem, { kind: "turn" }> = {
+      kind: "turn",
+      id: "t",
+      agent: "codex",
+      at: "now",
+      status: "completed",
+      steps: [{ kind: "tool", name: "Read", input: "src/main.ts" }],
+      text: "最終応答",
+      tells: [
+        { kind: "tell", id: "t1", agent: "codex", at: "now", body: "発見" },
+        { kind: "tell", id: "t2", agent: "codex", at: "later", body: "判断" },
+      ],
+      ...(attachment === "message"
+        ? { messages: [{ message: { id: "m", type: "RESULT", from: "codex", to: "claude", taskId: "T", repository: "root", createdAt: "now", body: "結果" } }] }
+        : {}),
+      ...(attachment === "question"
+        ? { questions: [{ kind: "question", id: "q", agent: "codex", at: "now", questions: [{ question: "方針", options: [{ label: "A" }] }] }] }
+        : {}),
+    };
+    const node = createLogItem(ctx).renderTurn(turn) as unknown as TestNode;
+    const body = node.children.find(child => child.className === "body")!;
+    const steps = node.children.find(child => child.className === "steps")!;
+    expect(contents(body)).toContain("発見");
+    expect(contents(body)).toContain("判断");
+    if (attachment === "tell") {
+      expect(contents(body)).toMatch(/発見[\s\S]*判断[\s\S]*最終応答/);
+      expect(contents(steps)).not.toContain("最終応答");
+      expect(contents(steps)).toContain("src/main.ts");
+    } else {
+      expect(contents(body)).not.toContain("最終応答");
+      expect(contents(steps)).toContain("最終応答");
+    }
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
 
 it.each([false, true])("tell を省略しない Markdown と画像プレビューで表示する: 添付=%s", embedded => {
   interface TestNode {
