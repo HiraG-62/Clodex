@@ -371,7 +371,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
         const previous = items[previousIndex] as Turn | undefined;
         if (previous) {
           const steps = text ? [...previous.steps, { kind: "say" as const, text, at }] : previous.steps;
-          const completed: Turn = { ...previous, status, finalAt: at, steps };
+          const completed: Turn = previous.questions?.length ? finish(previous) : { ...previous, status, finalAt: at, steps };
           return limit(items.filter((_, i) => i !== index).map((entry, i) => (i === previousIndex ? completed : entry)));
         }
       }

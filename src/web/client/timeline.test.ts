@@ -416,6 +416,7 @@ describe("applyFeedItem", () => {
       question(),
       formal("claude", "依頼"),
       agent("claude", { type: "tool", name: "Read", input: "a.ts" }),
+      agent("claude", { type: "text", text: "確認中" }),
       agent("claude", { type: "turn", result: { status: "completed", text: "確認中" } }),
     ]);
     expect(timeline).toMatchObject([
@@ -431,15 +432,17 @@ describe("applyFeedItem", () => {
     ]);
   });
 
-  it("質問して終えたターンは 1 枠にまとめ、最終応答は作業へ入れる", () => {
+  it.each([false, true])("質問して終えたターンは 1 枠にまとめ、最終応答を本文に残す: text=%s", withText => {
     const events = [
       agent("claude", { type: "turn_started" }),
+      tell(),
       question(),
+      ...(withText ? [agent("claude", { type: "text", text: "回答待ち" })] : []),
       agent("claude", { type: "turn", result: { status: "completed", text: "回答待ち" } }),
     ];
     for (const timeline of [run(events), rebuildTimeline(events as Extract<FeedItem, { type: "event" | "output" }>[], applyFeedItem)]) {
       expect(timeline).toHaveLength(1);
-      expect(timeline[0]).toMatchObject({ kind: "turn", questions: [{ id: "q1" }], steps: [{ kind: "say", text: "回答待ち" }] });
+      expect(timeline[0]).toMatchObject({ kind: "turn", tells: [{ id: "tell_1" }], questions: [{ id: "q1" }], steps: [], text: "回答待ち" });
     }
   });
 
@@ -635,7 +638,7 @@ describe("applyFeedItem", () => {
     expect(timeline[1]).not.toHaveProperty("plan");
   });
 
-  it("自分の質問の後の message で枠を固定し、最終応答は作業に入れる", () => {
+  it("自分の質問の後の message で枠を固定し、最終応答を本文に残す", () => {
     const question: FeedItem = {
       type: "event",
       seq: ++seq,
@@ -678,7 +681,8 @@ describe("applyFeedItem", () => {
         agent: "claude",
         status: "completed",
         segment: "closed",
-        steps: [{ kind: "say", text: "選んでください。" }],
+        steps: [],
+        text: "選んでください。",
         questions: [{ id: "q1", context: "確認します。" }],
         attachmentOrder: [
           { kind: "question", id: "q1" },

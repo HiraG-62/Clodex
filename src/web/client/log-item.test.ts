@@ -5,7 +5,7 @@ import { createLogItem, splitReferenceFiles } from "./log-item.js";
 import type { ClientContext } from "./store.js";
 import type { TimelineItem } from "./timeline.js";
 
-it.each(["tell", "message", "question"] as const)("最終応答の表示先を添付で分ける: %s", attachment => {
+it.each(["tell", "message", "question", "question-message"] as const)("最終応答の表示先を添付で分ける: %s", attachment => {
   interface TestNode {
     className: string;
     textContent: string;
@@ -49,10 +49,10 @@ it.each(["tell", "message", "question"] as const)("最終応答の表示先を�
         { kind: "tell", id: "t1", agent: "codex", at: "now", body: "発見" },
         { kind: "tell", id: "t2", agent: "codex", at: "later", body: "判断" },
       ],
-      ...(attachment === "message"
+      ...(attachment === "message" || attachment === "question-message"
         ? { messages: [{ message: { id: "m", type: "RESULT", from: "codex", to: "claude", taskId: "T", repository: "root", createdAt: "now", body: "結果" } }] }
         : {}),
-      ...(attachment === "question"
+      ...(attachment === "question" || attachment === "question-message"
         ? { questions: [{ kind: "question", id: "q", agent: "codex", at: "now", questions: [{ question: "方針", options: [{ label: "A" }] }] }] }
         : {}),
     };
@@ -65,16 +65,21 @@ it.each(["tell", "message", "question"] as const)("最終応答の表示先を�
       expect(contents(body)).toMatch(/発見[\s\S]*判断[\s\S]*最終応答/);
       expect(contents(steps)).not.toContain("最終応答");
       expect(contents(steps)).toContain("src/main.ts");
-    } else {
+    } else if (attachment === "message") {
       expect(contents(body)).not.toContain("最終応答");
       expect(contents(steps)).toContain("最終応答");
+    } else {
+      expect(contents(body)).toMatch(/最終応答[\s\S]*方針/);
+      expect(contents(body).match(/最終応答/g)).toHaveLength(1);
+      expect(contents(steps)).not.toContain("最終応答");
+      expect(contents(steps)).toContain("src/main.ts");
     }
   } finally {
     vi.unstubAllGlobals();
   }
 });
 
-it.each([false, true])("tell を省略しない Markdown と画像プレビューで表示する: 添付=%s", embedded => {
+it.each(["standalone", "tell", "question"])("本文を省略しない Markdown と画像プレビューで表示する: %s", attachment => {
   interface TestNode {
     tag: string;
     className: string;
@@ -114,16 +119,31 @@ it.each([false, true])("tell を省略しない Markdown と画像プレビュ�
       fileUrl: () => "/preview",
     } as unknown as ClientContext;
     const renderer = createLogItem(ctx);
-    const body = `**発見**\n${"長い本文".repeat(200)}\nC:/artifacts/shot.png`;
+    const body = `**発見**\n${"長い本文".repeat(200)}\n\n| 案 | 内容 |\n| --- | --- |\n| A | 詳細 |\n\nC:/artifacts/shot.png`;
     const tell = { kind: "tell" as const, id: "tell_1", agent: "codex" as const, at: "now", body };
-    const node = embedded
-      ? renderer.renderTurn({ kind: "turn", id: "t", at: "now", agent: "codex", status: "completed", steps: [], text: "", tells: [tell] })
-      : renderer.renderTell(tell);
+    const node =
+      attachment === "standalone"
+        ? renderer.renderTell(tell)
+        : renderer.renderTurn({
+            kind: "turn",
+            id: "t",
+            at: "now",
+            agent: "codex",
+            status: "completed",
+            steps: [],
+            text: attachment === "question" ? body : "",
+            ...(attachment === "tell"
+              ? { tells: [tell] }
+              : {
+                  questions: [{ kind: "question", id: "q", agent: "codex", at: "now", questions: [{ question: "方針", options: [{ label: "A" }] }] }],
+                }),
+          });
     expect(node).toBeDefined();
     expect(created.some(entry => entry.innerHTML.includes("<strong>発見</strong>") && entry.innerHTML.includes("長い本文".repeat(200)))).toBe(true);
+    expect(created.some(entry => entry.innerHTML.includes("<table>"))).toBe(true);
     expect(created.filter(entry => entry.className === "mark")).toHaveLength(1);
     expect(created.some(entry => entry.className === "image-preview" && entry.dataset.path === "C:/artifacts/shot.png")).toBe(true);
-    expect(created.some(entry => ["handoff", "question-card", "route"].includes(entry.className))).toBe(false);
+    if (attachment !== "question") expect(created.some(entry => ["handoff", "question-card", "route"].includes(entry.className))).toBe(false);
   } finally {
     vi.unstubAllGlobals();
   }

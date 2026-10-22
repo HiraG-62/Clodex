@@ -601,16 +601,23 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
       body: questionBody(item),
     };
   if (item.kind === "turn") {
+    let finalBeforeQuestion = Boolean(item.questions?.length && item.text);
+    const attachedQuestionBody = (entry: Extract<TimelineItem, { kind: "question" }>) => {
+      const body = questionBody(entry);
+      if (!finalBeforeQuestion) return body;
+      finalBeforeQuestion = false;
+      return `${item.text}\n\n${body}`;
+    };
     const attachments = item.attachmentOrder?.flatMap(attached => {
       if (attached.kind === "message") return item.messages?.filter(entry => entry.message.id === attached.id).map(entry => messageBody(entry.message)) ?? [];
       if (attached.kind === "tell") return item.tells?.filter(entry => entry.id === attached.id).map(entry => entry.body) ?? [];
-      return item.questions?.filter(entry => entry.id === attached.id).map(questionBody) ?? [];
+      return item.questions?.filter(entry => entry.id === attached.id).map(attachedQuestionBody) ?? [];
     }) ?? [
       ...(item.messages ?? []).map(entry => messageBody(entry.message)),
-      ...(item.questions ?? []).map(questionBody),
+      ...(item.questions ?? []).map(attachedQuestionBody),
       ...(item.tells ?? []).map(entry => entry.body),
     ];
-    const foldFinal = Boolean(item.messages?.length || item.questions?.length);
+    const foldFinal = Boolean(item.messages?.length && !item.questions?.length);
     const steps = [
       ...item.steps.map(step => (step.kind === "say" ? step.text : `${step.name}: ${step.input}`)),
       ...(foldFinal && item.text ? [item.text] : []),
@@ -620,7 +627,7 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
       color: agentColor(item.agent),
       title: `${agentName(item.agent)} · ${labels[item.status]}`,
       headerBackgroundColor: agentHeaderColor(item.agent),
-      body: [...attachments, ...(!foldFinal && item.text ? [item.text] : [])].join("\n\n"),
+      body: [...attachments, ...(!foldFinal && !item.questions?.length && item.text ? [item.text] : [])].join("\n\n"),
       ...((item.messages ?? []).some(entry => entry.message.evidence || entry.message.specCheck)
         ? { verification: (item.messages ?? []).flatMap(entry => verificationLines(entry.message)) }
         : {}),

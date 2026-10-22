@@ -59,9 +59,33 @@ it("tell の本文を添付順でターンに出し、単独なら Agent の発�
     ],
   };
   const card = formatTimelineItem(turn, labels, true);
-  expect(card.body).toBe("判断\n\n方針\n1. A\n2. B\n\n**発見**\n本文");
-  expect(card.steps).toEqual(["最終応答"]);
+  expect(card.body).toBe("判断\n\n最終応答\n\n方針\n1. A\n2. B\n\n**発見**\n本文");
+  expect(card.steps).toBeUndefined();
   expect(formatTimelineItem(tell, labels, false)).toMatchObject({ title: "Codex", body: tell.body });
+});
+
+it.each([false, true])("質問と message の枠も最終応答を最初の質問の前に一度だけ出す: 展開=%s", expanded => {
+  const card = formatTimelineItem(
+    {
+      kind: "turn",
+      id: "t",
+      agent: "codex",
+      at: "now",
+      status: "completed",
+      steps: [{ kind: "tool", name: "Read", input: "src/main.ts" }],
+      text: "**案の内容**",
+      messages: [{ message: { id: "m", type: "RESULT", from: "codex", to: "claude", taskId: "T", repository: "root", createdAt: "now", body: "結果" } }],
+      questions: [
+        { kind: "question", id: "q1", agent: "codex", at: "now", questions: [{ question: "方針", options: [{ label: "A" }] }] },
+        { kind: "question", id: "q2", agent: "codex", at: "now", questions: [{ question: "詳細", options: [{ label: "B" }] }] },
+      ],
+    },
+    labels,
+    expanded,
+  );
+  expect(card.body).toBe("結果\n\n**案の内容**\n\n方針\n1. A\n\n詳細\n1. B");
+  expect(card.stepsLabel).toBe("作業 1 件");
+  expect(card.steps).toEqual(expanded ? ["Read: src/main.ts"] : undefined);
 });
 
 it.each([false, true])("tell だけの枠は最終応答を本文の最後に出す: 展開=%s", expanded => {

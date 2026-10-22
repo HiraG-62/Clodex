@@ -242,7 +242,7 @@ export function createLogItem(ctx: ClientContext) {
     if (item.plan) {
       node.append(renderPlan(item));
     }
-    const foldFinal = Boolean(item.messages?.length || item.questions?.length);
+    const foldFinal = Boolean(item.messages?.length && !item.questions?.length);
     const finalStep = foldFinal && item.text ? [{ kind: "say" as const, text: item.text, at: item.at }] : [];
     const steps = [...item.steps, ...finalStep];
     if (steps.length) {
@@ -253,6 +253,14 @@ export function createLogItem(ctx: ClientContext) {
     if (item.status === "working" && item.segment !== "closed") node.append(nowLine(item));
     if (item.messages?.length || item.questions?.length || item.tells?.length) {
       const body = ctx.el("div", "body");
+      let finalPending = !foldFinal && Boolean(item.text);
+      const appendFinal = () => {
+        if (!finalPending) return;
+        const final = ctx.el("div", "md");
+        final.innerHTML = renderMarkdown(item.text);
+        body.append(final);
+        finalPending = false;
+      };
       const order = item.attachmentOrder ?? [
         ...(item.messages ?? []).map(entry => ({ kind: "message" as const, id: entry.message.id })),
         ...(item.questions ?? []).map(entry => ({ kind: "question" as const, id: entry.id })),
@@ -268,6 +276,7 @@ export function createLogItem(ctx: ClientContext) {
         } else {
           const entry = item.questions?.find(question => question.id === attached.id);
           if (entry) {
+            appendFinal();
             if (entry.context) {
               const context = ctx.el("div", "md question-context");
               context.innerHTML = renderMarkdown(entry.context);
@@ -277,11 +286,7 @@ export function createLogItem(ctx: ClientContext) {
           }
         }
       }
-      if (!foldFinal && item.text) {
-        const final = ctx.el("div", "md");
-        final.innerHTML = renderMarkdown(item.text);
-        body.append(final);
-      }
+      appendFinal();
       node.append(body);
     } else {
       const body = ctx.el("div", "body md");
