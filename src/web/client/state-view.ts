@@ -52,13 +52,10 @@ export function createStateView(ctx: ClientContext) {
         main.addEventListener("click", () => void ctx.send(command, main));
         row.append(main);
         const number = ctx.store.state?.conversations.findIndex(conversation => conversation.id === tab.conversationId && !conversation.parent) ?? -1;
-        if (tab.pinned || number >= 0) {
-          const action = ctx.iconButton(tab.pinned ? "x" : "pin", ctx.t(tab.pinned ? "web.conv.unpin" : "web.conv.pin"), "tab-action");
+        if (tab.tabbed || number >= 0) {
+          const action = ctx.iconButton(tab.tabbed ? "x" : "pin", ctx.t(tab.tabbed ? "web.conv.closeTab" : "web.conv.keepTab"), "tab-action");
           action.type = "button";
-          action.addEventListener(
-            "click",
-            () => void ctx.send(tab.pinned ? `/tab unpin ${tab.conversationId} ${tab.projectRoot}` : `/pin ${number + 1}`, action),
-          );
+          action.addEventListener("click", () => void ctx.send(`/tab ${tab.tabbed ? "close" : "keep"} ${tab.conversationId} ${tab.projectRoot}`, action));
           row.append(action);
         }
         return row;

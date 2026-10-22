@@ -6,31 +6,31 @@ describe("buildTabs", () => {
     {
       projectRoot: "C:\\one",
       conversations: [
-        { id: "one-pinned", title: "One", pinned: true, activity: "busy" as const },
+        { id: "one-tabbed", title: "One", tabbed: true, activity: "busy" as const },
         { id: "one-other", title: "Other" },
       ],
     },
     {
       projectRoot: "C:\\two",
       conversations: [
-        { id: "two-pinned", title: "Two", pinned: true },
-        { id: "two-other", title: "Hidden" },
+        { id: "two-tabbed", title: "Two", tabbed: true },
+        { id: "two-other", title: "Hidden", pinned: true, tabbed: false },
       ],
     },
   ];
 
   it("プロジェクトと会話の順に固定した会話を並べ、今の会話を末尾に足す", () => {
     expect(buildTabs(projects, { projectRoot: "C:\\one", conversation: { id: "one-other", title: "Other" } })).toEqual([
-      { projectRoot: "C:\\one", conversationId: "one-pinned", title: "One", pinned: true, current: false, activity: "busy" },
-      { projectRoot: "C:\\two", conversationId: "two-pinned", title: "Two", pinned: true, current: false },
-      { projectRoot: "C:\\one", conversationId: "one-other", title: "Other", pinned: false, current: true },
+      { projectRoot: "C:\\one", conversationId: "one-tabbed", title: "One", tabbed: true, current: false, activity: "busy" },
+      { projectRoot: "C:\\two", conversationId: "two-tabbed", title: "Two", tabbed: true, current: false },
+      { projectRoot: "C:\\one", conversationId: "one-other", title: "Other", tabbed: false, current: true },
     ]);
   });
 
   it("今の会話が固定済みなら重複させず、選択状態にする", () => {
-    expect(buildTabs(projects, { projectRoot: "C:\\one", conversation: { id: "one-pinned", title: "One", pinned: true, activity: "busy" } })).toMatchObject([
-      { conversationId: "one-pinned", current: true },
-      { conversationId: "two-pinned", current: false },
+    expect(buildTabs(projects, { projectRoot: "C:\\one", conversation: { id: "one-tabbed", title: "One", tabbed: true, activity: "busy" } })).toMatchObject([
+      { conversationId: "one-tabbed", current: true },
+      { conversationId: "two-tabbed", current: false },
     ]);
     expect(buildTabs(projects)).toHaveLength(2);
   });
@@ -41,7 +41,7 @@ describe("buildTabs", () => {
           projectRoot: "C:\\one",
           conversations: [
             { id: "parent", title: "親" },
-            { id: "child", title: "作業（並列）", pinned: true, parent: { conversationId: "parent" } },
+            { id: "child", title: "作業（並列）", tabbed: true, parent: { conversationId: "parent" } },
           ],
         },
       ],
@@ -55,7 +55,7 @@ describe("buildTabs", () => {
             projectRoot: "C:\\one",
             conversations: [
               { id: "parent", title: "親" },
-              { id: "child", pinned: true, parent: { conversationId: "parent" } },
+              { id: "child", tabbed: true, parent: { conversationId: "parent" } },
             ],
           },
         ],

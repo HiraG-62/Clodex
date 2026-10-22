@@ -68,15 +68,29 @@ describe("Hub", () => {
     context.history.rename("固定した会話");
     const id = context.history.currentId;
     context.history.togglePin(id);
-    const second = makeHub();
+    context.history.startNew();
     const source = (project: typeof context) => ({ conversations: project.history.list(), current: project.history.current });
-    expect(second.tabs(source)).toMatchObject([{ projectRoot: context.projectRoot, conversationId: id, pinned: true }]);
-    expect(second.unpinConversation(context.projectRoot, id, project => project.history)).toBe(false);
+    expect(first.tabs(source).some(tab => tab.conversationId === id)).toBe(false);
+    first.setConversationTabbed(context.projectRoot, id, true, project => project.history);
+    context.history.togglePin(id);
+    expect(first.tabs(source).find(tab => tab.conversationId === id)).toMatchObject({ tabbed: true });
+    context.history.togglePin(id);
+    const second = makeHub();
+    expect(second.tabs(source)).toMatchObject([{ projectRoot: context.projectRoot, conversationId: id, tabbed: true }]);
+    expect(second.setConversationTabbed(context.projectRoot, id, false, project => project.history)).toBe(false);
     expect(second.tabs(source)).toEqual([]);
     expect(opened).toHaveLength(1);
     const saved = new ConversationHistory(conversationStatePath(homeDir, context.projectRoot), { resumeLatest: false }).list();
     expect(saved.map(conversation => conversation.id)).toEqual([id]);
-    expect(saved[0]).not.toHaveProperty("pinned");
+    expect(saved[0]).toMatchObject({ pinned: true, tabbed: false });
+    expect(second.setConversationTabbed(context.projectRoot, id, true, project => project.history)).toBe(true);
+    expect(second.tabs(source)).toMatchObject([{ conversationId: id, tabbed: true }]);
+    expect(new ConversationHistory(conversationStatePath(homeDir, context.projectRoot), { resumeLatest: false }).list()[0]).toMatchObject({
+      pinned: true,
+      tabbed: true,
+    });
+    expect(second.setConversationTabbed(context.projectRoot, "missing", true, project => project.history)).toBeUndefined();
+    expect(opened).toHaveLength(1);
   });
   it("保存済み project のうち復旧する作業があるものだけ列挙する", async () => {
     const { homeDir, hub } = setup();

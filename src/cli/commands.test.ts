@@ -17,6 +17,15 @@ describe("SLASH_COMMAND_NAMES", () => {
 });
 
 describe("completeCommand", () => {
+  it("/tab の固定と解除を補完し、ヘルプにも表示する", () => {
+    expect(completeCommand("/tab ")).toEqual([["/tab keep ", "/tab close "], "/tab "]);
+    expect(completeCommand("/tab k")).toEqual([["/tab keep "], "/tab k"]);
+    expect(completeCommand("/tab unpin")).toEqual([[], "/tab unpin"]);
+    expect(slashCommands().find(command => command.name === "tab")).toMatchObject({
+      args: "[keep|close] <id> <project root>",
+      argumentValues: ["keep", "close"],
+    });
+  });
   it("/handoff の Agent 名を補完する", () => {
     expect(completeCommand("/hand")).toEqual([["/handoff "], "/hand"]);
     expect(completeCommand("/handoff ")).toEqual([["/handoff claude ", "/handoff codex "], "/handoff "]);

@@ -113,16 +113,20 @@ export class Hub<T extends HubProject> {
     return (context ? source(context).list() : this.savedConversations(projectRoot)).find(conversation => conversation.id === id);
   }
 
-  unpinConversation(projectRoot: string, id: string, source: (project: T) => Pick<ConversationHistory, "list" | "togglePin">): boolean | undefined {
+  setConversationTabbed(
+    projectRoot: string,
+    id: string,
+    tabbed: boolean,
+    source: (project: T) => Pick<ConversationHistory, "list" | "setTabbed">,
+  ): boolean | undefined {
     if (!this.saved.includes(projectRoot)) return undefined;
     const context = this.contexts.get(projectRoot);
     const history = context ? source(context) : new ConversationHistory(conversationStatePath(this.options.homeDir, projectRoot), { resumeLatest: false });
     const conversation = history.list().find(entry => entry.id === id);
     if (!conversation) return undefined;
-    if (!conversation.pinned) return false;
-    const pinned = history.togglePin(id);
+    const result = history.setTabbed(id, tabbed);
     if (!context) this.closedConversations.delete(projectRoot);
-    return pinned;
+    return result;
   }
 
   // 切り替え後のピン止めの状態。一覧に無ければ undefined

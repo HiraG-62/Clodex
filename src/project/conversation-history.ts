@@ -21,6 +21,7 @@ const conversationSchema = z.strictObject({
   updatedAt: z.string(),
   title: z.string().optional(),
   pinned: z.boolean().optional(),
+  tabbed: z.boolean().optional(),
   // worktree で作業する会話の作業場所とブランチ（DESIGN.md §28 D1）
   workDir: z.string().min(1).optional(),
   branch: z.string().min(1).optional(),
@@ -49,7 +50,9 @@ export const loadConversations = (path: string): Conversation[] => {
   if (!existsSync(path)) return [];
   try {
     const parsed = stateSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
-    return parsed.success ? parsed.data.conversations : [];
+    return parsed.success
+      ? parsed.data.conversations.map(conversation => ({ ...conversation, tabbed: conversation.tabbed ?? Boolean(conversation.pinned) }))
+      : [];
   } catch {
     return [];
   }
@@ -62,10 +65,11 @@ const arrange = (conversations: Conversation[], protectedParentId?: string): Con
   const saved = conversations.sort(byNewest);
   const roots = saved.filter(c => !c.parent);
   const pinned = roots.filter(c => c.pinned);
-  const recent = roots.filter(c => !c.pinned).slice(0, MAX_CONVERSATIONS);
+  const recent = roots.filter(c => !c.pinned && !c.tabbed).slice(0, MAX_CONVERSATIONS);
   const protectedParent = roots.find(c => c.id === protectedParentId);
-  if (protectedParent && !pinned.includes(protectedParent) && !recent.includes(protectedParent)) recent[recent.length - 1] = protectedParent;
-  const kept = [...pinned, ...recent];
+  if (protectedParent && !protectedParent.tabbed && !pinned.includes(protectedParent) && !recent.includes(protectedParent))
+    recent[recent.length - 1] = protectedParent;
+  const kept = [...pinned, ...roots.filter(c => !c.pinned && (c.tabbed || recent.includes(c)))];
   const rootIds = new Set(kept.map(c => c.id));
   return [...kept, ...saved.filter(c => c.parent && rootIds.has(c.parent.conversationId))];
 };
@@ -111,7 +115,7 @@ export class ConversationHistory {
 
   createChild(id: string, title: string, parent: NonNullable<Conversation["parent"]>, place: Pick<Conversation, "workDir" | "branch"> = {}): Conversation {
     const startedAt = this.now().toISOString();
-    const child: Conversation = { id, title: title.slice(0, TITLE_LENGTH), startedAt, updatedAt: startedAt, sessions: {}, parent, ...place };
+    const child: Conversation = { id, title: title.slice(0, TITLE_LENGTH), startedAt, updatedAt: startedAt, sessions: {}, tabbed: false, parent, ...place };
     this.save(list => [
       ...list,
       ...(parent.conversationId === this.currentId && !list.some(c => c.id === this.currentId) ? [this.currentConversation] : []),
@@ -182,6 +186,15 @@ export class ConversationHistory {
     return pinned;
   }
 
+  setTabbed(id: string, tabbed: boolean): boolean | undefined {
+    const found = this.find(id);
+    if (!found) return undefined;
+    const changed = { ...found, tabbed };
+    if (id === this.currentConversation.id) this.currentConversation = changed;
+    this.save(list => list.map(c => (c.id === id ? changed : c)));
+    return tabbed;
+  }
+
   // /delete: 今の会話以外を削除する。削除できなければ理由を返す
   remove(id: string): string | undefined {
     if (id === this.currentConversation.id || this.currentConversation.parent?.conversationId === id) return t("reject.deleteCurrent");
@@ -210,7 +223,7 @@ export class ConversationHistory {
 
   private emptyConversation(): Conversation {
     const startedAt = this.now().toISOString();
-    return { id: this.createId(), startedAt, updatedAt: startedAt, sessions: {} };
+    return { id: this.createId(), startedAt, updatedAt: startedAt, sessions: {}, tabbed: false };
   }
 
   get currentId(): string {

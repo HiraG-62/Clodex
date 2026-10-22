@@ -41,6 +41,60 @@ describe("conversationStatePath", () => {
 });
 
 describe("ConversationHistory", () => {
+  it("tabbed のない保存だけ pinned を初期値にし、次の保存で tabbed を書く", () => {
+    const { history, path, human } = setup();
+    human("旧会話");
+    const base = history.current;
+    writeFileSync(
+      path,
+      JSON.stringify({
+        conversations: [
+          { ...base, id: "legacy-pinned", pinned: true, tabbed: undefined },
+          { ...base, id: "legacy-normal", tabbed: undefined },
+          { ...base, id: "closed-tab", pinned: true, tabbed: false },
+        ],
+      }),
+    );
+    expect(loadConversations(path).map(c => [c.id, c.tabbed])).toEqual([
+      ["legacy-pinned", true],
+      ["legacy-normal", false],
+      ["closed-tab", false],
+    ]);
+    new ConversationHistory(path, { resumeLatest: true }).rename("更新");
+    expect(JSON.parse(readFileSync(path, "utf8")).conversations.every((c: { tabbed?: boolean }) => typeof c.tabbed === "boolean")).toBe(true);
+  });
+
+  it("ピン止めとタブ固定は互いを変更せず、解除も保存する", () => {
+    const { history, path, human } = setup();
+    human("会話");
+    const id = history.currentId;
+    history.togglePin(id);
+    expect(loadConversations(path)[0]).toMatchObject({ pinned: true, tabbed: false });
+    expect(history.setTabbed(id, true)).toBe(true);
+    history.togglePin(id);
+    expect(history.current.tabbed).toBe(true);
+    history.togglePin(id);
+    expect(history.setTabbed(id, false)).toBe(false);
+    expect(new ConversationHistory(path, { resumeLatest: true }).current).toMatchObject({ pinned: true, tabbed: false });
+    expect(history.setTabbed("missing", true)).toBeUndefined();
+  });
+
+  it("タブ固定は一覧を先頭へ移さず、保存の最大件数から除外する", () => {
+    const { history, path, human } = setup();
+    human("タブ");
+    const tabId = history.currentId;
+    history.startNew();
+    expect(history.setTabbed(tabId, true)).toBe(true);
+    for (let i = 0; i < MAX_CONVERSATIONS + 2; i++) {
+      human(`c${i}`);
+      history.startNew();
+    }
+    const saved = loadConversations(path);
+    expect(saved).toHaveLength(MAX_CONVERSATIONS + 1);
+    expect(saved.at(-1)).toMatchObject({ id: tabId, tabbed: true });
+    expect(saved.filter(c => !c.pinned && !c.tabbed)).toHaveLength(MAX_CONVERSATIONS);
+  });
+
   it("ブレストの設定と名前を保存して復旧する", () => {
     const path = makePath();
     const { history } = setup(path);

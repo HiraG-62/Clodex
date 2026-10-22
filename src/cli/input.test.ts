@@ -55,7 +55,8 @@ describe("parseInput", () => {
     ["/rename 2 日目", { kind: "rename", title: "2 日目" }],
     ["/rename #2 新しい名前", { kind: "rename", index: 2, title: "新しい名前" }],
     ["/tab conv-1 C:\\my projects\\app", { kind: "tab", conversationId: "conv-1", projectRoot: "C:\\my projects\\app" }],
-    ["/tab unpin conv-1 C:\\my projects\\app", { kind: "tab", action: "unpin", conversationId: "conv-1", projectRoot: "C:\\my projects\\app" }],
+    ["/tab keep conv-1 C:\\my projects\\app", { kind: "tab", action: "keep", conversationId: "conv-1", projectRoot: "C:\\my projects\\app" }],
+    ["/tab close conv-1 C:\\my projects\\app", { kind: "tab", action: "close", conversationId: "conv-1", projectRoot: "C:\\my projects\\app" }],
     ["/permission codex read-only", { kind: "permission", agent: "codex", level: "read-only" }],
     ["/model claude haiku", { kind: "model", agent: "claude", model: "haiku" }],
     ["/model codex gpt-6-sol", { kind: "model", agent: "codex", model: "gpt-6-sol" }],
@@ -74,7 +75,7 @@ describe("parseInput", () => {
     expect(parseInput(line, "claude")).toMatchObject({ kind: "invalid", message: expect.stringContaining("/rename [#<number>] <title>") });
   });
 
-  it.each(["/tab", "/tab conv-1", "/tab unpin", "/tab unpin conv-1"])("%s は使い方を返す", line => {
+  it.each(["/tab", "/tab conv-1", "/tab keep", "/tab keep conv-1", "/tab close", "/tab close conv-1"])("%s は使い方を返す", line => {
     expect(parseInput(line, "claude")).toMatchObject({ kind: "invalid", message: expect.stringContaining("/tab") });
   });
 

@@ -378,10 +378,10 @@ const main = async (): Promise<void> => {
       open: openInHub,
       hasCurrent: () => hub.current !== undefined,
       findConversation: (path, id) => hub.conversation(path, id, context => context.history),
-      unpinConversation: (path, id) => {
-        const pinned = hub.unpinConversation(path, id, context => context.history);
+      setConversationTabbed: (path, id, tabbed) => {
+        const result = hub.setConversationTabbed(path, id, tabbed, context => context.history);
         refreshState();
-        return pinned;
+        return result;
       },
       togglePin: path => {
         const pinned = hub.togglePin(path);

@@ -35,7 +35,7 @@ const SPECS: readonly SlashCommandSpec[] = [
   { name: "role", args: "[agent] [text] | preset [name]", argumentValues: ["preset", ...ROLE_PRESET_NAMES], description: "cmd.role" },
   { name: "primary", args: "<agent>", description: "cmd.primary" },
   { name: "resume", args: "[number]", description: "cmd.resume" },
-  { name: "tab", args: "[unpin] <id> <project root>", description: "cmd.tab" },
+  { name: "tab", args: "[keep|close] <id> <project root>", argumentValues: ["keep", "close"], description: "cmd.tab" },
   { name: "rename", args: "[#<number>] <title>", description: "cmd.rename" },
   { name: "solo", args: "[enable|disable|claude|codex]", argumentValues: ["enable", "disable", "claude", "codex"], description: "cmd.solo" },
   { name: "delete", args: "<number>", description: "cmd.delete" },
@@ -64,6 +64,7 @@ export const commandUsage = ({ name, args }: Pick<SlashCommand, "name" | "args">
 
 // readline の completer。コマンド名の入力中だけ補完する
 export const completeCommand = (line: string): [string[], string] => {
+  if (line.startsWith("/tab ")) return [["keep", "close"].map(value => `/tab ${value} `).filter(value => value.startsWith(line)), line];
   if (line.startsWith("/handoff ")) return [AGENT_IDS.map(value => `/handoff ${value} `).filter(value => value.startsWith(line)), line];
   if (line.startsWith("/role preset ")) return [ROLE_PRESET_NAMES.map(value => `/role preset ${value} `).filter(value => value.startsWith(line)), line];
   if (line.startsWith("/role ")) return [["preset", "claude", "codex"].map(value => `/role ${value} `).filter(value => value.startsWith(line)), line];

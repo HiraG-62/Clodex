@@ -31,6 +31,8 @@ export function createConversationSheets(ctx: ClientContext) {
     ctx.openSheet(ctx.t("web.top.editProjects"), [projectEditorList()]);
   };
   const openConversationMenu = (conversation: WebState["conversations"][number], number: number) => {
+    const projectRoot = ctx.store.state?.project;
+    if (!projectRoot) return;
     ctx.store.sheetKind = "conversationMenu";
     ctx.store.sheetAgent = undefined;
     const title = conversation.title ?? ctx.t("web.conv.untitled");
@@ -48,6 +50,13 @@ export function createConversationSheets(ctx: ClientContext) {
     actions.push(
       ctx.sheetButton(ctx.t(conversation.pinned ? "web.conv.unpin" : "web.conv.pin"), "secondary-action", button => {
         void ctx.send(`/pin ${number}`, button).then(ok => {
+          if (ok) ctx.closeSheet();
+        });
+      }),
+    );
+    actions.push(
+      ctx.sheetButton(ctx.t(conversation.tabbed ? "web.conv.removeTab" : "web.conv.addTab"), "secondary-action", button => {
+        void ctx.send(`/tab ${conversation.tabbed ? "close" : "keep"} ${conversation.id} ${projectRoot}`, button).then(ok => {
           if (ok) ctx.closeSheet();
         });
       }),

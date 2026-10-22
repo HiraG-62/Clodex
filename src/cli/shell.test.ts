@@ -274,7 +274,7 @@ const setup = ({ withoutProject = false } = {}) => {
   const configSources: ConfigSources = { roles: {}, rules: {} };
   const references: string[] = [];
   let hasProject = !withoutProject;
-  const tabUnpinned: Array<{ projectRoot: string; id: string }> = [];
+  const tabChanges: Array<{ projectRoot: string; id: string; tabbed: boolean }> = [];
   const projects = {
     list: () => [
       { projectRoot: "C:\\dev\\one", open: true, current: true, pinned: true },
@@ -287,9 +287,9 @@ const setup = ({ withoutProject = false } = {}) => {
     togglePin: (path: string) => (path === "C:\\dev\\two" ? true : undefined),
     remove: (path: string) => (path === "C:\\dev\\two" ? undefined : path === "C:\\dev\\one" ? ("open" as const) : ("missing" as const)),
     findConversation: (projectRoot: string, id: string) => (projectRoot === "C:\\dev\\two" && id === "conv-old" ? history.conversations[1] : undefined),
-    unpinConversation: (projectRoot: string, id: string) => {
-      tabUnpinned.push({ projectRoot, id });
-      return false;
+    setConversationTabbed: (projectRoot: string, id: string, tabbed: boolean) => {
+      tabChanges.push({ projectRoot, id, tabbed });
+      return tabbed;
     },
     hasCurrent: () => hasProject,
   };
@@ -383,7 +383,7 @@ const setup = ({ withoutProject = false } = {}) => {
     background,
     references,
     sandbox,
-    tabUnpinned,
+    tabChanges,
   };
 };
 
@@ -419,18 +419,18 @@ describe("createShell", () => {
     expect(notified.at(-1)).toBe('switched to: "Remember BANANA"');
   });
 
-  it("/tab unpin は project を開かずに固定を外す", async () => {
-    const { shell, projects, tabUnpinned, notified } = setup();
+  it.each(["keep", "close"] as const)("/tab %s は project を開かずにタブ固定だけ変更する", async action => {
+    const { shell, projects, tabChanges, notified } = setup();
     const opened: string[] = [];
     const originalOpen = projects.open;
     projects.open = async path => {
       opened.push(path);
       return originalOpen(path);
     };
-    await shell.handleLine("/tab unpin conv-old C:\\dev\\two");
-    expect(tabUnpinned).toEqual([{ projectRoot: "C:\\dev\\two", id: "conv-old" }]);
+    await shell.handleLine(`/tab ${action} conv-old C:\\dev\\two`);
+    expect(tabChanges).toEqual([{ projectRoot: "C:\\dev\\two", id: "conv-old", tabbed: action === "keep" }]);
     expect(opened).toEqual([]);
-    expect(notified.at(-1)).toBe('unpinned: "Remember BANANA"');
+    expect(notified.at(-1)).toBe(`${action === "keep" ? "tab kept" : "tab closed"}: "Remember BANANA"`);
   });
   it("Web の /sandbox on 失敗は表示し、入力 API は 204 を返す", async () => {
     const { shell, sandbox, printed } = setup();

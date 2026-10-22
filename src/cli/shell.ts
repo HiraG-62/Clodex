@@ -117,7 +117,7 @@ export interface ShellOptions {
     togglePin(path: string): boolean | undefined;
     remove(path: string): ProjectRemoveError | undefined;
     findConversation(projectRoot: string, id: string): Conversation | undefined;
-    unpinConversation(projectRoot: string, id: string): boolean | undefined;
+    setConversationTabbed(projectRoot: string, id: string, tabbed: boolean): boolean | undefined;
     hasCurrent?(): boolean;
   };
   language?: { get(): Language; set(value: Language): void | Promise<void> };
@@ -462,10 +462,10 @@ export const createShell = ({
       notify(t("reject.notFound"), "warn");
       return "continue";
     }
-    if (command.action === "unpin") {
-      const pinned = projects.unpinConversation(command.projectRoot, command.conversationId);
-      if (pinned === undefined) notify(t("reject.notFound"), "warn");
-      else notify(t("shell.unpinned", { title: titleOf(picked) }));
+    if (command.action) {
+      const tabbed = projects.setConversationTabbed(command.projectRoot, command.conversationId, command.action === "keep");
+      if (tabbed === undefined) notify(t("reject.notFound"), "warn");
+      else notify(t(tabbed ? "shell.tabKept" : "shell.tabClosed", { title: titleOf(picked) }));
       return "continue";
     }
     const opened = await projects.open(command.projectRoot);
