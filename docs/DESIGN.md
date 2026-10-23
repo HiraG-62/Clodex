@@ -1031,7 +1031,10 @@ QUESTION と次の依頼の間に設計書へ書き足すと、受け手はど�
 - 基準点: `DELEGATE` を配送したとき（配送の直前。§13 Spec の差分と同じ時点）、宛先の作業ディレクトリで `HEAD` と、変更のあるファイル（`git status --porcelain`。未追跡を含む）の中身の SHA-256 を記録する。記録はメモリだけで、依頼 ID ごと。git の外なら記録しない
   - 依頼の `spec` が作業ディレクトリと別の git の作業ツリー（project の中の git worktree など。`git rev-parse --show-toplevel` が違う）の中にあれば、その作業ツリーを基準点と差分の計算・`specCheck` の実行の場所にする。範囲の glob もその作業ツリーからの相対 path で当てる（Agent が会話の作業ディレクトリの外の worktree で作業していても証跡が働くように）
 - 証跡（`evidence`）: その依頼への `RESULT`（auto を含む）を受理したとき、Coordinator が次を付ける。Hub の再起動などで基準点が無ければ付けない
-  - `checks`: 依頼の配送から `RESULT` までに、宛先の Agent が実行したコマンド（§9 コマンドの記録）のうち、`verify.implement` の各コマンドを含むものの最後の結果（終了コード、無ければ失敗の印、実行していなければ未実行）
+  - `checks`: 依頼の配送から `RESULT` までに、宛先の Agent が実行したコマンド（§9 コマンドの記録）のうち、`verify.implement` の各コマンドを単独で実行したものの最後の結果（終了コード、無ければ失敗の印、実行していなければ未実行）
+    - 単独の実行: 先頭の `cd <path>;` / `cd <path> &&` と、外側のシェルの包み（`pwsh -Command …`・`powershell -Command "…"`・`bash -lc …` など）を除いた残りが、検査のコマンドそのもの（後ろに引数や `2>&1` が付いてもよい。`|`・`;`・`&&`・`||` を含まない）
+    - 検査のコマンドを含むがパイプやつなぎのある実行（`pnpm run check 2>&1 | grep -E "error"` など）は、終了コードが検査のものではない（`grep` は当たりが無いと 1 を返す）。単独の実行が 1 つも無いときだけ「実行したが結果不明」として記録し、終了コードを付けない。単独の実行があればそちらを使う（後のパイプの実行で上書きしない）
+    - 定型文の `Default checks` の行に、検査は単独のコマンドで回すことを添える（`Run each check as its own command without pipes or chaining so Clodex can record its exit code.`）
   - `changed`: 基準点の後に変わったファイル（基準点の `HEAD` からの差分と今の変更のあるファイルを合わせ、基準点と中身が同じものを除く）。各ファイルに、設計書（依頼の `spec`）の範囲による分類（`owned` / `forbidden` / `outside`。`specSections` か `spec` が無ければ付けない）と、依頼の間に依頼元の Agent が編集した印（`tool` event の `files`）を付ける。誰が変えたかの証明にはならない（人や別の作業も含む）ので「依頼開始後の作業ツリーの差分」と表示する
   - 100 件を超えたら件数だけにする
 - envelope: `RESULT` の末尾に `Evidence (recorded by Clodex):` に続けて検査の行（`pnpm test: exit 0` / `failed` / `not run`）と、変わったファイルの行（分類と印）。差分を計算した場所（作業ツリーの path）を添え、変わったファイルが無ければ `(none)` と書く（空の見出しで終わらせない）。画面: `RESULT` の message カードに同じ内容を折りたためる形で出す
