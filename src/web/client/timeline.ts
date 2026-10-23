@@ -304,6 +304,8 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem, options: { 
     case "text":
       return updateTurn(turn => ({ ...turn, steps: [...turn.steps, { kind: "say", text: agentEvent.text, at }] }));
     case "tool":
+      // message・質問はカードで出すので、送った tool の行は作業に入れない（tell_user は廃止前の保存分）
+      if (/^(?:clodex\.|mcp__clodex__)(?:send_message|ask_user|tell_user)$/.test(agentEvent.name)) return items;
       return updateTurn(turn => ({
         ...turn,
         steps: [...turn.steps, { kind: "tool", name: agentEvent.name, input: agentEvent.input, ...(agentEvent.files ? { files: agentEvent.files } : {}) }],

@@ -282,6 +282,16 @@ describe("withWorkingTurnsLast", () => {
 });
 
 describe("applyFeedItem", () => {
+  it("カードで見せる Clodex の tool（send_message・ask_user・旧 tell_user）は作業に入れない", () => {
+    const timeline = run([
+      agent("codex", { type: "turn_started" }),
+      agent("codex", { type: "tool", name: "clodex.send_message", input: "{}" }),
+      agent("codex", { type: "tool", name: "clodex.tell_user", input: "{}" }),
+      agent("codex", { type: "tool", name: "mcp__clodex__ask_user", input: "{}" }),
+      agent("codex", { type: "tool", name: "clodex.read_conversation", input: "{}" }),
+    ]);
+    expect(timeline[0]).toMatchObject({ kind: "turn", steps: [{ kind: "tool", name: "clodex.read_conversation" }] });
+  });
   it("質問直前の発言も本文の順序を保つ", () => {
     const timeline = run([
       agent("claude", { type: "turn_started" }),
