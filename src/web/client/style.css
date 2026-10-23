@@ -536,7 +536,7 @@
   .usage-ring .ring { width: 26px; height: 26px; }
   .usage-ring .ring .fg { stroke: var(--fg-2); }
   .usage-ring.over .ring .fg { stroke: var(--warn); }
-  .usage-ring.empty { opacity: .35; }
+  .usage-ring.blank { opacity: .35; }
   .usage-ring > .i { position: absolute; width: 11px; height: 11px; color: var(--fg-2); }
   .strip-collapse { padding: 0; border: 0; border-radius: var(--r-inner); background: transparent; color: inherit; font: inherit; font-weight: inherit; }
   .strip-collapse:hover { background: var(--hover-bg); }

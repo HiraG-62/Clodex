@@ -46,7 +46,7 @@ export const contextParts = (ctx: ClientContext, agent: AgentState) => {
 };
 
 export const usageRing = (ctx: ClientContext, label: string, percent: number | undefined, reset: string, icon: string, over: boolean) => {
-  const node = ctx.el("span", `usage-ring${percent === undefined ? " empty" : ""}${over ? " over" : ""}`);
+  const node = ctx.el("span", `usage-ring${percent === undefined ? " blank" : ""}${over ? " over" : ""}`);
   const title = usageRingLabel(label, percent, reset);
   node.title = title;
   node.setAttribute("aria-label", title);
