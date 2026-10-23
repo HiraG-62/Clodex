@@ -202,7 +202,7 @@ it.each(["claude", "codex"] as const)("%s に同じ会話の本文を読む方�
 it("検証プロファイルは定型文に一度だけ入り、ブレストには入らない", () => {
   const verify = { implement: ["pnpm test", "pnpm typecheck"], integrate: ["pnpm lint"] };
   const line =
-    "Default checks: implement = pnpm test; pnpm typecheck; integrate = pnpm lint. Run the default checks for your step plus any checks the spec adds.";
+    "Default checks: implement = pnpm test; pnpm typecheck; integrate = pnpm lint. Run the default checks for your step plus any checks the spec adds. Run each check as its own command without pipes or chaining so Clodex can record its exit code.";
   expect(buildRoleInstructions("codex", undefined, { verify })).toContain(line);
   expect(buildRoleInstructions("codex", undefined, { verify, brainstorm: true })).not.toContain("Default checks:");
   expect(buildRoleInstructions("claude", undefined, { verify: { integrate: ["pnpm lint"] } })).toContain("Default checks: integrate = pnpm lint.");

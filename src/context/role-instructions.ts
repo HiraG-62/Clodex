@@ -110,7 +110,9 @@ export const buildRoleInstructions = (
           `Default checks: ${(["implement", "integrate"] as const)
             .filter(step => verify[step] !== undefined)
             .map(step => `${step} = ${verify[step]!.join("; ")}`)
-            .join("; ")}. Run the default checks for your step plus any checks the spec adds.`,
+            .join(
+              "; ",
+            )}. Run the default checks for your step plus any checks the spec adds. Run each check as its own command without pipes or chaining so Clodex can record its exit code.`,
         ]
       : []),
     PERMISSION_NOTE,

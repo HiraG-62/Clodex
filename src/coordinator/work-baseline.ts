@@ -12,7 +12,30 @@ import type { AgentMessage, ChangedFile, VerificationCheck, VerificationEvidence
 const GIT_TIMEOUT_MS = 10_000;
 const MAX_CHANGED_FILES = 100;
 const STATUS_PATH_OFFSET = 3;
-type CheckRecord = VerificationCheck & { toolId?: string };
+type CheckRecord = VerificationCheck & { toolId?: string; standalone?: boolean };
+const LEADING_CD = /^cd\s+(?:"[^"]*"|'[^']*'|[^\s;&|]+)\s*(?:;|&&)\s*/i;
+const SHELL_WRAPPER = /^(?:"([^"]+)"|'([^']+)'|(\S+))\s+(-Command|-lc|-c)\s+(['"])([\s\S]*)\5$/i;
+
+const unwrapShell = (command: string): string => {
+  const match = SHELL_WRAPPER.exec(command);
+  if (!match) return command;
+  const shell = (match[1] ?? match[2] ?? match[3])!.split(/[\\/]/).at(-1)!;
+  const flag = match[4]!.toLowerCase();
+  const supported = /^(?:pwsh|powershell)(?:\.exe)?$/i.test(shell) ? flag === "-command" : /^(?:bash|sh)(?:\.exe)?$/i.test(shell) && flag !== "-command";
+  return supported ? match[6]! : command;
+};
+
+export const isStandaloneCheck = (command: string, check: string): boolean => {
+  let remaining = command.trim();
+  for (;;) {
+    const unwrapped = unwrapShell(remaining.replace(LEADING_CD, "")).trim();
+    if (unwrapped === remaining) break;
+    remaining = unwrapped;
+  }
+  if (!remaining.startsWith(check)) return false;
+  const suffix = remaining.slice(check.length);
+  return (!suffix || /^[\s<>]/.test(suffix)) && !/[|;]|&&/.test(remaining);
+};
 interface ScopePatterns {
   included: string[];
   excluded: string[];
@@ -166,16 +189,17 @@ export class WorkBaselines {
       if (event.type !== "tool") continue;
       const command = event.name === "command" ? (event.command ?? event.input) : event.name === "Bash" ? event.command : undefined;
       if (command === undefined) continue;
-      baseline.checks = baseline.checks.map(check =>
-        command.includes(check.command)
-          ? {
-              command: check.command,
-              ran: true,
-              ...(event.toolId !== undefined ? { toolId: event.toolId } : {}),
-              ...(event.exitCode !== undefined ? { exitCode: event.exitCode } : {}),
-            }
-          : check,
-      );
+      baseline.checks = baseline.checks.map(check => {
+        if (!command.includes(check.command)) return check;
+        if (!isStandaloneCheck(command, check.command)) return check.standalone ? check : { command: check.command, ran: true };
+        return {
+          command: check.command,
+          ran: true,
+          standalone: true,
+          ...(event.toolId !== undefined ? { toolId: event.toolId } : {}),
+          ...(event.exitCode !== undefined ? { exitCode: event.exitCode } : {}),
+        };
+      });
     }
   }
 
@@ -226,7 +250,7 @@ export class WorkBaselines {
       }
       return {
         root: baseline.root,
-        checks: baseline.checks.map(({ toolId: _toolId, ...check }) => check),
+        checks: baseline.checks.map(({ toolId: _toolId, standalone: _standalone, ...check }) => check),
         changed: changed.length > MAX_CHANGED_FILES ? { count: changed.length } : changed,
       };
     } catch {

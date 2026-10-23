@@ -4,7 +4,41 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "../protocol/messages.js";
-import { WorkBaselines } from "./work-baseline.js";
+import { isStandaloneCheck, WorkBaselines } from "./work-baseline.js";
+
+const CHECK_COMMAND = "pnpm run check:anim";
+
+describe("検査の単独実行", () => {
+  it.each([
+    CHECK_COMMAND,
+    `${CHECK_COMMAND} --verbose`,
+    `${CHECK_COMMAND} 2>&1`,
+    `${CHECK_COMMAND} > result.txt`,
+    `cd /e/dev/x; ${CHECK_COMMAND}`,
+    `cd '/e/dev/my project' && cd child; ${CHECK_COMMAND}`,
+    `"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command '${CHECK_COMMAND}'`,
+    `powershell.exe -Command "${CHECK_COMMAND}"`,
+    `pwsh -Command 'cd /e/dev/x; ${CHECK_COMMAND} 2>&1'`,
+    `cd /e/dev/x && bash -lc '${CHECK_COMMAND}'`,
+    `sh -c '${CHECK_COMMAND}'`,
+  ])("単独として扱う: %s", command => {
+    expect(isStandaloneCheck(command, CHECK_COMMAND)).toBe(true);
+  });
+
+  it.each([
+    `${CHECK_COMMAND} 2>&1 | grep -E "x"`,
+    `sed -i file; ${CHECK_COMMAND}`,
+    `${CHECK_COMMAND} && echo ok`,
+    `${CHECK_COMMAND} || echo failed`,
+    `${CHECK_COMMAND}; echo ok`,
+    `pwsh -Command '${CHECK_COMMAND} | Select-String x'`,
+    `pwsh -Command '${CHECK_COMMAND}' && echo ok`,
+    `echo '${CHECK_COMMAND}'`,
+    `${CHECK_COMMAND}:other`,
+  ])("単独として扱わない: %s", command => {
+    expect(isStandaloneCheck(command, CHECK_COMMAND)).toBe(false);
+  });
+});
 
 const request: AgentMessage = {
   id: "r",
@@ -187,6 +221,39 @@ describe("依頼の基準点", () => {
     ]);
     baselines.start({ ...request, id: "next" });
     expect(baselines.finish("next")?.checks.every(check => !check.ran)).toBe(true);
+  });
+
+  it.each(["command", "Bash"])("%s のつないだ実行は tool_end でも結果不明のままにする", name => {
+    const { root } = setup();
+    const baselines = new WorkBaselines(root, { verify: { implement: [CHECK_COMMAND] } });
+    baselines.start(request);
+    baselines.record("codex", { type: "tool", name, input: "", command: `${CHECK_COMMAND} | grep x`, toolId: "pipe", exitCode: 1 });
+    baselines.record("codex", { type: "tool_end", toolId: "pipe", exitCode: 1, failed: true });
+    expect(baselines.finish("r")?.checks).toEqual([{ command: CHECK_COMMAND, ran: true }]);
+  });
+
+  it.each([true, false])("単独の実行は後のパイプで上書きせず、その tool_end を反映する: 完了済み=%s", completed => {
+    const { root } = setup();
+    const baselines = new WorkBaselines(root, { verify: { implement: [CHECK_COMMAND] } });
+    baselines.start(request);
+    baselines.record("codex", { type: "tool", name: "command", input: CHECK_COMMAND, toolId: "single", ...(completed ? { exitCode: 0 } : {}) });
+    baselines.record("codex", { type: "tool", name: "command", input: `${CHECK_COMMAND} | grep x`, toolId: "pipe", exitCode: 1 });
+    baselines.record("codex", { type: "tool_end", toolId: "pipe", exitCode: 1, failed: true });
+    if (!completed) baselines.record("codex", { type: "tool_end", toolId: "single", exitCode: 0 });
+    expect(baselines.finish("r")?.checks).toEqual([{ command: CHECK_COMMAND, ran: true, exitCode: 0 }]);
+  });
+
+  it("つないだ実行の後の単独実行を採り、さらに単独実行したら前の失敗を消す", () => {
+    const { root } = setup();
+    const baselines = new WorkBaselines(root, { verify: { implement: [CHECK_COMMAND] } });
+    baselines.start(request);
+    baselines.record("codex", { type: "tool", name: "command", input: `${CHECK_COMMAND} && echo ok`, toolId: "chain", exitCode: 0 });
+    baselines.record("codex", { type: "tool", name: "command", input: CHECK_COMMAND, toolId: "failed" });
+    baselines.record("codex", { type: "tool_end", toolId: "failed", exitCode: 1, failed: true });
+    baselines.record("codex", { type: "tool", name: "command", input: CHECK_COMMAND, exitCode: 0 });
+    baselines.record("codex", { type: "tool", name: "command", input: `${CHECK_COMMAND} | grep x`, exitCode: 1 });
+    baselines.record("codex", { type: "tool_end", toolId: "failed", exitCode: 1, failed: true });
+    expect(baselines.finish("r")?.checks).toEqual([{ command: CHECK_COMMAND, ran: true, exitCode: 0 }]);
   });
 
   it("基準点がない・git の外なら証跡を付けない", () => {

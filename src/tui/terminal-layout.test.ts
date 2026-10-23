@@ -89,7 +89,10 @@ it("証跡を折りたたみ、失敗と範囲外を警告色にする", () => {
       body: "完了",
       evidence: {
         root: "C:/project/worktree",
-        checks: [{ command: "pnpm test", ran: true, exitCode: 1 }],
+        checks: [
+          { command: "pnpm test", ran: true, exitCode: 1 },
+          { command: "pnpm run check:anim", ran: true },
+        ],
         changed: [{ path: "outside.ts", scope: "outside" }],
       },
       specCheck: { command: "check", exitCode: 0, output: "diagnostic" },
@@ -97,6 +100,9 @@ it("証跡を折りたたみ、失敗と範囲外を警告色にする", () => {
   };
   const collapsed = cardLines(formatTimelineItem(item, labels, false), 100);
   expect(collapsed.some(line => line.parts?.some(part => part.text.includes("pnpm test: exit 1") && part.color === TERMINAL_COLORS.warn))).toBe(true);
+  expect(
+    collapsed.some(line => line.parts?.some(part => part.text.includes("pnpm run check:anim: exit unknown") && part.color === TERMINAL_COLORS.muted)),
+  ).toBe(true);
   expect(collapsed.some(line => line.text.includes("outside.ts"))).toBe(false);
   const expanded = cardLines(formatTimelineItem(item, labels, true), 100);
   expect(expanded.some(line => line.text.includes("C:/project/worktree"))).toBe(true);
