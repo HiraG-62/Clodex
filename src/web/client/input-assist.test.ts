@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { AGENT_IDS } from "../../agents/agent-adapter.js";
+import { AGENT_META } from "../../agents/agent-meta.js";
 import { slashCommands } from "../../cli/commands.js";
 import { createInputAssist } from "./input-assist.js";
 
@@ -16,6 +18,13 @@ const { suggest, highlight } = createInputAssist(slashCommands(), ["claude", "co
 const FILES = ["src/cli/input.ts", "src/web/client/input-assist.ts", "docs/DESIGN.md", "README.md"];
 
 describe("suggest", () => {
+  it("各 Agent の effort 候補が registry と一致する", () => {
+    for (const id of AGENT_IDS) {
+      const text = `/effort ${id} `;
+      const result = suggest(text, text.length, [], { agents: [], conversations: [], pendingInputs: [] });
+      expect(result?.items.map(item => item.label).sort()).toEqual([...AGENT_META[id].effortLevels].sort());
+    }
+  });
   it("@all を候補と強調表示に含める", () => {
     expect(suggest("@a", 2, [])?.items[0]?.insert).toBe("@all ");
     expect(highlight("@all! hello", new Set())[0]).toEqual({ text: "@all!", kind: "agent" });

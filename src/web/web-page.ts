@@ -1,5 +1,7 @@
 // Web UI の画面（DESIGN.md §17 Web UI）。HTML 1 枚に CSS と JS を inline で持つ。
 import { createHash } from "node:crypto";
+import { AGENT_IDS } from "../agents/agent-adapter.js";
+import { AGENT_META } from "../agents/agent-meta.js";
 import { slashCommands } from "../cli/commands.js";
 import type { Language } from "../context/language.js";
 import { MESSAGES } from "../i18n/i18n.js";
@@ -23,7 +25,7 @@ ${UI_ICONS}
     <div class="progress" aria-hidden="true"></div>
     ${button("mobile-menu", "menu", "web.top.conversations", "mobile-only")}
     <div class="mobile-title mobile-only"><b id="mobile-title"></b><small id="mobile-project"></small></div>
-    <div id="mobile-agents" class="mobile-only"><span class="sk mobile-agent-skeleton"></span><span class="sk mobile-agent-skeleton"></span></div>
+    <div id="mobile-agents" class="mobile-only">${AGENT_IDS.map(() => '<span class="sk mobile-agent-skeleton"></span>').join("")}</div>
     ${button("mobile-more", "ellipsis", "web.top.more", "mobile-only")}
     <span class="brand">Clodex</span>
     <div class="project-pill" id="project-pill">${icon("folder")}<span id="project-name"></span>${icon("chevron-down")}<select id="projects" aria-label="${m("web.top.projects")}"></select></div>
@@ -39,7 +41,7 @@ ${UI_ICONS}
   </header>
   <nav class="conversation-tabs" id="conversation-tabs" aria-label="${m("web.side.conversations")}" hidden></nav>
   <div class="conn" id="conn" hidden role="status"><span class="spin" id="conn-spinner"></span><span id="conn-label">${m("web.conn.lost")}</span><button class="btn" id="reload" type="button" hidden>${m("web.conn.reload")}</button></div>
-  <section class="agent-strip" id="agents" aria-label="${m("web.agents.label")}"><div class="strip-well" aria-hidden="true">${[0, 1].map(() => '<div class="strip-skeleton"><span class="sk sk-avatar"></span><div class="sk-identity"><div><span class="sk sk-name"></span><span class="sk sk-state"></span></div><span class="sk sk-settings"></span></div><div class="sk-gauges"><span class="sk"></span><span class="sk"></span><span class="sk"></span></div></div>').join("")}</div></section>
+  <section class="agent-strip" id="agents" aria-label="${m("web.agents.label")}"><div class="strip-well" aria-hidden="true">${AGENT_IDS.map(() => '<div class="strip-skeleton"><span class="sk sk-avatar"></span><div class="sk-identity"><div><span class="sk sk-name"></span><span class="sk sk-state"></span></div><span class="sk sk-settings"></span></div><div class="sk-gauges"><span class="sk"></span><span class="sk"></span><span class="sk"></span></div></div>').join("")}</div></section>
   <aside class="side">
     <section>
       <div class="side-head"><div class="eyebrow">${m("web.side.conversations")}</div><div class="side-actions">${button("new-brainstorm", "lightbulb", "web.brainstorm")}${button("new-conversation", "square-pen", "web.side.newConversation")}</div></div>
@@ -68,8 +70,7 @@ ${UI_ICONS}
       </div>
       <div class="bar">
         <div class="target-slot"><div class="to" role="group" aria-label="${m("web.to.label")}">
-          <button type="button" data-agent="claude" aria-pressed="true">Claude</button>
-          <button type="button" data-agent="codex" aria-pressed="false">Codex</button>
+          ${AGENT_IDS.map((id, index) => `<button type="button" data-agent="${id}" aria-pressed="${index === 0}">${escapeHtml(AGENT_META[id].name)}</button>`).join("\n          ")}
         </div>
         <div class="shell-badge"><span>${m("web.shellInput")}</span></div></div>
         <span class="solo-badge" id="solo-badge" hidden>${m("shell.solo")}</span>
@@ -114,6 +115,7 @@ const inlineScript = (source: string) => source.replace(/<\/script/gi, "<\\/scri
 
 const PAGE_VERSION_LENGTH = 12;
 const layoutStyle = `
+:root { --agent-count: ${AGENT_IDS.length}; }
 :root { --side-width: ${WEB_LAYOUT.sideWidth}px; --chat-max-width: ${WEB_LAYOUT.chatMaxWidth}px; }
 @media (width > ${WEB_LAYOUT.sideWidth + WEB_LAYOUT.chatMaxWidth}px) and (hover: hover) and (pointer: fine) {
   .app { max-width: none; border: 0; grid-template-columns: max(var(--side-width), calc((100vw - var(--chat-max-width)) / 2)) var(--chat-max-width) minmax(0, 1fr); grid-template-areas: "top top top" "side tabs ." "side conn ." "side agents ." "side log ." "side compose ."; }

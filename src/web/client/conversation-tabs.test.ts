@@ -84,7 +84,7 @@ function setup() {
     refreshOpenSheet: vi.fn(),
     syncPendingButtons: vi.fn(),
   } as unknown as ClientContext;
-  vi.stubGlobal("document", { body: { dataset: {} }, querySelectorAll: () => [] });
+  vi.stubGlobal("document", { body: { dataset: {}, style: { setProperty: vi.fn() } }, querySelectorAll: () => [] });
   return { ctx, get };
 }
 
@@ -96,6 +96,7 @@ describe("タブ操作", () => {
     ctx.store.state!.conversations = [conversation(tabbed)];
     ctx.store.state!.tabs = [{ projectRoot: PROJECT, conversationId: "saved", title: "会話", tabbed, current: true }];
     createStateView(ctx).renderState();
+    expect(document.body.style.setProperty).toHaveBeenCalledWith("--accent", "var(--claude)");
     const action = get("#conversation-tabs").children[0]!.children[1]!;
     expect(action.dataset.icon).toBe(tabbed ? "x" : "pin");
     expect(action.title).toBe(tabbed ? "web.conv.closeTab" : "web.conv.keepTab");

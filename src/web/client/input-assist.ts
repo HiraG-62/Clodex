@@ -1,6 +1,7 @@
 // 入力欄の補助（DESIGN.md §28 v0.3 A）: スラッシュコマンド・送り先・@path の候補と、強調表示の区切り。
-// ブラウザへ関数のまま埋め込むため、外部を参照しない 1 つの関数として書く（型の import のみ）
 
+import { COMMON_EFFORT_LEVELS, isAgentId } from "../../agents/agent-adapter.js";
+import { AGENT_META } from "../../agents/agent-meta.js";
 import type { ModelOption } from "../../agents/startup-probe.js";
 import type { SlashCommand } from "../../cli/commands.js";
 
@@ -51,7 +52,7 @@ export function createInputAssist(
   const MAX_ITEMS = 8;
   const recipients = [...agents, "all"];
   const PERMISSIONS = ["read-only", "edit", "full"];
-  const COMMON_EFFORTS = ["low", "medium", "high", "xhigh"];
+  const COMMON_EFFORTS = COMMON_EFFORT_LEVELS;
 
   // caret を含む空白区切りの語
   const tokenAt = (text: string, caret: number) => {
@@ -124,7 +125,11 @@ export function createInputAssist(
           break;
         case "effort":
           if (index === 0) values = [...agentValues, ...simple(COMMON_EFFORTS, labels.effort)];
-          if (index === 1) values = simple([...COMMON_EFFORTS, ...(previous[1] === "claude" ? ["max"] : ["minimal"])], labels.effort);
+          if (index === 1 && previous[1] && isAgentId(previous[1])) {
+            const levels = AGENT_META[previous[1]].effortLevels;
+            const common = COMMON_EFFORTS.filter(level => levels.includes(level));
+            values = simple([...common, ...levels.filter(level => !common.some(value => value === level))], labels.effort);
+          }
           break;
         case "model":
           if (index === 0) values = agentValues;

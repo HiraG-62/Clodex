@@ -1,6 +1,8 @@
 // Ink に渡す前の分類と編集操作。端末 I/O を含めない。
 
 import { marked, type Token, type Tokens } from "marked";
+import { type AgentId, isAgentId } from "../agents/agent-adapter.js";
+import { AGENT_META, agentRecord } from "../agents/agent-meta.js";
 import type { TaskMetrics } from "../coordinator/task-metrics-summary.js";
 import { t } from "../i18n/i18n.js";
 import type { AgentMessage, MessageType } from "../protocol/messages.js";
@@ -199,6 +201,8 @@ export const TERMINAL_COLORS = {
   claudeHeader: "#3c3025",
   codexHeader: "#272e39",
 } as const;
+
+export const TERMINAL_AGENT_COLORS = agentRecord(id => ({ color: TERMINAL_COLORS[id], header: TERMINAL_COLORS[`${id}Header`] }));
 
 export const WHEEL_LINES = 3;
 const SGR_WHEEL_UP = 64;
@@ -481,9 +485,9 @@ export class CardLineCache {
   }
 }
 
-const agentName = (id: string): string => (id === "claude" ? "Claude" : id === "codex" ? "Codex" : id);
-const agentColor = (id: string): string => (id === "claude" ? TERMINAL_COLORS.claude : TERMINAL_COLORS.codex);
-const agentHeaderColor = (id: string): string => (id === "claude" ? TERMINAL_COLORS.claudeHeader : TERMINAL_COLORS.codexHeader);
+const agentName = (id: string): string => (isAgentId(id) ? AGENT_META[id].name : id);
+const agentColor = (id: AgentId): string => TERMINAL_AGENT_COLORS[id].color;
+const agentHeaderColor = (id: AgentId): string => TERMINAL_AGENT_COLORS[id].header;
 const MESSAGE_COLORS: Record<MessageType, string> = {
   QUESTION: TERMINAL_COLORS.warn,
   REVIEW_REQUEST: TERMINAL_COLORS.review,

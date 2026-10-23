@@ -1,4 +1,4 @@
-import type { AgentId, PermissionLevel } from "../../agents/agent-adapter.js";
+import { AGENT_IDS, type AgentId, type PermissionLevel } from "../../agents/agent-adapter.js";
 import type { CommandLifecycle } from "../../cli/command-runner.js";
 import type { AgentState } from "../../cli/shell.js";
 
@@ -12,7 +12,7 @@ export function resolvePendingSettings(
   now = Date.now(),
 ): PendingSettings {
   const result: PendingSettings = {};
-  for (const id of ["claude", "codex"] as const) {
+  for (const id of AGENT_IDS) {
     const requested = pending[id];
     if (!requested) continue;
     const agent = agents.find(entry => entry.id === id);

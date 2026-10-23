@@ -1,7 +1,7 @@
 // Web UI の feed を会話ごとに JSON Lines で保存する（DESIGN.md §18 Web UI の feed）
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, extname, join } from "node:path";
-import type { AgentId } from "../agents/agent-adapter.js";
+import { type AgentId, isAgentId } from "../agents/agent-adapter.js";
 import { withoutContextInstruction } from "../context/conversation-instruction.js";
 import { DEFAULT_RECENT_ITEMS, type HistoryItem, withoutCanceledHistoryItem } from "./web-feed.js";
 
@@ -38,7 +38,8 @@ const parseLine = (line: string): HistoryItem | undefined => {
         item.event.kind === "agent" &&
         (!isObject(item.event.event) ||
           typeof item.event.event.type !== "string" ||
-          (item.event.agent !== "claude" && item.event.agent !== "codex") ||
+          typeof item.event.agent !== "string" ||
+          !isAgentId(item.event.agent) ||
           typeof item.event.at !== "string")
       )
         return undefined;

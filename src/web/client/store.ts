@@ -17,9 +17,9 @@ export interface ClientDeps {
 
 export interface SharedStore {
   pendingRequests: Set<string>;
-  interrupting: Set<"claude" | "codex">;
+  interrupting: Set<AgentId>;
   state: WebState | undefined;
-  interruptAttempts: Map<"claude" | "codex", symbol>;
+  interruptAttempts: Map<AgentId, symbol>;
   liveGeneration: number;
   pendingSettings: PendingSettings;
   settingRequests: Map<string, symbol>;
@@ -30,7 +30,7 @@ export interface SharedStore {
   unreadWhileReading: boolean;
   items: TimelineItem[];
   rendered: Map<string, { item: DisplayTimelineItem; node: HTMLElement }>;
-  startingAt: Map<"claude" | "codex", string>;
+  startingAt: Map<AgentId, string>;
   historyLoading: boolean;
   commandStarts: CommandStarts;
   controlUpdaters: WeakMap<HTMLElement, (agent: AgentState) => void>;

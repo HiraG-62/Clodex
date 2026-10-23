@@ -3,6 +3,8 @@ import { PassThrough } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
 import { Box, render, Text, useApp, useInput, useStdout } from "ink";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AGENT_IDS } from "../agents/agent-adapter.js";
+import { AGENT_META } from "../agents/agent-meta.js";
 import { slashCommands } from "../cli/commands.js";
 import { getLanguage, setLanguage, t } from "../i18n/i18n.js";
 import { createInputAssist } from "../web/client/input-assist.js";
@@ -21,6 +23,7 @@ import {
   scrollBy,
   scrollToBottom,
   splitMouseInput,
+  TERMINAL_AGENT_COLORS,
   TERMINAL_COLORS,
   type TerminalFeed,
   type TerminalLabels,
@@ -52,10 +55,10 @@ if (-not [W.K]::SetConsoleMode($h, $m -bor 0x${ENABLE_VIRTUAL_TERMINAL_INPUT.toS
 export const ENABLE_MOUSE_TRACKING = "\x1b[?1000h\x1b[?1006h";
 export const DISABLE_MOUSE_TRACKING = "\x1b[?1006l\x1b[?1000l";
 export const TUI_RENDER_OPTIONS = { exitOnCtrlC: false, alternateScreen: true } as const;
-const { line: LINE_COLOR, muted: MUTED_COLOR, warn: WARN_COLOR, claude: CLAUDE_COLOR, codex: CODEX_COLOR } = TERMINAL_COLORS;
+const { line: LINE_COLOR, muted: MUTED_COLOR, warn: WARN_COLOR } = TERMINAL_COLORS;
 const EMPTY_STATE: WebState = {
   project: "",
-  primary: "claude",
+  primary: AGENT_IDS[0],
   roles: {},
   roleSources: {},
   rules: {},
@@ -144,7 +147,7 @@ export class MouseInputRelay extends PassThrough {
 }
 
 const makeAssist = () =>
-  createInputAssist(slashCommands(), ["claude", "codex"], {
+  createInputAssist(slashCommands(), AGENT_IDS, {
     agent: t("web.assist.agent"),
     file: t("web.assist.file"),
     permission: t("web.assist.permission"),
@@ -192,7 +195,7 @@ const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed
       ]
         .filter(Boolean)
         .join(" · ");
-      const color = agent.id === "claude" ? CLAUDE_COLOR : CODEX_COLOR;
+      const color = TERMINAL_AGENT_COLORS[agent.id].color;
       const status = t(`web.status.${agent.status}`);
       return h(
         Box,
@@ -200,7 +203,7 @@ const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed
         h(
           Box,
           { flexDirection: "row", gap: 1 },
-          h(Box, { flexShrink: 0 }, h(Text, { color, bold: true }, agent.id === "claude" ? "Claude" : "Codex")),
+          h(Box, { flexShrink: 0 }, h(Text, { color, bold: true }, AGENT_META[agent.id].name)),
           h(
             Box,
             { flexShrink: 0 },
@@ -535,7 +538,7 @@ export const TuiApp = ({
   const cursor = cursorSlices(buffer);
   const frame = inputFrame(buffer.text, t("tui.shellInput"), size.columns);
   const { branch, solo } = state.conversations.find(conversation => conversation.current) ?? {};
-  const soloLabel = !solo ? "" : ` · ${solo === "free" ? t("shell.solo") : t("shell.soloAgent", { agent: solo === "claude" ? "Claude" : "Codex" })}`;
+  const soloLabel = !solo ? "" : ` · ${solo === "free" ? t("shell.solo") : t("shell.soloAgent", { agent: AGENT_META[solo].name })}`;
   const project = `${state.project || "Clodex"}${branch ? ` · ${t("tui.branch", { branch })}` : ""}${soloLabel}`;
   return h(
     Box,
@@ -573,7 +576,7 @@ export const TuiApp = ({
           ...choices.map((choice, i) =>
             h(
               Text,
-              { key: `${choice.insert}${i}`, color: i === selected ? CODEX_COLOR : MUTED_COLOR },
+              { key: `${choice.insert}${i}`, color: i === selected ? TERMINAL_COLORS.codex : MUTED_COLOR },
               `${i === selected ? "▸" : " "} ${choice.label} · ${choice.detail}`,
             ),
           ),

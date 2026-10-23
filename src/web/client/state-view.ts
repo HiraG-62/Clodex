@@ -72,6 +72,7 @@ export function createStateView(ctx: ClientContext) {
     const solo = ctx.store.state.conversations.find(conversation => conversation.current)?.solo;
     if (solo && solo !== "free") ctx.store.target = solo;
     document.body.dataset.to = ctx.store.target ?? ctx.store.state.primary;
+    document.body.style.setProperty("--accent", `var(--${document.body.dataset.to})`);
     const projects = ctx.$("#projects") as HTMLSelectElement;
     const listedProjects = ctx.store.state.projects ?? [];
     fillProjectSelect(projects, listedProjects);

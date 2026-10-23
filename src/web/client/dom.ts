@@ -1,4 +1,5 @@
-import type { AgentId, AgentStatus, TurnResult } from "../../agents/agent-adapter.js";
+import { AGENT_IDS, type AgentId, type AgentStatus, type TurnResult } from "../../agents/agent-adapter.js";
+import { AGENT_META, agentRecord } from "../../agents/agent-meta.js";
 import type { MessageKey } from "../../i18n/messages.js";
 import type { SendKey } from "./send-key.js";
 import type { ClientContext } from "./store.js";
@@ -11,16 +12,9 @@ export function createDom(ctx: ClientContext) {
   const t = (key: MessageKey, params: Record<string, string | number> = {}) =>
     ctx.messages[key].replace(/\{(\w+)\}/g, (match, name: string) => (name in params ? String(params[name]) : match));
   const displayDefault = (value: string | undefined) => (!value || value === "default" ? t("web.agent.default") : value);
-  const AGENTS: Record<AgentId, { name: string; mark: string }> = {
-    claude: { name: "Claude", mark: "C" },
-    codex: { name: "Codex", mark: "X" },
-  };
-  const AGENT_IDS: AgentId[] = ["claude", "codex"];
+  const AGENTS = agentRecord(id => ({ name: AGENT_META[id].name, mark: AGENT_META[id].ideaPrefix }));
   const PERMISSIONS = ["read-only", "edit", "full"] as const;
-  const EFFORTS: Record<AgentId, readonly string[]> = {
-    claude: ["low", "medium", "high", "xhigh", "max"],
-    codex: ["minimal", "low", "medium", "high", "xhigh"],
-  };
+  const EFFORTS = agentRecord(id => AGENT_META[id].effortLevels);
   const THEMES = ["system", "light", "dark"] as const;
 
   const THEME_LABEL: Record<Theme, MessageKey> = { system: "web.settings.themeSystem", light: "web.settings.themeLight", dark: "web.settings.themeDark" };
@@ -136,6 +130,7 @@ export function createDom(ctx: ClientContext) {
   };
   const mark = (agent: AgentId | "you") => {
     const node = el("span", `mark ${agent}`, agent === "you" ? "Y" : AGENTS[agent].mark);
+    if (agent !== "you") node.dataset.agent = agent;
     node.setAttribute("aria-hidden", "true");
     return node;
   };
