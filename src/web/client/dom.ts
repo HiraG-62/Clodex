@@ -5,6 +5,13 @@ import type { SendKey } from "./send-key.js";
 import type { ClientContext } from "./store.js";
 import { formatTokens } from "./token-format.js";
 
+const GOOGLE_G_PATHS = [
+  { fill: "#4285F4", d: "M21.35 11.1H12v3.8h5.35c-.23 1.24-.93 2.3-1.99 3.01v2.5h3.22c1.88-1.73 2.97-4.28 2.97-7.31 0-.68-.07-1.34-.2-2z" },
+  { fill: "#34A853", d: "M12 22c2.7 0 4.96-.9 6.61-2.43l-3.22-2.5c-.9.6-2.05.96-3.39.96-2.6 0-4.81-1.76-5.6-4.12H3.08v2.58C4.72 19.77 8.08 22 12 22z" },
+  { fill: "#FBBC05", d: "M6.4 13.91A5.98 5.98 0 0 1 6.09 12c0-.66.11-1.3.31-1.91V7.51H3.08A9.96 9.96 0 0 0 2 12c0 1.61.38 3.13 1.08 4.49l3.32-2.58z" },
+  { fill: "#EA4335", d: "M12 5.96c1.43 0 2.72.49 3.74 1.47l2.8-2.8C16.84 3.03 14.58 2 12 2c-3.92 0-7.28 2.23-8.92 5.51L6.4 10.1c.79-2.36 3-4.14 5.6-4.14z" },
+] as const;
+
 export function createDom(ctx: ClientContext) {
   type Theme = (typeof ctx.THEMES)[number];
 
@@ -129,9 +136,23 @@ export function createDom(ctx: ClientContext) {
     },
   };
   const mark = (agent: AgentId | "you") => {
-    const node = el("span", `mark ${agent}`, agent === "you" ? "Y" : AGENTS[agent].mark);
+    const node = el("span", `mark ${agent}`, agent === "gemini" ? undefined : agent === "you" ? "Y" : AGENTS[agent].mark);
     if (agent !== "you") node.dataset.agent = agent;
     node.setAttribute("aria-hidden", "true");
+    if (agent === "gemini") {
+      node.style.background = "#fff";
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "0 0 24 24");
+      svg.setAttribute("width", "82%");
+      svg.setAttribute("height", "82%");
+      for (const { fill, d } of GOOGLE_G_PATHS) {
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("fill", fill);
+        path.setAttribute("d", d);
+        svg.append(path);
+      }
+      node.append(svg);
+    }
     return node;
   };
   return {

@@ -151,9 +151,15 @@ export class AntigravityAdapter extends BaseAgentAdapter {
       if (!this.model && typeof init?.model === "string") this.model = init.model;
       return;
     }
-    if (event.event === "step_update") return this.handleStep(event);
+    if (event.event === "step_update") {
+      const step = record(event.step_update);
+      if (step) this.handleStep(step);
+      return;
+    }
     if (event.event !== "result") return;
-    const usage = record(event.usage);
+    const result = record(event.result);
+    if (!result) return;
+    const usage = record(result.usage);
     if (usage) {
       const input = typeof usage.input_tokens === "number" ? usage.input_tokens : this.previousInput;
       const cached = typeof usage.cache_read_tokens === "number" ? usage.cache_read_tokens : this.previousCached;
@@ -169,9 +175,9 @@ export class AntigravityAdapter extends BaseAgentAdapter {
       this.previousCached = cached;
       this.previousOutput = output;
     }
-    if (Array.isArray(event.denied_actions) && event.denied_actions.length)
-      process.stderr.write(`gemini denied actions: ${JSON.stringify(event.denied_actions)}\n`);
-    this.finishTurn({ status: event.status === "ERROR" ? "failed" : "completed", text: typeof event.response === "string" ? event.response : "" });
+    if (Array.isArray(result.denied_actions) && result.denied_actions.length)
+      process.stderr.write(`gemini denied actions: ${JSON.stringify(result.denied_actions)}\n`);
+    this.finishTurn({ status: result.status === "ERROR" ? "failed" : "completed", text: typeof result.response === "string" ? result.response : "" });
   }
 
   private handleStep(event: Record<string, unknown>): void {

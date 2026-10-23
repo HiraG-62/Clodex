@@ -14,11 +14,17 @@ describe("AntigravityAdapter", () => {
     fake.last.emit({ event: "init", conversation_id: "conversation-1", init: { model: "flash" } });
     const turn = adapter.send("調べる", ["C:\\image.png"]);
     expect(fake.last.written.at(-1)).toEqual({ event: "user", message: { content: "調べる\n\n[image] C:\\image.png" } });
-    fake.last.emit({ event: "step_update", step_type: "agent_response", step_index: 1, state: "ACTIVE", text_delta: "結" });
-    fake.last.emit({ event: "step_update", step_type: "agent_response", step_index: 1, state: "DONE", text_delta: "果" });
-    fake.last.emit({ event: "step_update", step_type: "tool", state: "ACTIVE", tool_info: { name: "run_command", parameters: { CommandLine: "pnpm test" } } });
-    fake.last.emit({ event: "step_update", step_type: "tool", state: "ACTIVE", tool_info: { name: "write_to_file", parameters: { TargetFile: "src/a.ts" } } });
-    fake.last.emit({ event: "result", status: "SUCCESS", response: "結果", usage: { input_tokens: 10, cache_read_tokens: 2, output_tokens: 3 } });
+    fake.last.emit({ event: "step_update", step_update: { step_type: "agent_response", step_index: 1, state: "ACTIVE", text_delta: "結" } });
+    fake.last.emit({ event: "step_update", step_update: { step_type: "agent_response", step_index: 1, state: "DONE", text_delta: "果" } });
+    fake.last.emit({
+      event: "step_update",
+      step_update: { step_type: "tool", state: "ACTIVE", tool_info: { name: "run_command", parameters: { CommandLine: "pnpm test" } } },
+    });
+    fake.last.emit({
+      event: "step_update",
+      step_update: { step_type: "tool", state: "ACTIVE", tool_info: { name: "write_to_file", parameters: { TargetFile: "src/a.ts" } } },
+    });
+    fake.last.emit({ event: "result", result: { status: "SUCCESS", response: "結果", usage: { input_tokens: 10, cache_read_tokens: 2, output_tokens: 3 } } });
     expect(await turn).toEqual({ status: "completed", text: "結果" });
     expect(events).toContainEqual({ type: "session", sessionId: "conversation-1" });
     expect(events).toContainEqual({ type: "text", text: "結果" });
@@ -40,7 +46,7 @@ describe("AntigravityAdapter", () => {
     expect(fake.calls[1]?.args).toContain("--conversation");
     expect(fake.calls[1]?.args).toContain("conversation-1");
     await flush();
-    fake.last.emit({ event: "result", status: "SUCCESS", response: "完了" });
+    fake.last.emit({ event: "result", result: { status: "SUCCESS", response: "完了" } });
     expect(await resumed).toEqual({ status: "completed", text: "完了" });
   });
 
