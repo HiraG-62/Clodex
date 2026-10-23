@@ -59,7 +59,6 @@ const setup = async () => {
   const mcp: McpServerHandle = await startMcpServer({
     sendMessage: (from, input) => coordinator!.receiveMessage(from, input),
     askUser: (from, input) => coordinator!.askUser(from, input),
-    tellUser: (from, input) => coordinator!.tellUser(from, input),
     readConversation: () => ({ entries: [] }),
   });
   coordinator = new Coordinator({

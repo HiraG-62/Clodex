@@ -10,8 +10,7 @@ export { isCanceledHistoryItem, withoutCanceledHistoryItem } from "../web-feed.j
 export type TimelineStep = { kind: "say"; text: string; at: string } | { kind: "tool"; name: string; input: string; files?: string[] };
 
 export type TimelineItem =
-  | { kind: "tell"; id: string; at: string; agent: AgentId; body: string }
-  | { kind: "question"; id: string; at: string; agent: AgentId; questions: UserQuestion[]; context?: string; answers?: string[][] }
+  | { kind: "question"; id: string; at: string; agent: AgentId; questions: UserQuestion[]; answers?: string[][] }
   | {
       kind: "human";
       id: string;
@@ -38,12 +37,9 @@ export type TimelineItem =
       steps: TimelineStep[];
       text: string;
       finalAt?: string;
-      plan?: string; // ターンの最初の発言（方針。DESIGN.md §17 ログ）
-      planAt?: string;
       messages?: Array<{ message: AgentMessage; envelope?: string }>;
       questions?: Array<Extract<TimelineItem, { kind: "question" }>>;
-      tells?: Array<Extract<TimelineItem, { kind: "tell" }>>;
-      attachmentOrder?: Array<{ kind: "message" | "question" | "tell"; id: string }>;
+      attachmentOrder?: Array<{ kind: "message" | "question"; id: string; stepIndex?: number }>;
     }
   | { kind: "message"; id: string; at: string; message: AgentMessage; envelope?: string }
   | { kind: "notice"; id: string; at: string; text: string; compactAgent?: AgentId }
@@ -112,33 +108,24 @@ export function withSubagentRows(
 }
 
 // 変更した項目だけを新しいオブジェクトにして返す（画面は項目の同一性で差分を描画する）
-export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineItem[] {
-  const limit = (list: TimelineItem[]) => (list.length > MAX_ITEMS ? list.slice(list.length - MAX_ITEMS) : list);
+export function applyFeedItem(items: TimelineItem[], item: FeedItem, options: { maxItems?: number } = {}): TimelineItem[] {
+  const maxItems = options.maxItems ?? MAX_ITEMS;
+  const limit = (list: TimelineItem[]) => (list.length > maxItems ? list.slice(list.length - maxItems) : list);
   type Turn = Extract<TimelineItem, { kind: "turn" }>;
   type Question = Extract<TimelineItem, { kind: "question" }>;
-  type Tell = Extract<TimelineItem, { kind: "tell" }>;
-  type Attachment =
-    | { kind: "message"; entry: { message: AgentMessage; envelope?: string } }
-    | { kind: "question"; entry: Question }
-    | { kind: "tell"; entry: Tell };
-  const hasAttachments = (turn: Turn) => Boolean(turn.messages?.length || turn.questions?.length || turn.tells?.length);
+  type Attachment = { kind: "message"; entry: { message: AgentMessage; envelope?: string } } | { kind: "question"; entry: Question };
+  const hasAttachments = (turn: Turn) => Boolean(turn.messages?.length || turn.questions?.length);
   const appendAttachment = (turn: Turn, attachment: Attachment): Turn => {
     if (attachment.kind === "message")
       return {
         ...turn,
         messages: [...(turn.messages ?? []), attachment.entry],
-        attachmentOrder: [...(turn.attachmentOrder ?? []), { kind: "message", id: attachment.entry.message.id }],
-      };
-    if (attachment.kind === "tell")
-      return {
-        ...turn,
-        tells: [...(turn.tells ?? []), attachment.entry],
-        attachmentOrder: [...(turn.attachmentOrder ?? []), { kind: "tell", id: attachment.entry.id }],
+        attachmentOrder: [...(turn.attachmentOrder ?? []), { kind: "message", id: attachment.entry.message.id, stepIndex: turn.steps.length }],
       };
     return {
       ...turn,
       questions: [...(turn.questions ?? []), attachment.entry],
-      attachmentOrder: [...(turn.attachmentOrder ?? []), { kind: "question", id: attachment.entry.id }],
+      attachmentOrder: [...(turn.attachmentOrder ?? []), { kind: "question", id: attachment.entry.id, stepIndex: turn.steps.length }],
     };
   };
   const attachToTurn = (index: number, attachment: Attachment, at: string, split: boolean): TimelineItem[] => {
@@ -205,40 +192,16 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
 
   const id = `e${item.seq}`;
   const { event } = item;
-  if (event.kind === "tell") {
-    let index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === event.agent && entry.status === "working" && entry.segment !== "closed");
-    const last = items.at(-1);
-    if (index < 0 && last?.kind === "turn" && last.agent === event.agent && last.status === "completed") index = items.length - 1;
-    const tell: Tell = { kind: "tell", id: event.id, agent: event.agent, at: event.at, body: event.body };
-    return index < 0 ? limit([...items, tell]) : attachToTurn(index, { kind: "tell", entry: tell }, event.at, false);
-  }
   if (event.kind === "question") {
     let index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === event.agent && entry.status === "working" && entry.segment !== "closed");
     const last = items.at(-1);
     if (index < 0 && last?.kind === "turn" && last.agent === event.agent && last.status === "completed") index = items.length - 1;
-    let context: string | undefined;
-    const turn = items[index];
-    if (turn?.kind === "turn" && !hasAttachments(turn)) {
-      const sayIndex = turn.steps.findLastIndex(step => step.kind === "say");
-      if (sayIndex >= 0) {
-        const say = turn.steps[sayIndex];
-        if (say?.kind === "say") context = say.text;
-        items = items.map((entry, entryIndex) =>
-          entryIndex === index ? { ...turn, steps: turn.steps.filter((_, stepIndex) => stepIndex !== sayIndex) } : entry,
-        );
-      } else if (turn.plan !== undefined) {
-        context = turn.plan;
-        const { plan: _plan, planAt: _planAt, ...withoutPlan } = turn;
-        items = items.map((entry, entryIndex) => (entryIndex === index ? withoutPlan : entry));
-      }
-    }
     const question: Question = {
       kind: "question",
       id: event.id,
       agent: event.agent,
       at: event.at,
       questions: event.questions,
-      ...(context !== undefined ? { context } : {}),
     };
     return index < 0 ? limit([...items, question]) : attachToTurn(index, { kind: "question", entry: question }, event.at, true);
   }
@@ -281,7 +244,15 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   if (event.kind === "brainstorm") {
     if (event.artifact) {
       const index = items.findLastIndex(entry => entry.kind === "turn" && entry.status === "completed");
-      return items.map((entry, i) => (i === index && entry.kind === "turn" ? { ...entry, text: `${entry.text}\n\n[資料](<${event.artifact}>)` } : entry));
+      return items.map((entry, i) => {
+        if (i !== index || entry.kind !== "turn") return entry;
+        const text = `${entry.text}\n\n[資料](<${event.artifact}>)`;
+        const lastSay = entry.steps.findLastIndex(step => step.kind === "say");
+        const steps = entry.steps.map((step, index) =>
+          index === lastSay && step.kind === "say" && step.text.trim() === entry.text.trim() ? { ...step, text } : step,
+        );
+        return { ...entry, text, steps };
+      });
     }
     return limit([...items, { kind: "brainstorm", id, at: event.at, phase: event.phase, ...(event.round ? { round: event.round } : {}), total: event.total }]);
   }
@@ -331,11 +302,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
       return limit([...other, ...unfinished.map(entry => ({ ...entry, status: "interrupted" as const })), newTurn()]);
     }
     case "text":
-      return updateTurn(turn =>
-        turn.plan === undefined && !turn.continuation
-          ? { ...turn, plan: agentEvent.text, planAt: at }
-          : { ...turn, steps: [...turn.steps, { kind: "say", text: agentEvent.text, at }] },
-      );
+      return updateTurn(turn => ({ ...turn, steps: [...turn.steps, { kind: "say", text: agentEvent.text, at }] }));
     case "tool":
       return updateTurn(turn => ({
         ...turn,
@@ -349,29 +316,22 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
         );
       }
       const finish = (turn: Turn): Turn => {
-        const last = turn.steps[turn.steps.length - 1];
-        // 最終応答は本文として出すので、同じ内容の最後の発言は作業から外す
-        const steps = last?.kind === "say" && last.text.trim() === text.trim() ? turn.steps.slice(0, -1) : turn.steps;
-        // 発言が最終応答だけなら、方針として重ねて出さない
-        if (turn.plan !== undefined && turn.plan.trim() === text.trim()) {
-          const { plan: _same, planAt: _sameAt, ...rest } = turn;
-          return { ...rest, status, text, finalAt: at, steps };
-        }
+        const last = turn.steps.findLast(step => step.kind === "say");
+        const steps = text.trim() && last?.text.trim() !== text.trim() ? [...turn.steps, { kind: "say" as const, text, at }] : turn.steps;
         return { ...turn, status, text, finalAt: at, steps };
       };
       const index = items.findLastIndex(entry => entry.kind === "turn" && entry.agent === agent && entry.status === "working" && entry.segment !== "closed");
       if (index < 0) return limit([...items, finish(newTurn())]);
       const active = items[index] as Turn;
       const finalTextOnly = active.steps.length === 1 && active.steps[0]?.kind === "say" && active.steps[0].text.trim() === text.trim();
-      if (active.continuation && !active.plan && (!active.steps.length || finalTextOnly) && !hasAttachments(active)) {
+      if (active.continuation && (!active.steps.length || finalTextOnly) && !hasAttachments(active)) {
         const previousIndex = items.findLastIndex(
           (entry, i) =>
             i < index && entry.kind === "turn" && entry.agent === agent && entry.segment === "closed" && (entry.rootId ?? entry.id) === active.rootId,
         );
         const previous = items[previousIndex] as Turn | undefined;
         if (previous) {
-          const steps = text ? [...previous.steps, { kind: "say" as const, text, at }] : previous.steps;
-          const completed: Turn = previous.questions?.length ? finish(previous) : { ...previous, status, finalAt: at, steps };
+          const completed = finish(previous);
           return limit(items.filter((_, i) => i !== index).map((entry, i) => (i === previousIndex ? completed : entry)));
         }
       }
@@ -386,59 +346,50 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem): TimelineIt
   }
 }
 
-export type WorkingEntry =
-  | { kind: "head"; turnId: string; agent: AgentId; at: string; plan?: string; done?: true }
-  | { kind: "say"; agent: AgentId; text: string };
+type Turn = Extract<TimelineItem, { kind: "turn" }>;
+export type TurnContent =
+  | { kind: "say"; key: string; text: string; at: string }
+  | { kind: "tools"; key: string; steps: Array<Extract<TimelineStep, { kind: "tool" }>> }
+  | { kind: "message"; key: string; entry: NonNullable<Turn["messages"]>[number] }
+  | { kind: "question"; key: string; entry: Extract<TimelineItem, { kind: "question" }> };
 
-// 作業ログ（DESIGN.md §28 作業ログ）: Agent ごとに直近のターンの発言を時系列に並べ、発言のターンが変わるところに見出しを挟む
-export function workingFeed(items: readonly TimelineItem[]): WorkingEntry[] {
-  type Turn = Extract<TimelineItem, { kind: "turn" }>;
-  const RECENT_TURNS = 2;
-  const roots: Partial<Record<AgentId, Set<string>>> = {};
-  const turns: Turn[] = [];
-  for (let i = items.length - 1; i >= 0; i--) {
-    const item = items[i];
-    if (item?.kind !== "turn") continue;
-    const seen = roots[item.agent] ?? new Set<string>();
-    const root = item.rootId ?? item.id;
-    if (!seen.has(root) && seen.size >= RECENT_TURNS) continue;
-    seen.add(root);
-    roots[item.agent] = seen;
-    turns.unshift(item);
-  }
-  const says = turns.flatMap(turn => [
-    ...(turn.plan === undefined ? [] : [{ turn, text: turn.plan, at: turn.planAt ?? turn.at }]),
-    ...turn.steps.flatMap(step => (step.kind === "say" ? [{ turn, text: step.text, at: step.at }] : [])),
-  ]);
-  // 発言の無いターンは開始の位置に見出しだけを置く
-  const events: Array<{ turn: Turn; at: string; text?: string }> = [
-    ...says,
-    ...turns.filter(turn => !says.some(say => say.turn === turn)).map(turn => ({ turn, at: turn.at })),
-  ].sort((a, b) => a.at.localeCompare(b.at));
-  const entries: WorkingEntry[] = [];
-  let current: Turn | undefined;
-  for (const event of events) {
-    if (event.turn !== current) {
-      const { id, agent, at, plan } = event.turn;
-      // 直後の発言が方針そのものなら、見出しには重ねて出さない
-      const showPlan = plan !== undefined && event.text !== plan;
-      entries.push({
-        kind: "head",
-        turnId: id,
-        agent,
-        at,
-        ...(showPlan ? { plan } : {}),
-        ...(event.turn.status === "working" && event.turn.segment !== "closed" ? {} : { done: true as const }),
-      });
-      current = event.turn;
+export function turnContent(turn: Turn): TurnContent[] {
+  const blocks: TurnContent[] = [];
+  const steps = [...turn.steps];
+  const lastSay = steps.findLast(step => step.kind === "say");
+  if (turn.text.trim() && lastSay?.text.trim() !== turn.text.trim()) steps.push({ kind: "say", text: turn.text, at: turn.finalAt ?? turn.at });
+  const hiddenFinal = turn.messages?.some(({ message }) => message.auto && (message.type === "RESULT" || message.type === "ANSWER"))
+    ? steps.findLastIndex(step => step.kind === "say")
+    : -1;
+  const order = turn.attachmentOrder ?? [
+    ...(turn.messages ?? []).map(entry => ({ kind: "message" as const, id: entry.message.id, stepIndex: turn.steps.length })),
+    ...(turn.questions ?? []).map(entry => ({ kind: "question" as const, id: entry.id, stepIndex: turn.steps.length })),
+  ];
+  for (let index = 0; index <= steps.length; index++) {
+    for (const attachment of order.filter(entry => (entry.stepIndex ?? turn.steps.length) === index)) {
+      if (attachment.kind === "message") {
+        const entry = turn.messages?.find(entry => entry.message.id === attachment.id);
+        if (entry) blocks.push({ kind: "message", key: `message:${attachment.id}`, entry });
+      } else {
+        const entry = turn.questions?.find(entry => entry.id === attachment.id);
+        if (entry) blocks.push({ kind: "question", key: `question:${attachment.id}`, entry });
+      }
     }
-    if (event.text !== undefined) entries.push({ kind: "say", agent: event.turn.agent, text: event.text });
+    const step = steps[index];
+    if (!step || index === hiddenFinal) continue;
+    const key = `step:${index}`;
+    if (step.kind === "say") blocks.push({ ...step, key });
+    else {
+      const last = blocks.at(-1);
+      if (last?.kind === "tools") last.steps.push(step);
+      else blocks.push({ kind: "tools", key, steps: [step] });
+    }
   }
-  return entries;
+  return blocks;
 }
 
 export function rebuildTimeline(history: readonly HistoryItem[], apply: typeof applyFeedItem): TimelineItem[] {
-  return history.reduce<TimelineItem[]>(apply, []);
+  return history.reduce<TimelineItem[]>((items, item) => apply(items, item), []);
 }
 
 export function mergeReplayHistory(current: readonly HistoryItem[], incoming: readonly HistoryItem[]): { history: HistoryItem[]; preserved: boolean } {

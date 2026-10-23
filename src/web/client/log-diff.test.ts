@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diffTurn, discardMissingOpened, sameWorkingEntry } from "./log-diff.js";
+import { diffTurn, discardMissingOpened } from "./log-diff.js";
 import type { TimelineItem } from "./timeline.js";
 
 const turn = (changes: Partial<Extract<TimelineItem, { kind: "turn" }>> = {}): Extract<TimelineItem, { kind: "turn" }> => ({
@@ -14,45 +14,31 @@ const turn = (changes: Partial<Extract<TimelineItem, { kind: "turn" }>> = {}): E
 });
 
 describe("diffTurn", () => {
-  it("tell の追加では枠を再描画する", () => {
-    const previous = turn();
-    const next = { ...previous, tells: [{ kind: "tell" as const, id: "tell_1", agent: "claude" as const, at: "now", body: "発見" }] };
-    expect(diffTurn(previous, next).replace).toBe(true);
-  });
-  it("追加ステップと変更ステップだけを返す", () => {
+  it("既存の本文と tool を再利用し、追加と変更だけを返す", () => {
     const previous = turn({
       steps: [
+        { kind: "say", text: "説明 a.png", at: "now" },
         { kind: "tool", name: "Read", input: "a" },
-        { kind: "say", text: "old", at: "a" },
       ],
     });
-    const next = turn({
-      steps: [
-        { kind: "tool", name: "Read", input: "a" },
-        { kind: "say", text: "new", at: "a" },
-        { kind: "tool", name: "Bash", input: "b" },
-      ],
-    });
-    expect(diffTurn(previous, next)).toMatchObject({ steps: [1, 2], plan: false, body: false });
+    const next = {
+      ...previous,
+      steps: [...previous.steps, { kind: "tool" as const, name: "Read", input: "b" }, { kind: "say" as const, text: "続き", at: "later" }],
+    };
+    expect(diffTurn(previous, next)).toMatchObject({ replace: false, blocks: [1, 2] });
+    const changed = { ...next, steps: [{ kind: "say" as const, text: "説明 b.png", at: "now" }, ...next.steps.slice(1)] };
+    expect(diffTurn(next, changed)).toMatchObject({ replace: false, blocks: [0] });
   });
-
-  it("本文と画像のパスの増減を分ける", () => {
-    const previous = turn({ plan: "C:\\a.png C:\\b.png", text: "old" });
-    const next = turn({ plan: "C:\\b.png C:\\c.png", text: "new" });
-    expect(diffTurn(previous, next)).toMatchObject({ plan: true, body: true, images: { keep: ["C:\\b.png"], add: ["C:\\c.png"], remove: ["C:\\a.png"] } });
+  it("質問の回答は該当カードだけ更新する", () => {
+    const question = { kind: "question" as const, id: "q", at: "now", agent: "claude" as const, questions: [{ question: "選択", options: [{ label: "A" }] }] };
+    const previous = turn({ questions: [question] });
+    const next = { ...previous, questions: [{ ...question, answers: [["A"]] }] };
+    expect(diffTurn(previous, next)).toMatchObject({ replace: false, blocks: [0] });
   });
-
-  it("画像の順序だけが変わったときも既存要素を使えるようにする", () => {
-    const previous = turn({ plan: "a.png b.png" });
-    const next = turn({ plan: "b.png a.png" });
-    expect(diffTurn(previous, next).images).toMatchObject({ paths: ["b.png", "a.png"], keep: ["b.png", "a.png"], add: [], remove: [], orderChanged: true });
+  it("状態が変わったときは見出しも描き直す", () => {
+    const previous = turn();
+    expect(diffTurn(previous, { ...previous, status: "completed" }).replace).toBe(true);
   });
-});
-
-it("作業パネルは同じ項目だけを再利用する", () => {
-  expect(sameWorkingEntry({ kind: "say", agent: "claude", text: "a" }, { kind: "say", agent: "claude", text: "a" })).toBe(true);
-  expect(sameWorkingEntry({ kind: "say", agent: "claude", text: "a" }, { kind: "say", agent: "claude", text: "b" })).toBe(false);
-  expect(sameWorkingEntry({ kind: "head", turnId: "t", agent: "claude", at: "a" }, { kind: "head", turnId: "t", agent: "claude", at: "a" })).toBe(true);
 });
 
 it("消えた項目の開閉状態を消す", () => {

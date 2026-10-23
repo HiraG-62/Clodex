@@ -26,7 +26,7 @@ export const toLocalIso = (iso: string, offsetMinutes?: number): string => {
 export type ConversationParticipant = AgentId | "human";
 export interface ConversationEntry {
   at: string;
-  kind: "input" | "reply" | "message" | "question" | "answer" | "tell";
+  kind: "input" | "reply" | "message" | "question" | "answer";
   from: ConversationParticipant;
   to?: ConversationParticipant;
   body: string;
@@ -59,8 +59,6 @@ const entryOf = (event: CoordinatorEvent): ConversationEntry | undefined => {
       return event.message.body.trim()
         ? { at, kind: "message", from: event.message.from, to: event.message.to, body: event.message.body, id: event.message.id }
         : undefined;
-    case "tell":
-      return { at, kind: "tell", from: event.agent, to: "human", body: event.body, id: event.id };
     case "question": {
       const body = event.questions.map(({ question }) => question).join("\n");
       return body.trim() ? { at, kind: "question", from: event.agent, to: "human", body } : undefined;
@@ -112,9 +110,7 @@ export class ConversationTranscript {
     const size = Number.isFinite(limit) ? Math.max(1, Math.min(MAX_PAGE_SIZE, Math.floor(limit))) : DEFAULT_PAGE_SIZE;
     const start = Math.max(0, end - size);
     return {
-      entries: entries
-        .slice(start, end)
-        .map(({ id, ...entry }) => ({ ...entry, ...((entry.kind === "message" || entry.kind === "tell") && id ? { id } : {}) })),
+      entries: entries.slice(start, end).map(({ id, ...entry }) => ({ ...entry, ...(entry.kind === "message" && id ? { id } : {}) })),
       ...(start > 0 ? { nextBefore: start } : {}),
     };
   }
@@ -126,7 +122,7 @@ export class ConversationTranscript {
         if (!line.trim()) return [];
         try {
           const entry = JSON.parse(line) as ConversationEntry;
-          if (typeof entry.body !== "string") return [];
+          if ((entry as { kind: string }).kind === "tell" || typeof entry.body !== "string") return [];
           return [{ ...entry, body: entry.kind === "input" ? withoutContextInstruction(entry.body) : entry.body }];
         } catch {
           return [];

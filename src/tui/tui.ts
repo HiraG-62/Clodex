@@ -181,8 +181,8 @@ const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed
     { flexDirection: "column" },
     ...state.agents.map(agent => {
       const active = feed.timeline.findLast(item => item.kind === "turn" && item.agent === agent.id && item.status === "working");
-      const last = active?.kind === "turn" ? active.steps.at(-1) : undefined;
-      const work = last ? (last.kind === "say" ? last.text : `${last.name}: ${last.input}`) : active?.kind === "turn" ? active.plan : undefined;
+      const last = active?.kind === "turn" ? active.steps.findLast(step => step.kind === "tool") : undefined;
+      const work = last?.kind === "tool" ? `${last.name}: ${last.input}` : undefined;
       const elapsed = active?.kind === "turn" ? Math.max(0, Math.floor((now - Date.parse(active.at)) / 1000)) : undefined;
       const usage = [
         agent.usage.fiveHourPercent === undefined ? "" : `${t("web.gauge.fiveHour")} ${agent.usage.fiveHourPercent}%`,

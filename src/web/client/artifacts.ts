@@ -15,7 +15,7 @@ export interface Artifact {
 export function collectArtifacts(items: readonly TimelineItem[]): Artifact[] {
   const IMAGE_PATH = /(?:[A-Za-z]:)?[\w.~\\/-]*[\w-]\.(?:png|jpe?g|gif|webp)(?![\w])/gi;
   const LINK = /\[[^\]]+\]\((?:<([^>]+)>|([^\s)]+))\)/g;
-  const ABSOLUTE_PATH = /(?<![\w:/])(?:[A-Za-z]:[\\/]|~\/|\/)(?:[^\s<>()"'、。]+[\\/]){1,}[^\s<>()"'、。]+/g;
+  const ABSOLUTE_PATH = /(?<![\w:/.])(?:[A-Za-z]:[\\/]|~\/|\/)(?:[^\s<>()"'、。]+[\\/]){1,}[^\s<>()"'、。]+/g;
   const found = new Map<string, Artifact>();
   const key = (path: string) => path.replace(/\\/g, "/").toLowerCase();
   const add = (path: string, kind: Artifact["kind"], group: Artifact["group"], at: string) => {
@@ -51,17 +51,12 @@ export function collectArtifacts(items: readonly TimelineItem[]): Artifact[] {
   for (const item of items) {
     if (item.kind === "turn") {
       for (const step of item.steps) {
+        if (step.kind === "say") presented(step.text, step.at || item.at);
         if (step.kind === "tool") for (const file of step.files ?? []) add(file, "changed", "work", item.at);
       }
       presented(item.text, item.finalAt ?? item.at);
-      if (item.segment === "closed" && !item.text && item.status === "completed") {
-        const lastSay = item.steps.at(-1);
-        if (lastSay?.kind === "say") presented(lastSay.text, lastSay.at || item.finalAt || item.at);
-      }
       for (const { message } of item.messages ?? []) addMessage(message, message.createdAt);
-      for (const tell of item.tells ?? []) presented(tell.body, tell.at);
     }
-    if (item.kind === "tell") presented(item.body, item.at);
     if (item.kind === "message") addMessage(item.message, item.at);
   }
   return [...found.values()].reverse().sort((a, b) => (a.group === b.group ? 0 : a.group === "presented" ? -1 : 1));

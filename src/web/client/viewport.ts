@@ -70,18 +70,6 @@ export function createViewport(ctx: ClientContext) {
     ctx.sheet.classList.add("mobile-pop", "add-pop");
     actions.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
   });
-  const tabs = ctx.$(".working-tabs");
-  const tabHome = tabs.parentElement!;
-  const adaptTabs = () => {
-    (ctx.mobile.matches ? ctx.$("#composer") : tabHome).prepend(tabs);
-    for (const [id, key] of [["working-toggle", "web.working.title"]] as const) {
-      const button = ctx.$(`#${id}`);
-      button.querySelector(".mobile-tab-label")?.remove();
-      if (ctx.mobile.matches) button.querySelector(".i")?.after(ctx.el("span", "mobile-tab-label", ctx.t(key)));
-    }
-  };
-  ctx.mobile.addEventListener("change", adaptTabs);
-  adaptTabs();
   const grab = ctx.$("#sheet-grab");
   let dragStart: number | undefined;
   grab.addEventListener("pointerdown", event => {

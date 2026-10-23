@@ -11,11 +11,11 @@ import {
   mergeReplayHistory,
   rebuildTimeline,
   type TimelineItem,
+  turnContent,
   withoutCanceledHistoryItem,
   withStartingTurns,
   withSubagentRows,
   withWorkingTurnsLast,
-  workingFeed,
 } from "./timeline.js";
 
 const AT = "2026-10-05T12:00:00.000Z";
@@ -56,72 +56,7 @@ const answer = (id = "q1", name: "claude" | "codex" = "claude"): Extract<FeedIte
   seq: ++seq,
   event: { kind: "answer", id, agent: name, at: LATER, answers: [["A"]] },
 });
-const run = (items: FeedItem[]) => items.reduce<TimelineItem[]>(applyFeedItem, []);
-
-const tell = (id = "tell_1", name: "claude" | "codex" = "claude"): Extract<FeedItem, { type: "event" }> => ({
-  type: "event",
-  seq: ++seq,
-  event: { kind: "tell", id, agent: name, body: "人への発言", at: LATER },
-});
-
-it("tell は tool・text を挟んでも同じ枠に順番に添付し、最終応答を本文に残す", () => {
-  const items = run([
-    agent("claude", { type: "turn_started" }),
-    agent("claude", { type: "text", text: "方針" }),
-    agent("claude", { type: "text", text: "途中の作業" }),
-    tell(),
-    agent("claude", { type: "tool", name: "Read", input: "src/main.ts" }),
-    tell("tell_2"),
-    agent("claude", { type: "text", text: "確認中" }),
-    tell("tell_3"),
-  ]);
-  expect(items).toHaveLength(1);
-  expect(items[0]).toMatchObject({
-    kind: "turn",
-    status: "working",
-    plan: "方針",
-    steps: [
-      { kind: "say", text: "途中の作業" },
-      { kind: "tool", name: "Read" },
-      { kind: "say", text: "確認中" },
-    ],
-    tells: [{ id: "tell_1" }, { id: "tell_2" }, { id: "tell_3" }],
-    attachmentOrder: [
-      { kind: "tell", id: "tell_1" },
-      { kind: "tell", id: "tell_2" },
-      { kind: "tell", id: "tell_3" },
-    ],
-  });
-  const withFinal = applyFeedItem(items, agent("claude", { type: "text", text: "完了" }));
-  const completed = applyFeedItem(withFinal, agent("claude", { type: "turn", result: { status: "completed", text: "完了" } }));
-  expect(completed).toHaveLength(1);
-  expect(completed[0]).toMatchObject({ status: "completed", text: "完了", steps: [{ text: "途中の作業" }, { name: "Read" }, { text: "確認中" }] });
-});
-
-it("tell は質問・message と添付順を保ち、ターンが無ければ独立した発言になる", () => {
-  expect(run([tell()])).toMatchObject([{ kind: "tell", agent: "claude", body: "人への発言" }]);
-  const items = run([agent("claude", { type: "turn_started" }), tell(), question(), formal("claude", "依頼"), tell("tell_2")]);
-  expect(items).toHaveLength(2);
-  expect(items[0]).toMatchObject({ segment: "closed", attachmentOrder: [{ kind: "tell" }, { kind: "question" }, { kind: "message" }] });
-  expect(items[1]).toMatchObject({ continuation: true, attachmentOrder: [{ kind: "tell", id: "tell_2" }] });
-  expect(announcementKind(tell())).toBeUndefined();
-});
-
-it("tell の後の message で枠を区切り、続きの tell と最終応答を同じ枠に残す", () => {
-  const items = run([agent("claude", { type: "turn_started" }), tell(), formal("claude", "依頼"), tell("tell_2")]);
-  expect(items).toHaveLength(2);
-  expect(items[0]).toMatchObject({ segment: "closed", tells: [{ id: "tell_1" }], messages: [{ message: { body: "依頼" } }] });
-  expect(items[1]).toMatchObject({ status: "working", continuation: true, steps: [], tells: [{ id: "tell_2" }] });
-  const completed = applyFeedItem(items, agent("claude", { type: "turn", result: { status: "completed", text: "完了" } }));
-  expect(completed).toHaveLength(2);
-  expect(completed[1]).toMatchObject({ status: "completed", continuation: true, steps: [], text: "完了", tells: [{ id: "tell_2" }] });
-});
-
-it("ターン完了後の tell は同じ Agent の最後の枠に添付する", () => {
-  expect(run([agent("claude", { type: "turn", result: { status: "completed", text: "完了" } }), tell()])).toMatchObject([
-    { kind: "turn", tells: [{ id: "tell_1" }], attachmentOrder: [{ kind: "tell", id: "tell_1" }] },
-  ]);
-});
+const run = (items: FeedItem[]) => items.reduce<TimelineItem[]>((items, item) => applyFeedItem(items, item), []);
 
 it.each([false, true])("spec_check は既存カードを更新し、ログ行を増やさない: attached=%s", attached => {
   const message = formal("claude", "依頼");
@@ -347,7 +282,7 @@ describe("withWorkingTurnsLast", () => {
 });
 
 describe("applyFeedItem", () => {
-  it("質問直前の最後の発言を作業から質問へ移す", () => {
+  it("質問直前の発言も本文の順序を保つ", () => {
     const timeline = run([
       agent("claude", { type: "turn_started" }),
       agent("claude", { type: "text", text: "調べます" }),
@@ -358,9 +293,8 @@ describe("applyFeedItem", () => {
     ]);
     expect(timeline[0]).toMatchObject({
       kind: "turn",
-      plan: "調べます",
-      steps: [{ kind: "tool" }, { kind: "say", text: "途中です" }],
-      questions: [{ id: "q1", context: "**選択の理由**\n詳細" }],
+      steps: [{ kind: "say", text: "調べます" }, { kind: "tool" }, { kind: "say", text: "途中です" }, { kind: "say", text: "**選択の理由**\n詳細" }],
+      questions: [{ id: "q1" }],
     });
   });
 
@@ -382,7 +316,7 @@ describe("applyFeedItem", () => {
     expect(attached[0]).not.toHaveProperty("context");
   });
 
-  it("複数の質問へそれぞれ直前の発言を移し、保存 feed の再生でも保持する", () => {
+  it("複数の質問と直前の発言の順序を保存 feed の再生でも保持する", () => {
     const events = [
       agent("claude", { type: "turn_started" }),
       agent("claude", { type: "text", text: "一つ目の説明" }),
@@ -391,10 +325,16 @@ describe("applyFeedItem", () => {
       question("q2"),
     ];
     for (const timeline of [run(events), rebuildTimeline(events, applyFeedItem)]) {
+      expect(timeline.filter(item => item.kind === "turn").flatMap(item => item.steps.flatMap(step => (step.kind === "say" ? [step.text] : [])))).toEqual([
+        "一つ目の説明",
+        "二つ目の説明",
+      ]);
       expect(
-        timeline.filter(item => item.kind === "turn").flatMap(item => (item.kind === "turn" ? (item.questions?.map(entry => entry.context) ?? []) : [])),
-      ).toEqual(["一つ目の説明", "二つ目の説明"]);
-      expect(timeline.filter(item => item.kind === "turn").flatMap(item => (item.kind === "turn" ? item.steps : []))).toEqual([]);
+        timeline
+          .filter(item => item.kind === "turn")
+          .flatMap(turnContent)
+          .map(block => block.kind),
+      ).toEqual(["say", "question", "say", "question"]);
     }
   });
 
@@ -428,21 +368,29 @@ describe("applyFeedItem", () => {
           { kind: "message", id: expect.any(String) },
         ],
       },
-      { kind: "turn", continuation: true, status: "completed", steps: [{ kind: "tool", name: "Read" }], text: "確認中" },
+      {
+        kind: "turn",
+        continuation: true,
+        status: "completed",
+        steps: [
+          { kind: "tool", name: "Read" },
+          { kind: "say", text: "確認中" },
+        ],
+        text: "確認中",
+      },
     ]);
   });
 
   it.each([false, true])("質問して終えたターンは 1 枠にまとめ、最終応答を本文に残す: text=%s", withText => {
     const events = [
       agent("claude", { type: "turn_started" }),
-      tell(),
       question(),
       ...(withText ? [agent("claude", { type: "text", text: "回答待ち" })] : []),
       agent("claude", { type: "turn", result: { status: "completed", text: "回答待ち" } }),
     ];
     for (const timeline of [run(events), rebuildTimeline(events as Extract<FeedItem, { type: "event" | "output" }>[], applyFeedItem)]) {
       expect(timeline).toHaveLength(1);
-      expect(timeline[0]).toMatchObject({ kind: "turn", tells: [{ id: "tell_1" }], questions: [{ id: "q1" }], steps: [], text: "回答待ち" });
+      expect(timeline[0]).toMatchObject({ kind: "turn", questions: [{ id: "q1" }], steps: [{ kind: "say", text: "回答待ち" }], text: "回答待ち" });
     }
   });
 
@@ -506,9 +454,11 @@ describe("applyFeedItem", () => {
     expect(timeline.map(item => item.kind)).toEqual(["turn", "human"]);
     expect(timeline[0]).toMatchObject({
       kind: "turn",
-      plan: "調べます",
       segment: "closed",
-      steps: [{ kind: "say", text: "依頼しました" }],
+      steps: [
+        { kind: "say", text: "調べます" },
+        { kind: "say", text: "依頼しました" },
+      ],
       messages: [{ message: { body: "依頼" } }],
     });
   });
@@ -547,10 +497,11 @@ describe("applyFeedItem", () => {
         status: "completed",
         text: "直しました。",
         finalAt: AT,
-        // 最初の発言は方針。最終応答と同じ最後の発言は作業から外す
-        plan: "確認します。",
-        planAt: AT,
-        steps: [{ kind: "tool", name: "Read", input: "a.ts" }],
+        steps: [
+          { kind: "say", text: "確認します。", at: AT },
+          { kind: "tool", name: "Read", input: "a.ts" },
+          { kind: "say", text: "直しました。", at: AT },
+        ],
       },
     ]);
   });
@@ -561,11 +512,11 @@ describe("applyFeedItem", () => {
       agent("codex", { type: "text", text: "完了しました。" }),
       agent("codex", { type: "turn", result: { status: "completed", text: "完了しました。" } }),
     ]);
-    expect(timeline).toMatchObject([{ kind: "turn", status: "completed", text: "完了しました。", steps: [] }]);
+    expect(timeline).toMatchObject([{ kind: "turn", status: "completed", text: "完了しました。", steps: [{ kind: "say", text: "完了しました。" }] }]);
     expect(timeline[0]).not.toHaveProperty("plan");
   });
 
-  it("tool の後の最初の発言も方針にし、2 つ目以降の発言は作業に入れる", () => {
+  it("tool の後の発言も順に本文へ並べる", () => {
     const timeline = run([
       agent("claude", { type: "turn_started" }),
       agent("claude", { type: "tool", name: "Read", input: "a.ts" }),
@@ -576,9 +527,9 @@ describe("applyFeedItem", () => {
       {
         kind: "turn",
         status: "working",
-        plan: "方針です。",
         steps: [
           { kind: "tool", name: "Read", input: "a.ts" },
+          { kind: "say", text: "方針です。" },
           { kind: "say", text: "途中です。" },
         ],
       },
@@ -603,9 +554,11 @@ describe("applyFeedItem", () => {
         status: "completed",
         text: "直しました。",
         finalAt: LATER,
-        plan: "確認します。",
-        planAt: AT,
-        steps: [{ kind: "tool", name: "Read", input: "a.ts" }],
+        steps: [
+          { kind: "say", text: "確認します。", at: AT },
+          { kind: "tool", name: "Read", input: "a.ts" },
+          { kind: "say", text: "直しました。", at: LATER },
+        ],
       },
     ]);
   });
@@ -632,7 +585,7 @@ describe("applyFeedItem", () => {
     ]);
     expect(timeline).toMatchObject([
       { kind: "human", text: "割り込み" },
-      { kind: "turn", at: AT, status: "completed", text: "完了しました。", steps: [] },
+      { kind: "turn", at: AT, status: "completed", text: "完了しました。", steps: [{ kind: "say", text: "完了しました。" }] },
     ]);
     expect(timeline).toHaveLength(2);
     expect(timeline[1]).not.toHaveProperty("plan");
@@ -681,9 +634,12 @@ describe("applyFeedItem", () => {
         agent: "claude",
         status: "completed",
         segment: "closed",
-        steps: [],
+        steps: [
+          { kind: "say", text: "確認します。" },
+          { kind: "say", text: "選んでください。" },
+        ],
         text: "選んでください。",
-        questions: [{ id: "q1", context: "確認します。" }],
+        questions: [{ id: "q1" }],
         attachmentOrder: [
           { kind: "question", id: "q1" },
           { kind: "message", id: expect.any(String) },
@@ -726,7 +682,7 @@ describe("applyFeedItem", () => {
     ]);
     expect(timeline.map(i => i.kind === "turn" && [i.agent, i.status, i.steps.length])).toEqual([
       ["claude", "working", 1],
-      ["codex", "completed", 1],
+      ["codex", "completed", 2],
     ]);
   });
 
@@ -840,7 +796,7 @@ describe("applyFeedItem の割り込み", () => {
       seq: 902,
       event: { kind: "agent", agent: "codex", at: AT, event: { type: "steer_delivered", steerId: "s-1" } },
     };
-    const items = [human, other, delivered].reduce(applyFeedItem, []);
+    const items = [human, other, delivered].reduce<TimelineItem[]>((items, item) => applyFeedItem(items, item), []);
     expect(items).toMatchObject([
       { text: "fix", steerId: "s-1", delivered: true },
       { text: "next", steerId: "s-2" },
@@ -887,75 +843,6 @@ it("同じ Agent のターンが始まったら、その Agent の作業中の�
   ]);
   const turns = items.flatMap(item => (item.kind === "turn" ? [`${item.agent}:${item.status}`] : []));
   expect(turns).toEqual(["codex:working", "claude:interrupted", "claude:completed"]);
-});
-
-describe("workingFeed", () => {
-  const at = (second: number) => `2026-10-05T12:00:${String(second).padStart(2, "0")}.000Z`;
-  it("作業中のターンの発言を時系列に並べ、ターンが変わるところに見出しを挟む（方針の直前の見出しには方針を重ねない）", () => {
-    const items = run([
-      agent("claude", { type: "turn_started" }, at(0)),
-      agent("claude", { type: "text", text: "設計する" }, at(1)),
-      agent("codex", { type: "turn_started" }, at(2)),
-      agent("codex", { type: "text", text: "実装する" }, at(3)),
-      agent("claude", { type: "tool", name: "Read", input: "a.ts" }, at(4)),
-      agent("claude", { type: "text", text: "読んだ" }, at(5)),
-      agent("codex", { type: "text", text: "テストを書いた" }, at(6)),
-      agent("codex", { type: "text", text: "通った" }, at(7)),
-    ]);
-    const [claude, codex] = items;
-    expect(workingFeed(items)).toEqual([
-      { kind: "head", turnId: claude!.id, agent: "claude", at: at(0) },
-      { kind: "say", agent: "claude", text: "設計する" },
-      { kind: "head", turnId: codex!.id, agent: "codex", at: at(2) },
-      { kind: "say", agent: "codex", text: "実装する" },
-      { kind: "head", turnId: claude!.id, agent: "claude", at: at(0), plan: "設計する" },
-      { kind: "say", agent: "claude", text: "読んだ" },
-      { kind: "head", turnId: codex!.id, agent: "codex", at: at(2), plan: "実装する" },
-      { kind: "say", agent: "codex", text: "テストを書いた" },
-      { kind: "say", agent: "codex", text: "通った" },
-    ]);
-  });
-  it("発言の無いターンは見出しだけを出し、終わったターンの見出しには done を付ける", () => {
-    const items = run([
-      agent("codex", { type: "turn_started" }, at(0)),
-      agent("codex", { type: "text", text: "確認する" }, at(1)),
-      agent("codex", { type: "text", text: "途中" }, at(2)),
-      agent("codex", { type: "turn", result: { status: "completed", text: "完了" } }, at(3)),
-      agent("claude", { type: "turn_started" }, at(4)),
-    ]);
-    expect(workingFeed(items)).toEqual([
-      { kind: "head", turnId: items[0]!.id, agent: "codex", at: at(0), done: true },
-      { kind: "say", agent: "codex", text: "確認する" },
-      { kind: "say", agent: "codex", text: "途中" },
-      { kind: "head", turnId: items[1]!.id, agent: "claude", at: at(4) },
-    ]);
-  });
-  it("Agent ごとに直近 2 ターンだけを残し、最終応答だけの項目は数えない", () => {
-    const turn = (name: "claude" | "codex", text: string, start: number): FeedItem[] => [
-      agent(name, { type: "turn_started" }, at(start)),
-      agent(name, { type: "text", text }, at(start + 1)),
-      agent(name, { type: "text", text: `${text}の途中` }, at(start + 2)),
-      agent(name, { type: "turn", result: { status: "completed", text: `${text}の完了` } }, at(start + 3)),
-    ];
-    const items = run([
-      ...turn("claude", "1", 0),
-      ...turn("codex", "A", 4),
-      agent("claude", { type: "turn_started" }, at(10)),
-      agent("claude", { type: "text", text: "2" }, at(11)),
-      human("claude", "割り込み"),
-      agent("claude", { type: "turn", result: { status: "completed", text: "2の完了" } }, at(12)),
-      ...turn("claude", "3", 20),
-    ]);
-    const texts = workingFeed(items)
-      .filter(entry => entry.kind === "say")
-      .map(entry => (entry.kind === "say" ? entry.text : ""));
-    expect(texts).toEqual(["A", "Aの途中", "2", "3", "3の途中"]);
-    expect(
-      workingFeed(items)
-        .filter(entry => entry.kind === "head")
-        .map(entry => entry.agent),
-    ).toEqual(["codex", "claude", "claude"]);
-  });
 });
 
 describe("message で区切るターン", () => {
@@ -1016,7 +903,7 @@ describe("message で区切るターン", () => {
     expect(timeline[0]).not.toMatchObject({ status: "interrupted" });
   });
 
-  it("依頼の後に最終応答だけなら一つの枠に戻し、畳んだ作業に入れる", () => {
+  it("依頼の後に最終応答だけなら一つの枠に戻し、カードの後の本文に入れる", () => {
     const timeline = run([
       agent("claude", { type: "turn_started" }),
       formal("claude", "依頼"),
@@ -1056,8 +943,16 @@ describe("message で区切るターン", () => {
       agent("claude", { type: "turn", result: { status: "completed", text: "完了" } }),
     ]);
     expect(timeline).toHaveLength(2);
-    expect(timeline[0]).toMatchObject({ segment: "closed", plan: "方針" });
-    expect(timeline[1]).toMatchObject({ continuation: true, status: "completed", steps: [{ kind: "say", text: "回答を受けた" }], text: "完了" });
+    expect(timeline[0]).toMatchObject({ segment: "closed", steps: [{ kind: "say", text: "方針" }] });
+    expect(timeline[1]).toMatchObject({
+      continuation: true,
+      status: "completed",
+      steps: [
+        { kind: "say", text: "回答を受けた" },
+        { kind: "say", text: "完了" },
+      ],
+      text: "完了",
+    });
     expect(timeline[1]).not.toHaveProperty("plan");
   });
 
@@ -1079,21 +974,64 @@ describe("message で区切るターン", () => {
     expect(timeline[0]).toMatchObject({ messages: [{ message: { body: "質問" } }] });
     expect(timeline[1]).toMatchObject({ messages: [{ message: { body: "自動の結果", auto: true } }] });
   });
+});
 
-  it("区切った枠と続きの枠を同じターンとして直近 2 ターンに数える", () => {
-    const timeline = run([
-      agent("claude", { type: "turn_started" }),
-      agent("claude", { type: "text", text: "古いターン" }),
-      agent("claude", { type: "turn", result: { status: "completed", text: "済" } }),
-      agent("claude", { type: "turn_started" }),
-      agent("claude", { type: "text", text: "一つ前" }),
-      agent("claude", { type: "turn", result: { status: "completed", text: "済" } }),
-      agent("claude", { type: "turn_started" }),
-      agent("claude", { type: "text", text: "今の方針" }),
-      formal("claude", "質問"),
-      agent("claude", { type: "text", text: "今の続き" }),
+describe("発言を本文に並べる", () => {
+  it("全文の発言と tool のまとまりを時系列にし、最後の発言を重複させない", () => {
+    const first = "最初の発言\n".repeat(20);
+    const items = run([
+      agent("codex", { type: "text", text: first }),
+      agent("codex", { type: "tool", name: "Read", input: "a" }),
+      agent("codex", { type: "text", text: "結果" }),
+      agent("codex", { type: "tool", name: "Read", input: "b" }),
+      agent("codex", { type: "turn", result: { status: "completed", text: "結果" } }),
     ]);
-    const says = workingFeed(timeline).flatMap(entry => (entry.kind === "say" ? [entry.text] : []));
-    expect(says).toEqual(["一つ前", "今の方針", "今の続き"]);
+    const turn = items[0]!;
+    if (turn.kind !== "turn") throw new Error("turn");
+    expect(turn).not.toHaveProperty("plan");
+    expect(turnContent(turn).map(block => block.kind)).toEqual(["say", "tools", "say", "tools"]);
+    expect(
+      turnContent(turn)
+        .filter(block => block.kind === "say")
+        .map(block => block.text),
+    ).toEqual([first, "結果"]);
   });
+  it.each(["RESULT", "ANSWER"] as const)("auto %s の最後の発言を本文から省く", type => {
+    const items = run([
+      agent("claude", { type: "text", text: "途中" }),
+      agent("claude", { type: "text", text: "結果" }),
+      agent("claude", { type: "turn", result: { status: "completed", text: "結果" } }),
+      formal("claude", "結果", true, type),
+    ]);
+    const turn = items[0]!;
+    if (turn.kind !== "turn") throw new Error("turn");
+    expect(turnContent(turn).map(block => block.kind)).toEqual(["say", "message"]);
+    expect(turnContent(turn)[0]).toMatchObject({ text: "途中" });
+  });
+  it("質問直前の発言を残し、空の続きは前の枠のカード後に最終応答を足す", () => {
+    const items = run([
+      agent("claude", { type: "text", text: "説明" }),
+      question(),
+      agent("claude", { type: "turn", result: { status: "completed", text: "最終" } }),
+    ]);
+    expect(items).toHaveLength(1);
+    const turn = items[0]!;
+    if (turn.kind !== "turn") throw new Error("turn");
+    expect(turnContent(turn).map(block => block.kind)).toEqual(["say", "question", "say"]);
+    expect(turn.questions?.[0]).not.toHaveProperty("context");
+  });
+});
+
+it("ブレストの成果物は最後の本文へ加え、元の最終応答を重複させない", () => {
+  const items = run([
+    agent("claude", { type: "turn", result: { status: "completed", text: "まとめ" } }),
+    { type: "event", seq: ++seq, event: { kind: "brainstorm", at: AT, phase: "summary", total: 1, artifact: "C:/docs/report.md" } },
+  ]);
+  const turn = items[0]!;
+  if (turn.kind !== "turn") throw new Error("turn");
+  expect(
+    turnContent(turn)
+      .filter(block => block.kind === "say")
+      .map(block => block.text),
+  ).toEqual(["まとめ\n\n[資料](<C:/docs/report.md>)"]);
 });

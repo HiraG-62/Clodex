@@ -5,106 +5,42 @@ import { createLogItem, splitReferenceFiles } from "./log-item.js";
 import type { ClientContext } from "./store.js";
 import type { TimelineItem } from "./timeline.js";
 
-it.each(["tell", "message", "question", "question-message"] as const)("最終応答の表示先を添付で分ける: %s", attachment => {
-  interface TestNode {
-    className: string;
-    textContent: string;
-    innerHTML: string;
-    children: TestNode[];
-    append: (...children: TestNode[]) => void;
-    addEventListener: () => void;
-  }
-  const el = (_tag: string, className = "", textContent = ""): TestNode => {
-    const node: TestNode = {
-      className,
-      textContent,
-      innerHTML: "",
-      children: [],
-      append: (...children) => node.children.push(...children),
-      addEventListener: () => {},
-    };
-    return node;
-  };
-  const contents = (node: TestNode): string => [node.textContent, node.innerHTML, ...node.children.map(contents)].join("\n");
-  vi.stubGlobal("document", { addEventListener: () => {} });
-  try {
-    const ctx = {
-      el,
-      mark: () => el("span", "mark"),
-      clock: () => "12:00",
-      t,
-      AGENTS: { codex: { name: "Codex" } },
-      TURN_LABEL: {},
-      store: { opened: new Map() },
-    } as unknown as ClientContext;
-    const turn: Extract<TimelineItem, { kind: "turn" }> = {
-      kind: "turn",
-      id: "t",
-      agent: "codex",
-      at: "now",
-      status: "completed",
-      steps: [{ kind: "tool", name: "Read", input: "src/main.ts" }],
-      text: "最終応答",
-      tells: [
-        { kind: "tell", id: "t1", agent: "codex", at: "now", body: "発見" },
-        { kind: "tell", id: "t2", agent: "codex", at: "later", body: "判断" },
-      ],
-      ...(attachment === "message" || attachment === "question-message"
-        ? { messages: [{ message: { id: "m", type: "RESULT", from: "codex", to: "claude", taskId: "T", repository: "root", createdAt: "now", body: "結果" } }] }
-        : {}),
-      ...(attachment === "question" || attachment === "question-message"
-        ? { questions: [{ kind: "question", id: "q", agent: "codex", at: "now", questions: [{ question: "方針", options: [{ label: "A" }] }] }] }
-        : {}),
-    };
-    const node = createLogItem(ctx).renderTurn(turn) as unknown as TestNode;
-    const body = node.children.find(child => child.className === "body")!;
-    const steps = node.children.find(child => child.className === "steps")!;
-    expect(contents(body)).toContain("発見");
-    expect(contents(body)).toContain("判断");
-    if (attachment === "tell") {
-      expect(contents(body)).toMatch(/発見[\s\S]*判断[\s\S]*最終応答/);
-      expect(contents(steps)).not.toContain("最終応答");
-      expect(contents(steps)).toContain("src/main.ts");
-    } else if (attachment === "message") {
-      expect(contents(body)).not.toContain("最終応答");
-      expect(contents(steps)).toContain("最終応答");
-    } else {
-      expect(contents(body)).toMatch(/最終応答[\s\S]*方針/);
-      expect(contents(body).match(/最終応答/g)).toHaveLength(1);
-      expect(contents(steps)).not.toContain("最終応答");
-      expect(contents(steps)).toContain("src/main.ts");
+class TestNode {
+  children: TestNode[] = [];
+  parentNode?: TestNode;
+  dataset: Record<string, string> = {};
+  innerHTML = "";
+  constructor(
+    readonly tag: string,
+    readonly className = "",
+    public textContent = "",
+  ) {}
+  append(...children: TestNode[]) {
+    for (const child of children) {
+      child.parentNode = this;
+      this.children.push(child);
     }
-  } finally {
-    vi.unstubAllGlobals();
   }
-});
-
-it.each(["standalone", "tell", "question"])("本文を省略しない Markdown と画像プレビューで表示する: %s", attachment => {
-  interface TestNode {
-    tag: string;
-    className: string;
-    textContent: string;
-    innerHTML: string;
-    dataset: Record<string, string>;
-    children: TestNode[];
-    append: (...children: TestNode[]) => void;
-    addEventListener: () => void;
+  addEventListener() {}
+  remove() {
+    if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(child => child !== this);
   }
-  const created: TestNode[] = [];
-  const el = (tag: string, className = "", textContent = ""): TestNode => {
-    const node: TestNode = {
-      tag,
-      className,
-      textContent,
-      innerHTML: "",
-      dataset: {},
-      children: [],
-      append: (...children) => node.children.push(...children),
-      addEventListener: () => {},
-    };
-    created.push(node);
-    return node;
-  };
+  replaceWith(next: TestNode) {
+    if (!this.parentNode) return;
+    next.parentNode = this.parentNode;
+    this.parentNode.children[this.parentNode.children.indexOf(this)] = next;
+  }
+  get lastElementChild() {
+    return this.children.at(-1);
+  }
+  querySelector(selector: string): TestNode | undefined {
+    const match = selector.replace(":scope > ", "");
+    return this.children.find(child => (match.startsWith(".") ? child.className.split(" ").includes(match.slice(1)) : child.tag === match));
+  }
+}
+const contents = (node: TestNode): string => [node.textContent, node.innerHTML, ...node.children.map(contents)].join("\n");
+const renderFixture = (run: (renderer: ReturnType<typeof createLogItem>, ctx: ClientContext) => void) => {
+  const el = (tag: string, className = "", text = "") => new TestNode(tag, className, text);
   vi.stubGlobal("document", { addEventListener: () => {}, createElement: el, createTreeWalker: () => ({ nextNode: () => false }) });
   vi.stubGlobal("NodeFilter", { SHOW_TEXT: 4 });
   try {
@@ -115,39 +51,86 @@ it.each(["standalone", "tell", "question"])("本文を省略しない Markdown �
       t,
       AGENTS: { codex: { name: "Codex" } },
       TURN_LABEL: {},
+      MS_PER_SECOND: 1000,
+      SECONDS_PER_MINUTE: 60,
       store: { opened: new Map() },
       fileUrl: () => "/preview",
     } as unknown as ClientContext;
-    const renderer = createLogItem(ctx);
-    const body = `**発見**\n${"長い本文".repeat(200)}\n\n| 案 | 内容 |\n| --- | --- |\n| A | 詳細 |\n\nC:/artifacts/shot.png`;
-    const tell = { kind: "tell" as const, id: "tell_1", agent: "codex" as const, at: "now", body };
-    const node =
-      attachment === "standalone"
-        ? renderer.renderTell(tell)
-        : renderer.renderTurn({
-            kind: "turn",
-            id: "t",
-            at: "now",
-            agent: "codex",
-            status: "completed",
-            steps: [],
-            text: attachment === "question" ? body : "",
-            ...(attachment === "tell"
-              ? { tells: [tell] }
-              : {
-                  questions: [{ kind: "question", id: "q", agent: "codex", at: "now", questions: [{ question: "方針", options: [{ label: "A" }] }] }],
-                }),
-          });
-    expect(node).toBeDefined();
-    expect(created.some(entry => entry.innerHTML.includes("<strong>発見</strong>") && entry.innerHTML.includes("長い本文".repeat(200)))).toBe(true);
-    expect(created.some(entry => entry.innerHTML.includes("<table>"))).toBe(true);
-    expect(created.filter(entry => entry.className === "mark")).toHaveLength(1);
-    expect(created.some(entry => entry.className === "image-preview" && entry.dataset.path === "C:/artifacts/shot.png")).toBe(true);
-    if (attachment !== "question") expect(created.some(entry => ["handoff", "question-card", "route"].includes(entry.className))).toBe(false);
+    run(createLogItem(ctx), ctx);
   } finally {
     vi.unstubAllGlobals();
   }
+};
+const sampleTurn = (): Extract<TimelineItem, { kind: "turn" }> => ({
+  kind: "turn",
+  id: "t",
+  at: "2026-01-01T00:00:00Z",
+  agent: "codex",
+  status: "working",
+  text: "",
+  steps: [
+    { kind: "say", text: `**発見**\n${"長い本文\n".repeat(20)}C:/artifacts/shot.png`, at: "now" },
+    { kind: "tool", name: "Read", input: "a" },
+    { kind: "say", text: "結果", at: "now" },
+    { kind: "tool", name: "Read", input: "b" },
+  ],
 });
+it("発言の全文と画像を本文に出し、tool だけを別々の作業に畳む", () =>
+  renderFixture(renderer => {
+    const node = renderer.renderTurn({ ...sampleTurn(), status: "completed", text: "結果" }) as unknown as TestNode;
+    const blocks = node.querySelector(".turn-content")!.children;
+    expect(blocks.map(block => block.className)).toEqual(["body md", "steps", "body md", "steps"]);
+    expect(contents(blocks[0]!)).toContain("<strong>発見</strong>");
+    expect(contents(blocks[0]!).match(/長い本文/g)).toHaveLength(20);
+    expect(blocks[0]!.querySelector(".image-previews")?.children[0]?.dataset.path).toBe("C:/artifacts/shot.png");
+    expect(contents(node).match(/結果/g)).toHaveLength(1);
+    expect(contents(blocks[1]!)).not.toContain("発見");
+  }));
+it("途中の tool 追加では既存の本文・画像と作業の開閉状態を保つ", () =>
+  renderFixture(renderer => {
+    const previous = sampleTurn();
+    const node = renderer.renderTurn(previous) as unknown as TestNode;
+    const blocks = node.querySelector(".turn-content")!.children;
+    const saved = [...blocks];
+    const next = { ...previous, steps: [...previous.steps, { kind: "tool" as const, name: "Read", input: "c" }] };
+    expect(renderer.updateTurn(node as unknown as HTMLElement, previous, next)).toEqual([]);
+    expect(blocks).toEqual(saved);
+    expect(contents(blocks[3]!)).toContain("c");
+    expect(blocks[3]!.querySelector("ol")?.children).toHaveLength(2);
+    const saying = { ...next, steps: [...next.steps, { kind: "say" as const, text: "途中の報告", at: "now" }] };
+    renderer.updateTurn(node as unknown as HTMLElement, next, saying);
+    expect(blocks.slice(0, 4)).toEqual(saved);
+    expect(contents(node.querySelector(".now")!)).toContain("c");
+    expect(contents(node.querySelector(".now")!)).not.toContain("途中の報告");
+  }));
+it.each([false, true])("message と最終応答を時系列に出し、自動の結果なら重複を省く: auto=%s", auto =>
+  renderFixture(renderer => {
+    const node = renderer.renderTurn({
+      ...sampleTurn(),
+      status: "completed",
+      text: "結果",
+      messages: [
+        {
+          message: {
+            id: "m",
+            type: "RESULT",
+            from: "codex",
+            to: "codex",
+            taskId: "T",
+            repository: "root",
+            createdAt: "now",
+            body: "カード",
+            ...(auto ? { auto: true as const } : {}),
+          },
+        },
+      ],
+    }) as unknown as TestNode;
+    const blocks = node.querySelector(".turn-content")!.children;
+    expect(blocks.at(-1)?.className).toBe("handoff");
+    expect(contents(node).includes("結果")).toBe(!auto);
+    expect(contents(node)).toContain("カード");
+  }),
+);
 
 it.each([false, true])("証跡の場所・差分と設計書検査を表示する: 空=%s", empty => {
   const created: Array<{ tag: string; className: string; textContent: string }> = [];
@@ -230,3 +213,38 @@ describe("splitReferenceFiles", () => {
     expect(splitReferenceFiles(["a", "b", "c", "d", "e"])).toEqual({ visible: ["a", "b", "c"], hidden: ["d", "e"] });
   });
 });
+
+it("質問と message の前後に発言を本文として出す", () =>
+  renderFixture(renderer => {
+    const turn = {
+      ...sampleTurn(),
+      status: "completed" as const,
+      text: "最終",
+      steps: [
+        { kind: "say" as const, text: "説明", at: "now" },
+        { kind: "say" as const, text: "最終", at: "later" },
+      ],
+      questions: [{ kind: "question" as const, id: "q", agent: "codex" as const, at: "now", questions: [{ question: "選択", options: [{ label: "A" }] }] }],
+      messages: [
+        {
+          message: {
+            id: "m",
+            type: "QUESTION" as const,
+            from: "codex" as const,
+            to: "codex" as const,
+            taskId: "T",
+            repository: "root",
+            createdAt: "now",
+            body: "相談",
+          },
+        },
+      ],
+      attachmentOrder: [
+        { kind: "question" as const, id: "q", stepIndex: 1 },
+        { kind: "message" as const, id: "m", stepIndex: 1 },
+      ],
+    };
+    const node = renderer.renderTurn(turn) as unknown as TestNode;
+    expect(node.querySelector(".turn-content")!.children.map(block => block.className)).toEqual(["body md", "question-card", "handoff", "body md"]);
+    expect(contents(node)).toMatch(/説明[\s\S]*選択[\s\S]*相談[\s\S]*最終/);
+  }));

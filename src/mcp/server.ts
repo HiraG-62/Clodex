@@ -5,19 +5,10 @@ import type { AddressInfo } from "node:net";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import {
-  AGENT_IDS,
-  type AgentId,
-  ASK_USER_TOOL,
-  COORDINATOR_MCP_SERVER,
-  READ_CONVERSATION_TOOL,
-  SEND_MESSAGE_TOOL,
-  TELL_USER_TOOL,
-} from "../agents/agent-adapter.js";
+import { AGENT_IDS, type AgentId, ASK_USER_TOOL, COORDINATOR_MCP_SERVER, READ_CONVERSATION_TOOL, SEND_MESSAGE_TOOL } from "../agents/agent-adapter.js";
 import { type ConversationPage, type ReadConversationOptions, toLocalIso } from "../project/conversation-transcript.js";
 import { type CreateMessageResult, sendMessageShape } from "../protocol/messages.js";
 import { type AskUserResult, askUserShape } from "../protocol/questions.js";
-import { type TellUserResult, tellUserShape } from "../protocol/tells.js";
 
 const HOST = "127.0.0.1";
 const TOKEN_BYTES = 16;
@@ -36,7 +27,6 @@ export type SendMessageHandler = (from: AgentId, input: unknown) => CreateMessag
 export interface McpHandlers {
   sendMessage: SendMessageHandler;
   askUser(from: AgentId, input: unknown): AskUserResult;
-  tellUser(from: AgentId, input: unknown): TellUserResult;
   readConversation(from: AgentId, input: ReadConversationOptions): ConversationPage;
 }
 
@@ -67,20 +57,6 @@ const buildMcpServer = (from: AgentId, handler: McpHandlers): McpServer => {
       const result = handler.askUser(from, args);
       return result.ok
         ? { content: [{ type: "text", text: `Question ${result.id} is shown to the human. End your turn now; the answer will arrive as a new message.` }] }
-        : { content: [{ type: "text", text: `Rejected: ${result.error}` }], isError: true };
-    },
-  );
-  server.registerTool(
-    TELL_USER_TOOL,
-    {
-      description:
-        "Show the human, in a few lines, what they should know now: a root cause you found, a plan change, a judgment call you made, a check or test result that matters, a risk or something the human must do, or that you are about to wait on a long command. Your intermediate text is collapsed in the UI. Do not use it for routine progress notes. Do not repeat it in your final reply. Continue your work after calling this tool.",
-      inputSchema: tellUserShape,
-    },
-    async args => {
-      const result = handler.tellUser(from, args);
-      return result.ok
-        ? { content: [{ type: "text", text: `Shown to the human as ${result.id}. Continue your work.` }] }
         : { content: [{ type: "text", text: `Rejected: ${result.error}` }], isError: true };
     },
   );

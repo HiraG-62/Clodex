@@ -33,21 +33,6 @@ const message = {
 } as const;
 
 describe("connectWebFeed", () => {
-  it("tell を通知に変えず feed と履歴へ保存する", () => {
-    const bus = new EventBus();
-    const recorded: FeedItem[] = [];
-    const delivered: FeedItem[] = [];
-    const feed = new WebFeed(100, item => recorded.push(item));
-    connectWebFeed(bus, feed, () => STATE);
-    feed.subscribe(item => delivered.push(item));
-    bus.publish({ kind: "tell", id: "tell_1", agent: "codex", body: "発見" });
-    expect(delivered).toMatchObject([{ type: "event", event: { kind: "tell", body: "発見" } }]);
-    expect(recorded).toEqual(delivered);
-    expect(feed.recent()).toEqual(delivered);
-    const item = recorded[0];
-    if (item?.type !== "event") throw new Error("event");
-    expect(historyItemOf(item.event)).toEqual({ ...item, seq: 0 });
-  });
   it("retry・tool_end・usage は feed と履歴に残さない", () => {
     const bus = new EventBus();
     const recorded: FeedItem[] = [];

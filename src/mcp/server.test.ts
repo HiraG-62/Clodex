@@ -10,7 +10,7 @@ import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { Coordinator } from "../coordinator/coordinator.js";
 import { EventBus } from "../coordinator/event-bus.js";
 import { toLocalIso } from "../project/conversation-transcript.js";
-import { type CreateMessageResult, MAX_BODY_LENGTH } from "../protocol/messages.js";
+import type { CreateMessageResult } from "../protocol/messages.js";
 import { type McpServerHandle, startMcpServer } from "./server.js";
 
 let server: McpServerHandle | undefined;
@@ -43,7 +43,6 @@ const readConversation = () => ({ entries: [] });
 describe("startMcpServer", () => {
   it("MCP の接続処理が throw したら HTTP 500 を返す", async () => {
     server = await startMcpServer({
-      tellUser: () => ({ ok: true, id: "tell_1" }),
       readConversation,
       askUser: () => ({ ok: true, id: "q1" }),
       sendMessage: () => accepted,
@@ -63,7 +62,6 @@ describe("startMcpServer", () => {
   it("send_message を公開し、URL の agentId を送信元として handler に渡す", async () => {
     const calls: Array<{ from: AgentId; input: unknown }> = [];
     server = await startMcpServer({
-      tellUser: () => ({ ok: true, id: "tell_1" }),
       readConversation,
       askUser: () => ({ ok: true, id: "q1" }),
       sendMessage: (from, input) => {
@@ -76,7 +74,7 @@ describe("startMcpServer", () => {
 
     const client = await connect(server.urlFor("claude"));
     const { tools } = await client.listTools();
-    expect(tools.map(t => t.name)).toEqual(["send_message", "ask_user", "tell_user", "read_conversation"]);
+    expect(tools.map(t => t.name)).toEqual(["send_message", "ask_user", "read_conversation"]);
     expect(tools.find(tool => tool.name === "read_conversation")?.description).toContain("message id");
     expect(tools.find(tool => tool.name === "send_message")?.inputSchema.properties).toHaveProperty("effort");
 
@@ -92,7 +90,6 @@ describe("startMcpServer", () => {
 
   it("handler が拒否したらエラー文を tool エラーとして返す", async () => {
     server = await startMcpServer({
-      tellUser: () => ({ ok: true, id: "tell_1" }),
       readConversation,
       askUser: () => ({ ok: true, id: "q1" }),
       sendMessage: () => ({ ok: false, error: "replyTo: required for RESULT" }),
@@ -113,7 +110,6 @@ describe("startMcpServer", () => {
       release = resolve;
     });
     server = await startMcpServer({
-      tellUser: () => ({ ok: true, id: "tell_1" }),
       readConversation,
       askUser: () => ({ ok: true, id: "q1" }),
       sendMessage: async () => {
@@ -139,7 +135,6 @@ describe("startMcpServer", () => {
   it("Codex の URL からの送信は codex として扱う（URL で送信元が決まる）", async () => {
     const froms: AgentId[] = [];
     server = await startMcpServer({
-      tellUser: () => ({ ok: true, id: "tell_1" }),
       readConversation,
       askUser: () => ({ ok: true, id: "q1" }),
       sendMessage: from => {
@@ -155,7 +150,6 @@ describe("startMcpServer", () => {
 
   it("token が違う、または token の後ろに path を足した URL は 404", async () => {
     server = await startMcpServer({
-      tellUser: () => ({ ok: true, id: "tell_1" }),
       readConversation,
       sendMessage: () => accepted,
       askUser: () => ({ ok: true, id: "q1" }),
@@ -182,7 +176,6 @@ it("spec を公開・配送し、存在しない設計書は tool エラーに�
     agents: { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") },
   });
   server = await startMcpServer({
-    tellUser: () => ({ ok: true, id: "tell_1" }),
     readConversation,
     sendMessage: (from, input) => coordinator.receiveMessage(from, input),
     askUser: (from, input) => coordinator.askUser(from, input),
@@ -209,7 +202,7 @@ it("spec を公開・配送し、存在しない設計書は tool エラーに�
 
 it("ask_user は URL の Agent を使い、回答を待たずに ID を返す", async () => {
   const askUser = vi.fn(() => ({ ok: true as const, id: "q1" }));
-  server = await startMcpServer({ tellUser: () => ({ ok: true, id: "tell_1" }), readConversation, sendMessage: () => accepted, askUser });
+  server = await startMcpServer({ readConversation, sendMessage: () => accepted, askUser });
   for (const agent of ["claude", "codex"] as const) {
     const client = await connect(server.urlFor(agent));
     const questions = [{ question: "方針は", options: [{ label: "A" }, { label: "B" }] }];
@@ -236,7 +229,6 @@ it("ask_user は URL の Agent を使い、回答を待たずに ID を返す", 
 
 it("ask_user handler の拒否を tool エラーにする", async () => {
   server = await startMcpServer({
-    tellUser: () => ({ ok: true, id: "tell_1" }),
     readConversation,
     sendMessage: () => accepted,
     askUser: () => ({ ok: false, error: "invalid question" }),
@@ -254,7 +246,6 @@ it("ask_user handler の拒否を tool エラーにする", async () => {
 it("read_conversation は同じ会話の本文を Agent ごとの URL から取得できる", async () => {
   const calls: Array<{ from: AgentId; before?: number; limit?: number }> = [];
   server = await startMcpServer({
-    tellUser: () => ({ ok: true, id: "tell_1" }),
     sendMessage: () => accepted,
     askUser: () => ({ ok: true, id: "q1" }),
     readConversation: (from, options) => {
@@ -276,38 +267,4 @@ it("read_conversation は同じ会話の本文を Agent ごとの URL から取�
   } finally {
     await client.close();
   }
-});
-
-it("tell_user は送信元を URL で決め、本文を公開してすぐに ID を返す", async () => {
-  const bus = new EventBus();
-  const coordinator = new Coordinator({
-    projectRoot: "C:/dev/app",
-    bus,
-    mcpUrlFor: () => "http://localhost/mcp",
-    agents: { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") },
-  });
-  const publish = vi.spyOn(bus, "publish");
-  server = await startMcpServer({
-    readConversation,
-    sendMessage: () => accepted,
-    askUser: (from, input) => coordinator.askUser(from, input),
-    tellUser: (from, input) => coordinator.tellUser(from, input),
-  });
-  for (const agent of ["claude", "codex"] as const) {
-    const client = await connect(server.urlFor(agent));
-    try {
-      const result = await client.callTool({ name: "tell_user", arguments: { body: "**発見**", from: "偽装" } });
-      expect(result.isError).toBeFalsy();
-      expect(JSON.stringify(result.content)).toMatch(/Shown to the human as tell_.*Continue your work/);
-      expect(publish).toHaveBeenLastCalledWith({ kind: "tell", id: expect.stringMatching(/^tell_/), agent, body: "**発見**" });
-      for (const body of ["", "  ", "x".repeat(MAX_BODY_LENGTH + 1)]) {
-        const rejected = await client.callTool({ name: "tell_user", arguments: { body } });
-        expect(rejected.isError).toBe(true);
-        expect(JSON.stringify(rejected.content)).toContain("Rejected:");
-      }
-    } finally {
-      await client.close();
-    }
-  }
-  expect(publish).toHaveBeenCalledTimes(2);
 });

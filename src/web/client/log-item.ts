@@ -5,11 +5,10 @@ import { diffTurn } from "./log-diff.js";
 import { renderMarkdown } from "./markdown.js";
 import type { ClientContext } from "./store.js";
 import { formatTaskMetrics } from "./task-metrics-format.js";
-import type { TimelineItem } from "./timeline.js";
+import { type TimelineItem, type TurnContent, turnContent } from "./timeline.js";
 import { formatVerification } from "./verification-format.js";
 
 const VISIBLE_REFERENCE_FILES = 3;
-const PLAN_KEY_PREFIX = "plan:";
 
 export function splitReferenceFiles(files: readonly string[]): { visible: string[]; hidden: string[] } {
   return { visible: files.slice(0, VISIBLE_REFERENCE_FILES), hidden: files.slice(VISIBLE_REFERENCE_FILES) };
@@ -23,35 +22,6 @@ export function createLogItem(ctx: ClientContext) {
     node.append(ctx.el("summary", "", summary), body);
     node.addEventListener("toggle", () => ctx.store.opened.set(id, node.open));
     return node;
-  };
-
-  const renderPlan = (item: Extract<TimelineItem, { kind: "turn" }>): HTMLElement => {
-    const plan = ctx.el("div", "plan");
-    const content = ctx.el("div", "plan-content md");
-    content.innerHTML = renderMarkdown(item.plan ?? "");
-    linkImagePaths(content, item.at);
-    plan.append(content);
-    const key = `${PLAN_KEY_PREFIX}${item.id}`;
-    const expanded = ctx.store.opened.get(key) ?? false;
-    plan.classList.toggle("expanded", expanded);
-    plan.setAttribute("role", "button");
-    plan.setAttribute("aria-expanded", String(expanded));
-    plan.tabIndex = 0;
-    const toggle = () => {
-      const open = plan.classList.toggle("expanded");
-      plan.setAttribute("aria-expanded", String(open));
-      ctx.store.opened.set(key, open);
-    };
-    plan.addEventListener("click", event => {
-      if ((event.target as Element).closest("a, button, .image-link")) return;
-      toggle();
-    });
-    plan.addEventListener("keydown", event => {
-      if (event.target !== plan || (event.key !== "Enter" && event.key !== " ")) return;
-      event.preventDefault();
-      toggle();
-    });
-    return plan;
   };
 
   // tool 名を短い種類にする（Claude: Read / Bash / mcp__clodex__send_message、Codex: command / clodex.send_message）
@@ -68,12 +38,10 @@ export function createLogItem(ctx: ClientContext) {
     const minutes = Math.floor(seconds / ctx.SECONDS_PER_MINUTE);
     return minutes ? ctx.t("web.elapsed.minutes", { minutes, seconds: seconds % ctx.SECONDS_PER_MINUTE }) : ctx.t("web.elapsed.seconds", { seconds });
   };
-  // 今の作業: 直近の発言か tool を 1 行で（DESIGN.md §17 ログ）
   const nowLine = (item: Extract<TimelineItem, { kind: "turn" }>) => {
     const node = ctx.el("div", "now");
-    const last = item.steps[item.steps.length - 1];
+    const last = item.steps.findLast(step => step.kind === "tool");
     if (!last) node.append(ctx.el("span", "what muted", ctx.t("web.turn.working")));
-    else if (last.kind === "say") node.append(ctx.el("span", "what", last.text.split("\n", 1)[0] ?? ""));
     else node.append(ctx.el("span", "k", toolLabel(last.name)), ctx.el("span", "what mono", last.input));
     return node;
   };
@@ -151,9 +119,24 @@ export function createLogItem(ctx: ClientContext) {
 
   const stepNode = (step: Extract<TimelineItem, { kind: "turn" }>["steps"][number]) => {
     const li = ctx.el("li");
-    if (step.kind === "say") li.append(ctx.el("span", "k", ctx.t("web.step.say")), ctx.el("span", "say", step.text));
-    else li.append(ctx.el("span", "k", toolLabel(step.name)), ctx.el("span", "run", step.input));
+    if (step.kind === "tool") li.append(ctx.el("span", "k", toolLabel(step.name)), ctx.el("span", "run", step.input));
     return li;
+  };
+
+  const renderBlock = (block: TurnContent, turnId: string): HTMLElement => {
+    if (block.kind === "say") {
+      const body = ctx.el("div", "body md");
+      body.innerHTML = renderMarkdown(block.text);
+      appendImagePreviews(body, block.text, block.at);
+      return body;
+    }
+    if (block.kind === "tools") {
+      const list = ctx.el("ol");
+      for (const step of block.steps) list.append(stepNode(step));
+      return details(`${turnId}:${block.key}`, ctx.t("web.turn.steps", { count: block.steps.length }), list, "steps");
+    }
+    if (block.kind === "message") return renderMessage({ ...block.entry, id: block.entry.message.id, at: block.entry.message.createdAt });
+    return renderQuestion(block.entry, true);
   };
 
   const updateTurn = (
@@ -163,66 +146,34 @@ export function createLogItem(ctx: ClientContext) {
   ): HTMLElement[] | undefined => {
     const change = diffTurn(previous, next);
     if (change.replace) return undefined;
+    const content = node.querySelector<HTMLElement>(":scope > .turn-content")!;
+    const before = turnContent(previous);
+    const after = change.content;
     const updated: HTMLElement[] = [];
-    const head = node.querySelector<HTMLElement>(":scope > .head")!;
-    if (change.plan) {
-      node.querySelector(":scope > .plan")?.remove();
-      if (next.plan) {
-        const plan = renderPlan(next);
-        head.after(plan);
-        updated.push(plan);
+    change.blocks.forEach(index => {
+      const block = after[index]!;
+      const old = before[index];
+      const current = content.children[index];
+      if (old?.kind === "tools" && block.kind === "tools" && old.key === block.key && current) {
+        const list = current.querySelector("ol")!;
+        block.steps.forEach((step, stepIndex) => {
+          if (old.steps[stepIndex] === step) return;
+          const li = stepNode(step);
+          const previousStep = list.children[stepIndex];
+          if (previousStep) previousStep.replaceWith(li);
+          else list.append(li);
+        });
+        while (list.children.length > block.steps.length) list.lastElementChild?.remove();
+        current.querySelector("summary")!.textContent = ctx.t("web.turn.steps", { count: block.steps.length });
+        return;
       }
-    }
-    if (change.steps.length) {
-      let steps = node.querySelector<HTMLDetailsElement>(":scope > .steps");
-      if (!steps) {
-        const list = ctx.el("ol");
-        steps = details(next.id, "", list, "steps");
-        (node.querySelector(":scope > .plan") ?? head).after(steps);
-      }
-      const list = steps.querySelector("ol")!;
-      for (const index of change.steps) {
-        const li = stepNode(next.steps[index]!);
-        const old = list.children[index];
-        if (old) old.replaceWith(li);
-        else list.append(li);
-      }
-      steps.querySelector("summary")!.textContent = ctx.t("web.turn.steps", { count: next.steps.length });
-      node.querySelector(":scope > .now")?.replaceWith(nowLine(next));
-    }
-    if (change.body) {
-      node.querySelector(":scope > .body")?.remove();
-      if (next.text) {
-        const body = ctx.el("div", "body md");
-        body.innerHTML = renderMarkdown(next.text);
-        linkImagePaths(body, next.at);
-        node.querySelector(":scope > .image-previews")?.before(body);
-        if (!body.parentNode) node.append(body);
-        updated.push(body);
-      }
-    }
-    if (change.images.add.length || change.images.remove.length || change.images.orderChanged) {
-      let previews = node.querySelector<HTMLElement>(":scope > .image-previews");
-      for (const path of change.images.remove) {
-        const key = imageKey(path);
-        for (const button of previews?.querySelectorAll<HTMLButtonElement>(".image-preview") ?? []) {
-          if (imageKey(button.dataset.path ?? "") === key) button.remove();
-        }
-      }
-      if (change.images.add.length && !previews) {
-        previews = ctx.el("div", "image-previews");
-        node.append(previews);
-      }
-      const added = new Set(change.images.add.map(imageKey));
-      for (const path of change.images.paths) {
-        const button = [...(previews?.querySelectorAll<HTMLButtonElement>(".image-preview") ?? [])].find(
-          entry => imageKey(entry.dataset.path ?? "") === imageKey(path),
-        );
-        if (button) previews!.append(button);
-        else if (added.has(imageKey(path))) previews!.append(imagePreview(node, path, next.at));
-      }
-      if (previews && !previews.children.length) previews.remove();
-    }
+      const replacement = renderBlock(block, next.id);
+      if (current) current.replaceWith(replacement);
+      else content.append(replacement);
+      updated.push(replacement);
+    });
+    while (content.children.length > after.length) content.lastElementChild?.remove();
+    node.querySelector(":scope > .now")?.replaceWith(nowLine(next));
     return updated;
   };
 
@@ -239,62 +190,10 @@ export function createLogItem(ctx: ClientContext) {
       head.append(elapsed);
     }
     node.append(head);
-    if (item.plan) {
-      node.append(renderPlan(item));
-    }
-    const foldFinal = Boolean(item.messages?.length && !item.questions?.length);
-    const finalStep = foldFinal && item.text ? [{ kind: "say" as const, text: item.text, at: item.at }] : [];
-    const steps = [...item.steps, ...finalStep];
-    if (steps.length) {
-      const list = ctx.el("ol");
-      for (const step of steps) list.append(stepNode(step));
-      node.append(details(item.id, ctx.t("web.turn.steps", { count: steps.length }), list, "steps"));
-    }
+    const content = ctx.el("div", "turn-content");
+    for (const block of turnContent(item)) content.append(renderBlock(block, item.id));
+    node.append(content);
     if (item.status === "working" && item.segment !== "closed") node.append(nowLine(item));
-    if (item.messages?.length || item.questions?.length || item.tells?.length) {
-      const body = ctx.el("div", "body");
-      let finalPending = !foldFinal && Boolean(item.text);
-      const appendFinal = () => {
-        if (!finalPending) return;
-        const final = ctx.el("div", "md");
-        final.innerHTML = renderMarkdown(item.text);
-        body.append(final);
-        finalPending = false;
-      };
-      const order = item.attachmentOrder ?? [
-        ...(item.messages ?? []).map(entry => ({ kind: "message" as const, id: entry.message.id })),
-        ...(item.questions ?? []).map(entry => ({ kind: "question" as const, id: entry.id })),
-        ...(item.tells ?? []).map(entry => ({ kind: "tell" as const, id: entry.id })),
-      ];
-      for (const attached of order) {
-        if (attached.kind === "message") {
-          const entry = item.messages?.find(message => message.message.id === attached.id);
-          if (entry) body.append(renderMessage({ ...entry, id: entry.message.id, at: entry.message.createdAt }));
-        } else if (attached.kind === "tell") {
-          const entry = item.tells?.find(tell => tell.id === attached.id);
-          if (entry) body.append(renderTell(entry, true));
-        } else {
-          const entry = item.questions?.find(question => question.id === attached.id);
-          if (entry) {
-            appendFinal();
-            if (entry.context) {
-              const context = ctx.el("div", "md question-context");
-              context.innerHTML = renderMarkdown(entry.context);
-              body.append(context);
-            }
-            body.append(renderQuestion(entry, true));
-          }
-        }
-      }
-      appendFinal();
-      node.append(body);
-    } else {
-      const body = ctx.el("div", "body md");
-      if (item.text) body.innerHTML = renderMarkdown(item.text);
-      else if (item.status === "completed") body.append(ctx.el("span", "muted", ctx.t("web.turn.completed")));
-      if (body.childNodes.length) node.append(body);
-    }
-    appendImagePreviews(node, [item.plan, item.text].filter(Boolean).join("\n"), item.at);
     return node;
   };
 
@@ -413,11 +312,6 @@ export function createLogItem(ctx: ClientContext) {
       ctx.el("span", "kind", ctx.t(item.answers ? "web.question.answered" : "web.question.waiting")),
     );
     if (!embedded) node.append(ctx.mark(item.agent));
-    if (!embedded && item.context) {
-      const context = ctx.el("div", "md question-context");
-      context.innerHTML = renderMarkdown(item.context);
-      node.append(context);
-    }
     node.append(head);
     const previewText = item.questions.flatMap(question => [question.question, ...question.options.map(option => option.description ?? "")]).join("\n");
     const record = ctx.el("dl", "question-record");
@@ -431,18 +325,5 @@ export function createLogItem(ctx: ClientContext) {
     appendImagePreviews(node, previewText, item.at);
     return node;
   };
-  const renderTell = (item: Extract<TimelineItem, { kind: "tell" }>, embedded = false): HTMLElement => {
-    const node = ctx.el(embedded ? "div" : "article", embedded ? "tell" : "entry");
-    if (!embedded) {
-      const head = ctx.el("div", "head");
-      head.append(ctx.el("b", `c-${item.agent}`, ctx.AGENTS[item.agent].name), ctx.el("time", "mono", ctx.clock(item.at)));
-      node.append(ctx.mark(item.agent), head);
-    }
-    const body = ctx.el("div", embedded ? "md" : "body md");
-    body.innerHTML = renderMarkdown(item.body);
-    node.append(body);
-    appendImagePreviews(node, item.body, item.at);
-    return node;
-  };
-  return { appendImagePreviews, elapsedText, renderQuestion, renderTell, renderTurn, renderMessage, updateTurn };
+  return { appendImagePreviews, elapsedText, renderQuestion, renderTurn, renderMessage, updateTurn };
 }

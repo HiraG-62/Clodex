@@ -113,7 +113,6 @@ export interface ClientContext extends ClientDeps {
   appendImagePreviews: (node: HTMLElement, text: string, version: string) => void;
   elapsedText: (startIso: string) => string;
   renderQuestion: (item: Extract<TimelineItem, { kind: "question" }>) => HTMLElement;
-  renderTell: (item: Extract<TimelineItem, { kind: "tell" }>) => HTMLElement;
   renderTurn: (item: Extract<TimelineItem, { kind: "turn" }>) => HTMLElement;
   renderMessage: (item: Pick<Extract<TimelineItem, { kind: "message" }>, "id" | "at" | "message" | "envelope">) => HTMLElement;
   log: HTMLElement;

@@ -237,7 +237,6 @@ export const openProject = async ({
     const mcp = await startMcpServer({
       sendMessage: (from, input) => coordinator!.receiveMessageFromTool(from, input),
       askUser: (from, input) => coordinator!.askUser(from, input),
-      tellUser: (from, input) => coordinator!.tellUser(from, input),
       readConversation: (_from, input) => transcript.page(input),
     });
     coordinator = new Coordinator({

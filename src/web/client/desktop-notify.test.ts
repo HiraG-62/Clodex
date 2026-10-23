@@ -40,12 +40,6 @@ const session = () => {
 };
 
 describe("updateDesktopNotify", () => {
-  it("tell では desktop 通知と通知待ちの状態を変えない", () => {
-    const previous: DesktopNotifyState = { live: true, working: true, toolUsed: {} };
-    expect(updateDesktopNotify(previous, { type: "event", seq: 1, event: { kind: "tell", id: "tell_1", agent: "codex", body: "発見", at: "now" } })).toEqual({
-      state: previous,
-    });
-  });
   it("tool の無いターンは全員が止まってから 1 回だけ応答通知にする", () => {
     const next = session();
     next(state());

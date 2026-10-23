@@ -6,7 +6,7 @@ import { draftKey, staleDraftKeys } from "./client/drafts.js";
 import { fitView, zoomView } from "./client/image-zoom.js";
 import { renderMarkdown } from "./client/markdown.js";
 import { nextUnanswered } from "./client/question-flow.js";
-import { applyFeedItem, rebuildTimeline, workingFeed } from "./client/timeline.js";
+import { applyFeedItem, rebuildTimeline } from "./client/timeline.js";
 import { buildWebPage, ICON_SVG, MANIFEST } from "./web-page.js";
 
 const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(match => match[1] ?? "");
@@ -94,7 +94,7 @@ describe("buildWebPage", () => {
   it("画像パスを抽出し、会話本文にプレビューを付ける", () => {
     const { html } = buildWebPage("ja");
     expect(findImagePaths("C:\\out\\shot.png c:/OUT/shot.PNG")).toEqual(["C:\\out\\shot.png"]);
-    expect(html).toContain('appendImagePreviews(node, [item.plan, item.text].filter(Boolean).join("\\n"), item.at)');
+    expect(html).toContain("appendImagePreviews(body, block.text, block.at)");
     expect(html).toContain("appendImagePreviews(node, item.text, item.at)");
     expect(html).toContain("appendImagePreviews(node, message.body, item.at)");
     expect(html).toContain("appendImagePreviews(node, previewText, item.at)");
@@ -116,31 +116,6 @@ describe("buildWebPage", () => {
     expect(html).toContain('aria-label="新しいタブで開く"');
     expect(fitView({ width: 2000, height: 1000 }, { width: 1000, height: 1000 }).scale).toBe(0.5);
     expect(zoomView({ scale: 1, x: 0, y: 0 }, 2, { x: 0, y: 0 }).scale).toBe(2);
-  });
-
-  it("作業ログは発言を時系列に並べて描く", () => {
-    const { html } = buildWebPage("ja");
-    expect(workingFeed([])).toEqual([]);
-    expect(
-      workingFeed([
-        {
-          kind: "turn",
-          id: "t1",
-          at: "2026-01-01T00:00:00Z",
-          agent: "claude",
-          status: "working",
-          text: "",
-          plan: "方針",
-          steps: [{ kind: "say", text: "進捗", at: "2026-01-01T00:00:01Z" }],
-        },
-      ]),
-    ).toMatchObject([
-      { kind: "head", turnId: "t1" },
-      { kind: "say", text: "方針" },
-      { kind: "say", text: "進捗" },
-    ]);
-    expect(html).toContain('"working-say md"');
-    expect(html).not.toContain("working-entry");
   });
 
   it("未回答の質問は入力欄の上の質問欄に 1 問ずつ出し、件数の pill は出さない", () => {
@@ -297,4 +272,9 @@ describe("buildWebPage", () => {
 
 it("履歴の再構築を行う", () => {
   expect(rebuildTimeline([{ type: "output", seq: 1, text: "過去" }], applyFeedItem)).toEqual([{ kind: "output", id: "o1", text: "過去" }]);
+});
+
+it("作業ログのボタンとパネルを含めない", () => {
+  const { html } = buildWebPage("ja");
+  for (const removed of ["working-toggle", "working-panel", "workingFeed", "plan-content", "renderTell"]) expect(html.includes(removed), removed).toBe(false);
 });

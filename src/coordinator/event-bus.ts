@@ -13,7 +13,6 @@ export type CoordinatorEventInput =
   | { kind: "steered"; inputId: string; steerId: string }
   | { kind: "brainstormReleased"; inputId: string }
   | { kind: "question"; id: string; agent: AgentId; questions: UserQuestion[] }
-  | { kind: "tell"; id: string; agent: AgentId; body: string }
   | { kind: "answer"; id: string; agent: AgentId; answers: string[][] }
   | { kind: "notice"; text: string; level?: "warn"; limitHold?: { agent: AgentId; time: string } }
   | { kind: "brainstorm"; phase: "round" | "summary"; round?: number; total: number; artifact?: string };

@@ -6,7 +6,7 @@ import { t } from "../i18n/i18n.js";
 import type { AgentMessage, MessageType } from "../protocol/messages.js";
 import { isShellInput } from "../web/client/shell-input.js";
 import { formatTaskMetrics } from "../web/client/task-metrics-format.js";
-import { applyFeedItem, type TimelineItem } from "../web/client/timeline.js";
+import { applyFeedItem, type TimelineItem, turnContent } from "../web/client/timeline.js";
 import { formatVerification, type VerificationLine } from "../web/client/verification-format.js";
 import type { FeedItem } from "../web/web-feed.js";
 
@@ -24,77 +24,22 @@ export const advanceTerminalFeed = (state: TerminalFeed, feed: FeedItem, expande
   if (feed.type === "state" || feed.type === "version" || feed.type === "toast" || feed.type === "notify" || feed.type === "gui" || feed.type === "gui_command")
     return state;
   if (feed.type === "reset") return { timeline: [], completed: state.completed };
-  if (feed.type === "cancel")
-    return {
-      timeline: applyFeedItem(state.timeline, feed),
-      completed: (() => {
-        const items = applyFeedItem(
-          state.completed.map(entry => entry.item),
-          feed,
-        );
-        const byId = new Map(state.completed.map(entry => [entry.item.id, entry]));
-        return items.map(item => ({ ...byId.get(item.id)!, item }));
-      })(),
-    };
-  if (feed.type === "output") {
-    return { ...state, completed: [...state.completed, { item: { kind: "output", id: `o${feed.seq}`, text: feed.text }, expanded }] };
-  }
-  if (feed.event.kind === "answer" || feed.event.kind === "spec_check") {
-    return {
-      ...state,
-      timeline: applyFeedItem(state.timeline, feed),
-      completed: state.completed.map(entry => ({ ...entry, item: applyFeedItem([entry.item], feed)[0] ?? entry.item })),
-    };
-  }
-  if (feed.event.kind === "question" || feed.event.kind === "tell") {
-    const question = feed.event;
-    if (!state.timeline.some(item => item.kind === "turn" && item.agent === question.agent && item.status === "working")) {
-      const last = state.completed.at(-1);
-      if (last?.item.kind === "turn" && last.item.agent === question.agent && last.item.status === "completed") {
-        const attached = applyFeedItem([last.item], feed)[0];
-        if (attached) return { ...state, completed: [...state.completed.slice(0, -1), { ...last, item: attached }] };
-      }
-    }
-  }
-  if (feed.event.kind === "steered") {
-    const steered = feed.event;
-    return {
-      ...state,
-      completed: state.completed.map(entry =>
-        entry.item.kind === "human" && entry.item.inputId === steered.inputId
-          ? { ...entry, item: { ...entry.item, steer: true, steerId: steered.steerId, queued: false } }
-          : entry,
-      ),
-    };
-  }
-  if (feed.event.kind === "agent" && feed.event.event.type === "turn" && feed.event.event.result.status === "interrupted" && feed.event.inputIds?.length) {
-    const inputIds = feed.event.inputIds;
-    state = {
-      ...state,
-      completed: state.completed.map(entry =>
-        entry.item.kind === "human" && inputIds.includes(entry.item.inputId ?? entry.item.steerId ?? "")
-          ? { ...entry, item: { ...entry.item, interrupted: true } }
-          : entry,
-      ),
-    };
-  }
-  const next = applyFeedItem(state.timeline, feed);
+  if (feed.type === "output") return { ...state, completed: [...state.completed, { item: { kind: "output", id: `o${feed.seq}`, text: feed.text }, expanded }] };
+  const previous = new Map(state.completed.map(entry => [entry.item.id, entry]));
+  const next = applyFeedItem([...state.completed.map(entry => entry.item), ...state.timeline], feed, { maxItems: Number.POSITIVE_INFINITY });
   return {
     timeline: next.filter(item => item.kind === "turn" && item.status === "working"),
-    completed: [
-      ...state.completed,
-      ...next
-        .filter(item => item.kind !== "turn" || item.status !== "working")
-        .map(item => ({
-          item,
-          expanded,
-          ...(item.kind === "turn" && feed.event.kind === "agent"
-            ? {
-                elapsedSeconds: Math.max(0, Math.floor((Date.parse(feed.event.at) - Date.parse(item.at)) / 1000)),
-              }
+    completed: next
+      .filter(item => item.kind !== "turn" || item.status !== "working")
+      .map(item => ({
+        item,
+        expanded: previous.get(item.id)?.expanded ?? expanded,
+        ...(previous.get(item.id)?.elapsedSeconds !== undefined
+          ? { elapsedSeconds: previous.get(item.id)!.elapsedSeconds }
+          : !previous.has(item.id) && item.kind === "turn" && feed.type === "event" && feed.event.kind === "agent"
+            ? { elapsedSeconds: Math.max(0, Math.floor((Date.parse(feed.event.at) - Date.parse(item.at)) / 1000)) }
             : {}),
-        })),
-    ],
+      })),
   };
 };
 
@@ -236,9 +181,7 @@ export interface TerminalCard {
   title: string;
   body: string;
   tag?: string;
-  plan?: string;
-  stepsLabel?: string;
-  steps?: string[];
+  content?: Array<{ body: string } | { stepsLabel: string; steps?: string[] }>;
   at?: string;
   headerBackgroundColor?: string;
 }
@@ -450,17 +393,10 @@ export const cardLines = (card: TerminalCard, width: number, elapsedLabel?: stri
     };
     return [border("┌", "┬", "┐"), ...row(table.header), border("├", "┼", "┤"), ...table.rows.flatMap(row), border("└", "┴", "┘")];
   };
-  const content: TerminalLine[] = [
-    { text: `${card.title}${elapsedLabel === undefined ? "" : ` · ${elapsedLabel}`}`, color: card.color, bold: true },
-    ...(card.tag ? [{ text: card.tag, color: card.color }] : []),
-    ...(card.metrics ? [{ text: card.metrics, color: TERMINAL_COLORS.muted }] : []),
-    ...(card.verification ?? []),
-    ...(card.plan ? [{ text: card.plan, color: TERMINAL_COLORS.muted }] : []),
-    ...(card.stepsLabel ? [{ text: `${card.steps ? "▾" : "▸"} ${card.stepsLabel}`, color: TERMINAL_COLORS.muted }] : []),
-    ...(card.steps ?? []).map(step => ({ text: `  • ${step}`, color: TERMINAL_COLORS.muted })),
-    ...(card.kind === "question"
-      ? card.body.split("\n").map((text): TerminalLine => ({ text }))
-      : formatMarkdown(card.body).flatMap((block): TerminalLine[] => {
+  const bodyLines = (body: string): TerminalLine[] =>
+    card.kind === "question"
+      ? body.split("\n").map(text => ({ text }))
+      : formatMarkdown(body).flatMap((block): TerminalLine[] => {
           const value = block.parts.map(part => part.text).join("");
           if (block.kind === "table") return tableLines(block);
           if (block.kind === "hr") return [{ text: "─".repeat(contentWidth), color: TERMINAL_COLORS.muted, quoteDepth: block.quoteDepth }];
@@ -477,7 +413,20 @@ export const cardLines = (card: TerminalCard, width: number, elapsedLabel?: stri
             ...inlineSegments(block.parts, block.kind === "heading"),
           ];
           return [{ text: `${prefix}${value}`, parts, quoteDepth: block.quoteDepth }];
-        })),
+        });
+  const content: TerminalLine[] = [
+    { text: `${card.title}${elapsedLabel === undefined ? "" : ` · ${elapsedLabel}`}`, color: card.color, bold: true },
+    ...(card.tag ? [{ text: card.tag, color: card.color }] : []),
+    ...(card.metrics ? [{ text: card.metrics, color: TERMINAL_COLORS.muted }] : []),
+    ...(card.verification ?? []),
+    ...(card.content ?? [{ body: card.body }]).flatMap((block): TerminalLine[] =>
+      "body" in block
+        ? bodyLines(block.body)
+        : [
+            { text: `${block.steps ? "▾" : "▸"} ${block.stepsLabel}`, color: TERMINAL_COLORS.muted },
+            ...(block.steps ?? []).map(step => ({ text: `  • ${step}`, color: TERMINAL_COLORS.muted })),
+          ],
+    ),
   ];
   const lines: TerminalLine[] = [
     ...content.flatMap(line => {
@@ -574,7 +523,6 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
       .join("\n");
   const questionBody = (entry: Extract<TimelineItem, { kind: "question" }>) =>
     [
-      entry.context,
       entry.questions
         .map((question, index) =>
           [
@@ -591,7 +539,6 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
     ]
       .filter(Boolean)
       .join("\n\n");
-  if (item.kind === "tell") return { kind: item.kind, color: agentColor(item.agent), title: agentName(item.agent), body: item.body };
   if (item.kind === "question")
     return {
       kind: item.kind,
@@ -601,44 +548,26 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
       body: questionBody(item),
     };
   if (item.kind === "turn") {
-    let finalBeforeQuestion = Boolean(item.questions?.length && item.text);
-    const attachedQuestionBody = (entry: Extract<TimelineItem, { kind: "question" }>) => {
-      const body = questionBody(entry);
-      if (!finalBeforeQuestion) return body;
-      finalBeforeQuestion = false;
-      return `${item.text}\n\n${body}`;
-    };
-    const attachments = item.attachmentOrder?.flatMap(attached => {
-      if (attached.kind === "message") return item.messages?.filter(entry => entry.message.id === attached.id).map(entry => messageBody(entry.message)) ?? [];
-      if (attached.kind === "tell") return item.tells?.filter(entry => entry.id === attached.id).map(entry => entry.body) ?? [];
-      return item.questions?.filter(entry => entry.id === attached.id).map(attachedQuestionBody) ?? [];
-    }) ?? [
-      ...(item.messages ?? []).map(entry => messageBody(entry.message)),
-      ...(item.questions ?? []).map(attachedQuestionBody),
-      ...(item.tells ?? []).map(entry => entry.body),
-    ];
-    const foldFinal = Boolean(item.messages?.length && !item.questions?.length);
-    const steps = [
-      ...item.steps.map(step => (step.kind === "say" ? step.text : `${step.name}: ${step.input}`)),
-      ...(foldFinal && item.text ? [item.text] : []),
-    ];
+    const content = turnContent(item).map(block => {
+      if (block.kind === "say") return { body: block.text };
+      if (block.kind === "message") return { body: messageBody(block.entry.message) };
+      if (block.kind === "question") return { body: questionBody(block.entry) };
+      return {
+        stepsLabel: labels.steps.replace("{count}", String(block.steps.length)),
+        ...(expanded ? { steps: block.steps.map(step => `${step.name}: ${step.input}`) } : {}),
+      };
+    });
     return {
       kind: item.kind,
       color: agentColor(item.agent),
-      title: `${agentName(item.agent)} · ${labels[item.status]}`,
+      title: item.segment === "closed" ? agentName(item.agent) : `${agentName(item.agent)} · ${labels[item.status]}`,
       headerBackgroundColor: agentHeaderColor(item.agent),
-      body: [...attachments, ...(!foldFinal && !item.questions?.length && item.text ? [item.text] : [])].join("\n\n"),
+      body: content.flatMap(block => ("body" in block ? [block.body] : [])).join("\n\n"),
+      content,
       ...((item.messages ?? []).some(entry => entry.message.evidence || entry.message.specCheck)
         ? { verification: (item.messages ?? []).flatMap(entry => verificationLines(entry.message)) }
         : {}),
       at: item.at,
-      ...(item.plan ? { plan: item.plan } : {}),
-      ...(steps.length
-        ? {
-            stepsLabel: labels.steps.replace("{count}", String(steps.length)),
-            ...(expanded ? { steps } : {}),
-          }
-        : {}),
     };
   }
   if (item.kind === "message")

@@ -18,7 +18,6 @@ const EVENT_KINDS: ReadonlySet<unknown> = new Set([
   "human",
   "question",
   "answer",
-  "tell",
   "steered",
   "brainstorm",
   "brainstormReleased",

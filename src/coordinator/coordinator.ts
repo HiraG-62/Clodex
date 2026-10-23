@@ -23,7 +23,6 @@ import type { ConversationRecovery } from "../project/recovery-store.js";
 import { resolveSpecFile } from "../project/spec-file.js";
 import { type AgentMessage, type CreateMessageResult, createMessage, FOLLOWUP_TYPES, MAX_BODY_LENGTH } from "../protocol/messages.js";
 import type { AskUserResult, PendingQuestion } from "../protocol/questions.js";
-import { type TellUserResult, tellUserSchema } from "../protocol/tells.js";
 import { AgentMailbox, type PreparedSend } from "./agent-mailbox.js";
 import { type BrainstormConfig, type BrainstormResponse, roundPrompt, summaryPrompt } from "./brainstorm.js";
 import { type BudgetLimits, BudgetManager, humanBudgetError } from "./budget-manager.js";
@@ -61,7 +60,6 @@ export interface PendingMessage {
 }
 
 const INPUT_ID_PREFIX = "in";
-const TELL_ID_PREFIX = "tell_";
 export const RECOVERY_CONTINUE = "[Clodex] Clodex restarted and your previous turn was interrupted. Continue the task you were working on.";
 // solo: Agent 同士のやり取りを止める。"free" は人の送り先を固定しない（DESIGN.md §11 Solo）
 export type SoloMode = "free" | AgentId;
@@ -505,14 +503,6 @@ export class Coordinator {
 
   setLimits(limits: BudgetLimits): void {
     this.budget.setLimits(limits);
-  }
-
-  tellUser(agent: AgentId, input: unknown): TellUserResult {
-    const parsed = tellUserSchema.safeParse(input);
-    if (!parsed.success) return { ok: false, error: parsed.error.message };
-    const id = `${TELL_ID_PREFIX}${randomUUID()}`;
-    this.options.bus.publish({ kind: "tell", id, agent, body: parsed.data.body });
-    return { ok: true, id };
   }
 
   askUser(agent: AgentId, input: unknown): AskUserResult {

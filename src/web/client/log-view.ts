@@ -1,10 +1,8 @@
-import { discardMissingOpened, sameWorkingEntry } from "./log-diff.js";
+import { discardMissingOpened } from "./log-diff.js";
 import { renderMarkdown } from "./markdown.js";
-import { captureScrollPosition, restoreScrollPosition } from "./scroll-position.js";
 import type { ClientContext } from "./store.js";
 import type { DisplayTimelineItem, TimelineItem } from "./timeline.js";
-import { type WorkingEntry, withStartingTurns, withSubagentRows, withWorkingTurnsLast, workingFeed } from "./timeline.js";
-import { workingPanelPosition } from "./working-panel-position.js";
+import { withStartingTurns, withSubagentRows, withWorkingTurnsLast } from "./timeline.js";
 
 export function createLogView(ctx: ClientContext) {
   const renderItem = (item: DisplayTimelineItem): HTMLElement => {
@@ -73,8 +71,6 @@ export function createLogView(ctx: ClientContext) {
       }
       case "question":
         return ctx.renderQuestion(item);
-      case "tell":
-        return ctx.renderTell(item);
       case "turn":
         return ctx.renderTurn(item);
       case "message":
@@ -105,95 +101,6 @@ export function createLogView(ctx: ClientContext) {
     ctx.log.scrollTop = ctx.log.scrollHeight;
     syncNewer();
   };
-
-  const workingPanel = ctx.$("#working-panel");
-  const workingToggle = ctx.$("#working-toggle");
-  const workingList = ctx.$("#working-list");
-  const positionWorkingPanel = () => {
-    if (ctx.mobile.matches || workingPanel.hidden) return;
-    const bounds = workingPanelPosition(workingToggle.getBoundingClientRect(), ctx.log.getBoundingClientRect(), {
-      width: window.innerWidth,
-      height: window.innerHeight,
-    });
-    workingPanel.style.setProperty("--working-top", `${bounds.top}px`);
-    workingPanel.style.setProperty("--working-right", `${bounds.right}px`);
-    workingPanel.style.setProperty("--working-bottom", `${bounds.bottom}px`);
-  };
-  const setWorkingOpen = (open: boolean) => {
-    workingPanel.hidden = !open;
-    workingToggle.setAttribute("aria-expanded", String(open));
-    workingToggle.setAttribute("aria-pressed", String(open));
-    if (!open) return;
-    positionWorkingPanel();
-    workingList.scrollTop = workingList.scrollHeight;
-  };
-  workingToggle.setAttribute("aria-pressed", "false");
-  let previousFeed: WorkingEntry[] = [];
-  const renderWorking = () => {
-    const active = ctx.store.items.filter(
-      (item): item is Extract<TimelineItem, { kind: "turn" }> => item.kind === "turn" && item.status === "working" && item.segment !== "closed",
-    );
-    const feed = workingFeed(ctx.store.items);
-    const count = active.length ? String(active.length) : "";
-    if (ctx.$("#working-count").textContent !== count) ctx.$("#working-count").textContent = count;
-    const agent = active.length > 1 ? (ctx.store.state?.primary ?? "claude") : (active[0]?.agent ?? "claude");
-    if (workingToggle.dataset.agent !== agent) workingToggle.dataset.agent = agent;
-    if (workingToggle.hidden !== (feed.length === 0)) workingToggle.hidden = feed.length === 0;
-    if (!feed.length && !workingPanel.hidden) setWorkingOpen(false);
-    const list = workingList;
-    const feedChanged =
-      feed.length !== previousFeed.length || feed.some((entry, index) => !previousFeed[index] || !sameWorkingEntry(previousFeed[index], entry));
-    if (!feedChanged) return;
-    const position = captureScrollPosition(list, ctx.NEAR_BOTTOM_PX);
-    feed.forEach((entry, index) => {
-      if (previousFeed[index] && sameWorkingEntry(previousFeed[index], entry)) return;
-      let node: HTMLElement;
-      if (entry.kind === "say") {
-        const say = ctx.el("div", "working-say md");
-        say.innerHTML = renderMarkdown(entry.text);
-        enhanceMarkdown(say);
-        node = say;
-      } else {
-        const button = ctx.el("button", "working-head") as HTMLButtonElement;
-        button.type = "button";
-        button.append(ctx.el("span", `name c-${entry.agent}`, ctx.AGENTS[entry.agent].name));
-        if (entry.plan) button.append(ctx.el("span", "plan", (entry.plan.split("\n", 1)[0] ?? "").replace(/`/g, "")));
-        if (!entry.done) {
-          const elapsed = ctx.el("span", "elapsed", ctx.elapsedText(entry.at));
-          elapsed.dataset.start = entry.at;
-          button.append(elapsed);
-        }
-        button.addEventListener("click", () => {
-          setWorkingOpen(false);
-          ctx.store.rendered.get(entry.turnId)?.node.scrollIntoView({ behavior: "smooth", block: "center" });
-        });
-        node = button;
-      }
-      const old = list.children[index];
-      if (old) old.replaceWith(node);
-      else list.append(node);
-    });
-    while (list.children.length > feed.length) list.lastElementChild?.remove();
-    previousFeed = feed;
-    restoreScrollPosition(list, position);
-  };
-  workingToggle.addEventListener("click", () => setWorkingOpen(Boolean(workingPanel.hidden)));
-  ctx.$("#working-close").addEventListener("click", () => {
-    setWorkingOpen(false);
-    workingToggle.focus({ preventScroll: true });
-  });
-  if (typeof document !== "undefined") {
-    document.addEventListener("pointerdown", event => {
-      if (workingPanel.hidden || !(event.target instanceof Node)) return;
-      if (!workingPanel.contains(event.target) && !workingToggle.contains(event.target)) setWorkingOpen(false);
-    });
-    document.addEventListener("keydown", event => {
-      if (event.key !== "Escape" || workingPanel.hidden) return;
-      setWorkingOpen(false);
-      workingToggle.focus({ preventScroll: true });
-    });
-    window.addEventListener("resize", positionWorkingPanel);
-  }
 
   const enhanceMarkdown = (root: HTMLElement) => {
     for (const pre of root.querySelectorAll("pre")) {
@@ -258,7 +165,7 @@ export function createLogView(ctx: ClientContext) {
     for (const item of visibleItems) {
       if (item.kind === "message") for (const prefix of ["refs", "evidence", "spec-check"]) openedKeep.add(`${prefix}:${item.id}`);
       if (item.kind === "turn") {
-        openedKeep.add(`plan:${item.id}`);
+        for (let index = 0; index < item.steps.length; index++) openedKeep.add(`${item.id}:step:${index}`);
         for (const message of item.messages ?? []) for (const prefix of ["refs", "evidence", "spec-check"]) openedKeep.add(`${prefix}:${message.message.id}`);
       }
     }
@@ -340,7 +247,6 @@ export function createLogView(ctx: ClientContext) {
       }
       syncNewer();
     }
-    renderWorking();
     ctx.syncSharedUnread();
   };
   return { renderLog, renderItem, nearBottom, scrollToBottom, syncNewer };

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { AgentEvent } from "../agents/agent-adapter.js";
 import { emptyTaskMetrics } from "../coordinator/task-metrics-summary.js";
-import type { TimelineItem } from "../web/client/timeline.js";
+import { MAX_ITEMS, type TimelineItem } from "../web/client/timeline.js";
+import type { FeedItem } from "../web/web-feed.js";
 import {
   advanceTerminalFeed,
   CardLineCache,
@@ -16,6 +18,7 @@ import {
   scrollToBottom,
   splitMouseInput,
   TERMINAL_COLORS,
+  type TerminalFeed,
   textWidth,
   visibleRange,
   wrapText,
@@ -40,75 +43,35 @@ const labels = {
   parallel: "並列",
 };
 
-it("tell の本文を添付順でターンに出し、単独なら Agent の発言にする", () => {
-  const tell: Extract<TimelineItem, { kind: "tell" }> = { kind: "tell", id: "tell_1", agent: "codex", at: "now", body: "**発見**\n本文" };
-  const turn: Extract<TimelineItem, { kind: "turn" }> = {
-    kind: "turn",
-    id: "t",
-    agent: "codex",
-    at: "now",
-    status: "completed",
-    steps: [],
-    text: "最終応答",
-    tells: [tell, { ...tell, id: "tell_2", body: "判断" }],
-    questions: [{ kind: "question", id: "q1", agent: "codex", at: "now", questions: [{ question: "方針", options: [{ label: "A" }, { label: "B" }] }] }],
-    attachmentOrder: [
-      { kind: "tell", id: "tell_2" },
-      { kind: "question", id: "q1" },
-      { kind: "tell", id: "tell_1" },
-    ],
-  };
-  const card = formatTimelineItem(turn, labels, true);
-  expect(card.body).toBe("判断\n\n最終応答\n\n方針\n1. A\n2. B\n\n**発見**\n本文");
-  expect(card.steps).toBeUndefined();
-  expect(formatTimelineItem(tell, labels, false)).toMatchObject({ title: "Codex", body: tell.body });
-});
-
-it.each([false, true])("質問と message の枠も最終応答を最初の質問の前に一度だけ出す: 展開=%s", expanded => {
+it.each([false, true])("発言全文の間に tool のまとまりだけを畳む: 展開=%s", expanded => {
+  const first = "最初の発言\n".repeat(20);
   const card = formatTimelineItem(
     {
       kind: "turn",
       id: "t",
-      agent: "codex",
       at: "now",
+      agent: "codex",
       status: "completed",
-      steps: [{ kind: "tool", name: "Read", input: "src/main.ts" }],
-      text: "**案の内容**",
-      messages: [{ message: { id: "m", type: "RESULT", from: "codex", to: "claude", taskId: "T", repository: "root", createdAt: "now", body: "結果" } }],
-      questions: [
-        { kind: "question", id: "q1", agent: "codex", at: "now", questions: [{ question: "方針", options: [{ label: "A" }] }] },
-        { kind: "question", id: "q2", agent: "codex", at: "now", questions: [{ question: "詳細", options: [{ label: "B" }] }] },
+      text: "結果",
+      steps: [
+        { kind: "say", text: first, at: "now" },
+        { kind: "tool", name: "Read", input: "a" },
+        { kind: "say", text: "結果", at: "now" },
+        { kind: "tool", name: "Read", input: "b" },
       ],
     },
     labels,
     expanded,
   );
-  expect(card.body).toBe("結果\n\n**案の内容**\n\n方針\n1. A\n\n詳細\n1. B");
-  expect(card.stepsLabel).toBe("作業 1 件");
-  expect(card.steps).toEqual(expanded ? ["Read: src/main.ts"] : undefined);
-});
-
-it.each([false, true])("tell だけの枠は最終応答を本文の最後に出す: 展開=%s", expanded => {
-  const card = formatTimelineItem(
-    {
-      kind: "turn",
-      id: "t",
-      agent: "codex",
-      at: "now",
-      status: "completed",
-      steps: [{ kind: "tool", name: "Read", input: "src/main.ts" }],
-      text: "最終応答",
-      tells: [
-        { kind: "tell", id: "t1", agent: "codex", at: "now", body: "発見" },
-        { kind: "tell", id: "t2", agent: "codex", at: "later", body: "判断" },
-      ],
-    },
-    labels,
-    expanded,
-  );
-  expect(card.body).toBe("発見\n\n判断\n\n最終応答");
-  expect(card.stepsLabel).toBe("作業 1 件");
-  expect(card.steps).toEqual(expanded ? ["Read: src/main.ts"] : undefined);
+  const lines = cardLines(card, 100)
+    .map(line => line.text)
+    .join("\n");
+  expect(lines.match(/最初の発言/g)).toHaveLength(20);
+  expect(lines.match(/結果/g)).toHaveLength(1);
+  expect(lines.match(/作業 1 件/g)).toHaveLength(2);
+  expect(lines.indexOf("作業 1 件")).toBeLessThan(lines.indexOf("結果"));
+  expect(lines.lastIndexOf("作業 1 件")).toBeGreaterThan(lines.indexOf("結果"));
+  expect(lines.includes("Read: a")).toBe(expanded);
 });
 
 it("証跡を折りたたみ、失敗と範囲外を警告色にする", () => {
@@ -264,16 +227,15 @@ describe("formatMarkdown", () => {
 });
 
 describe("formatTimelineItem", () => {
-  it("質問の直前の発言を質問本文の前に表示する", () => {
+  it("単独の質問本文を表示する", () => {
     const question: TimelineItem = {
       kind: "question",
       id: "q1",
       agent: "claude",
       at: "2026-01-01T00:00:00Z",
-      context: "**選択の理由**\n詳細",
       questions: [{ question: "どれ？", options: [{ label: "A" }] }],
     };
-    expect(formatTimelineItem(question, labels, false).body).toBe("**選択の理由**\n詳細\n\nどれ？\n1. A");
+    expect(formatTimelineItem(question, labels, false).body).toBe("どれ？\n1. A");
   });
 
   it("ターンと formal message の見出しと本文を組み立てる", () => {
@@ -283,15 +245,13 @@ describe("formatTimelineItem", () => {
       agent: "codex",
       at: "2026-01-01T00:00:00Z",
       status: "completed",
-      plan: "調べます",
       steps: [{ kind: "tool", name: "Read", input: "a.ts" }],
       text: "終わりました",
     };
     expect(formatTimelineItem(turn, labels, false)).toMatchObject({
       color: "#4b6fa5",
       title: "Codex · 完了",
-      plan: "調べます",
-      stepsLabel: "作業 1 件",
+      content: [{ stepsLabel: "作業 1 件" }, { body: "終わりました" }],
       body: "終わりました",
     });
     const message: TimelineItem = {
@@ -312,8 +272,8 @@ describe("formatTimelineItem", () => {
     expect(formatTimelineItem(message, labels, false)).toMatchObject({ title: "Claude → Codex", tag: "DELEGATE · T-1", body: "実装して" });
     const result = { ...message, message: { ...message.message, type: "RESULT" as const } };
     expect(formatTimelineItem({ ...turn, messages: [{ message: result.message }] }, labels, true)).toMatchObject({
-      body: "実装して",
-      steps: ["Read: a.ts", "終わりました"],
+      body: "実装して\n\n終わりました",
+      content: [{ stepsLabel: "作業 1 件", steps: ["Read: a.ts"] }, { body: "実装して" }, { body: "終わりました" }],
     });
     const metrics = { x: { ...emptyTaskMetrics("c", "T-1", ""), turns: 4, inputTokens: 1_200_000, durationMs: 2_280_000, questions: 1 } };
     expect(formatTimelineItem(result, labels, false, metrics).metrics).toBe("4 turns · in 1.2M · 38 min · 1 question");
@@ -465,7 +425,7 @@ describe("ログの表示行", () => {
     expect(lines[0]?.text).not.toContain("3s");
   });
   it("作業中のターンは毎秒の表示をキャッシュに溜めない", () => {
-    const item: TimelineItem = { kind: "turn", id: "t", agent: "claude", at: "2026-01-01T00:00:00Z", status: "working", plan: "", steps: [], text: "作業中" };
+    const item: TimelineItem = { kind: "turn", id: "t", agent: "claude", at: "2026-01-01T00:00:00Z", status: "working", steps: [], text: "作業中" };
     const cache = new CardLineCache();
     expect(cache.lines(item, labels, false, 40, "1 秒")).not.toBe(cache.lines(item, labels, false, 40, "1 秒"));
     expect(cache.lines(item, labels, false, 40, "2 秒")[0]?.text).toContain("2 秒");
@@ -550,4 +510,69 @@ it("作業中の質問をターンの本文に入れ、回答で同じ枠を更�
     false,
   );
   expect(formatTimelineItem(answered.completed[0]!.item, labels, false).body).toContain("どちら？\nA");
+});
+
+it.each([false, true])("質問と message で区切った後の最終応答を元の枠に戻す: text=%s", withText => {
+  let seq = 0;
+  const agent = (event: AgentEvent): FeedItem => ({ type: "event", seq: ++seq, event: { kind: "agent", agent: "codex", at: "2026-01-01T00:00:00Z", event } });
+  const events: FeedItem[] = [
+    agent({ type: "text", text: "説明" }),
+    {
+      type: "event",
+      seq: ++seq,
+      event: { kind: "question", id: "q", agent: "codex", at: "now", questions: [{ question: "選択", options: [{ label: "A" }] }] },
+    },
+    {
+      type: "event",
+      seq: ++seq,
+      event: {
+        kind: "message",
+        at: "now",
+        message: { id: "m", from: "codex", to: "claude", type: "QUESTION", taskId: "T", repository: "root", createdAt: "now", body: "相談" },
+      },
+    },
+    ...(withText ? [agent({ type: "text", text: "最終" })] : []),
+    agent({ type: "turn", result: { status: "completed", text: "最終" } }),
+  ];
+  const feed = events.reduce((state, event) => advanceTerminalFeed(state, event, false), {
+    timeline: [],
+    completed: [],
+  } as TerminalFeed);
+  expect(feed.timeline).toHaveLength(0);
+  expect(feed.completed).toHaveLength(1);
+  expect(formatTimelineItem(feed.completed[0]!.item, labels, false).body).toBe("説明\n\n選択\n1. A\n\n相談\n\n最終");
+});
+it.each(["RESULT", "ANSWER"] as const)("TUI の完了済みターンに auto %s を結び付け、最終発言を重複させない", type => {
+  const events: FeedItem[] = [
+    { type: "event", seq: 1, event: { kind: "agent", agent: "codex", at: "now", event: { type: "text", text: "説明" } } },
+    { type: "event", seq: 2, event: { kind: "agent", agent: "codex", at: "now", event: { type: "turn", result: { status: "completed", text: "結果" } } } },
+    {
+      type: "event",
+      seq: 3,
+      event: {
+        kind: "message",
+        at: "now",
+        message: { id: "m", from: "codex", to: "claude", type, taskId: "T", repository: "root", createdAt: "now", body: "結果", auto: true },
+      },
+    },
+  ];
+  const feed = events.reduce((state, event) => advanceTerminalFeed(state, event, false), {
+    timeline: [],
+    completed: [],
+  } as TerminalFeed);
+  expect(feed.completed).toHaveLength(1);
+  expect(formatTimelineItem(feed.completed[0]!.item, labels, false).body).toBe("説明\n\n結果");
+});
+
+it("TUI の既存の履歴を Web の件数制限で切らない", () => {
+  const completed = Array.from({ length: MAX_ITEMS + 1 }, (_, index) => ({
+    item: { kind: "output" as const, id: `o${index}`, text: String(index) },
+    expanded: false,
+  }));
+  const next = advanceTerminalFeed(
+    { completed, timeline: [] },
+    { type: "event", seq: 2000, event: { kind: "human", agent: "codex", at: "now", text: "次" } },
+    false,
+  );
+  expect(next.completed).toHaveLength(MAX_ITEMS + 2);
 });

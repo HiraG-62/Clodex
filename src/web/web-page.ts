@@ -29,7 +29,6 @@ ${UI_ICONS}
     <div class="project-pill" id="project-pill">${icon("folder")}<span id="project-name"></span>${icon("chevron-down")}<select id="projects" aria-label="${m("web.top.projects")}"></select></div>
     ${button("open-project", "folder-open", "web.top.openProject")}
     <div class="header-tray tray">
-      <div class="working-tabs"><button class="icon-btn working-tab" id="working-toggle" type="button" aria-expanded="false" aria-label="${m("web.working.title")}" title="${m("web.working.title")}" hidden>${icon("activity")}<span class="count" id="working-count">0</span></button></div>
       ${button("detail", "list-tree", "web.top.detailTitle", "", 'aria-pressed="false"')}
       ${button("open-shared", "paperclip", "web.top.shared")}
       ${button("open-artifacts", "files", "web.top.artifacts")}
@@ -82,10 +81,6 @@ ${UI_ICONS}
     </div>
   </form>
 </div>
-<aside class="working-panel" id="working-panel" hidden aria-label="${m("web.working.title")}">
-  <div class="working-panel-head"><span>${m("web.working.title")}</span>${button("working-close", "x", "web.working.close")}</div>
-  <div class="working-list" id="working-list"></div>
-</aside>
 <div class="sheet" id="sheet" hidden>
   <button class="sheet-backdrop" id="sheet-backdrop" type="button" aria-label="${m("web.sheet.close")}"></button>
   <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">

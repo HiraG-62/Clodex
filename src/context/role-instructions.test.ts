@@ -23,11 +23,9 @@ it("範囲の節の設定がなければ書き方を追加しない", () => {
   expect(buildRoleInstructions("codex", undefined, { specSections: {} })).not.toContain("Write exceptions");
 });
 
-it.each(["claude", "codex"] as const)("%s に tell_user の使い分けを伝え、ブレストでは省く", agent => {
-  const note =
-    'Your intermediate text is collapsed in the UI, so the human usually does not read it. Call the tell_user tool of the "clodex" MCP server in a few lines whenever you: find a root cause, change your plan, make a judgment call on your own, get a check or test result that matters, hit a risk or something the human must do, or are about to wait on a long command. Do this even when you will also report to the peer. Do not use it for routine progress notes. Do not repeat it in your final reply.';
-  expect(buildRoleInstructions(agent, undefined)).toContain(note);
-  expect(buildRoleInstructions(agent, undefined, { brainstorm: true })).not.toContain(note);
+it.each(["claude", "codex"] as const)("%s の定型文に tell_user を含めない", agent => {
+  expect(buildRoleInstructions(agent, undefined)).not.toContain("tell_user");
+  expect(buildRoleInstructions(agent, undefined, { brainstorm: true })).not.toContain("tell_user");
 });
 
 describe("buildRoleInstructions", () => {
@@ -52,7 +50,7 @@ describe("buildRoleInstructions", () => {
     const text = buildRoleInstructions("codex", { codex: "実装", claude: "設計" }, { brainstorm: true, language: "ja" });
     expect(text).toContain("brainstorming together");
     expect(text).toContain("do not edit files");
-    expect(text).toContain("Do not use send_message, ask_user or tell_user");
+    expect(text).toContain("Do not use send_message or ask_user.");
     expect(text).not.toContain("Your role:");
   });
   it("自分と相手の役割と、相手の役割の作業は send_message で依頼することを伝える", () => {
@@ -109,9 +107,9 @@ describe("buildRoleInstructions の方針と言語", () => {
     expect(text).toContain("save it under C:\\home\\.clodex\\artifacts\\p");
     expect(text).toContain("[name](<full path>)");
     expect(text).toContain("It appears under Shared.");
-    expect(text).toContain("final reply, a tell_user note or an ask_user question");
+    expect(text).toContain("reply text or an ask_user question");
     expect(text).toContain("plain path or as a Markdown link [name](<full path>)");
-    expect(text).toContain("Paths in intermediate progress notes are not shown.");
+    expect(text).not.toContain("Paths in intermediate progress notes are not shown.");
   });
 });
 

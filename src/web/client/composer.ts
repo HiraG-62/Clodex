@@ -250,8 +250,7 @@ export function createComposer(ctx: ClientContext) {
   ctx.newer.addEventListener("click", ctx.scrollToBottom);
   setInterval(() => {
     for (const node of ctx.log.querySelectorAll<HTMLElement>(".elapsed[data-start]")) node.textContent = ctx.elapsedText(node.dataset.start ?? "");
-    for (const node of document.querySelectorAll<HTMLElement>("#working-panel .elapsed[data-start], #agents .elapsed[data-start]"))
-      node.textContent = ctx.elapsedText(node.dataset.start ?? "");
+    for (const node of document.querySelectorAll<HTMLElement>("#agents .elapsed[data-start]")) node.textContent = ctx.elapsedText(node.dataset.start ?? "");
   }, ctx.MS_PER_SECOND);
   const loadHistory = async () => {
     const oldest = ctx.store.history[0];
