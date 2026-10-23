@@ -594,16 +594,16 @@ Adapter の必須処理:
 
 `-p` / app-server で動く Agent には、その場で人が権限確認に答える手段がない。代わりに、両 Agent 共通の権限レベルを持ち、人が `/permission` で切り替える（docs/spikes/permission.md）。
 
-| レベル | Claude（`--permission-mode` / `set_permission_mode`） | Codex（`sandbox` / `sandboxPolicy`） |
-|---|---|---|
-| `read-only` | `plan`（読み取りと計画のみ。ユーザー設定で許可済みの tool でも編集・実行しない） | `read-only` |
-| `edit`（既定） | `acceptEdits` | `workspace-write`（ネットワーク可） |
-| `full` | `bypassPermissions` | `danger-full-access` |
+| レベル | Claude（`--permission-mode` / `set_permission_mode`） | Codex（`sandbox` / `sandboxPolicy`） | Gemini（agy の起動引数） |
+|---|---|---|---|
+| `read-only` | `plan`（読み取りと計画のみ。ユーザー設定で許可済みの tool でも編集・実行しない） | `read-only` | `--mode plan` |
+| `edit`（既定） | `acceptEdits` | `workspace-write`（ネットワーク可） | `--mode accept-edits`（承認が要る操作は headless でソフト拒否） |
+| `full` | `bypassPermissions` | `danger-full-access` | `--dangerously-skip-permissions` |
 
 - 既定は `edit`。設定ファイルの `permission` で変えられる（§13 Roles）
 - Codex の `edit` はネットワークを許す（起動引数の `-c sandbox_workspace_write.network_access=true` と、`sandboxPolicy` の `networkAccess: true`）。依存関係の取得など、project の作業に要るため。Schannel を使う TLS（`curl.exe`、PowerShell 5.1 の HTTPS）は Codex の sandbox では通らない（docs/spikes/codex-project-config.md）
 - Claude は `full` へ後から切り替えられるよう、常に `--allow-dangerously-skip-permissions` を付けて起動する（付けるだけでは bypass にならない）
-- 反映: Claude は即時（`set_permission_mode`）、Codex は次のターンから（`turn/start` の `sandboxPolicy`。以降のターンにも引き継がれる）
+- 反映: Claude は即時（`set_permission_mode`）、Codex は次のターンから（`turn/start` の `sandboxPolicy`。以降のターンにも引き継がれる）。Gemini は起動引数でしか渡せないので、プロセスを入れ替えて反映する（`--conversation <id>` で同じ会話を続ける。作業中のターンは中断される）
 - 停止中の Agent は、次の起動時にそのレベルで起動する
 - 起動処理の途中で変更された場合は、起動が終わった時点で反映する
 - `/permission` で切り替えた値は project ごとに保存し、次の起動でも使う（下記「Agent の設定の保存」）
@@ -2343,6 +2343,20 @@ Google AI プランの購読で使える Antigravity CLI（`agy`）を 3 体目�
 - **G3 — agy の spike**: 人が agy を導入・ログインした後に実測し、`docs/spikes/antigravity.md` に記録する
 - **G4 — AntigravityAdapter**: Adapter・permission の対応・model / effort・利用枠・sandbox・`AGENT_IDS` への `gemini` 追加
 - **G5 — 仕上げ**: 役割プリセットの 3 者化、ブレストの確認、Budget の既定値の見直し、受入 E2E
+
+G4（AntigravityAdapter）の設計（docs/spikes/antigravity.md の実測が根拠）:
+
+- `AGENT_IDS` に `gemini` を足す。registry は name `Gemini`・mark / 案 ID `G`・effort は `low|medium|high|xhigh|max`（agy の `--effort`）・message の `effort` は受けない（起動引数のみ）・usage は累積
+- Adapter: `agy --input-format stream-json --output-format stream-json` の常駐プロセス（`AgentProcess` / `BaseAgentAdapter` の形）。実行ファイルは PATH に無ければ `%LOCALAPPDATA%agyinagy.exe`
+  - session = `init` の `conversation_id`。再開・プロセスの入れ替えは `--conversation <id>`
+  - event の対応: `step_update` の `agent_response`（`text_delta` を連結し、step の DONE で `text`）、`tool`（`tool_info.name` と parameters。`run_command` は検証の証跡の `command` に、ファイル系の tool は `files` に写す）、ターンごとの `result` で `turn`（本文は `response`）。`denied_actions` が付いたら warn の notice を出す
+  - 中断: stdin に control は送れないので、プロセスを kill して `--conversation` で入れ替える（kill してもサーバー側でターンが完走することがある）
+  - model / effort / permission は起動引数。変更はプロセスの入れ替えで反映する
+- MCP（`send_message` などの経路）: グローバル `~/.gemini/config/mcp_config.json` に stdio の中継（Clodex が同梱する proxy script）を `clodex` の名前で登録し、会話ごとの URL は agy の起動 env（`CLODEX_MCP_URL`）で渡す（agy は自分の env を MCP の子プロセスへ引き継ぐ。実測済み）。`~/.gemini/antigravity-cli/settings.json` の `permissions.allow` に `mcp(clodex/*)` が無ければ足す（他のキーは保つ）。どちらも gemini の起動時に確かめて書く
+- 組み込みの tool に `send_message` が別にあるので、定型文・envelope では「the send_message tool of the \"clodex\" MCP server」の形を保つ（既にそうなっている）
+- model の一覧は `agy models`（ターンを送らない）。利用枠の percent と reset は headless から取れないので、gemini の利用枠ゲージは出さない（token の累積だけ）
+- sandbox は当面 gemini 非対応: sandbox が有効な project では gemini を起動できない（分かる文言のエラー）。対応は将来
+- 設定: 起動オプション `--gemini-model`。roles・rules などの Agent キーは G1 で一覧駆動になっているので、`gemini` を書けば効く
 
 N 体の設計の決まり（G1〜G2 の仕様）:
 
