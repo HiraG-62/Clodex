@@ -367,6 +367,9 @@ export function turnContent(turn: Turn): TurnContent[] {
     ...(turn.messages ?? []).map(entry => ({ kind: "message" as const, id: entry.message.id, stepIndex: turn.steps.length })),
     ...(turn.questions ?? []).map(entry => ({ kind: "question" as const, id: entry.id, stepIndex: turn.steps.length })),
   ];
+  // 発言の間ごとに「作業」を挟むと読みにくいので、枠の tool は先頭の 1 つにまとめる
+  const tools = steps.filter(step => step.kind === "tool");
+  if (tools.length) blocks.push({ kind: "tools", key: "tools", steps: tools });
   for (let index = 0; index <= steps.length; index++) {
     for (const attachment of order.filter(entry => (entry.stepIndex ?? turn.steps.length) === index)) {
       if (attachment.kind === "message") {
@@ -381,11 +384,6 @@ export function turnContent(turn: Turn): TurnContent[] {
     if (!step || index === hiddenFinal) continue;
     const key = `step:${index}`;
     if (step.kind === "say") blocks.push({ ...step, key });
-    else {
-      const last = blocks.at(-1);
-      if (last?.kind === "tools") last.steps.push(step);
-      else blocks.push({ kind: "tools", key, steps: [step] });
-    }
   }
   return blocks;
 }

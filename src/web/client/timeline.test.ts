@@ -987,7 +987,7 @@ describe("message で区切るターン", () => {
 });
 
 describe("発言を本文に並べる", () => {
-  it("全文の発言と tool のまとまりを時系列にし、最後の発言を重複させない", () => {
+  it("tool は枠の先頭の 1 つのまとまりに入れ、発言は時系列に全文で並べ、最後の発言を重複させない", () => {
     const first = "最初の発言\n".repeat(20);
     const items = run([
       agent("codex", { type: "text", text: first }),
@@ -999,7 +999,8 @@ describe("発言を本文に並べる", () => {
     const turn = items[0]!;
     if (turn.kind !== "turn") throw new Error("turn");
     expect(turn).not.toHaveProperty("plan");
-    expect(turnContent(turn).map(block => block.kind)).toEqual(["say", "tools", "say", "tools"]);
+    expect(turnContent(turn).map(block => block.kind)).toEqual(["tools", "say", "say"]);
+    expect(turnContent(turn)[0]).toMatchObject({ kind: "tools", steps: [{ input: "a" }, { input: "b" }] });
     expect(
       turnContent(turn)
         .filter(block => block.kind === "say")

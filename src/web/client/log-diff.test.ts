@@ -25,9 +25,9 @@ describe("diffTurn", () => {
       ...previous,
       steps: [...previous.steps, { kind: "tool" as const, name: "Read", input: "b" }, { kind: "say" as const, text: "続き", at: "later" }],
     };
-    expect(diffTurn(previous, next)).toMatchObject({ replace: false, blocks: [1, 2] });
+    expect(diffTurn(previous, next)).toMatchObject({ replace: false, blocks: [0, 2] });
     const changed = { ...next, steps: [{ kind: "say" as const, text: "説明 b.png", at: "now" }, ...next.steps.slice(1)] };
-    expect(diffTurn(next, changed)).toMatchObject({ replace: false, blocks: [0] });
+    expect(diffTurn(next, changed)).toMatchObject({ replace: false, blocks: [1] });
   });
   it("質問の回答は該当カードだけ更新する", () => {
     const question = { kind: "question" as const, id: "q", at: "now", agent: "claude" as const, questions: [{ question: "選択", options: [{ label: "A" }] }] };

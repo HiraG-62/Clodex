@@ -43,7 +43,7 @@ const labels = {
   parallel: "並列",
 };
 
-it.each([false, true])("発言全文の間に tool のまとまりだけを畳む: 展開=%s", expanded => {
+it.each([false, true])("発言は全文で並べ、tool は先頭の 1 つの作業に畳む: 展開=%s", expanded => {
   const first = "最初の発言\n".repeat(20);
   const card = formatTimelineItem(
     {
@@ -68,9 +68,8 @@ it.each([false, true])("発言全文の間に tool のまとまりだけを畳�
     .join("\n");
   expect(lines.match(/最初の発言/g)).toHaveLength(20);
   expect(lines.match(/結果/g)).toHaveLength(1);
-  expect(lines.match(/作業 1 件/g)).toHaveLength(2);
-  expect(lines.indexOf("作業 1 件")).toBeLessThan(lines.indexOf("結果"));
-  expect(lines.lastIndexOf("作業 1 件")).toBeGreaterThan(lines.indexOf("結果"));
+  expect(lines.match(/作業 2 件/g)).toHaveLength(1);
+  expect(lines.indexOf("作業 2 件")).toBeLessThan(lines.indexOf("最初の発言"));
   expect(lines.includes("Read: a")).toBe(expanded);
 });
 

@@ -75,16 +75,17 @@ const sampleTurn = (): Extract<TimelineItem, { kind: "turn" }> => ({
     { kind: "tool", name: "Read", input: "b" },
   ],
 });
-it("発言の全文と画像を本文に出し、tool だけを別々の作業に畳む", () =>
+it("発言の全文と画像を本文に出し、tool は先頭の 1 つの作業に畳む", () =>
   renderFixture(renderer => {
     const node = renderer.renderTurn({ ...sampleTurn(), status: "completed", text: "結果" }) as unknown as TestNode;
     const blocks = node.querySelector(".turn-content")!.children;
-    expect(blocks.map(block => block.className)).toEqual(["body md", "steps", "body md", "steps"]);
-    expect(contents(blocks[0]!)).toContain("<strong>発見</strong>");
-    expect(contents(blocks[0]!).match(/長い本文/g)).toHaveLength(20);
-    expect(blocks[0]!.querySelector(".image-previews")?.children[0]?.dataset.path).toBe("C:/artifacts/shot.png");
+    expect(blocks.map(block => block.className)).toEqual(["steps", "body md", "body md"]);
+    expect(contents(blocks[1]!)).toContain("<strong>発見</strong>");
+    expect(contents(blocks[1]!).match(/長い本文/g)).toHaveLength(20);
+    expect(blocks[1]!.querySelector(".image-previews")?.children[0]?.dataset.path).toBe("C:/artifacts/shot.png");
     expect(contents(node).match(/結果/g)).toHaveLength(1);
-    expect(contents(blocks[1]!)).not.toContain("発見");
+    expect(contents(blocks[0]!)).not.toContain("発見");
+    expect(blocks[0]!.querySelector("ol")?.children).toHaveLength(2);
   }));
 it("途中の tool 追加では既存の本文・画像と作業の開閉状態を保つ", () =>
   renderFixture(renderer => {
@@ -95,11 +96,11 @@ it("途中の tool 追加では既存の本文・画像と作業の開閉状態�
     const next = { ...previous, steps: [...previous.steps, { kind: "tool" as const, name: "Read", input: "c" }] };
     expect(renderer.updateTurn(node as unknown as HTMLElement, previous, next)).toEqual([]);
     expect(blocks).toEqual(saved);
-    expect(contents(blocks[3]!)).toContain("c");
-    expect(blocks[3]!.querySelector("ol")?.children).toHaveLength(2);
+    expect(contents(blocks[0]!)).toContain("c");
+    expect(blocks[0]!.querySelector("ol")?.children).toHaveLength(3);
     const saying = { ...next, steps: [...next.steps, { kind: "say" as const, text: "途中の報告", at: "now" }] };
     renderer.updateTurn(node as unknown as HTMLElement, next, saying);
-    expect(blocks.slice(0, 4)).toEqual(saved);
+    expect(blocks.slice(0, 3)).toEqual(saved);
     expect(contents(node.querySelector(".now")!)).toContain("c");
     expect(contents(node.querySelector(".now")!)).not.toContain("途中の報告");
   }));
