@@ -1,11 +1,22 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { expect, it } from "vitest";
 import { startMcpServer } from "../mcp/server.js";
 import { ensureAgyMcpConfig } from "./agy-mcp-config.js";
+
+it("空の設定ファイルは欠損と同じに扱い、壊れた JSON は path 入りで失敗する", () => {
+  const home = mkdtempSync(join(tmpdir(), "clodex-agy-mcp-"));
+  const mcpPath = join(home, ".gemini", "config", "mcp_config.json");
+  mkdirSync(join(home, ".gemini", "config"), { recursive: true });
+  writeFileSync(mcpPath, "");
+  ensureAgyMcpConfig(home);
+  expect(JSON.parse(readFileSync(mcpPath, "utf8"))).toHaveProperty("mcpServers.clodex");
+  writeFileSync(mcpPath, "{broken");
+  expect(() => ensureAgyMcpConfig(home)).toThrowError(mcpPath);
+});
 
 it("設定を保ちながら proxy を書き、実 MCP server と往復する", async () => {
   const home = mkdtempSync(join(tmpdir(), "clodex-agy-mcp-"));

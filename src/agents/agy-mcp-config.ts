@@ -40,7 +40,15 @@ input.on("line", line => { queue = queue.then(() => forward(line)); });
 
 const readObject = (path: string): Record<string, unknown> => {
   if (!existsSync(path)) return {};
-  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+  // agy が設定ファイルを空にすることがあるため、空は欠損と同じに扱う
+  const text = readFileSync(path, "utf8");
+  if (text.trim() === "") return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`Invalid JSON: ${path} (${String(error)})`);
+  }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error(`Invalid JSON object: ${path}`);
   return parsed as Record<string, unknown>;
 };
