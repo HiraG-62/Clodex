@@ -1,15 +1,14 @@
 // Agent の起動時に system prompt へ追加する定型文と役割（DESIGN.md §13 Roles）
-import { AGENT_IDS, type AgentId, ASK_USER_TOOL, COORDINATOR_MCP_SERVER, READ_CONVERSATION_TOOL, SEND_MESSAGE_TOOL } from "../agents/agent-adapter.js";
+import { type AgentId, ASK_USER_TOOL, COORDINATOR_MCP_SERVER, READ_CONVERSATION_TOOL, SEND_MESSAGE_TOOL } from "../agents/agent-adapter.js";
+import { AGENT_META, peersOf } from "../agents/agent-meta.js";
 import type { ClodexConfig, RolesConfig } from "../config/config.js";
 import { BODY_FORMAT } from "./context-resolver.js";
 import { type Language, languageDirective } from "./language.js";
 
 const NOT_SPECIFIED = "not specified";
 
-const peerOf = (agent: AgentId): AgentId => AGENT_IDS.find(id => id !== agent)!;
-
-const header = (agent: AgentId, peer: AgentId) =>
-  `[Clodex] You are the "${agent}" agent in Clodex, working with a peer agent "${peer}" on the same repository.`;
+const header = (agent: AgentId, peers: readonly AgentId[]) =>
+  `[Clodex] You are the "${agent}" agent in Clodex, working with ${peers.length === 1 ? "a peer agent" : "peer agents"} ${peers.map(peer => `"${peer}"`).join(", ")} on the same repository.`;
 
 const SEND_TOOL = `the ${SEND_MESSAGE_TOOL} tool of the "${COORDINATOR_MCP_SERVER}" MCP server`;
 
@@ -28,10 +27,6 @@ const PARALLEL_NOTE =
 const USAGE_NOTE =
   "Do not poll in small steps with repeated sleep or by checking subagents again and again. Read the relevant range of a file at once, not a few dozen lines at a time. " +
   "Do not re-read content you already read. Do not rerun the same tests or type checks when nothing has changed.";
-const CODEX_USAGE_NOTE = "Run long commands (tests, builds) with a long enough yield_time_ms to finish in one call. Do not poll with wait or write_stdin.";
-const CLAUDE_USAGE_NOTE =
-  "Run long commands with a long enough Bash timeout (up to 600000 ms) to finish in one call. " +
-  "Do not check run_in_background commands again and again with sleep or by re-reading their output.";
 // 公式の subagent でコンテキストを分ける・並列にする（DESIGN.md §28 v0.3 C）
 const SUBAGENT_NOTE =
   "Use your built-in sub-agents for work that can run in parallel independently, and for work that is better done " +
@@ -60,15 +55,17 @@ const READ_CONVERSATION_NOTE = `Use the ${READ_CONVERSATION_TOOL} tool of the "$
 
 const PLAN_NOTE = "When you receive a request, state in one or two sentences what you will do before you start working.";
 
-const roleLines = (agent: AgentId, peer: AgentId, roles: RolesConfig | undefined): string[] => {
-  if (!roles?.[agent] && !roles?.[peer]) {
-    return [`Ask the peer with ${SEND_TOOL} only when an independent view helps (review, hard bugs, uncertain design).`];
+const roleLines = (agent: AgentId, peers: readonly AgentId[], roles: RolesConfig | undefined): string[] => {
+  if (!roles?.[agent] && !peers.some(peer => roles?.[peer])) {
+    return [`Ask the other agents with ${SEND_TOOL} only when an independent view helps (review, hard bugs, uncertain design).`];
   }
   return [
-    `Your role: ${roles[agent] || NOT_SPECIFIED}`,
-    `Role of ${peer}: ${roles[peer] || NOT_SPECIFIED}`,
-    `When work belongs to ${peer}'s role, delegate it with ${SEND_TOOL} (DELEGATE, QUESTION or REVIEW_REQUEST) instead of doing it yourself.`,
-    "Do not do the same work as the peer. Small edits (typos, formatting, trivial fixes) you may do yourself.",
+    `Your role: ${roles?.[agent] || NOT_SPECIFIED}`,
+    ...peers.flatMap(peer => [
+      `Role of ${peer}: ${roles?.[peer] || NOT_SPECIFIED}`,
+      `When work belongs to ${peer}'s role, delegate it with ${SEND_TOOL} (DELEGATE, QUESTION or REVIEW_REQUEST) instead of doing it yourself.`,
+    ]),
+    "Do not do the same work as the other agents. Small edits (typos, formatting, trivial fixes) you may do yourself.",
   ];
 };
 
@@ -93,17 +90,17 @@ export const buildRoleInstructions = (
   roles: RolesConfig | undefined,
   { language, artifactsDir, usageHints, brainstorm, rules, verify, specSections }: RoleInstructionOptions = {},
 ): string => {
-  const peer = peerOf(agent);
+  const peers = peersOf(agent);
   if (brainstorm)
     return [
-      header(agent, peer),
-      `You and ${peer} are brainstorming together. Offer concrete ideas in bullet points. Read code and documents if useful, but do not edit files. Do not use send_message or ask_user.`,
+      header(agent, peers),
+      `You and ${peers.join(", ")} are brainstorming together. Offer concrete ideas in bullet points. Read code and documents if useful, but do not edit files. Do not use send_message or ask_user.`,
       ...(language ? [languageDirective(language)] : []),
     ].join("\n");
   const scopeHeadings = [specSections?.owned, specSections?.forbidden].filter(heading => heading !== undefined);
   return [
-    header(agent, peer),
-    ...roleLines(agent, peer, roles),
+    header(agent, peers),
+    ...roleLines(agent, peers, roles),
     ...(rules ? [`Rules: ${rules}`] : []),
     ...(verify && Object.keys(verify).length
       ? [
@@ -134,7 +131,7 @@ export const buildRoleInstructions = (
     INTERRUPT_NOTE,
     FRESH_NOTE,
     PARALLEL_NOTE,
-    ...(usageHints ? [USAGE_NOTE, agent === "codex" ? CODEX_USAGE_NOTE : CLAUDE_USAGE_NOTE] : []),
+    ...(usageHints ? [USAGE_NOTE, AGENT_META[agent].usageHint] : []),
     SUBAGENT_NOTE,
     ...(artifactsDir ? [artifactsNote(artifactsDir)] : []),
     ...(language ? [languageDirective(language)] : []),

@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
+import { AGENT_IDS } from "../agents/agent-adapter.js";
 import { DeliveryNotes } from "./delivery-notes.js";
 
 describe("DeliveryNotes", () => {
+  it.each(AGENT_IDS)("%s 宛ての発言は本人以外の全員に一度ずつ渡す", to => {
+    const notes = new DeliveryNotes();
+    notes.queueHumanContext(to, "共有する指示");
+    for (const id of AGENT_IDS) {
+      if (id === to) expect(notes.take(id)).toBe("");
+      else expect(notes.take(id)).toContain(`the human said to ${to}:\n- 共有する指示`);
+      expect(notes.take(id)).toBe("");
+    }
+  });
+
   it("人の発言を相手への次の配送にだけ添える", () => {
     const notes = new DeliveryNotes();
     notes.queueHumanContext("claude", "  修正を  続けて ");

@@ -236,7 +236,7 @@ const parseCommand = (name: string, arg: string, primary: AgentId): ShellCommand
     case "solo":
       if (!arg || arg === "enable") return { kind: "solo", mode: "free" };
       if (arg === "disable") return { kind: "solo" };
-      return isAgentId(arg) ? { kind: "solo", mode: arg } : usage("/solo [enable|disable|claude|codex]");
+      return isAgentId(arg) ? { kind: "solo", mode: arg } : usage(`/solo [enable|disable|${AGENT_IDS.join("|")}]`);
     case "brainstorm": {
       if (!arg) return usage(BRAINSTORM_USAGE);
       const match = /^(\d+)(?:\s+([\s\S]+))?$/.exec(arg);

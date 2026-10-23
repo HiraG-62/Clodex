@@ -11,6 +11,7 @@ import {
   type SubagentState,
   type TurnResult,
 } from "../agents/agent-adapter.js";
+import { AGENT_META, agentRecord, peersOf } from "../agents/agent-meta.js";
 import { type ModelCatalog, modelLabel } from "../agents/model-catalog.js";
 import type { StartupProbe } from "../agents/startup-probe.js";
 import type { ClodexConfig } from "../config/config.js";
@@ -26,7 +27,7 @@ import type { AskUserResult, PendingQuestion } from "../protocol/questions.js";
 import { AgentMailbox, type PreparedSend } from "./agent-mailbox.js";
 import { type BrainstormConfig, type BrainstormResponse, roundPrompt, summaryPrompt } from "./brainstorm.js";
 import { type BudgetLimits, BudgetManager, humanBudgetError } from "./budget-manager.js";
-import { DeliveryNotes, OTHER_AGENT } from "./delivery-notes.js";
+import { DeliveryNotes } from "./delivery-notes.js";
 import type { EventBus } from "./event-bus.js";
 import { QuestionStore } from "./question-store.js";
 import { createHandoffPath, handoffInstruction, handoffNotice, hasHandoffDocument } from "./session-handoff.js";
@@ -64,7 +65,7 @@ export const RECOVERY_CONTINUE = "[Clodex] Clodex restarted and your previous tu
 // solo: Agent 同士のやり取りを止める。"free" は人の送り先を固定しない（DESIGN.md §11 Solo）
 export type SoloMode = "free" | AgentId;
 const SOLO_REMINDER = "[Clodex] Solo mode: do not use send_message. Do all the work yourself.";
-const SOLO_REJECTED = "solo mode: the other agent is not available. Do the work yourself.";
+const SOLO_REJECTED = "solo mode: the other agents are not available. Do the work yourself.";
 const BRAINSTORM_REJECTED = "brainstorm mode: do not use send_message";
 const STEER_IMAGE_INSTRUCTION = "[Clodex] Attached images (read them with your tools):";
 // 作業を頼む message は、配送したターンが失敗したら一度だけ送り直し、それでも失敗したら送信元に引き取らせる（DESIGN.md §12 配送ルール）
@@ -165,8 +166,8 @@ export class Coordinator {
   // 宛先ごと・設計書の実パスごとに、前回渡した中身（DESIGN.md §13 Spec の差分）
   private readonly specSnapshots = new Map<string, { content: string; sessionId: string | undefined }>();
   private readonly liveUsage = new Set<AgentId>();
-  private readonly subagents: Record<AgentId, SubagentState[]> = { claude: [], codex: [] };
-  private readonly backgroundTasks: Record<AgentId, SubagentState[]> = { claude: [], codex: [] };
+  private readonly subagents: Record<AgentId, SubagentState[]> = agentRecord(() => []);
+  private readonly backgroundTasks: Record<AgentId, SubagentState[]> = agentRecord(() => []);
   private readonly recoveryListeners = new Set<() => void>();
   private stoppingRecovery: ConversationRecovery | undefined;
   private brainstormPhase: "idle" | "round" | "summary" | "done" | "stopped" = "idle";
@@ -215,7 +216,6 @@ export class Coordinator {
     const config = this.options.brainstorm;
     if (!config || this.brainstormPhase !== "idle") return;
     const responses: BrainstormResponse[] = [];
-    const peers: Record<AgentId, AgentId> = { claude: "codex", codex: "claude" };
     for (let round = 1; round <= config.rounds; round++) {
       if (this.brainstormInterrupted) break;
       this.brainstormPhase = "round";
@@ -225,7 +225,13 @@ export class Coordinator {
       const human = this.takeBrainstormInput();
       const turns = AGENT_IDS.map(id =>
         this.mailboxes[id].enqueue(
-          roundPrompt(config, round, peers[id], responses.find(response => response.round === round - 1 && response.agent === peers[id])?.text ?? "", human),
+          roundPrompt(
+            config,
+            round,
+            id,
+            responses.filter(response => response.round === round - 1 && peersOf(id).includes(response.agent)),
+            human,
+          ),
           { suffix: this.reminder, signal: this.brainstormAbort.signal },
         ),
       );
@@ -292,10 +298,7 @@ export class Coordinator {
   recoveryState(): ConversationRecovery {
     if (this.stoppingRecovery) return this.stoppingRecovery;
     const interrupted = AGENT_IDS.filter(id => this.mailboxes[id].activeSending || this.mailboxes[id].holding || this.options.agents[id].status === "busy");
-    const queue = {
-      claude: this.mailboxes.claude.recoveryQueue,
-      codex: this.mailboxes.codex.recoveryQueue,
-    };
+    const queue = agentRecord(id => this.mailboxes[id].recoveryQueue);
     for (const input of [...this.brainstormInFlightHuman, ...this.brainstormHuman]) {
       for (const target of input.targets) {
         queue[target].push({ kind: "input", ...(target === input.agent ? { id: input.id } : {}), text: input.text, brainstorm: true });
@@ -389,7 +392,7 @@ export class Coordinator {
         if (event.type === "background_tasks") this.backgroundTasks[id] = [...event.running];
         const files = this.workRecorder.record(id, event);
         this.workBaselines.record(id, event);
-        this.deliveryNotes.recordPeerFiles(OTHER_AGENT[id], files);
+        for (const peer of peersOf(id)) this.deliveryNotes.recordPeerFiles(peer, files);
         if (["turn_started", "text", "tool", "turn"].includes(event.type)) this.notifyRecoveryChange();
         const handoff = event.type === "turn" && this.handoffTurns[id] === true;
         if (event.type === "turn") delete this.handoffTurns[id];
@@ -449,7 +452,7 @@ export class Coordinator {
         message => this.metrics.deliver(message),
       );
     };
-    this.mailboxes = { claude: createMailbox("claude"), codex: createMailbox("codex") };
+    this.mailboxes = agentRecord(createMailbox);
   }
 
   private rememberInputId(id: string): void {
@@ -478,8 +481,12 @@ export class Coordinator {
   }
 
   private notifyPeerLimit(id: AgentId, resumeAt: number): void {
-    const peer = OTHER_AGENT[id];
-    if (this.options.solo?.() || this.options.agents[peer].status === "stopped") return;
+    if (this.options.solo?.()) return;
+    for (const peer of peersOf(id)) this.notifyLimitTo(id, peer, resumeAt);
+  }
+
+  private notifyLimitTo(id: AgentId, peer: AgentId, resumeAt: number): void {
+    if (this.options.agents[peer].status === "stopped") return;
     const work = this.workRecorder.lastWork(id);
     const plan = work?.plan ? ` Its last plan: ${work.plan}.` : "";
     const files = work?.files.size ? ` Files it edited in its last turn: ${[...work.files].join(", ")}. Do not edit these files until it resumes.` : "";
@@ -798,7 +805,7 @@ export class Coordinator {
     if ((message.type === "FIX" || message.type === "ADD") && message.replyTo) this.workBaselines.resume(message.replyTo);
     const delivery = { ...message, ...(interrupt ? { interrupt: true } : {}) };
     const onSent = this.prepareSpec(delivery);
-    const effort = !interrupt && message.to === "codex" ? message.effort : undefined;
+    const effort = !interrupt && AGENT_META[message.to].effortInMessage ? message.effort : undefined;
     const knownEffort = this.options.agents[message.to].effort !== undefined;
     if (effort && !knownEffort) this.options.bus.publish({ kind: "notice", text: t("notice.unknownEffort"), level: "warn" });
     return {

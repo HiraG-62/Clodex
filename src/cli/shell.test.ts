@@ -511,7 +511,7 @@ describe("createShell", () => {
     const { shell, coordinator, printed, references } = setup();
     await shell.handleLine("@all hello @shot.png");
     expect(coordinator.sent.map(({ agent }) => agent)).toEqual(["claude", "codex"]);
-    expect(coordinator.sent.every(({ text }) => text.startsWith("[Sent to both claude and codex]\n"))).toBe(true);
+    expect(coordinator.sent.every(({ text }) => text.startsWith("[Sent to claude and codex]\n"))).toBe(true);
     expect(coordinator.images).toEqual([["C:/up/shot.png"], ["C:/up/shot.png"]]);
     expect(coordinator.sharedFlags).toEqual([true, true]);
     expect(printed).toContain("@all: sent to claude and codex");
@@ -520,7 +520,7 @@ describe("createShell", () => {
   it("@all! は両 Agent に割り込む", async () => {
     const { shell, coordinator } = setup();
     await shell.handleLine("@all! hello");
-    expect(coordinator.steeredInputs).toEqual(["claude", "codex"].map(agent => ({ agent, text: "[Sent to both claude and codex]\nhello" })));
+    expect(coordinator.steeredInputs).toEqual(["claude", "codex"].map(agent => ({ agent, text: "[Sent to claude and codex]\nhello" })));
     expect(coordinator.sharedFlags).toEqual([true, true]);
   });
   it("/role で役割を表示し、編集後に次の session の案内を出す", async () => {

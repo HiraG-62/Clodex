@@ -84,3 +84,19 @@ it("未回答だけの会話も保存する", () => {
   saveRecovery(home, project, { current: "c1", conversations: { c1: conversation } });
   expect(loadRecovery(home, project)?.conversations.c1).toEqual(conversation);
 });
+
+it("省略した Agent の queue を空配列で補う", () => {
+  const home = mkdtempSync(join(tmpdir(), "clodex-recovery-keys-"));
+  const project = join(home, "project");
+  saveRecovery(home, project, { current: "c", conversations: {} });
+  writeFileSync(
+    recoveryPath(home, project),
+    JSON.stringify({
+      current: "c",
+      conversations: {
+        c: { interrupted: ["claude"], queue: { claude: [{ kind: "input", text: "続行" }] } },
+      },
+    }),
+  );
+  expect(loadRecovery(home, project)?.conversations.c?.queue).toEqual({ claude: [{ kind: "input", text: "続行" }], codex: [] });
+});

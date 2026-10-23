@@ -1,3 +1,4 @@
+import { agentRecord } from "../agents/agent-meta.js";
 // project ごとの設定・会話・Agent・保存をまとめる（DESIGN.md §28 D2a）
 
 import { mkdirSync } from "node:fs";
@@ -169,10 +170,7 @@ export const openProject = async ({
       try {
         const result = await fetch(projectRoot, spawn);
         if (current !== generation) return;
-        catalog = {
-          claude: result.models.claude.length ? result.models.claude : catalog.claude,
-          codex: result.models.codex.length ? result.models.codex : catalog.codex,
-        };
+        catalog = agentRecord(id => (result.models[id].length ? result.models[id] : catalog[id]));
         for (const runtime of workspace?.allRuntimes() ?? []) runtime.coordinator.applyStartupUsage(result.usage);
         onModelsChanged?.();
       } catch (error) {
@@ -226,8 +224,7 @@ export const openProject = async ({
       saved: sandbox.enabled
         ? {
             ...settingsStore.load(),
-            claude: { ...settingsStore.load().claude, permission: "full" },
-            codex: { ...settingsStore.load().codex, permission: "full" },
+            ...agentRecord(id => ({ ...settingsStore.load()[id], permission: "full" as const })),
           }
         : settingsStore.load(),
       models: args.models,
@@ -268,10 +265,7 @@ export const openProject = async ({
             forwardFailureToParent: (message: AgentMessage, error: string) => workspace!.forwardFailureToParent(conversation, message, error),
           }
         : {}),
-      settings:
-        conversation.mode === "brainstorm"
-          ? { claude: { ...startSettings.claude, permission: "read-only" }, codex: { ...startSettings.codex, permission: "read-only" } }
-          : startSettings,
+      settings: conversation.mode === "brainstorm" ? agentRecord(id => ({ ...startSettings[id], permission: "read-only" as const })) : startSettings,
       ...(config.freshThread ? { freshThread: config.freshThread } : {}),
       ...(config.verify ? { verify: config.verify } : {}),
       ...(config.specSections ? { specSections: config.specSections } : {}),

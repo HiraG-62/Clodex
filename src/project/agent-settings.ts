@@ -2,6 +2,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
 import { type AgentId, PERMISSION_LEVELS, type PermissionLevel } from "../agents/agent-adapter.js";
+import { agentRecord } from "../agents/agent-meta.js";
 import { type BudgetLimits, isLimitValue, LIMIT_KEYS } from "../coordinator/budget-manager.js";
 import { writeFileAtomic } from "./atomic-write.js";
 
@@ -21,8 +22,7 @@ const savedLimits = z.unknown().transform((value): Partial<BudgetLimits> => {
 });
 const savedSchema = z.strictObject({
   sandbox: z.boolean().optional(),
-  claude: settingsSchema.optional(),
-  codex: settingsSchema.optional(),
+  ...agentRecord(() => settingsSchema.optional()),
   limits: savedLimits.optional(),
   limitsUnlimited: z.literal(true).optional(),
 });
@@ -84,5 +84,5 @@ export const resolveStartSettings = ({ saved, configPermission, models }: StartS
     const effort = saved[id]?.effort;
     return { ...(permission ? { permission } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
   };
-  return { claude: resolve("claude"), codex: resolve("codex") };
+  return agentRecord(resolve);
 };

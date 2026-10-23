@@ -1,17 +1,17 @@
 import type { AgentId } from "../agents/agent-adapter.js";
+import { agentRecord, peersOf } from "../agents/agent-meta.js";
 
 const SOLO_RELEASED_NOTE =
-  "[Clodex] Solo mode is off. Delegate to the other agent with send_message as your role says, and reply to requests with send_message.";
+  "[Clodex] Solo mode is off. Delegate to the other agents with send_message as your role says, and reply to requests with send_message.";
 const HUMAN_CONTEXT_LIMIT = 5;
 const HUMAN_CONTEXT_LENGTH = 300;
-export const OTHER_AGENT: Record<AgentId, AgentId> = { claude: "codex", codex: "claude" };
 
 export class DeliveryNotes {
-  private readonly humanContext: Record<AgentId, { entries: Array<{ to: AgentId; text: string }>; extra: number }> = {
-    claude: { entries: [], extra: 0 },
-    codex: { entries: [], extra: 0 },
-  };
-  private readonly pendingNotices: Record<AgentId, string[]> = { claude: [], codex: [] };
+  private readonly humanContext: Record<AgentId, { entries: Array<{ to: AgentId; text: string }>; extra: number }> = agentRecord(() => ({
+    entries: [],
+    extra: 0,
+  }));
+  private readonly pendingNotices: Record<AgentId, string[]> = agentRecord(() => []);
   private readonly holdContext: Partial<Record<AgentId, { peerFiles: Set<string> }>> = {};
 
   constructor(
@@ -28,11 +28,19 @@ export class DeliveryNotes {
   peek(id: AgentId): string {
     const human = this.humanContext[id];
     const humanNote = human.entries.length
-      ? `\n\n[Clodex] Since your last turn, the human said to ${human.entries[0]!.to}:\n${human.entries.map(item => `- ${this.previewHuman(item.text)}`).join("\n")}${human.extra ? `\n- (+${human.extra} more)` : ""}`
+      ? [...new Set(human.entries.map(item => item.to))]
+          .map(
+            to =>
+              `\n\n[Clodex] Since your last turn, the human said to ${to}:\n${human.entries
+                .filter(item => item.to === to)
+                .map(item => `- ${this.previewHuman(item.text)}`)
+                .join("\n")}`,
+          )
+          .join("") + (human.extra ? `\n- (+${human.extra} more)` : "")
       : "";
     const notices = this.pendingNotices[id].map(notice => `\n\n${notice}`).join("");
     const edited = [...(this.holdContext[id]?.peerFiles ?? [])];
-    const holdNote = edited.length ? `\n\nWhile you were stopped, ${OTHER_AGENT[id]} edited: ${edited.join(", ")}. Check them before continuing.` : "";
+    const holdNote = edited.length ? `\n\nWhile you were stopped, ${peersOf(id).join(", ")} edited: ${edited.join(", ")}. Check them before continuing.` : "";
     const soloNote = this.soloReleased?.(id) ? `\n\n${SOLO_RELEASED_NOTE}` : "";
     return `${soloNote}${humanNote}${notices}${holdNote}`;
   }
@@ -50,9 +58,11 @@ export class DeliveryNotes {
   }
 
   queueHumanContext(to: AgentId, text: string): void {
-    const queue = this.humanContext[OTHER_AGENT[to]];
-    if (queue.entries.length < HUMAN_CONTEXT_LIMIT) queue.entries.push({ to, text });
-    else queue.extra++;
+    for (const peer of peersOf(to)) {
+      const queue = this.humanContext[peer];
+      if (queue.entries.length < HUMAN_CONTEXT_LIMIT) queue.entries.push({ to, text });
+      else queue.extra++;
+    }
   }
 
   queueNotice(id: AgentId, notice: string): void {

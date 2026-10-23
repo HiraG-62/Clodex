@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
-import type { AgentId } from "../agents/agent-adapter.js";
+import { AGENT_IDS, type AgentId } from "../agents/agent-adapter.js";
 import type { Coordinator, RequestState } from "../coordinator/coordinator.js";
 import type { CoordinatorEvent, EventBus } from "../coordinator/event-bus.js";
 import type { Conversation, ConversationHistory } from "../project/conversation-history.js";
@@ -49,7 +49,7 @@ export class Workspace {
   private readonly switchListeners: Array<(runtime: ConversationRuntime) => void> = [];
   private readonly runtimeListeners: Array<(runtime: ConversationRuntime) => void> = [];
   private readonly recoveryListeners: Array<() => void> = [];
-  private readonly toolUse = new Map<string, Partial<Record<"claude" | "codex", boolean>>>();
+  private readonly toolUse = new Map<string, Partial<Record<AgentId, boolean>>>();
   private readonly pendingFailure = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private readonly options: WorkspaceOptions) {
@@ -224,7 +224,7 @@ export class Workspace {
       .map(agent => agent.id);
     const queued = [...runtime.coordinator.pendingInputs(), ...runtime.coordinator.pendingMessages()].map(item => item.agent);
     if (!runtime.coordinator.idle() || busy.length) {
-      return { ok: false, reason: "busy", agents: [...new Set([...busy, ...queued])].join(", ") || "claude, codex" };
+      return { ok: false, reason: "busy", agents: [...new Set([...busy, ...queued])].join(", ") || AGENT_IDS.join(", ") };
     }
     const created = await this.options.createWorktree(this.options.projectRoot, this.options.history.currentId);
     if (!created.ok) return { ok: false, reason: "failed", error: created.error };

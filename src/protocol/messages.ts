@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { AGENT_IDS, type AgentId } from "../agents/agent-adapter.js";
+import { AGENT_META } from "../agents/agent-meta.js";
 
 export const MESSAGE_TYPES = ["QUESTION", "REVIEW_REQUEST", "DELEGATE", "FIX", "ADD", "NOTE", "CANCEL", "ANSWER", "RESULT", "ISSUE", "ACK"] as const;
 export const RESULT_STATUSES = ["approved", "changes_requested", "done", "failed", "canceled"] as const;
@@ -34,7 +35,11 @@ export const sendMessageShape = {
       "FIX corrects, ADD adds requirements to, NOTE informs about, CANCEL withdraws a DELEGATE / REVIEW_REQUEST you sent (replyTo = that request). Delivered into the recipient's running turn when it is working on it. ANSWER replies to a QUESTION; RESULT reports completed delegated work. Follow-ups, ANSWER, RESULT and ACK require replyTo",
     ),
   taskId: z.string().min(1).describe("Task ID"),
-  effort: z.string().min(1).optional().describe("Reasoning effort for the turn that handles this request (codex only)"),
+  effort: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(`Reasoning effort for the turn that handles this request (${AGENT_IDS.filter(id => AGENT_META[id].effortInMessage).join(", ")} only)`),
   rework: z.enum(["spec", "impl", "check"]).optional().describe("Why this task is requested again with the same taskId: spec, impl or check"),
   relatesTo: z.string().min(1).optional().describe("Related previous task ID (DELEGATE or REVIEW_REQUEST only)"),
   body: z.string().min(1).max(MAX_BODY_LENGTH).describe("Request, question, or result summary. Reference commit/files instead of pasting large content"),
@@ -75,8 +80,12 @@ export const sendMessageShape = {
 
 const TYPES_ALLOWING_SPEC = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST", "FIX", "ADD", "NOTE", "RESULT", "ANSWER"]);
 const sendMessageSchema = z.object(sendMessageShape).superRefine((input, ctx) => {
-  if (input.effort !== undefined && (input.to !== "codex" || !TYPES_ALLOWING_FRESH.has(input.type))) {
-    ctx.addIssue({ code: "custom", path: ["effort"], message: "allowed only for DELEGATE or REVIEW_REQUEST to codex" });
+  if (input.effort !== undefined && (!AGENT_META[input.to].effortInMessage || !TYPES_ALLOWING_FRESH.has(input.type))) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["effort"],
+      message: `allowed only for DELEGATE or REVIEW_REQUEST to ${AGENT_IDS.filter(id => AGENT_META[id].effortInMessage).join(", ")}`,
+    });
   }
   if (input.rework !== undefined && !TYPES_ALLOWING_REWORK.has(input.type)) {
     ctx.addIssue({ code: "custom", path: ["rework"], message: "allowed only for DELEGATE, FIX or ADD" });

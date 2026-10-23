@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { AGENT_IDS } from "../agents/agent-adapter.js";
+import { agentRecord } from "../agents/agent-meta.js";
 import { sendMessageShape } from "../protocol/messages.js";
 import { pendingQuestionSchema } from "../protocol/questions.js";
 import { writeFileAtomic } from "./atomic-write.js";
@@ -35,15 +36,12 @@ const itemSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("message"), message: messageSchema }),
 ]);
 const workSchema = z.strictObject({ plan: z.string().optional(), actions: z.array(z.string()).max(5) });
-const lastWorkSchema = z.strictObject({
-  claude: workSchema.optional().catch(undefined),
-  codex: workSchema.optional().catch(undefined),
-});
+const lastWorkSchema = z.strictObject(agentRecord(() => workSchema.optional().catch(undefined)));
 const conversationSchema = z.strictObject({
   brainstormPhase: z.enum(["idle", "round", "summary", "done", "stopped"]).optional(),
   questions: z.array(pendingQuestionSchema).optional(),
   interrupted: z.array(z.enum(AGENT_IDS)),
-  queue: z.strictObject({ claude: z.array(itemSchema), codex: z.array(itemSchema) }),
+  queue: z.strictObject(agentRecord(() => z.array(itemSchema).default([]))),
   lastWork: lastWorkSchema.optional().catch(undefined),
 });
 const recoverySchema = z.strictObject({

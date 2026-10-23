@@ -1,6 +1,7 @@
 // Agent ごとの利用状況を集計し、偏りを人に知らせる（DESIGN.md §14 利用枠の可視化と通知）
 // 送り先の切り替えは行わない（DESIGN.md §3.6）
-import { AGENT_IDS, type AgentId, type RateLimitWindow } from "../agents/agent-adapter.js";
+import type { AgentId, RateLimitWindow } from "../agents/agent-adapter.js";
+import { AGENT_META, peersOf } from "../agents/agent-meta.js";
 import { t } from "../i18n/i18n.js";
 import type { EventBus } from "./event-bus.js";
 
@@ -47,8 +48,6 @@ interface Windows {
   weekly?: RateLimitWindow;
 }
 
-const peerOf = (agent: AgentId): AgentId => AGENT_IDS.find(id => id !== agent)!;
-
 // 使用率が 100% 以上でリセット前の枠があれば、そのリセット時刻（epoch 秒。複数なら遅いほう）
 export const limitResetAt = (snapshot: UsageSnapshot): number | undefined => {
   const LIMIT_PERCENT = 100;
@@ -83,7 +82,7 @@ export class UsageMonitor {
       if (agentEvent.type === "session" && this.sessions.get(agent) !== agentEvent.sessionId) {
         this.sessions.set(agent, agentEvent.sessionId);
         this.clearContext(agent);
-        if (agent === "claude") this.inputTotals.set(agent, 0);
+        if (AGENT_META[agent].cumulativeInput) this.inputTotals.set(agent, 0);
       }
       if (agentEvent.type === "compacted") this.contexts.delete(agent);
       if (agentEvent.type === "context") {
@@ -152,7 +151,7 @@ export class UsageMonitor {
     if (weekly) {
       const pace = weeklyPace(weekly, this.nowSeconds());
       if (pace >= this.alert.weeklyPaceThreshold) {
-        this.notifyOnce(`${agent}:weekly:${weekly.resetsAt}`, t("notice.weeklyPace", { agent, pace, peer: peerOf(agent) }));
+        this.notifyOnce(`${agent}:weekly:${weekly.resetsAt}`, t("notice.weeklyPace", { agent, pace, peer: peersOf(agent).join(", ") }));
       }
     }
     if (fiveHour && fiveHour.usedPercent >= this.alert.fiveHourThreshold) {

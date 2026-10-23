@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { AGENT_IDS, type AgentId } from "../agents/agent-adapter.js";
+import { agentRecord } from "../agents/agent-meta.js";
 import type { EventBus } from "../coordinator/event-bus.js";
 import { t } from "../i18n/i18n.js";
 import { writeFileAtomic } from "./atomic-write.js";
@@ -14,7 +15,7 @@ const TITLE_LENGTH = 60;
 const STATE_DIR = join(".clodex", "state");
 const PATH_HASH_LENGTH = 8;
 
-const sessionsSchema = z.strictObject({ claude: z.string().min(1).optional(), codex: z.string().min(1).optional() });
+const sessionsSchema = z.strictObject(agentRecord(() => z.string().min(1).optional()));
 const conversationSchema = z.strictObject({
   id: z.string().min(1),
   startedAt: z.string(),
@@ -58,7 +59,7 @@ export const loadConversations = (path: string): Conversation[] => {
   }
 };
 
-const isWorthSaving = (c: Conversation) => Boolean(c.title || c.workDir || c.solo || c.mode || c.soloReleased?.length || c.sessions.claude || c.sessions.codex);
+const isWorthSaving = (c: Conversation) => Boolean(c.title || c.workDir || c.solo || c.mode || c.soloReleased?.length || AGENT_IDS.some(id => c.sessions[id]));
 const byNewest = (a: Conversation, b: Conversation) => b.updatedAt.localeCompare(a.updatedAt);
 // ピン止めした会話は先頭に並べ、最大件数の枠に数えない
 const arrange = (conversations: Conversation[], protectedParentId?: string): Conversation[] => {

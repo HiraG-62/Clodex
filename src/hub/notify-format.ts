@@ -1,4 +1,5 @@
 import type { AgentId } from "../agents/agent-adapter.js";
+import { AGENT_META } from "../agents/agent-meta.js";
 import type { Messages } from "../i18n/messages.js";
 
 export type NotificationKind = "work" | "reply" | "failed" | "interrupted" | "question" | "limitHold" | "error" | "notice";
@@ -21,7 +22,6 @@ export interface HubNotification {
   body: string;
 }
 
-const AGENT_NAME: Record<AgentId, string> = { claude: "Claude", codex: "Codex" };
 const MESSAGE_KEY = {
   work: "notify.work",
   reply: "notify.reply",
@@ -42,7 +42,7 @@ export function formatNotification(input: NotificationInput, messages: Messages)
   const line = input.line?.split(/\r?\n/, 1)[0] ?? "";
   const template = input.kind === "notice" ? line : messages[MESSAGE_KEY[input.kind]];
   const content = template.replace("{time}", input.time ?? "").replace("{line}", line);
-  const suffix = input.agent ? messages["notify.agent"].replace("{agent}", AGENT_NAME[input.agent]) : "";
+  const suffix = input.agent ? messages["notify.agent"].replace("{agent}", AGENT_META[input.agent].name) : "";
   return {
     kind: input.kind,
     project,

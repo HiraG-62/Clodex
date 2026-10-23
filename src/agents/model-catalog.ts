@@ -1,4 +1,5 @@
 import type { AgentId } from "./agent-adapter.js";
+import { agentRecord } from "./agent-meta.js";
 
 export interface ModelOption {
   value: string;
@@ -6,7 +7,7 @@ export interface ModelOption {
   resolved?: string;
 }
 export type ModelCatalog = Record<AgentId, ModelOption[]>;
-export const EMPTY_MODEL_CATALOG = (): ModelCatalog => ({ claude: [], codex: [] });
+export const EMPTY_MODEL_CATALOG = (): ModelCatalog => agentRecord(() => []);
 
 export const modelLabel = (value: string | undefined, models: readonly ModelOption[]): string => {
   if (!value) return "default";

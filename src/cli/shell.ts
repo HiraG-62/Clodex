@@ -146,7 +146,7 @@ export type ShellOutcome = "continue" | "exit";
 
 // 説明の開始位置をそろえる幅
 const HELP_COLUMN = 20;
-const ALL_MESSAGE_PREFIX = "[Sent to both claude and codex]";
+const ALL_MESSAGE_PREFIX = `[Sent to ${AGENT_IDS.join(" and ")}]`;
 const helpLine = (usage: string, description: string) => `${usage.padEnd(HELP_COLUMN - 1)} ${description}`;
 
 const HELP_LINES = (primary: AgentId) => [

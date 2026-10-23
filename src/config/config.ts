@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { AGENT_IDS, type AgentId, PERMISSION_LEVELS } from "../agents/agent-adapter.js";
+import { agentRecord } from "../agents/agent-meta.js";
 import { LANGUAGES, type Language } from "../context/language.js";
 import { writeFileAtomic } from "../project/atomic-write.js";
 
@@ -25,16 +26,14 @@ const configSchema = z.strictObject({
   language: z.enum(LANGUAGES).optional(),
   permission: z.enum(PERMISSION_LEVELS).optional(),
   updateChannel: z.enum(UPDATE_CHANNELS).optional(),
-  roles: z.strictObject({ claude: role.optional(), codex: role.optional() }).optional(),
+  roles: z.strictObject(agentRecord(() => role.optional())).optional(),
   verify: z.strictObject({ implement: z.array(z.string().min(1)).optional(), integrate: z.array(z.string().min(1)).optional() }).optional(),
   specSections: z.strictObject({ owned: z.string().optional(), forbidden: z.string().optional() }).optional(),
   specCheck: z.string().min(1).optional(),
-  rules: z.strictObject({ claude: z.string().optional(), codex: z.string().optional() }).optional(),
+  rules: z.strictObject(agentRecord(() => z.string().optional())).optional(),
   freshThread: z.strictObject({ DELEGATE: z.boolean().optional(), REVIEW_REQUEST: z.boolean().optional() }).optional(),
-  usageHints: z.strictObject({ claude: z.boolean().optional(), codex: z.boolean().optional() }).optional(),
-  threadTokenWarn: z
-    .union([z.number().int().positive(), z.strictObject({ claude: z.number().int().positive().optional(), codex: z.number().int().positive().optional() })])
-    .optional(),
+  usageHints: z.strictObject(agentRecord(() => z.boolean().optional())).optional(),
+  threadTokenWarn: z.union([z.number().int().positive(), z.strictObject(agentRecord(() => z.number().int().positive().optional()))]).optional(),
   limits: z
     .strictObject({
       maxMessagesPerChain: nonNegativeInt.optional(),
@@ -97,7 +96,7 @@ export const ensureUserConfigTemplate = (homeDir: string): void => {
   const path = join(homeDir, USER_CONFIG_PATH);
   if (existsSync(path)) return;
   try {
-    writeFileAtomic(path, `${JSON.stringify({ roles: { claude: "", codex: "" } }, null, 2)}\n`);
+    writeFileAtomic(path, `${JSON.stringify({ roles: agentRecord(() => "") }, null, 2)}\n`);
   } catch {
     // ひな形の保存に失敗しても、設定なしで起動する。
   }
