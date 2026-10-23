@@ -2331,3 +2331,25 @@ Agent の設定（model・effort・権限）:
 - 進行中（まとめを送る前）に人が入力したら、宛先によらず配送せずに溜め、次の周（まとめの番ならまとめ）の指示の先頭に「人が足したこと」として両 Agent に渡す。人が足した方向をブレストに反映させ、別のターンを増やさないため。ログの発言には「次の周へ」の印を付ける。割り込み（`@agent!`）とコマンドは今どおり。まとめを送った後の入力は通常の配送
 - `/interrupt` はブレストを止める（残りの周とまとめを送らない）
 - 1 周ごとに両 Agent の 1 ターンを使うので、利用枠を周回数 ×2 + 1 ターン使う
+
+### G — Gemini（Antigravity CLI）と N 体の Agent
+
+Google AI プランの購読で使える Antigravity CLI（`agy`）を 3 体目の Agent `gemini` として足す（API キーは使わない。認証は agy 自身の Google OAuth ログイン）。agy の headless は stdin/stdout の stream-json（`--input-format stream-json --output-format stream-json`。1 プロセスで複数ターン、`init` / `step_update` / `result` の NDJSON）を持ち、`--conversation <id>` で再開できる。実装の前に `spikes/` で実測する（イベントの実際の形・中断・permission・`agy models`・利用枠・MCP の設定）。
+
+段階:
+
+- **G1 — N 体対応の一般化**（agy 不要）: 「相手は 1 体」の前提と `{ claude, codex }` の手書きリテラルをなくし、`AGENT_IDS` と Agent ごとのメタデータ（registry）駆動にする。`AGENT_IDS` は 2 体のまま変えない
+- **G2 — UI の N 体対応**: 送り先・カードの列・色・`@` の解析を registry 駆動にする
+- **G3 — agy の spike**: 人が agy を導入・ログインした後に実測し、`docs/spikes/antigravity.md` に記録する
+- **G4 — AntigravityAdapter**: Adapter・permission の対応・model / effort・利用枠・sandbox・`AGENT_IDS` への `gemini` 追加
+- **G5 — 仕上げ**: 役割プリセットの 3 者化、ブレストの確認、Budget の既定値の見直し、受入 E2E
+
+N 体の設計の決まり（G1〜G2 の仕様）:
+
+- 「相手」は集合にする: `peersOf(id)` = 自分以外の全 Agent。人の発言の共有（queueHumanContext）・利用枠の上限の通知・相手が編集したファイルの記録は、宛先（本人）以外の全員に対して行う
+- Agent ごとの違い（表示名・mark・色・既定の色変数・effort の段階・message の `effort` を受けるか・usage hint・inputTotal の数え方・ブレストの案 ID の接頭辞）は、1 つの registry にまとめる。`=== "claude" ? A : B` の二択で gemini が暗黙に codex 扱いになる形を残さない
+- 設定（`roles`・`rules`・`usageHints`・`threadTokenWarn`）と保存形式（sessions・settings・recovery）の Agent 名のキーは、`AGENT_IDS` からスキーマを組み立てる。すべて省略可にし、recovery の `queue` は無い Agent を空で補う（古いファイルを読めなくしない）
+- solo は今のまま「1 体だけ」（`"free" | AgentId`）。部分集合のモードは作らない
+- ブレストは各周で「他の全員の前の周の回答」を渡す。完了判定は 周回数 × Agent 数
+- 定型文は「peer は 1 人」の文面をやめ、自分以外の全員の役割を並べる。`@all` の文言も「全員」にする
+- message の `effort` は「宛先が codex か」ではなく registry の能力で判定する
