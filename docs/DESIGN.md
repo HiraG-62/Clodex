@@ -2307,7 +2307,7 @@ Agent の設定（model・effort・権限）:
 - model はリストから選ぶ。一覧は CLI から取得し、固定リストは持たない（docs/spikes/model-list.md）
   - Claude: 短命の `claude -p --input-format stream-json ...` に `control_request` の `initialize` を送り、応答の `models` を使う。値は `value`、表示名は `displayName`。`default` は `displayName` に版が無いので `description` の ` · ` より前を足して `Default (Opus 5.5)` とする
   - Codex: 短命の `codex app-server` で `initialize` → `model/list`（`nextCursor` を最後までたどる）。値は `model`、表示名は `displayName`。`hidden` は除く
-  - 取得は Clodex の起動時に 1 回、Agent の Lazy Start を待たずにバックグラウンドで行う（ターンを送らないので利用枠を消費しない）。同じプロセスで利用状況も取得する（§利用枠の可視化と通知）。取得できるまで・失敗したときは空の一覧（「その他（入力）」だけ）。一覧は project によらないので Hub で共有する
+  - 取得は Clodex の起動時（project を開いたとき）に、Agent の Lazy Start を待たずにバックグラウンドで行う（ターンを送らないので利用枠を消費しない）。CLI の更新などで一覧が変わる（docs/spikes/model-list.md の追記）ので、Agent のプロセスを起動するたびに取り直す。ただし前の取得から 10 分以内なら取り直さない。取り直した一覧は state に反映し、取得に失敗したら前の一覧を残す。同じプロセスで利用状況も取得する（§利用枠の可視化と通知）。取得できるまで・失敗したときは空の一覧（「その他（入力）」だけ）。一覧は project によらないので Hub で共有する
   - リストは表示名を出し、選ぶと値を `/model <agent> <value>` で送る。リストの最後に「その他（入力）」を置き、自由に入力もできる
 - 一覧は state に Agent ごとに `{ value, label }[]` で入れる。Claude は `resolvedModel` も持ち、今の model の表示（チップ・状態の行・`/status`）は値か `resolvedModel` が一致する項目の表示名にする（例: `claude-opus-5-5` → `Opus 5.5`）。一致しなければ値のまま
 - スラッシュコマンドの `/model` の引数の候補は値を出し、表示名を説明として添える

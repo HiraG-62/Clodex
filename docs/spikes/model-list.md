@@ -36,3 +36,9 @@
 ## 結論
 
 両 Agent とも、短命のプロセスを起動して model の一覧と利用枠を取得できる。Agent の Lazy Start を待たずに Clodex の起動時に取得する。
+
+## 追記（2026-10-23）: 一覧は時期で変わる
+
+- Claude Code 2.1.308 で取り直すと、13 件（`default`・`opus`・`fable`・`sonnet`・`haiku` と、`claude-haiku-4-5-20251001`・`claude-sonnet-5`・`claude-opus-5`・`claude-fable-5`・`claude-opus-4-8`・`claude-opus-4-7`・`claude-opus-4-6`・`claude-sonnet-4-6`）。表示名はすべて版つき（`Fable 5.1`・`Fable 5` など）
+- 同じ PC で 10/22 22:28 に起動した Hub が持っていた一覧は 5 件（`Default (Opus 5.5)`・`Opus`・`Fable`（value `claude-fable-5-1[1m]`）・`Sonnet`・`Haiku`）で、版の表示も古い版も無かった
+- 同じ処理（`fetchStartupProbe`）・同じ作業場所で取り直すと 13 件になるので、CLI の更新か、CLI が取得する設定の変化で一覧が変わったと考えられる。起動時に 1 回取るだけでは古い一覧が残る
