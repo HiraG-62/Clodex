@@ -38,18 +38,22 @@
 - **実測**: workspace 設定の stdio サーバーが使われ、`CLODEX_MCP_URL` を Clodex → agy → MCP 子プロセスへ環境変数で引き継げた。tool 呼び出しは `step_update` の `tool_info: {name:"call_mcp_tool", parameters:{Arguments:...}}`
 - Clodex の MCP URL は会話ごと（ランダムポート + token）なので、静的な設定ファイルに直接書けない。**成立した案**: stdio の中継（proxy）を設定に 1 回書き、URL は agy の起動時の環境変数で渡す（agy は自分の env を MCP の子プロセスへ引き継ぐ）
 - agy は MCP の tool スキーマを `~/.gemini/antigravity-cli/mcp/` にキャッシュし、呼ぶ前に `read_file` で読むことがある
-- 実測は `--dangerously-skip-permissions` で行った。実運用は `permissions.allow` に `mcp(clodex/*)` を足す形になる見込み（未検証）
+- **`permissions.allow` の実測**: `~/.gemini/antigravity-cli/settings.json` に `{"permissions":{"allow":["mcp(clodex/*)"]}}` を書くと、`--dangerously-skip-permissions` なしで MCP の tool を呼べた（ソフト拒否されない）。実運用はこの形
 
 ## 利用枠
 
 - ターンごとの `result.usage` 以外に、headless から利用枠（5 時間 / 週）を取る経路は見つかっていない。`/usage` は print モードでは CLI のコマンドとして展開されず、モデルがコマンド実行を試みてソフト拒否された。stream-json の stdin ではスラッシュコマンドは ERROR（docs）。残量の表示は対話 UI のみ
 - → Clodex の利用枠ゲージは、当面 gemini は token 累積（`usage`）だけで、5 時間 / 週の percent は unknown になる
 
+## 中断（実測）
+
+- stdin に control は送れない（ERROR）ので、中断は**プロセスを kill → `--conversation <id>` で再開**。kill（SIGTERM、exit 143）の後も conversation は残り、別プロセスの `--conversation` で続きを話せた
+- 注意: kill の時点でローカルの stream は `user_input` までしか出ていないのに、再開後のモデルは依頼の完了（300 まで数えた）を前提に答えた。ローカルを kill してもサーバー側のターンは完走している可能性がある（課金・状態の両方。断定には追加の実測が要る）
+
 ## 未実測（G4 の前に足す）
 
-- ターン中の中断: stdin に control は送れない（ERROR）。プロセスを kill → `--conversation <id>` で再開、の線が有力（未実測）
-- `permissions.allow` の実際の効き方（`mcp(clodex/*)`・`command(...)` を settings に書いた場合）
-- `--mode` と `--dangerously-skip-permissions` の併用、途中での権限変更（プロセス再起動が要るか）
+- kill したターンがサーバー側で完走するかの確定（上の注意）
+- `--mode` の途中変更（プロセス再起動が要るか。`--mode` は起動引数なので再起動前提と思われる）
 - subagent（`subagent_info`）・context の残量の取得・compact 相当の操作
 
 ## 結論
