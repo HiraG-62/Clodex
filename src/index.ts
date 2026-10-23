@@ -315,6 +315,7 @@ const main = async (): Promise<void> => {
         isCurrent: () => hub.current === context,
         modelCatalog: () => modelCatalog,
         registerCoordinator,
+        onModelsChanged: () => refreshState(),
       });
       context.workspace.onEvent((runtime, event, current) => {
         if (event.kind === "canceled") context.feedStore.remove(runtime.conversationId, event.id, event.agent, event.text);

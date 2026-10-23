@@ -105,6 +105,7 @@ export interface CoordinatorOptions {
   brainstormComplete?: boolean;
   permissionLocked?: () => boolean;
   canStart?: () => boolean;
+  onAgentStart?: () => void;
   projectRoot: string;
   agents: Record<AgentId, AgentAdapter>;
   bus: EventBus;
@@ -435,6 +436,7 @@ export class Coordinator {
         () => this.notifyRecoveryChange(),
         () => {
           if (this.options.canStart?.() === false) throw new Error(t("sandbox.incomplete"));
+          this.options.onAgentStart?.();
         },
         () => {
           const hold = this.limitHold(id);

@@ -34,6 +34,7 @@ import type { NotificationInput } from "./notify-format.js";
 import { type ConversationRuntime, Workspace } from "./workspace.js";
 
 const LOG_SUFFIX_LENGTH = 8;
+const MODEL_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 const DEFAULT_PRIMARY: AgentId = "claude";
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -96,6 +97,8 @@ export interface OpenProjectOptions {
   createAgents?: () => Record<AgentId, AgentAdapter>;
   sandboxPlatform?: SandboxPlatform;
   startupProbe?: (cwd: string, spawn: SpawnAgentProcess) => Promise<StartupProbe>;
+  now?: () => number;
+  onModelsChanged?: () => void;
 }
 
 export const openProject = async ({
@@ -114,6 +117,8 @@ export const openProject = async ({
   createAgents,
   sandboxPlatform,
   startupProbe,
+  now = Date.now,
+  onModelsChanged,
 }: OpenProjectOptions): Promise<ProjectContext> => {
   let { config, sources } = loadConfigLayers({ homeDir, projectRoot });
   const primary = args.primary ?? config.primary ?? DEFAULT_PRIMARY;
@@ -145,19 +150,43 @@ export const openProject = async ({
   const registered = new Map<Coordinator, () => void>();
   let catalog = modelCatalog();
   let generation = 0;
+  let lastProbeStartedAt: number | undefined;
+  let probeInFlight: Promise<void> | undefined;
   const spawn: SpawnAgentProcess = (command, parameters, options) => {
     if (!sandbox.usable) throw new Error(t("sandbox.incomplete"));
     return (sandbox.enabled ? sandbox.platform.spawn : spawnAgentProcess)(command, parameters, options);
   };
   const probe = async () => {
     if (!sandbox.usable) return;
+    if (probeInFlight) return probeInFlight;
+    const startedAt = now();
+    if (lastProbeStartedAt !== undefined && startedAt - lastProbeStartedAt < MODEL_REFRESH_INTERVAL_MS) return;
     const current = generation;
     const fetch = startupProbe ?? (createAgents ? undefined : fetchStartupProbe);
     if (!fetch) return;
-    const result = await fetch(projectRoot, spawn);
-    if (current !== generation) return;
-    catalog = result.models;
-    for (const runtime of workspace?.allRuntimes() ?? []) runtime.coordinator.applyStartupUsage(result.usage);
+    lastProbeStartedAt = startedAt;
+    probeInFlight = (async () => {
+      try {
+        const result = await fetch(projectRoot, spawn);
+        if (current !== generation) return;
+        catalog = {
+          claude: result.models.claude.length ? result.models.claude : catalog.claude,
+          codex: result.models.codex.length ? result.models.codex : catalog.codex,
+        };
+        for (const runtime of workspace?.allRuntimes() ?? []) runtime.coordinator.applyStartupUsage(result.usage);
+        onModelsChanged?.();
+      } catch (error) {
+        if (current === generation) notify(errorMessage(error), "warn");
+      }
+    })();
+    try {
+      await probeInFlight;
+    } finally {
+      if (current === generation) probeInFlight = undefined;
+    }
+  };
+  const refreshModels = () => {
+    void probe();
   };
   const sandbox = new SandboxController(sandboxPlatform ?? new WindowsSandboxPlatform(homeDir, projectRoot, text => notify(text, "warn")), {
     notify: text => notify(text, "warn"),
@@ -167,6 +196,8 @@ export const openProject = async ({
     }),
     stop: async () => {
       generation++;
+      lastProbeStartedAt = undefined;
+      probeInFlight = undefined;
       await workspace?.closeAll();
     },
     save: enabled => {
@@ -176,7 +207,7 @@ export const openProject = async ({
     },
     restart: async () => {
       await workspace?.restart();
-      await probe();
+      refreshModels();
     },
   });
   if (savedSettings.sandbox ?? config.sandbox ?? false) await sandbox.initialize();
@@ -218,6 +249,7 @@ export const openProject = async ({
       agents: createAgents?.() ?? { claude: new ClaudeAdapter(spawn), codex: new CodexAdapter(spawn) },
       permissionLocked: () => sandbox.enabled,
       canStart: () => sandbox.usable,
+      onAgentStart: refreshModels,
       bus,
       knownMessages: savedFeed.flatMap(item => (item.type === "event" && item.event.kind === "message" ? [item.event.message] : [])),
       knownInputIds: [
