@@ -28,9 +28,9 @@ describe("completeCommand", () => {
   });
   it("/handoff の Agent 名を補完する", () => {
     expect(completeCommand("/hand")).toEqual([["/handoff "], "/hand"]);
-    expect(completeCommand("/handoff ")).toEqual([["/handoff claude ", "/handoff codex "], "/handoff "]);
+    expect(completeCommand("/handoff ")).toEqual([["/handoff claude ", "/handoff codex ", "/handoff gemini "], "/handoff "]);
     expect(completeCommand("/handoff co")).toEqual([["/handoff codex "], "/handoff co"]);
-    expect(slashCommands().find(command => command.name === "handoff")).toMatchObject({ args: "<agent>", argumentValues: ["claude", "codex"] });
+    expect(slashCommands().find(command => command.name === "handoff")).toMatchObject({ args: "<agent>", argumentValues: ["claude", "codex", "gemini"] });
   });
   it("/language の値を補完する", () => {
     expect(completeCommand("/lang")).toEqual([["/language "], "/lang"]);

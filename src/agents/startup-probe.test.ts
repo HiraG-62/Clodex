@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakeSpawner, flush } from "./fake-agent-process.js";
 import { modelLabel } from "./model-catalog.js";
-import { fetchStartupProbe, parseClaudeModels, parseClaudeUsage, parseCodexModels, parseCodexUsage } from "./startup-probe.js";
+import { fetchStartupProbe, parseAgyModels, parseClaudeModels, parseClaudeUsage, parseCodexModels, parseCodexUsage } from "./startup-probe.js";
 
 const CLAUDE_MODELS = [
   { value: "default", resolvedModel: "claude-opus-5-5", displayName: "Default (recommended)", description: "Opus 5.5 · Best for everyday tasks" },
@@ -24,6 +24,9 @@ const usageResponse = {
 };
 
 describe("model catalog", () => {
+  it("agy models の TSV を読む", () => {
+    expect(parseAgyModels("gemini-3.8-flash-low\tGemini Flash\ninvalid")).toEqual([{ value: "gemini-3.8-flash-low", label: "Gemini Flash" }]);
+  });
   it("Claude の応答を表示名と解決済み model に変換する", () => {
     expect(parseClaudeModels(claudeResponse)).toEqual([
       { value: "default", label: "Default (Opus 5.5)", resolved: "claude-opus-5-5" },
@@ -95,20 +98,24 @@ describe("model catalog", () => {
     claude.emit(claudeResponse);
     expect(claude.written[1]).toMatchObject({ request: { subtype: "get_usage" } });
     claude.emit(usageResponse);
+    spawner.processes[2]!.emitRaw("gemini-3.8-flash-low\tGemini Flash");
+    spawner.processes[2]!.exit(0);
     const probe = await pending;
     expect(probe.models.claude.map(item => item.label)).toEqual(["Default (Opus 5.5)", "Opus 5.5", "Fable 5.1"]);
     expect(probe.models.codex.map(item => item.value)).toEqual(["gpt-6-astra", "gpt-6-sol"]);
+    expect(probe.models.gemini).toEqual([{ value: "gemini-3.8-flash-low", label: "Gemini Flash" }]);
     expect(probe.usage.claude?.fiveHour?.usedPercent).toBe(26);
     expect(probe.usage.codex?.weekly?.usedPercent).toBe(2);
-    expect(spawner.calls.map(call => call.command)).toEqual(["claude", "codex"]);
+    expect(spawner.calls.slice(0, 2).map(call => call.command)).toEqual(["claude", "codex"]);
+    expect(spawner.calls[2]?.command).toMatch(/agy(?:\.exe)?$/);
     expect(spawner.processes.every(proc => proc.killed)).toBe(true);
   });
 
   it("起動失敗またはタイムアウトなら空にしてプロセスを終了する", async () => {
     const spawner = createFakeSpawner();
-    expect(await fetchStartupProbe("C:\\repo", spawner.spawn, 1)).toEqual({ models: { claude: [], codex: [] }, usage: {} });
+    expect(await fetchStartupProbe("C:\\repo", spawner.spawn, 1)).toEqual({ models: { claude: [], codex: [], gemini: [] }, usage: {} });
     expect(spawner.processes.every(proc => proc.killed)).toBe(true);
     const failed = createFakeSpawner(undefined, { spawnError: new Error("missing CLI") });
-    expect(await fetchStartupProbe("C:\\repo", failed.spawn)).toEqual({ models: { claude: [], codex: [] }, usage: {} });
+    expect(await fetchStartupProbe("C:\\repo", failed.spawn)).toEqual({ models: { claude: [], codex: [], gemini: [] }, usage: {} });
   });
 });

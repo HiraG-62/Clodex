@@ -32,7 +32,7 @@ it("Hub の利用枠通知は親子と別 project で共有し、session の警�
         isCurrent: () => true,
         modelCatalog: EMPTY_MODEL_CATALOG,
         registerCoordinator: () => () => {},
-        createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") }),
+        createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") }),
       });
     },
   });
@@ -99,7 +99,7 @@ it("Hub 再起動後の新しい入力の取消で、保存済み feed の発言
       isCurrent: () => true,
       modelCatalog: EMPTY_MODEL_CATALOG,
       registerCoordinator: () => () => {},
-      createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex }),
+      createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex, gemini: new FakeAgentAdapter("gemini") }),
     });
   const first = await open();
   first.history.rename("保存済み会話");
@@ -157,7 +157,7 @@ it("既存の会話を worktree に移すと runtime と session を保って cw
     isCurrent: () => true,
     modelCatalog: EMPTY_MODEL_CATALOG,
     registerCoordinator: () => () => {},
-    createAgents: () => ({ claude, codex }),
+    createAgents: () => ({ claude, codex, gemini: new FakeAgentAdapter("gemini") }),
   });
   try {
     const runtime = context.workspace.current;
@@ -226,7 +226,7 @@ it("別 project のターン終了を共有の通知先へ渡す", async () => {
     isCurrent: () => false,
     modelCatalog: EMPTY_MODEL_CATALOG,
     registerCoordinator: () => () => {},
-    createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") }),
+    createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") }),
   });
   try {
     context.workspace.current.bus.publish({ kind: "agent", agent: "claude", event: { type: "turn", result: { status: "completed", text: "完了" } } });
@@ -267,7 +267,7 @@ it("言語変更で session を作り直さず、次の session の system promp
     createAgents: () => {
       const claude = new FakeAgentAdapter("claude");
       agents.push(claude);
-      return { claude, codex: new FakeAgentAdapter("codex") };
+      return { claude, codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") };
     },
   });
   try {
@@ -307,7 +307,7 @@ it("起動中・作業中の会話に戻ってもターンを中断せず、完�
     createAgents: () => {
       const claude = new FakeAgentAdapter("claude");
       agents.push(claude);
-      return { claude, codex: new FakeAgentAdapter("codex") };
+      return { claude, codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") };
     },
   });
   try {
@@ -357,7 +357,7 @@ it("project の上限を保存し、既存・新規の会話と再起動に反�
       isCurrent: () => true,
       modelCatalog: EMPTY_MODEL_CATALOG,
       registerCoordinator: () => () => {},
-      createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") }),
+      createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") }),
     });
   let context = await open();
   try {
@@ -434,7 +434,7 @@ it("sandbox off の project を開いても実機の検査や broker 接続を�
       close: async () => {},
       spawn: vi.fn(),
     },
-    createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") }),
+    createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") }),
   });
   try {
     expect(ready).not.toHaveBeenCalled();
@@ -467,7 +467,7 @@ it("役割の保存後は層を読み直し、起動オプションと実行中�
     isCurrent: () => true,
     modelCatalog: EMPTY_MODEL_CATALOG,
     registerCoordinator: () => () => {},
-    createAgents: () => ({ claude, codex }),
+    createAgents: () => ({ claude, codex, gemini: new FakeAgentAdapter("gemini") }),
   });
   try {
     await context.workspace.current.coordinator.start();

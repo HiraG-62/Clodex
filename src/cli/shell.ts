@@ -487,7 +487,9 @@ export const createShell = ({
       }
       const preset = ROLE_PRESETS[command.preset][language?.get() ?? getLanguage()];
       for (const agent of AGENT_IDS) {
-        const saved = saveRole(agent, preset[agent]);
+        const role = preset[agent];
+        if (role === undefined) continue;
+        const saved = saveRole(agent, role);
         print(t("shell.roleSaved", { agent, text: saved }));
         print(t("shell.roleRestart", { agent }));
       }

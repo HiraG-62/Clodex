@@ -8,8 +8,28 @@ describe("parseCliArgs", () => {
 
   it("全 option を読む", () => {
     expect(
-      parseCliArgs(["--project", "C:\\dev\\app", "--primary", "codex", "--claude-model", "haiku", "--codex-model", "gpt-5.5", "--resume", "--web"]),
-    ).toEqual({ project: "C:\\dev\\app", primary: "codex", models: { claude: "haiku", codex: "gpt-5.5" }, resume: true, web: true, serve: false });
+      parseCliArgs([
+        "--project",
+        "C:\\dev\\app",
+        "--primary",
+        "gemini",
+        "--claude-model",
+        "haiku",
+        "--codex-model",
+        "gpt-5.5",
+        "--gemini-model",
+        "flash",
+        "--resume",
+        "--web",
+      ]),
+    ).toEqual({
+      project: "C:\\dev\\app",
+      primary: "gemini",
+      models: { claude: "haiku", codex: "gpt-5.5", gemini: "flash" },
+      resume: true,
+      web: true,
+      serve: false,
+    });
   });
 
   it("serve は project 省略可で Web を起動する", () => {
@@ -19,7 +39,7 @@ describe("parseCliArgs", () => {
   });
 
   it("未知の primary はエラー", () => {
-    expect(() => parseCliArgs(["--primary", "gemini"])).toThrow(/--primary/);
+    expect(() => parseCliArgs(["--primary", "unknown"])).toThrow(/--primary/);
   });
 
   it("未知の option はエラー", () => {
@@ -33,9 +53,22 @@ describe("hubCommands", () => {
   });
 
   it("option を Hub へのコマンドに変え、変えられないものは ignored に入れる", () => {
-    const args = parseCliArgs(["--project", "sub", "--primary", "codex", "--claude-model", "haiku", "--codex-model", "gpt-5.5", "--resume", "--web"]);
+    const args = parseCliArgs([
+      "--project",
+      "sub",
+      "--primary",
+      "codex",
+      "--claude-model",
+      "haiku",
+      "--codex-model",
+      "gpt-5.5",
+      "--gemini-model",
+      "flash",
+      "--resume",
+      "--web",
+    ]);
     expect(hubCommands(args, "C:\\dev\\app")).toEqual({
-      commands: ["/project C:\\dev\\app\\sub", "/primary codex", "/model claude haiku", "/model codex gpt-5.5"],
+      commands: ["/project C:\\dev\\app\\sub", "/primary codex", "/model claude haiku", "/model codex gpt-5.5", "/model gemini flash"],
       ignored: ["--resume", "--web"],
     });
   });

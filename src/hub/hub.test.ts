@@ -97,7 +97,7 @@ describe("Hub", () => {
     await hub.open("one");
     await hub.open("two");
     const [one, two] = hub.list().map(({ projectRoot }) => projectRoot);
-    saveRecovery(homeDir, one!, { current: "c1", conversations: { c1: { interrupted: ["claude"], queue: { claude: [], codex: [] } } } });
+    saveRecovery(homeDir, one!, { current: "c1", conversations: { c1: { interrupted: ["claude"], queue: { claude: [], codex: [], gemini: [] } } } });
     saveRecovery(homeDir, two!, { current: "c2", conversations: {} });
     const next = new Hub({ homeDir, cwd: homeDir, openProject: async projectRoot => ({ projectRoot, close: async () => {} }) });
     expect(next.recoveryProjects()).toEqual([one]);

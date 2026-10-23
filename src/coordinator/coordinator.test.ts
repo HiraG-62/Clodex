@@ -23,7 +23,7 @@ const setup = (projectRoot = PROJECT_ROOT, knownInputIds: readonly string[] = []
   bus.subscribe(e => events.push(e));
   const coordinator = new Coordinator({
     projectRoot,
-    agents: { claude, codex },
+    agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
     bus,
     knownInputIds,
     mcpUrlFor,
@@ -119,7 +119,7 @@ describe("fresh の配送", () => {
     const clearSession = vi.fn();
     const coordinator = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude, codex },
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
       bus,
       mcpUrlFor,
       clearSession,
@@ -230,7 +230,7 @@ describe("fresh の配送", () => {
     const clearSession = vi.fn();
     const resumed = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude: new FakeAgentAdapter("claude"), codex },
+      agents: { claude: new FakeAgentAdapter("claude"), codex, gemini: new FakeAgentAdapter("gemini") },
       bus: new EventBus(),
       mcpUrlFor,
       resumeSessionIds: { codex: "old" },
@@ -381,7 +381,7 @@ describe("人の判断と作業の引き継ぎ", () => {
     const resumed = new FakeAgentAdapter("claude");
     const after = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude: resumed, codex: new FakeAgentAdapter("codex") },
+      agents: { claude: resumed, codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") },
       bus: new EventBus(),
       mcpUrlFor,
       resumeSessionIds: { claude: "previous-session" },
@@ -442,7 +442,7 @@ describe("自動 RESULT", () => {
     const { claude, codex } = setup();
     const coordinator = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude, codex },
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
       bus: new EventBus(),
       mcpUrlFor,
       knownMessages: [
@@ -466,7 +466,7 @@ describe("自動 RESULT", () => {
     const deliverToThread = vi.fn().mockResolvedValue(undefined);
     const coordinator = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude, codex },
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
       bus: new EventBus(),
       mcpUrlFor,
       deliverToThread,
@@ -513,7 +513,7 @@ describe("自動 RESULT", () => {
     const deliverToThread = vi.fn();
     const coordinator = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude, codex },
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
       bus: new EventBus(),
       mcpUrlFor,
       parallelParent: { from: "claude", to: "codex", messageId: "msg_parallel" },
@@ -557,7 +557,7 @@ describe("自動 RESULT", () => {
     const forwardFailureToParent = vi.fn();
     const coordinator = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude, codex },
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
       bus: new EventBus(),
       mcpUrlFor,
       retryDelayMs: 0,
@@ -582,7 +582,7 @@ describe("自動 RESULT", () => {
     const { claude, codex } = setup();
     const coordinator = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude, codex },
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
       bus: new EventBus(),
       mcpUrlFor,
       limits: { maxMessagesPerChain: 1, maxReviewRoundsPerChain: 1, maxDelegationsPerChain: 1, maxDelegationDepth: 1 },
@@ -765,6 +765,7 @@ describe("自動 RESULT", () => {
             },
           },
         ],
+        gemini: [],
       },
     });
     await flush();
@@ -832,7 +833,7 @@ describe("Coordinator", () => {
     bus.subscribe(event => events.push(event));
     const coordinator = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude, codex },
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
       bus,
       mcpUrlFor,
       resumeSessionIds: { claude: "saved" },
@@ -855,6 +856,7 @@ describe("Coordinator", () => {
           { kind: "message", message: formal },
         ],
         codex: [],
+        gemini: [],
       },
     });
     await flush();
@@ -900,7 +902,7 @@ describe("Coordinator", () => {
     const codex = new FakeAgentAdapter("codex");
     const coordinator = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude, codex },
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
       bus: new EventBus(),
       mcpUrlFor,
       instructions: agent => (agent === "codex" ? "You are codex." : undefined),
@@ -917,7 +919,7 @@ describe("Coordinator", () => {
     const codex = new FakeAgentAdapter("codex");
     const coordinator = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude, codex },
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
       bus: new EventBus(),
       mcpUrlFor,
       settings: { claude: { model: "haiku", effort: "high" }, codex: { effort: "low" } },
@@ -933,7 +935,7 @@ describe("Coordinator", () => {
     const codex = new FakeAgentAdapter("codex");
     const coordinator = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude, codex },
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
       bus: new EventBus(),
       mcpUrlFor,
       resumeSessionIds: { claude: "saved-claude" },
@@ -1005,6 +1007,7 @@ describe("Coordinator", () => {
       queue: {
         claude: [],
         codex: [{ kind: "input", text: "前の依頼", context: true }],
+        gemini: [],
       },
     });
     await flush();
@@ -1093,7 +1096,13 @@ describe("Coordinator", () => {
       const bus = new EventBus(() => new Date(NOW));
       const events: CoordinatorEvent[] = [];
       bus.subscribe(e => events.push(e));
-      const coordinator = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus, mcpUrlFor, limitResumeMarginMs: 0 });
+      const coordinator = new Coordinator({
+        projectRoot: PROJECT_ROOT,
+        agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
+        bus,
+        mcpUrlFor,
+        limitResumeMarginMs: 0,
+      });
       return { claude, codex, events, coordinator };
     };
     const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -1114,7 +1123,7 @@ describe("Coordinator", () => {
       expect(codex.steered[0]).toContain("a.ts");
       codex.emit({ type: "tool", name: "Edit", input: "b.ts", files: ["b.ts"] });
       await wait(200);
-      expect(claude.sent[1]).toContain("codex edited: b.ts");
+      expect(claude.sent[1]).toContain("codex, gemini edited: b.ts");
       claude.completeTurn();
       codex.completeTurn();
     });
@@ -1144,7 +1153,7 @@ describe("Coordinator", () => {
         const codex = new FakeAgentAdapter("codex");
         const coordinator = new Coordinator({
           projectRoot: PROJECT_ROOT,
-          agents: { claude, codex },
+          agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
           bus: new EventBus(),
           mcpUrlFor,
           limitResumeMarginMs: 0,
@@ -1246,7 +1255,7 @@ describe("Coordinator", () => {
       let seq = 0;
       const coordinator = new Coordinator({
         projectRoot: PROJECT_ROOT,
-        agents: { claude, codex },
+        agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
         bus,
         mcpUrlFor,
         retryDelayMs: 0,
@@ -1433,6 +1442,19 @@ describe("Coordinator", () => {
         subagents: [],
         backgroundTasks: [],
       },
+      {
+        id: "gemini",
+        status: "stopped",
+        sessionId: undefined,
+        permission: "edit",
+        model: undefined,
+        modelLabel: "default",
+        effort: undefined,
+        models: [],
+        usage: {},
+        subagents: [],
+        backgroundTasks: [],
+      },
     ]);
   });
 
@@ -1486,6 +1508,7 @@ describe("Coordinator", () => {
     expect(coordinator.status().map(({ model, effort }) => ({ model, effort }))).toEqual([
       { model: "haiku", effort: "low" },
       { model: undefined, effort: "low" },
+      { model: undefined, effort: "low" },
     ]);
   });
 
@@ -1494,7 +1517,7 @@ describe("Coordinator", () => {
     const codex = new FakeAgentAdapter("codex");
     new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude, codex },
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
       bus: new EventBus(),
       mcpUrlFor,
       settings: { claude: { permission: "full" }, codex: { permission: "read-only" } },
@@ -1532,7 +1555,7 @@ describe("Coordinator", () => {
     await expect(coordinator.switchSessions({ claude: "c-old" })).resolves.toBeUndefined();
     expect([claude.status, codex.status]).toEqual(["stopped", "stopped"]);
     // 停止中は古い session ではなく、次の起動で使う session を見せる
-    expect(coordinator.status().map(agent => agent.sessionId)).toEqual(["c-old", undefined]);
+    expect(coordinator.status().map(agent => agent.sessionId)).toEqual(["c-old", undefined, undefined]);
 
     void coordinator.sendToAgent("claude", "hi");
     coordinator.receiveMessage("claude", reviewRequest);
@@ -2036,7 +2059,13 @@ describe("Coordinator の言語の 1 行（DESIGN.md §13 Language）", () => {
     const claude = new FakeAgentAdapter("claude");
     const codex = new FakeAgentAdapter("codex");
     let language: "ja" | "en" = "ja";
-    const coordinator = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor, language: () => language });
+    const coordinator = new Coordinator({
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
+      bus: new EventBus(),
+      mcpUrlFor,
+      language: () => language,
+    });
     void coordinator.sendToAgent("claude", "最初");
     await flush();
     expect(claude.sent[0]).toContain("Japanese");
@@ -2056,7 +2085,13 @@ describe("Coordinator の言語の 1 行（DESIGN.md §13 Language）", () => {
     const bus = new EventBus();
     const events: CoordinatorEvent[] = [];
     bus.subscribe(e => events.push(e));
-    const coordinator = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus, mcpUrlFor, language: "ja" });
+    const coordinator = new Coordinator({
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
+      bus,
+      mcpUrlFor,
+      language: "ja",
+    });
     return { claude, codex, events, coordinator };
   };
 
@@ -2093,7 +2128,7 @@ describe("Coordinator の役割の反映", () => {
     let role = "old";
     const coordinator = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude, codex },
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
       bus: new EventBus(),
       mcpUrlFor,
       instructions: () => role,
@@ -2405,7 +2440,13 @@ describe("Coordinator の solo（DESIGN.md §11 Solo）", () => {
     const claude = new FakeAgentAdapter("claude");
     const codex = new FakeAgentAdapter("codex");
     let solo: SoloMode | undefined = "free";
-    const coordinator = new Coordinator({ projectRoot: PROJECT_ROOT, agents: { claude, codex }, bus: new EventBus(), mcpUrlFor, solo: () => solo });
+    const coordinator = new Coordinator({
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
+      bus: new EventBus(),
+      mcpUrlFor,
+      solo: () => solo,
+    });
     return {
       claude,
       codex,
@@ -2457,12 +2498,12 @@ describe("Coordinator の solo（DESIGN.md §11 Solo）", () => {
 
 describe("solo 解除の配送通知", () => {
   const setupReleased = () => {
-    const pending = new Set(["claude", "codex"] as const);
+    const pending = new Set<string>(["claude", "codex"]);
     const claude = new FakeAgentAdapter("claude");
     const codex = new FakeAgentAdapter("codex");
     const coordinator = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude, codex },
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
       bus: new EventBus(),
       mcpUrlFor,
       soloReleased: agent => pending.has(agent),
@@ -2533,7 +2574,7 @@ describe("solo 解除の配送通知", () => {
     const first = new FakeAgentAdapter("claude");
     const before = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude: first, codex: new FakeAgentAdapter("codex") },
+      agents: { claude: first, codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") },
       bus: new EventBus(),
       mcpUrlFor,
       soloReleased: agent => history.soloReleasedOf(id, agent),
@@ -2547,7 +2588,7 @@ describe("solo 解除の配送通知", () => {
     const codex = new FakeAgentAdapter("codex");
     const after = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude: new FakeAgentAdapter("claude"), codex },
+      agents: { claude: new FakeAgentAdapter("claude"), codex, gemini: new FakeAgentAdapter("gemini") },
       bus: new EventBus(),
       mcpUrlFor,
       soloReleased: agent => restored.soloReleasedOf(id, agent),
@@ -2556,6 +2597,6 @@ describe("solo 解除の配送通知", () => {
     void after.sendToAgent("codex", "再開");
     await flush();
     expect(codex.sent[0]).toContain("Solo mode is off");
-    expect(restored.current.soloReleased).toBeUndefined();
+    expect(restored.current.soloReleased).toEqual(["gemini"]);
   });
 });

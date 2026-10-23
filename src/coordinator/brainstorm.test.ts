@@ -41,26 +41,27 @@ describe("ブレストのプロンプト", () => {
 const setup = (rounds: number) => {
   const claude = new FakeAgentAdapter("claude");
   const codex = new FakeAgentAdapter("codex");
+  const gemini = new FakeAgentAdapter("gemini");
   const bus = new EventBus();
   const events: Array<{ kind: string }> = [];
   bus.subscribe(event => events.push(event));
   const artifactsDir = mkdtempSync(join(tmpdir(), "clodex-brainstorm-"));
   const coordinator = new Coordinator({
     projectRoot: "C:\\project",
-    agents: { claude, codex },
+    agents: { claude, codex, gemini },
     bus,
     mcpUrlFor: id => `http://localhost/${id}`,
     brainstorm: { topic: "新機能", rounds },
     brainstormPrimary: "claude",
     brainstormArtifactsDir: artifactsDir,
-    settings: { claude: { permission: "read-only" }, codex: { permission: "read-only" } },
+    settings: { claude: { permission: "read-only" }, codex: { permission: "read-only" }, gemini: { permission: "read-only" } },
   });
-  return { claude, codex, coordinator, events, artifactsDir };
+  return { claude, codex, gemini, coordinator, events, artifactsDir };
 };
 
 describe("ブレストの進行", () => {
   it("両 Agent に同時に送り、次の周に相手の応答と人の追記を渡し、primary がまとめる", async () => {
-    const { claude, codex, coordinator, events, artifactsDir } = setup(2);
+    const { claude, codex, gemini, coordinator, events, artifactsDir } = setup(2);
     const run = coordinator.startBrainstorm();
     await flush();
     expect(claude.sent).toHaveLength(1);
@@ -70,6 +71,7 @@ describe("ブレストの進行", () => {
     coordinator.addBrainstormInput("codex", "予算を考慮");
     claude.completeTurn({ status: "completed", text: "Claude の案" });
     codex.completeTurn({ status: "completed", text: "Codex の案" });
+    gemini.completeTurn({ status: "completed", text: "Gemini の案" });
     await flush();
     expect(claude.sent[1]).toContain("Codex の案");
     expect(codex.sent[1]).toContain("Claude の案");
@@ -77,6 +79,7 @@ describe("ブレストの進行", () => {
     expect(codex.sent[1]).toContain("予算を考慮");
     claude.completeTurn({ status: "completed", text: "Claude の発展案" });
     codex.completeTurn({ status: "completed", text: "Codex の発展案" });
+    gemini.completeTurn({ status: "completed", text: "Gemini の発展案" });
     await flush();
     expect(claude.sent[2]).toContain("Claude の案");
     expect(claude.sent[2]).toContain("Codex の発展案");
@@ -89,7 +92,7 @@ describe("ブレストの進行", () => {
   });
 
   it("失敗と中断後は次の周を送らず、send_message と権限変更を拒否する", async () => {
-    const { claude, codex, coordinator } = setup(2);
+    const { claude, codex, gemini, coordinator } = setup(2);
     expect(coordinator.receiveMessage("claude", {})).toMatchObject({ ok: false, error: "brainstorm mode: do not use send_message" });
     await coordinator.setPermission("full");
     expect(claude.permission).toBe("read-only");
@@ -97,6 +100,7 @@ describe("ブレストの進行", () => {
     await flush();
     claude.completeTurn({ status: "failed", text: "失敗" });
     codex.completeTurn();
+    gemini.completeTurn();
     await run;
     expect(claude.sent).toHaveLength(1);
     expect(codex.sent).toHaveLength(1);
@@ -104,19 +108,20 @@ describe("ブレストの進行", () => {
   });
 
   it("/interrupt 後は次の周を送らない", async () => {
-    const { claude, codex, coordinator } = setup(2);
+    const { claude, codex, gemini, coordinator } = setup(2);
     const run = coordinator.startBrainstorm();
     await flush();
     await coordinator.interrupt();
     claude.completeTurn({ status: "interrupted", text: "" });
     codex.completeTurn({ status: "interrupted", text: "" });
+    gemini.completeTurn({ status: "interrupted", text: "" });
     await run;
     expect(claude.sent).toHaveLength(1);
     expect(codex.sent).toHaveLength(1);
   });
 
   it("止まったときは溜めた人の入力を宛先へ配送し、次の周の印を外す", async () => {
-    const { claude, codex, coordinator, events } = setup(2);
+    const { claude, codex, gemini, coordinator, events } = setup(2);
     const run = coordinator.startBrainstorm();
     await flush();
     coordinator.addBrainstormInput("claude", "追記", ["claude", "codex"]);
@@ -124,6 +129,7 @@ describe("ブレストの進行", () => {
     expect(coordinator.recoveryState().queue.codex).toMatchObject([{ kind: "input", text: "追記", brainstorm: true }]);
     claude.completeTurn({ status: "failed", text: "失敗" });
     codex.completeTurn();
+    gemini.completeTurn();
     await run;
     await flush();
     expect(claude.sent[1]).toContain("追記");
@@ -134,17 +140,19 @@ describe("ブレストの進行", () => {
   });
 
   it("次の周に渡した入力も、その周が失敗すれば失わない", async () => {
-    const { claude, codex, coordinator } = setup(2);
+    const { claude, codex, gemini, coordinator } = setup(2);
     const run = coordinator.startBrainstorm();
     await flush();
     coordinator.addBrainstormInput("claude", "費用を確認");
     claude.completeTurn();
     codex.completeTurn();
+    gemini.completeTurn();
     await flush();
     expect(claude.sent[1]).toContain("費用を確認");
     expect(coordinator.recoveryState().queue.claude).toMatchObject([{ kind: "input", text: "費用を確認", brainstorm: true }]);
     claude.completeTurn({ status: "failed", text: "失敗" });
     codex.completeTurn();
+    gemini.completeTurn();
     await run;
     await flush();
     expect(claude.sent[2]).toContain("費用を確認");
@@ -156,7 +164,7 @@ describe("ブレストの進行", () => {
     coordinator.restore({
       brainstormPhase: "round",
       interrupted: ["claude"],
-      queue: { claude: [{ kind: "input", id: "in3", text: "追記", brainstorm: true }], codex: [] },
+      queue: { claude: [{ kind: "input", id: "in3", text: "追記", brainstorm: true }], codex: [], gemini: [] },
     });
     await flush();
     expect(coordinator.brainstormState?.phase).toBe("stopped");
@@ -169,7 +177,7 @@ describe("ブレストの進行", () => {
   it("ブレスト中断後の普通のターンは復旧で続ける", async () => {
     const { claude, coordinator } = setup(2);
     claude.sessionId = "saved-session";
-    coordinator.restore({ brainstormPhase: "stopped", interrupted: ["claude"], queue: { claude: [], codex: [] } });
+    coordinator.restore({ brainstormPhase: "stopped", interrupted: ["claude"], queue: { claude: [], codex: [], gemini: [] } });
     await flush();
     expect(claude.sent[0]).toContain("Clodex restarted");
     claude.completeTurn();
@@ -180,14 +188,18 @@ describe("ブレストの進行", () => {
     const codex = new FakeAgentAdapter("codex");
     const coordinator = new Coordinator({
       projectRoot: "C:\\project",
-      agents: { claude, codex },
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
       bus: new EventBus(),
       mcpUrlFor: id => `http://localhost/${id}`,
       brainstorm: { topic: "新機能", rounds: 2 },
       brainstormComplete: true,
     });
     const question = { id: "q1", agent: "claude" as const, questions: [{ question: "方向", options: [{ label: "A" }, { label: "B" }] }] };
-    coordinator.restore({ interrupted: [], queue: { claude: [{ kind: "input", id: "in1", text: "完了後の依頼" }], codex: [] }, questions: [question] });
+    coordinator.restore({
+      interrupted: [],
+      queue: { claude: [{ kind: "input", id: "in1", text: "完了後の依頼" }], codex: [], gemini: [] },
+      questions: [question],
+    });
     await flush();
     expect(coordinator.brainstormState?.phase).toBe("done");
     expect(coordinator.pendingQuestions()).toEqual([question]);
@@ -196,13 +208,14 @@ describe("ブレストの進行", () => {
   });
 
   it("起動待ち中の /interrupt はブレストの指示を送らない", async () => {
-    const { claude, codex, coordinator } = setup(2);
+    const { claude, codex, gemini, coordinator } = setup(2);
     let release!: () => void;
     const gate = new Promise<void>(resolve => {
       release = resolve;
     });
     const startClaude = claude.start.bind(claude);
     const startCodex = codex.start.bind(codex);
+    const startGemini = gemini.start.bind(gemini);
     claude.start = async options => {
       await gate;
       await startClaude(options);
@@ -211,6 +224,10 @@ describe("ブレストの進行", () => {
       await gate;
       await startCodex(options);
     };
+    gemini.start = async options => {
+      await gate;
+      await startGemini(options);
+    };
     const run = coordinator.startBrainstorm();
     await flush();
     await coordinator.interrupt();
@@ -218,5 +235,6 @@ describe("ブレストの進行", () => {
     await run;
     expect(claude.sent).toHaveLength(0);
     expect(codex.sent).toHaveLength(0);
+    expect(gemini.sent).toHaveLength(0);
   });
 });

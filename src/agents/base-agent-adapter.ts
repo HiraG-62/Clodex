@@ -109,11 +109,13 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   stop(): Promise<void> {
     if (!this.proc) return Promise.resolve();
     // 複数の呼び出し元が同じ終了を待てるよう、停止中の Promise を共有する
-    this.stopping ??= new Promise<void>(resolve => {
-      this.resolveStop = resolve;
-      this.proc?.kill();
-    });
-    return this.stopping;
+    if (this.stopping) return this.stopping;
+    let resolveStop: () => void = () => {};
+    const stopping = new Promise<void>(resolve => (resolveStop = resolve));
+    this.stopping = stopping;
+    this.resolveStop = resolveStop;
+    this.proc.kill();
+    return stopping;
   }
 
   protected emit(event: AgentEvent): void {

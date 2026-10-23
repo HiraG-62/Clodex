@@ -173,7 +173,7 @@ it("spec を公開・配送し、存在しない設計書は tool エラーに�
     projectRoot,
     bus: new EventBus(),
     mcpUrlFor: () => "http://localhost/mcp",
-    agents: { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") },
+    agents: { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") },
   });
   server = await startMcpServer({
     readConversation,

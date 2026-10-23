@@ -8,6 +8,8 @@ describe("subscriptionEnv", () => {
       anthropic_auth_token: "b",
       OPENAI_API_KEY: "c",
       Codex_Api_Key: "d",
+      GEMINI_API_KEY: "e",
+      google_api_key: "f",
       PATH: "p",
       USERPROFILE: "u",
     });

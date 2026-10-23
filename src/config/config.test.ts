@@ -195,9 +195,9 @@ describe("loadConfig", () => {
 
   it.each([
     ["壊れた JSON", "{ not json", /config\.json/],
-    ["未知の primary", { primary: "gemini" }, /primary/],
+    ["未知の primary", { primary: "nobody" }, /primary/],
     ["未知のキー", { unknown: 1 }, /unknown/],
-    ["未知の Agent の役割", { roles: { gemini: "x" } }, /roles/],
+    ["未知の Agent の役割", { roles: { nobody: "x" } }, /roles/],
     ["負の上限", { limits: { maxMessagesPerChain: -1 } }, /maxMessagesPerChain/],
   ])("%s はファイル名付きのエラーにする", (_, content, pattern) => {
     expect(() => loadConfig(setup({ user: content }))).toThrow(pattern);
@@ -209,7 +209,7 @@ describe("ensureUserConfigTemplate", () => {
     const { homeDir } = setup();
     ensureUserConfigTemplate(homeDir);
     const content = readFileSync(join(homeDir, ".clodex", "config.json"), "utf8");
-    expect(content).toBe(`${JSON.stringify({ roles: { claude: "", codex: "" } }, null, 2)}\n`);
+    expect(content).toBe(`${JSON.stringify({ roles: { claude: "", codex: "", gemini: "" } }, null, 2)}\n`);
     expect(loadConfig({ homeDir, projectRoot: homeDir })).toEqual({});
   });
 

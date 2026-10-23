@@ -54,7 +54,7 @@ it("全会話を新規 session にし、履歴を残して permission と保存�
     sandboxPlatform: platform,
     startupProbe: probe,
     createAgents: () => {
-      const agents = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") };
+      const agents = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") };
       adapters.push(agents.claude, agents.codex);
       return agents;
     },
@@ -71,7 +71,7 @@ it("全会話を新規 session にし、履歴を残して permission と保存�
     expect(context.history.list().map(c => c.title)).toEqual(expect.arrayContaining(["以前の会話", "今の会話"]));
     expect(context.history.list().every(c => Object.keys(c.sessions).length === 0)).toBe(true);
     for (const runtime of context.workspace.allRuntimes()) {
-      expect(runtime.coordinator.status().map(agent => agent.permission)).toEqual(["full", "full"]);
+      expect(runtime.coordinator.status().map(agent => agent.permission)).toEqual(["full", "full", "full"]);
       await expect(runtime.coordinator.setPermission("edit")).rejects.toThrow();
     }
     expect(adapters.slice(0, 4).every(agent => agent.status === "stopped")).toBe(true);
@@ -80,7 +80,7 @@ it("全会話を新規 session にし、履歴を残して permission と保存�
     expect(context.workspace.current.coordinator.status()[0]?.permission).toBe("full");
     await context.sandbox.setEnabled(false);
     expect(context.settingsStore.load().sandbox).toBe(false);
-    expect(context.workspace.current.coordinator.status().map(agent => agent.permission)).toEqual(["read-only", "edit"]);
+    expect(context.workspace.current.coordinator.status().map(agent => agent.permission)).toEqual(["read-only", "edit", "read-only"]);
     expect(probe).toHaveBeenCalledTimes(2);
     expect(platform.release).toHaveBeenCalledTimes(1);
     context.history.startNew({ workDir: join(homeDir, "deleted-worktree"), branch: "deleted" });
@@ -101,7 +101,7 @@ it("保存済み on の初期化失敗でも project を開き、off に復帰�
   writeFileSync(join(projectRoot, ".clodex.json"), JSON.stringify({ sandbox: true }));
   const notify = vi.fn();
   const platform: SandboxPlatform = { inspect: async () => false, connect: vi.fn(), grant: vi.fn(), release: vi.fn(), close: vi.fn(), spawn: vi.fn() };
-  const agents = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") };
+  const agents = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") };
   const context = await openProject({
     projectRoot,
     homeDir,
@@ -119,12 +119,49 @@ it("保存済み on の初期化失敗でも project を開き、off に復帰�
   });
   try {
     expect(notify).toHaveBeenCalled();
-    expect(context.workspace.current.coordinator.status()).toHaveLength(2);
+    expect(context.workspace.current.coordinator.status()).toHaveLength(3);
     await expect(context.workspace.current.coordinator.start()).rejects.toThrow();
     expect(agents.claude.starts).toHaveLength(0);
     await context.sandbox.setEnabled(false);
     expect(context.sandbox.enabled).toBe(false);
     expect(agents.claude.starts).toHaveLength(1);
+  } finally {
+    await context.close();
+  }
+});
+
+it("sandbox 中は Gemini を起動しない", async () => {
+  const homeDir = mkdtempSync(join(tmpdir(), "clodex-gemini-sandbox-"));
+  const projectRoot = join(homeDir, "project");
+  mkdirSync(projectRoot);
+  writeFileSync(join(projectRoot, ".clodex.json"), JSON.stringify({ sandbox: true }));
+  const spawn = vi.fn();
+  const context = await openProject({
+    projectRoot,
+    homeDir,
+    args: { models: {}, resume: false, web: false, serve: false },
+    language: "ja",
+    printTerminal: () => {},
+    notify: () => {},
+    notifyAgent: () => {},
+    displayMode: () => "normal",
+    isCurrent: () => true,
+    modelCatalog: EMPTY_MODEL_CATALOG,
+    registerCoordinator: () => () => {},
+    startupProbe: async () => ({ models: EMPTY_MODEL_CATALOG(), usage: {} }),
+    sandboxPlatform: {
+      inspect: async () => true,
+      connect: async () => {},
+      grant: async () => {},
+      release: async () => {},
+      close: async () => {},
+      spawn,
+    },
+  });
+  try {
+    const result = await context.workspace.current.coordinator.sendToAgent("gemini", "確認");
+    expect(result).toMatchObject({ status: "failed", text: expect.stringContaining("Gemini is not available in the sandbox") });
+    expect(spawn).not.toHaveBeenCalled();
   } finally {
     await context.close();
   }

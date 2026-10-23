@@ -30,7 +30,7 @@ describe("Hub recovery", () => {
         isCurrent: () => true,
         modelCatalog: EMPTY_MODEL_CATALOG,
         registerCoordinator: () => () => {},
-        createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") }),
+        createAgents: () => ({ claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") }),
       });
       await context.restore();
       return context;
@@ -80,7 +80,7 @@ describe("Hub recovery", () => {
             modelCatalog: EMPTY_MODEL_CATALOG,
             registerCoordinator: () => () => {},
             createAgents: () => {
-              const pair = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") };
+              const pair = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") };
               agents.push(pair);
               return pair;
             },

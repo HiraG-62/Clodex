@@ -15,7 +15,7 @@ it("Hub 再起動後に未回答のカードを読み直し、元の session に
   const projectRoot = join(homeDir, "project");
   mkdirSync(projectRoot);
   const open = async () => {
-    const agents = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") };
+    const agents = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") };
     const context = await openProject({
       projectRoot,
       homeDir,

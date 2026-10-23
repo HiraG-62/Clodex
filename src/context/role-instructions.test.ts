@@ -56,7 +56,7 @@ describe("buildRoleInstructions", () => {
   it("自分と相手の役割と、相手の役割の作業は send_message で依頼することを伝える", () => {
     const text = buildRoleInstructions("claude", { claude: "設計とレビュー", codex: "実装" });
     expect(text).toContain('You are the "claude" agent in Clodex');
-    expect(text).toContain('peer agent "codex"');
+    expect(text).toContain('peer agents "codex", "gemini"');
     expect(text).toContain("Your role: 設計とレビュー");
     expect(text).toContain("Role of codex: 実装");
     expect(text).toMatch(/send_message tool of the "clodex" MCP server/);
@@ -89,7 +89,7 @@ describe("buildRoleInstructions", () => {
 
   it("役割が無ければ相手の Agent がいることだけを伝える", () => {
     const text = buildRoleInstructions("claude", undefined);
-    expect(text).toContain('peer agent "codex"');
+    expect(text).toContain('peer agents "codex", "gemini"');
     expect(text).not.toContain("Your role");
     expect(text).toMatch(/only when an independent view/);
   });

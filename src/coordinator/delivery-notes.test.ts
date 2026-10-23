@@ -27,7 +27,7 @@ describe("DeliveryNotes", () => {
     notes.beginHold("claude");
     notes.recordPeerFiles("claude", ["a.ts", "b.ts"]);
     notes.queueNotice("claude", "制限中");
-    expect(notes.take("claude")).toContain("codex edited: a.ts, b.ts");
+    expect(notes.take("claude")).toContain("codex, gemini edited: a.ts, b.ts");
     expect(notes.peek("claude")).toBe("");
   });
 

@@ -166,7 +166,7 @@ describe("createMessage", () => {
   it.each([
     ["必須フィールドの欠落", { to: "codex", type: "QUESTION", taskId: "T-1" }, /body/],
     ["未知の type", { ...reviewRequest, type: "CHAT" }, /type/],
-    ["未知の宛先", { ...reviewRequest, to: "gemini" }, /to/],
+    ["未知の宛先", { ...reviewRequest, to: "nobody" }, /to/],
     ["自分宛て", { ...reviewRequest, to: "claude" }, /yourself/],
     ["空の taskId", { ...reviewRequest, taskId: "" }, /taskId/],
     ["長すぎる body", { ...reviewRequest, body: "x".repeat(MAX_BODY_LENGTH + 1) }, /body/],

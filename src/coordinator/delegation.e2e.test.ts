@@ -6,6 +6,7 @@ import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ClaudeAdapter } from "../agents/claude-adapter.js";
 import { CodexAdapter } from "../agents/codex-adapter.js";
+import { FakeAgentAdapter } from "../agents/fake-agent-adapter.js";
 import { attachEventLog } from "../logging/event-log.js";
 import { type McpServerHandle, startMcpServer } from "../mcp/server.js";
 import type { AgentMessage } from "../protocol/messages.js";
@@ -63,7 +64,7 @@ const setup = async () => {
   });
   coordinator = new Coordinator({
     projectRoot,
-    agents: { claude: new ClaudeAdapter(), codex: new CodexAdapter() },
+    agents: { claude: new ClaudeAdapter(), codex: new CodexAdapter(), gemini: new FakeAgentAdapter("gemini") },
     bus,
     mcpUrlFor: agent => mcp.urlFor(agent),
     settings: { claude: { model: "haiku" } },

@@ -194,12 +194,14 @@ export const TERMINAL_COLORS = {
   warn: "#b7791f",
   claude: "#b4793f",
   codex: "#4b6fa5",
+  gemini: "#287eae",
   code: "#6f9a5a",
   error: "#d14343",
   review: "#8159a8",
   humanHeader: "#323234",
   claudeHeader: "#3c3025",
   codexHeader: "#272e39",
+  geminiHeader: "#25333d",
 } as const;
 
 export const TERMINAL_AGENT_COLORS = agentRecord(id => ({ color: TERMINAL_COLORS[id], header: TERMINAL_COLORS[`${id}Header`] }));

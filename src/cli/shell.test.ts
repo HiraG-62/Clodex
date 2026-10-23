@@ -510,18 +510,18 @@ describe("createShell", () => {
   it("@all は両 Agent に接頭行と画像を送り notice を出す", async () => {
     const { shell, coordinator, printed, references } = setup();
     await shell.handleLine("@all hello @shot.png");
-    expect(coordinator.sent.map(({ agent }) => agent)).toEqual(["claude", "codex"]);
-    expect(coordinator.sent.every(({ text }) => text.startsWith("[Sent to claude and codex]\n"))).toBe(true);
-    expect(coordinator.images).toEqual([["C:/up/shot.png"], ["C:/up/shot.png"]]);
-    expect(coordinator.sharedFlags).toEqual([true, true]);
-    expect(printed).toContain("@all: sent to claude and codex");
+    expect(coordinator.sent.map(({ agent }) => agent)).toEqual(["claude", "codex", "gemini"]);
+    expect(coordinator.sent.every(({ text }) => text.startsWith("[Sent to claude and codex and gemini]\n"))).toBe(true);
+    expect(coordinator.images).toEqual([["C:/up/shot.png"], ["C:/up/shot.png"], ["C:/up/shot.png"]]);
+    expect(coordinator.sharedFlags).toEqual([true, true, true]);
+    expect(printed).toContain("@all: sent to claude, codex and gemini");
     expect(references).toEqual(["shot.png"]);
   });
   it("@all! は両 Agent に割り込む", async () => {
     const { shell, coordinator } = setup();
     await shell.handleLine("@all! hello");
-    expect(coordinator.steeredInputs).toEqual(["claude", "codex"].map(agent => ({ agent, text: "[Sent to claude and codex]\nhello" })));
-    expect(coordinator.sharedFlags).toEqual([true, true]);
+    expect(coordinator.steeredInputs).toEqual(["claude", "codex", "gemini"].map(agent => ({ agent, text: "[Sent to claude and codex and gemini]\nhello" })));
+    expect(coordinator.sharedFlags).toEqual([true, true, true]);
   });
   it("/role で役割を表示し、編集後に次の session の案内を出す", async () => {
     const { shell, printed, roles } = setup();
@@ -833,10 +833,10 @@ describe("createShell", () => {
     await shell.handleLine("/model claude haiku");
     await shell.handleLine("/effort low");
     expect(saved).toEqual([
-      { agents: ["claude", "codex"], change: { permission: "full" } },
+      { agents: ["claude", "codex", "gemini"], change: { permission: "full" } },
       { agents: ["codex"], change: { permission: "read-only" } },
       { agents: ["claude"], change: { model: "haiku" } },
-      { agents: ["claude", "codex"], change: { effort: "low" } },
+      { agents: ["claude", "codex", "gemini"], change: { effort: "low" } },
     ]);
   });
 

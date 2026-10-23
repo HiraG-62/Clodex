@@ -252,12 +252,13 @@ describe("ConversationHistory の solo", () => {
     history.setSolo("free");
     history.setSolo(undefined);
     const id = history.currentId;
-    expect(history.current.soloReleased).toEqual(["claude", "codex"]);
-    expect(new ConversationHistory(path, { resumeLatest: true }).current.soloReleased).toEqual(["claude", "codex"]);
+    expect(history.current.soloReleased).toEqual(["claude", "codex", "gemini"]);
+    expect(new ConversationHistory(path, { resumeLatest: true }).current.soloReleased).toEqual(["claude", "codex", "gemini"]);
     expect(history.consumeSoloReleased(id, "claude")).toBe(true);
     expect(history.consumeSoloReleased(id, "claude")).toBe(false);
-    expect(new ConversationHistory(path, { resumeLatest: true }).current.soloReleased).toEqual(["codex"]);
+    expect(new ConversationHistory(path, { resumeLatest: true }).current.soloReleased).toEqual(["codex", "gemini"]);
     expect(history.consumeSoloReleased(id, "codex")).toBe(true);
+    expect(history.consumeSoloReleased(id, "gemini")).toBe(true);
     expect(new ConversationHistory(path, { resumeLatest: true }).current.soloReleased).toBeUndefined();
   });
 

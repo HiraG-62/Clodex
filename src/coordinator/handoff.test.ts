@@ -23,7 +23,14 @@ const setup = () => {
   const events: CoordinatorEvent[] = [];
   bus.subscribe(event => events.push(event));
   const clearSession = vi.fn();
-  const coordinator = new Coordinator({ projectRoot, artifactsDir, agents: { claude, codex }, bus, clearSession, mcpUrlFor: () => "http://localhost/mcp" });
+  const coordinator = new Coordinator({
+    projectRoot,
+    artifactsDir,
+    agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
+    bus,
+    clearSession,
+    mcpUrlFor: () => "http://localhost/mcp",
+  });
   return { coordinator, claude, codex, artifactsDir, clearSession, events };
 };
 

@@ -16,7 +16,7 @@ const setup = (check?: string) => {
   execFileSync("git", ["init"], { cwd: root, stdio: "pipe" });
   execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--allow-empty", "-m", "初期化"], { cwd: root, stdio: "pipe" });
   writeFileSync(join(root, "spec.md"), "## 対象\n- `*.txt`\n");
-  const agents = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") };
+  const agents = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") };
   const bus = new EventBus();
   const events: CoordinatorEvent[] = [];
   bus.subscribe(event => events.push(event));

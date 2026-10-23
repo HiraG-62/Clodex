@@ -1,6 +1,6 @@
 // AgentAdapter の境界定義（DESIGN.md §9）
 
-export const AGENT_IDS = ["claude", "codex"] as const;
+export const AGENT_IDS = ["claude", "codex", "gemini"] as const;
 export type AgentId = (typeof AGENT_IDS)[number];
 export const isAgentId = (value: string): value is AgentId => (AGENT_IDS as readonly string[]).includes(value);
 export type AgentStatus = "stopped" | "starting" | "idle" | "busy";

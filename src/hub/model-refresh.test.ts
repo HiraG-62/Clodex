@@ -10,6 +10,7 @@ const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 const OLD_MODELS: ModelCatalog = {
   claude: [{ value: "fable", label: "Fable" }],
   codex: [{ value: "codex-old", label: "Codex old" }],
+  gemini: [],
 };
 const NEW_MODELS: ModelCatalog = {
   claude: [
@@ -17,6 +18,7 @@ const NEW_MODELS: ModelCatalog = {
     { value: "fable-5", label: "Fable 5" },
   ],
   codex: [{ value: "codex-new", label: "Codex new" }],
+  gemini: [],
 };
 
 const pendingProbe = () => {
@@ -51,7 +53,7 @@ const setup = async (startupProbe = vi.fn(async (): Promise<StartupProbe> => ({ 
     now: () => now,
     onModelsChanged,
     createAgents: () => {
-      const created = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex") };
+      const created = { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") };
       agents.push(created);
       return created;
     },
@@ -73,17 +75,17 @@ it("Agent 起動時の一覧取得を待たずに起動し、取得中は 10 分
   try {
     const coordinator = context.workspace.current.coordinator;
     await coordinator.start();
-    expect(coordinator.status().map(agent => agent.status)).toEqual(["idle", "idle"]);
+    expect(coordinator.status().map(agent => agent.status)).toEqual(["idle", "idle", "idle"]);
     expect(startupProbe).toHaveBeenCalledTimes(1);
     expect(onModelsChanged).not.toHaveBeenCalled();
-    expect(coordinator.status().map(agent => agent.models)).toEqual([OLD_MODELS.claude, OLD_MODELS.codex]);
+    expect(coordinator.status().map(agent => agent.models)).toEqual([OLD_MODELS.claude, OLD_MODELS.codex, OLD_MODELS.gemini]);
     advance(REFRESH_INTERVAL_MS + 1);
     await coordinator.switchSessions({}, ["codex"]);
     await coordinator.start();
     expect(startupProbe).toHaveBeenCalledTimes(1);
     pending.resolve({ models: NEW_MODELS, usage: {} });
     await context.probe();
-    expect(coordinator.status().map(agent => agent.models)).toEqual([NEW_MODELS.claude, NEW_MODELS.codex]);
+    expect(coordinator.status().map(agent => agent.models)).toEqual([NEW_MODELS.claude, NEW_MODELS.codex, NEW_MODELS.gemini]);
     expect(onModelsChanged).toHaveBeenCalledTimes(1);
   } finally {
     pending.resolve({ models: NEW_MODELS, usage: {} });

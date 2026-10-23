@@ -1,5 +1,6 @@
 import type { AgentEvent, AgentId, RateLimitWindow } from "./agent-adapter.js";
 import { type AgentProcess, agentEnv, type SpawnAgentProcess, spawnAgentProcess } from "./agent-process.js";
+import { findAgy } from "./antigravity-adapter.js";
 import type { ModelCatalog, ModelOption } from "./model-catalog.js";
 import { type CodexRateLimits, codexRateLimitEvent } from "./rate-limits.js";
 
@@ -63,6 +64,39 @@ export const parseClaudeUsage = (message: unknown): RateLimitEvent => {
 export const parseCodexUsage = (result: unknown): RateLimitEvent => {
   const rateLimits = asRecord(asRecord(result)?.rateLimits);
   return codexRateLimitEvent(rateLimits as CodexRateLimits | undefined);
+};
+
+export const parseAgyModels = (output: string): ModelOption[] =>
+  output.split(/\r?\n/).flatMap(line => {
+    const [value, label] = line.split("\t");
+    return value && label ? [{ value: value.trim(), label: label.trim() }] : [];
+  });
+
+const fetchAgyModels = async (cwd: string, spawn: SpawnAgentProcess, timeoutMs: number): Promise<ModelOption[]> => {
+  let proc: AgentProcess;
+  try {
+    proc = spawn(findAgy(process.env), ["models"], { cwd, env: agentEnv(process.env, "gemini") });
+  } catch {
+    return [];
+  }
+  try {
+    return await new Promise<ModelOption[]>(resolve => {
+      const lines: string[] = [];
+      let done = false;
+      const finish = (success: boolean) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(success ? parseAgyModels(lines.join("\n")) : []);
+      };
+      const timer = setTimeout(() => finish(false), timeoutMs);
+      proc.onLine(line => lines.push(line));
+      proc.onExit(code => finish(code === 0));
+      proc.spawned.catch(() => finish(false));
+    });
+  } finally {
+    proc.kill();
+  }
 };
 
 interface ProbeOne {
@@ -173,9 +207,13 @@ export const fetchStartupProbe = async (
   spawn: SpawnAgentProcess = spawnAgentProcess,
   timeoutMs = MODEL_LIST_TIMEOUT_MS,
 ): Promise<StartupProbe> => {
-  const [claude, codex] = await Promise.all([fetchOne("claude", cwd, spawn, timeoutMs), fetchOne("codex", cwd, spawn, timeoutMs)]);
+  const [claude, codex, gemini] = await Promise.all([
+    fetchOne("claude", cwd, spawn, timeoutMs),
+    fetchOne("codex", cwd, spawn, timeoutMs),
+    fetchAgyModels(cwd, spawn, timeoutMs),
+  ]);
   return {
-    models: { claude: claude.models, codex: codex.models },
+    models: { claude: claude.models, codex: codex.models, gemini },
     usage: {
       ...(claude.usage && { claude: claude.usage }),
       ...(codex.usage && { codex: codex.usage }),

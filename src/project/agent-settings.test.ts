@@ -62,11 +62,12 @@ describe("resolveStartSettings", () => {
     ).toEqual({
       claude: { permission: "full", model: "opus", effort: "high" },
       codex: { permission: "read-only", model: "gpt-cli" },
+      gemini: { permission: "read-only" },
     });
   });
 
   it("何も無ければ空の設定", () => {
-    expect(resolveStartSettings({ saved: {}, models: {} })).toEqual({ claude: {}, codex: {} });
+    expect(resolveStartSettings({ saved: {}, models: {} })).toEqual({ claude: {}, codex: {}, gemini: {} });
   });
 });
 

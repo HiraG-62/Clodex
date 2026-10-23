@@ -4,6 +4,8 @@ import { agentRecord } from "../agents/agent-meta.js";
 import { mkdirSync } from "node:fs";
 import { AGENT_IDS, type AgentAdapter, type AgentId } from "../agents/agent-adapter.js";
 import { type SpawnAgentProcess, spawnAgentProcess } from "../agents/agent-process.js";
+import { ensureAgyMcpConfig } from "../agents/agy-mcp-config.js";
+import { AntigravityAdapter } from "../agents/antigravity-adapter.js";
 import { ClaudeAdapter } from "../agents/claude-adapter.js";
 import { CodexAdapter } from "../agents/codex-adapter.js";
 import type { ModelCatalog } from "../agents/startup-probe.js";
@@ -242,7 +244,15 @@ export const openProject = async ({
       metricsStore,
       projectRoot: workDir,
       artifactsDir,
-      agents: createAgents?.() ?? { claude: new ClaudeAdapter(spawn), codex: new CodexAdapter(spawn) },
+      agents: createAgents?.() ?? {
+        claude: new ClaudeAdapter(spawn),
+        codex: new CodexAdapter(spawn),
+        gemini: new AntigravityAdapter((command, parameters, options) => {
+          if (sandbox.enabled) throw new Error(t("sandbox.geminiUnavailable"));
+          ensureAgyMcpConfig(homeDir);
+          return spawn(command, parameters, options);
+        }),
+      },
       permissionLocked: () => sandbox.enabled,
       canStart: () => sandbox.usable,
       onAgentStart: refreshModels,

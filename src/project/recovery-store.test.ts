@@ -19,9 +19,13 @@ describe("recovery store", () => {
         c1: {
           brainstormPhase: "round" as const,
           interrupted: ["claude" as const],
-          queue: { claude: [{ kind: "input" as const, text: "次", images: ["shot.png"], context: true as const, brainstorm: true as const }], codex: [] },
+          queue: {
+            claude: [{ kind: "input" as const, text: "次", images: ["shot.png"], context: true as const, brainstorm: true as const }],
+            codex: [],
+            gemini: [],
+          },
         },
-        c2: { interrupted: [], queue: { claude: [], codex: [] } },
+        c2: { interrupted: [], queue: { claude: [], codex: [], gemini: [] } },
       },
     };
     saveRecovery(home, project, data);
@@ -48,7 +52,10 @@ describe("recovery store", () => {
       },
       specCheck: { command: "check", exitCode: 1, output: "diagnostic" },
     };
-    saveRecovery(home, project, { current: "c", conversations: { c: { interrupted: [], queue: { claude: [{ kind: "message", message }], codex: [] } } } });
+    saveRecovery(home, project, {
+      current: "c",
+      conversations: { c: { interrupted: [], queue: { claude: [{ kind: "message", message }], codex: [], gemini: [] } } },
+    });
     expect(loadRecovery(home, project)?.conversations.c?.queue.claude[0]).toEqual({ kind: "message", message });
   });
 
@@ -63,7 +70,11 @@ describe("recovery store", () => {
 
   it("lastWork を保存し、壊れた Agent の値だけを無視する", () => {
     const { home, project, path } = setup();
-    const conversation = { interrupted: ["claude" as const], queue: { claude: [], codex: [] }, lastWork: { claude: { plan: "方針", actions: ["Read a.ts"] } } };
+    const conversation = {
+      interrupted: ["claude" as const],
+      queue: { claude: [], codex: [], gemini: [] },
+      lastWork: { claude: { plan: "方針", actions: ["Read a.ts"] } },
+    };
     saveRecovery(home, project, { current: "c1", conversations: { c1: conversation } });
     expect(loadRecovery(home, project)?.conversations.c1?.lastWork).toEqual(conversation.lastWork);
     const saved = JSON.parse(readFileSync(path, "utf8"));
@@ -78,7 +89,7 @@ it("未回答だけの会話も保存する", () => {
   const project = join(home, "project");
   const conversation = {
     interrupted: [],
-    queue: { claude: [], codex: [] },
+    queue: { claude: [], codex: [], gemini: [] },
     questions: [{ id: "q1", agent: "claude" as const, questions: [{ question: "方針", options: [{ label: "A" }, { label: "B" }] }] }],
   };
   saveRecovery(home, project, { current: "c1", conversations: { c1: conversation } });
@@ -98,5 +109,5 @@ it("省略した Agent の queue を空配列で補う", () => {
       },
     }),
   );
-  expect(loadRecovery(home, project)?.conversations.c?.queue).toEqual({ claude: [{ kind: "input", text: "続行" }], codex: [] });
+  expect(loadRecovery(home, project)?.conversations.c?.queue).toEqual({ claude: [{ kind: "input", text: "続行" }], codex: [], gemini: [] });
 });

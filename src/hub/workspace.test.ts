@@ -38,7 +38,7 @@ const setup = (
     const workDir = conversation.workDir ?? projectRoot;
     const coordinator = new Coordinator({
       projectRoot: workDir,
-      agents: { claude, codex },
+      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
       bus,
       mcpUrlFor: () => "http://x",
       retryDelayMs: 0,

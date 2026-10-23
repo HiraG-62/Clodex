@@ -29,7 +29,7 @@ export const agentStartError = (command: string, error: unknown): Error => {
 };
 
 // サブスクリプション認証を守るため、子プロセスに渡さない環境変数（docs/spikes/authentication.md）
-const API_KEY_ENV_VARS = new Set(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY"]);
+const API_KEY_ENV_VARS = new Set(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"]);
 
 // Windows の環境変数名は大文字小文字を区別しないので、大文字で比較する
 export const subscriptionEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv =>

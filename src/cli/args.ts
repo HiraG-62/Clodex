@@ -21,6 +21,7 @@ export const parseCliArgs = (argv: string[]): CliArgs => {
       primary: { type: "string" },
       "claude-model": { type: "string" },
       "codex-model": { type: "string" },
+      "gemini-model": { type: "string" },
       resume: { type: "boolean" },
       web: { type: "boolean" },
     },
@@ -33,6 +34,7 @@ export const parseCliArgs = (argv: string[]): CliArgs => {
   const models: Partial<Record<AgentId, string>> = {};
   if (values["claude-model"]) models.claude = values["claude-model"];
   if (values["codex-model"]) models.codex = values["codex-model"];
+  if (values["gemini-model"]) models.gemini = values["gemini-model"];
 
   return {
     ...(values.project ? { project: values.project } : {}),

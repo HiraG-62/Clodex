@@ -1,9 +1,9 @@
-import type { AgentId } from "../agents/agent-adapter.js";
+import { AGENT_IDS, type AgentId } from "../agents/agent-adapter.js";
 import type { Language } from "../context/language.js";
 
 export const ROLE_PRESET_NAMES = ["design-review", "codex-design", "implement-review"] as const;
 export type RolePresetName = (typeof ROLE_PRESET_NAMES)[number];
-type Roles = Record<AgentId, string>;
+type Roles = Partial<Record<AgentId, string>>;
 
 export const ROLE_PRESETS: Record<RolePresetName, Record<Language, Roles>> = {
   "design-review": {
@@ -55,7 +55,7 @@ export const matchingRolePreset = (roles: Partial<Roles>): RolePresetName | unde
   for (const name of ROLE_PRESET_NAMES) {
     for (const language of ["ja", "en"] as const) {
       const preset = ROLE_PRESETS[name][language];
-      if (roles.claude === preset.claude && roles.codex === preset.codex) return name;
+      if (AGENT_IDS.every(id => roles[id] === preset[id])) return name;
     }
   }
   return undefined;

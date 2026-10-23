@@ -70,7 +70,7 @@ describe("UsageMonitor", () => {
     const { notices, levels, report } = setup();
     report("claude", { usedPercent: 40, resetsAt: weeklyResetsAt(0.2) });
     report("claude", { usedPercent: 41, resetsAt: weeklyResetsAt(0.2) });
-    expect(notices).toEqual(["claude is ahead of weekly pace (+20). Try /primary codex"]);
+    expect(notices).toEqual(["claude is ahead of weekly pace (+20). Try /primary codex, gemini"]);
     expect(levels).toEqual(["warn"]);
   });
 
