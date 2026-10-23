@@ -12,10 +12,10 @@
 
 - 単発: `agy -p "<prompt>" --output-format stream-json`。NDJSON で `init` → `step_update`... → `result`
 - **1 プロセス複数ターン**: `--input-format stream-json --output-format stream-json` で、stdin に 1 行 1 JSON `{"event":"user","message":{"content":"..."}}`。`init` は 1 回、ターンごとに `result`。`num_turns`・`usage` はセッション累積。stdin を閉じると今のターンを終えて exit 0
-- 実測したイベント:
+- 実測したイベント（**ペイロードは同名キーの入れ子**。`{"event":"step_update","step_update":{…}}`・`{"event":"result","result":{…}}`。`init` はトップレベルに `conversation_id` を持ち、中身は `init` キーの下）:
   - `init`: `{conversation_id, init:{model, cwd, tools:[...], permission_mode}}`。tools には組み込みの `send_message`・`run_command`・`view_file` など約 60 個（**組み込みに `send_message` があり、Clodex の MCP tool と同名**。MCP の呼び出しは `call_mcp_tool` 経由なので衝突はしないが、定型文では「clodex MCP server の send_message」と明示する必要がある）
-  - `step_update`: `{conversation_id, step_index, state: ACTIVE|DONE, step_type: user_input|agent_response|tool|checkpoint, text_delta?, duration_seconds?, usage?, tool_info?: {name, parameters, output?, error?}, subagent_info?}`。`agent_response` の本文は `text_delta` の連結
-  - `result`: `{conversation_id, status, response, duration_seconds, num_turns, usage:{input_tokens, output_tokens, thinking_tokens, cache_read_tokens, total_tokens}, denied_actions?}`
+  - `step_update`（`step_update` キーの下）: `{conversation_id, step_index, state: ACTIVE|DONE, step_type: user_input|agent_response|tool|checkpoint, text_delta?, duration_seconds?, usage?, tool_info?: {name, parameters, output?, error?}, subagent_info?}`。`agent_response` の本文は `text_delta` の連結
+  - `result`（`result` キーの下）: `{conversation_id, status, response, duration_seconds, num_turns, usage:{input_tokens, output_tokens, thinking_tokens, cache_read_tokens, total_tokens}, denied_actions?}`
 - 再開: 別プロセスで `--conversation <conversation_id>`。前の会話の内容を覚えていた（pong の実測）。`-c` は直近の会話
 - Git Bash の pipe でも stdout は落ちない（古い版の既知問題は 1.4.6 では再現せず）
 - 診断（権限の拒否・認証・進捗）は stderr。成功は exit 0
