@@ -120,6 +120,18 @@ describe("タブ操作", () => {
     expect(ctx.send).toHaveBeenCalledWith(`/tab close other ${otherProject}`, close);
   });
 
+  it("会話を切り替えると Agent の手動展開を解除する", () => {
+    const { ctx } = setup();
+    ctx.store.state!.conversations = [conversation(false)];
+    ctx.store.expandedStripAgent = "gemini";
+    ctx.store.stripViewKey = `${PROJECT}\nsaved`;
+    createStateView(ctx).renderState();
+    expect(ctx.store.expandedStripAgent).toBe("gemini");
+    ctx.store.state!.conversations = [{ ...conversation(false), id: "next" }];
+    createStateView(ctx).renderState();
+    expect(ctx.store.expandedStripAgent).toBeUndefined();
+  });
+
   it.each([false, true])("会話メニューのタブ操作とピン止めは別のコマンドを送る: %s", async tabbed => {
     const { ctx } = setup();
     createConversationSheets(ctx).openConversationMenu(conversation(tabbed), 2);

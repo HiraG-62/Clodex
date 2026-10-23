@@ -1,6 +1,58 @@
-import type { AgentId } from "../../agents/agent-adapter.js";
+import type { AgentId, AgentStatus } from "../../agents/agent-adapter.js";
 import type { AgentState } from "../../cli/shell.js";
 import type { ClientContext } from "./store.js";
+
+const RING_RADIUS = "9";
+const RING_PATH_LENGTH = 100;
+const FIVE_HOUR_ALERT_PERCENT = 90;
+const WEEKLY_PACE_ALERT = 15;
+
+export const usageRingAlert = (kind: "fiveHour" | "weekly", value: number | undefined) =>
+  value !== undefined && value >= (kind === "fiveHour" ? FIVE_HOUR_ALERT_PERCENT : WEEKLY_PACE_ALERT);
+
+export const isCollapsedAgent = (status: AgentStatus, selected: boolean, expanded: boolean) => status === "stopped" && !selected && !expanded;
+
+export const nextExpandedAgent = (current: AgentId | undefined, clicked: AgentId): AgentId | undefined => (current === clicked ? undefined : clicked);
+
+export const usageRingLabel = (label: string, percent: number | undefined, reset: string) =>
+  `${label} ${percent === undefined ? "—" : `${Math.round(percent)}%`}${reset ? ` · reset ${reset}` : ""}`;
+
+const svgCircle = (className: string) => {
+  const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  for (const [key, value] of Object.entries({ cx: "12", cy: "12", r: RING_RADIUS, class: className, pathLength: String(RING_PATH_LENGTH) })) {
+    circle.setAttribute(key, value);
+  }
+  return circle;
+};
+
+const ring = (percent: number | undefined, className: string) => {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", className);
+  svg.setAttribute("aria-hidden", "true");
+  const background = svgCircle("bg");
+  const foreground = svgCircle("fg");
+  foreground.setAttribute("stroke-dasharray", `${Math.min(RING_PATH_LENGTH, Math.max(0, percent ?? 0))} ${RING_PATH_LENGTH}`);
+  svg.append(background, foreground);
+  return svg;
+};
+
+export const contextParts = (ctx: ClientContext, agent: AgentState) => {
+  const dot = ctx.el("span", "dot");
+  const shield = agent.permission === "full" ? ctx.icon("shield-alert") : undefined;
+  shield?.classList.add("shield");
+  const percent = agent.usage.contextWindow ? ((agent.usage.contextTokens ?? 0) / agent.usage.contextWindow) * ctx.PERCENT : 0;
+  return [dot, ...(shield ? [shield] : []), ring(percent, `ring${agent.usage.contextWarning ? " over" : ""}`)];
+};
+
+export const usageRing = (ctx: ClientContext, label: string, percent: number | undefined, reset: string, icon: string, over: boolean) => {
+  const node = ctx.el("span", `usage-ring${percent === undefined ? " empty" : ""}${over ? " over" : ""}`);
+  const title = usageRingLabel(label, percent, reset);
+  node.title = title;
+  node.setAttribute("aria-label", title);
+  node.append(ring(percent, "ring"), ctx.icon(icon));
+  return node;
+};
 
 export function createAgentStrip(ctx: ClientContext) {
   // ---- 状態の描画 ----
@@ -270,10 +322,18 @@ export function createAgentStrip(ctx: ClientContext) {
   };
 
   const usagePopover = ctx.$("#usage-popover");
+  const toggleUsage = (agent: AgentId) => {
+    if (ctx.wideUsage.matches) return;
+    if (ctx.store.usageAgent === agent) ctx.closeUsage();
+    else {
+      ctx.store.usageAgent = agent;
+      ctx.refreshUsage();
+    }
+  };
   const closeUsage = () => {
     ctx.store.usageAgent = undefined;
     usagePopover.hidden = true;
-    for (const button of document.querySelectorAll("#agents button.mini-gauges")) button.setAttribute("aria-expanded", "false");
+    for (const button of document.querySelectorAll("#agents button.usage-trigger")) button.setAttribute("aria-expanded", "false");
   };
   const positionUsage = () => {
     if (!ctx.store.usageAgent || usagePopover.hidden) return;
@@ -330,13 +390,13 @@ export function createAgentStrip(ctx: ClientContext) {
     if (!agent || ctx.mobile.matches) return closeUsage();
     syncUsageDetails(usagePopover, agent);
     usagePopover.hidden = false;
-    for (const button of document.querySelectorAll("#agents button.mini-gauges"))
+    for (const button of document.querySelectorAll("#agents button.usage-trigger"))
       button.setAttribute("aria-expanded", String(button.closest<HTMLElement>(".agent")?.dataset.agent === agent.id));
     positionUsage();
   };
   document.addEventListener("click", event => {
     const target = event.target;
-    if (target instanceof Element && !target.closest("#usage-popover, #agents button.mini-gauges")) closeUsage();
+    if (target instanceof Element && !target.closest("#usage-popover, #agents button.usage-trigger")) closeUsage();
   });
   document.addEventListener("keydown", event => {
     if (event.key === "Escape") closeUsage();
@@ -347,5 +407,5 @@ export function createAgentStrip(ctx: ClientContext) {
   // project のセレクト: ピン止めを optgroup にまとめ、最後に一覧の編集を置く（DESIGN.md §28 D2a 一覧の整理）
 
   const EDIT_PROJECTS_VALUE = "clodex:edit-projects";
-  return { EDIT_PROJECTS_VALUE, subagentBadge, stateLabel, agentControls, closeUsage, refreshUsage };
+  return { EDIT_PROJECTS_VALUE, subagentBadge, stateLabel, agentControls, closeUsage, refreshUsage, toggleUsage };
 }

@@ -1,5 +1,6 @@
 import type { AgentId } from "../../agents/agent-adapter.js";
 import type { WebState } from "../web-feed.js";
+import { contextParts, isCollapsedAgent, nextExpandedAgent, usageRing, usageRingAlert } from "./agent-strip.js";
 import { isShellInput } from "./shell-input.js";
 import type { ClientContext } from "./store.js";
 
@@ -66,6 +67,11 @@ export function createStateView(ctx: ClientContext) {
   const renderState = () => {
     ctx.renderQuestionDock();
     if (!ctx.store.state) return;
+    const viewKey = `${ctx.store.state.project}\n${ctx.store.state.conversations.find(conversation => conversation.current)?.id ?? ""}`;
+    if (ctx.store.stripViewKey !== viewKey) {
+      ctx.store.stripViewKey = viewKey;
+      ctx.store.expandedStripAgent = undefined;
+    }
     ctx.$("#project-name").textContent = ctx.store.state.project.split(/[\\/]/).filter(Boolean).at(-1) || ctx.t("web.top.noProject");
     ctx.$("#project-pill").title = ctx.store.state.project || ctx.t("web.top.noProject");
     // solo で送り先が固定されていればその Agent にする（DESIGN.md §11 Solo）。送り先の色より先に決める
@@ -92,26 +98,7 @@ export function createStateView(ctx: ClientContext) {
         button.setAttribute("aria-label", `${ctx.AGENTS[agent.id].name} · ${ctx.t(ctx.STATUS_LABEL[agent.status])}${badge ? `\n${badge.title}` : ""}`);
         button.title = button.getAttribute("aria-label")!;
         const inside = ctx.el("span", "in");
-        inside.append(ctx.el("span", "dot"));
-        if (agent.permission === "full") {
-          const shield = ctx.icon("shield-alert");
-          shield.classList.add("shield");
-          inside.append(shield);
-        }
-        const ring = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        ring.setAttribute("viewBox", "0 0 24 24");
-        ring.setAttribute("class", `ring${agent.usage.contextWarning ? " over" : ""}`);
-        ring.setAttribute("aria-hidden", "true");
-        const percent = agent.usage.contextWindow
-          ? Math.min(ctx.PERCENT, Math.max(0, ((agent.usage.contextTokens ?? 0) / agent.usage.contextWindow) * ctx.PERCENT))
-          : 0;
-        for (const cls of ["bg", "fg"]) {
-          const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-          for (const [key, value] of Object.entries({ cx: "12", cy: "12", r: "9", class: cls, pathLength: "100" })) circle.setAttribute(key, value);
-          if (cls === "fg") circle.setAttribute("stroke-dasharray", `${percent} 100`);
-          ring.append(circle);
-        }
-        inside.append(ring);
+        inside.append(...contextParts(ctx, agent));
         if (badge) inside.append(badge);
         button.append(inside);
         button.addEventListener("click", () => ctx.openAgentSheet(agent.id));
@@ -126,10 +113,46 @@ export function createStateView(ctx: ClientContext) {
     ctx.$("#target-toggle").title = ctx.$("#target-toggle").getAttribute("aria-label")!;
     // PC: Agent パネル
     const well = ctx.el("div", "strip-well");
+    well.setAttribute(
+      "style",
+      `grid-template-columns: ${ctx.store.state.agents
+        .map(agent => (isCollapsedAgent(agent.status, agent.id === selected, ctx.store.expandedStripAgent === agent.id) ? "44px" : "minmax(0, 1fr)"))
+        .join(" ")}`,
+    );
     well.append(
       ...ctx.store.state.agents.map(agent => {
-        const section = ctx.el("section", `agent ${agent.status}`);
+        const collapsed = isCollapsedAgent(agent.status, agent.id === selected, ctx.store.expandedStripAgent === agent.id);
+        const section = ctx.el("section", `agent ${agent.status}${collapsed ? " collapsed" : ""}`);
         section.dataset.agent = agent.id;
+        section.dataset.state = agent.status;
+        const markButton = ctx.el("button", "context-button usage-trigger") as HTMLButtonElement;
+        markButton.type = "button";
+        markButton.setAttribute("aria-label", `${ctx.AGENTS[agent.id].name} · ${ctx.t(ctx.STATUS_LABEL[agent.status])}`);
+        markButton.title = markButton.getAttribute("aria-label")!;
+        markButton.append(ctx.mark(agent.id), ...contextParts(ctx, agent));
+        if (collapsed) {
+          markButton.classList.remove("usage-trigger");
+          markButton.setAttribute("aria-expanded", "false");
+          const badge = ctx.subagentBadge(agent);
+          if (badge) {
+            markButton.append(badge);
+            markButton.title += `\n${badge.title}`;
+          }
+          if (Object.keys(ctx.store.pendingSettings[agent.id] ?? {}).length) {
+            markButton.classList.add("pending");
+            markButton.title += ` · ${ctx.t("web.setting.pending")}`;
+          }
+          markButton.setAttribute("aria-label", markButton.title);
+          markButton.addEventListener("click", () => {
+            ctx.store.expandedStripAgent = nextExpandedAgent(ctx.store.expandedStripAgent, agent.id);
+            ctx.renderState();
+          });
+          section.append(markButton);
+          return section;
+        }
+        markButton.setAttribute("aria-expanded", String(ctx.store.usageAgent === agent.id));
+        markButton.setAttribute("aria-controls", "usage-popover");
+        markButton.addEventListener("click", () => ctx.toggleUsage(agent.id));
         const who = ctx.el("div", "strip-who");
         const h2 = ctx.el("h2");
         const status = ctx.stateLabel(agent);
@@ -139,7 +162,19 @@ export function createStateView(ctx: ClientContext) {
           elapsed.dataset.start = turn.at;
           status.append(elapsed);
         }
-        h2.append(ctx.el("span", "", ctx.AGENTS[agent.id].name), status);
+        if (agent.status === "stopped" && ctx.store.expandedStripAgent === agent.id && agent.id !== selected) {
+          const collapse = ctx.el("button", "strip-collapse", ctx.AGENTS[agent.id].name) as HTMLButtonElement;
+          collapse.type = "button";
+          collapse.setAttribute("aria-label", `${ctx.AGENTS[agent.id].name} · ${ctx.t(ctx.STATUS_LABEL[agent.status])}`);
+          collapse.title = collapse.getAttribute("aria-label")!;
+          collapse.addEventListener("click", () => {
+            ctx.store.expandedStripAgent = nextExpandedAgent(ctx.store.expandedStripAgent, agent.id);
+            ctx.closeUsage();
+            ctx.renderState();
+          });
+          h2.append(collapse);
+        } else h2.append(ctx.el("span", "", ctx.AGENTS[agent.id].name));
+        h2.append(status);
         const badge = ctx.subagentBadge(agent);
         if (badge) h2.append(badge);
         const current = ctx.displayedAgent(agent);
@@ -161,24 +196,35 @@ export function createStateView(ctx: ClientContext) {
         }
         who.append(h2, summary);
         const controls = ctx.agentControls(agent);
-        const miniButton = ctx.el(ctx.wideUsage.matches ? "div" : "button", "mini-gauges");
-        if (miniButton instanceof HTMLButtonElement) {
-          miniButton.type = "button";
-          miniButton.title = ctx.t("web.usage.title");
-          miniButton.setAttribute("aria-label", ctx.t("web.usage.title"));
-          miniButton.setAttribute("aria-expanded", String(ctx.store.usageAgent === agent.id));
-          miniButton.setAttribute("aria-controls", "usage-popover");
-          miniButton.addEventListener("click", () => {
-            if (ctx.wideUsage.matches) return;
-            if (ctx.store.usageAgent === agent.id) ctx.closeUsage();
-            else {
-              ctx.store.usageAgent = agent.id;
-              ctx.refreshUsage();
-            }
-          });
+        const limits = ctx.el("div", "usage-rings");
+        for (const [label, percent, reset, icon, over] of [
+          [
+            ctx.t("web.gauge.fiveHour"),
+            agent.usage.fiveHourPercent,
+            agent.usage.fiveHourResetsAt,
+            "clock",
+            usageRingAlert("fiveHour", agent.usage.fiveHourPercent),
+          ],
+          [ctx.t("web.gauge.weekly"), agent.usage.weeklyPercent, agent.usage.weeklyResetsAt, "calendar", usageRingAlert("weekly", agent.usage.weeklyPace)],
+        ] as const) {
+          const time =
+            reset === undefined
+              ? ""
+              : icon === "clock"
+                ? ctx.clock(new Date(reset * ctx.MS_PER_SECOND).toISOString())
+                : ctx.shortDate(new Date(reset * ctx.MS_PER_SECOND).toISOString());
+          const button = ctx.el("button", "usage-trigger limit-trigger") as HTMLButtonElement;
+          button.type = "button";
+          const circle = usageRing(ctx, label, percent, time, icon, over);
+          button.title = circle.title;
+          button.setAttribute("aria-label", circle.title);
+          button.setAttribute("aria-expanded", String(ctx.store.usageAgent === agent.id));
+          button.setAttribute("aria-controls", "usage-popover");
+          button.append(circle);
+          button.addEventListener("click", () => ctx.toggleUsage(agent.id));
+          limits.append(button);
         }
-        miniButton.append(...controls.querySelector(".mini-gauges")!.childNodes);
-        section.append(ctx.mark(agent.id), who, miniButton, controls.querySelector(".links")!);
+        section.append(markButton, who, limits, controls.querySelector(".links")!);
         return section;
       }),
     );

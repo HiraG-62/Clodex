@@ -476,11 +476,10 @@
     .topbar { height: 52px; padding: 0 12px 0 16px; }
     .side { background: var(--bg); padding: 16px; }
     .composer { padding: 6px 32px 16px; }
-    .agent-strip { display: grid; grid-template-columns: repeat(var(--agent-count), minmax(0, 1fr)); }
+    .agent-strip { display: grid; grid-template-columns: minmax(0, 1fr); }
     .icon-btn[title]:hover::before { content: attr(title); position: absolute; top: calc(100% + 9px); right: 0; z-index: 40; padding: 5px 8px; border-radius: var(--r); background: var(--panel); color: var(--fg); box-shadow: var(--shadow-pop); white-space: nowrap; font-size: 12px; pointer-events: none; animation: tooltip-in 400ms step-end; }
     .composer .icon-btn[title]:hover::before { top: auto; bottom: calc(100% + 9px); }
   }
-  @media (min-width: 900px) and (max-width: 1199px) { .agent-strip .agent { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title actions" "chips actions" "gauges gauges"; } .agent-strip .mini-gauges { grid-template-columns: repeat(3,minmax(0,1fr)); } .agent-strip .gauge { grid-template-columns: 1fr auto; } .agent-strip .gauge .track { grid-column: 1 / -1; grid-row: 2; } .agent-strip .gauge .v { grid-column: 2; } }
   @keyframes tooltip-in { from { opacity: 0; } to { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 
@@ -509,8 +508,38 @@
 
   .count { background: var(--fg); color: var(--bg); box-shadow: 0 0 0 2px var(--panel); font-weight: 600; }
   .count:empty { display: none; }
-  .strip-well { display: grid; grid-template-columns: repeat(var(--agent-count), minmax(0, 1fr)); grid-column: 1 / -1; gap: 2px; padding: 2px; background: var(--sunken); border-radius: 12px; min-width: 0; }
-  .agent-strip .agent { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) 136px auto; grid-template-areas: none; gap: 10px; padding: 7px 8px 7px 10px; align-items: center; min-height: 52px; border-radius: 10px; background: transparent; box-shadow: none; }
+  .strip-well { display: grid; grid-column: 1 / -1; gap: 2px; padding: 2px; background: var(--sunken); border-radius: 12px; min-width: 0; }
+  .agent-strip .agent { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto; grid-template-areas: none; gap: 5px; padding: 6px; align-items: center; min-width: 0; min-height: 52px; border-radius: 10px; background: transparent; box-shadow: none; }
+  .agent-strip .agent.collapsed { display: grid; grid-template-columns: 1fr; padding: 0; }
+  .agent-strip .context-button { position: relative; display: grid; place-items: center; width: 32px; height: 40px; padding: 0; border: 0; border-radius: var(--r); background: transparent; }
+  .agent-strip .collapsed .context-button { width: 100%; min-width: 44px; height: 44px; }
+  .agent-strip .context-button:hover, .agent-strip .context-button[aria-expanded="true"], .agent-strip .limit-trigger:hover, .agent-strip .limit-trigger[aria-expanded="true"] { background: var(--hover-bg); }
+  .agent-strip .context-button .mark { width: 17px; height: 17px; font-size: 9px; border-radius: 4px; }
+  .agent-strip .context-button .ring { position: absolute; width: 30px; height: 30px; }
+  .agent-strip .context-button .dot { position: absolute; right: 1px; bottom: 4px; width: 7px; height: 7px; border: 1px solid var(--sunken); border-radius: 2px; background: var(--agent); }
+  .agent-strip .agent.busy .context-button .dot { border-radius: 50%; animation: pulse 1.5s infinite; }
+  .agent-strip .agent.starting .context-button .dot { border: 1px dashed var(--agent); border-radius: 50%; background: none; animation: spin 1s linear infinite; }
+  .agent-strip .agent.stopped .context-button .dot { background: var(--muted); }
+  .agent-strip .context-button .shield { position: absolute; right: -2px; top: 1px; width: 11px; height: 11px; color: var(--warn); background: var(--sunken); }
+  .agent-strip .collapsed .context-button.pending { box-shadow: var(--ring-strong); }
+  .agent-strip .collapsed .context-button .task-badges { position: absolute; right: -2px; top: -4px; }
+  .agent-strip .collapsed .context-button .subagent-badge { padding: 1px 3px; }
+  .ring { width: 20px; height: 20px; transform: rotate(-90deg); }
+  .ring circle { fill: none; stroke-width: 2.6; }
+  .ring .bg { stroke: var(--line-strong); } .ring .fg { stroke: var(--agent); stroke-linecap: round; }
+  .agent.stopped .context-button > .ring .fg { stroke: var(--muted); }
+  .agent .context-button > .ring.over .fg { stroke: var(--warn); }
+  .ring.over .fg { stroke: var(--warn); }
+  .usage-rings { display: flex; align-items: center; gap: 1px; }
+  .agent-strip .limit-trigger { display: grid; place-items: center; width: 29px; height: 36px; padding: 0; border: 0; border-radius: var(--r); background: transparent; }
+  .usage-ring { position: relative; display: grid; place-items: center; width: 26px; height: 26px; }
+  .usage-ring .ring { width: 26px; height: 26px; }
+  .usage-ring .ring .fg { stroke: var(--fg-2); }
+  .usage-ring.over .ring .fg { stroke: var(--warn); }
+  .usage-ring.empty { opacity: .35; }
+  .usage-ring > .i { position: absolute; width: 11px; height: 11px; color: var(--fg-2); }
+  .strip-collapse { padding: 0; border: 0; border-radius: var(--r-inner); background: transparent; color: inherit; font: inherit; font-weight: inherit; }
+  .strip-collapse:hover { background: var(--hover-bg); }
   .agent-strip .agent.busy { background: var(--panel); box-shadow: var(--ring); }
   .agent-strip .agent.busy::after { content: ""; position: absolute; inset: auto 0 0; height: 1px; background: linear-gradient(90deg,transparent,var(--agent),transparent); }
   .strip-who { min-width: 0; }
@@ -526,12 +555,8 @@
   .strip-summary .model { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .strip-summary .permission-full { color: var(--warn); }
   .strip-summary.pending { box-shadow: var(--ring); }
-  .agent-strip .mini-gauges, .agent-strip .links { grid-area: auto; }
-  .agent-strip .mini-gauges { grid-template-columns: minmax(0, 1fr); }
-  .agent-strip .gauge { grid-template-columns: 30px minmax(0, 1fr) 30px; }
-  .agent-strip .gauge .v { grid-column: 3; }
-  .agent-strip .gauge .track { grid-column: 2; grid-row: 1; }
-  .agent-strip .track > i { background: var(--fg-2); }
+  .agent-strip .links { grid-area: auto; flex-wrap: nowrap; }
+  .agent-strip .links .icon-btn { width: 24px; height: 28px; }
   .question.claude { --accent: var(--claude); } .question.codex { --accent: var(--codex); } .question.gemini { --accent: var(--gemini); }
   .question-dock { --accent: var(--agent-color); margin-bottom: 8px; border: 1px solid var(--line-strong); border-top: 2px solid var(--accent);
     border-radius: 10px; background: var(--panel); box-shadow: 0 -4px 18px rgba(0,0,0,.06); }
@@ -692,11 +717,7 @@
     .apill[data-state="stopped"] .dot { background: var(--muted); }
     .apill .shield { width: 12px; height: 12px; color: var(--warn); margin-left: -2px; }
     .apill .subagent-badge { padding: 1px 3px; }
-    .ring { width: 20px; height: 20px; transform: rotate(-90deg); }
-    .ring circle { fill: none; stroke-width: 2.6; }
-    .ring .bg { stroke: var(--line-strong); } .ring .fg { stroke: var(--agent); stroke-linecap: round; }
     .apill[data-state="stopped"] .ring .fg { stroke: var(--muted); }
-    .apill .ring.over .fg { stroke: var(--warn); }
     .log { padding: 0 14px 64px; }
     .entry { grid-template-columns: 20px minmax(0, 1fr); gap: 6px 8px; padding: 14px 0; }
     .entry > :not(.mark):not(.head), .entry.question > :not(.mark):not(.head) { grid-column: 1 / -1; }

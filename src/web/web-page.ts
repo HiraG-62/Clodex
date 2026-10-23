@@ -115,7 +115,6 @@ const inlineScript = (source: string) => source.replace(/<\/script/gi, "<\\/scri
 
 const PAGE_VERSION_LENGTH = 12;
 const layoutStyle = `
-:root { --agent-count: ${AGENT_IDS.length}; }
 :root { --side-width: ${WEB_LAYOUT.sideWidth}px; --chat-max-width: ${WEB_LAYOUT.chatMaxWidth}px; }
 @media (width > ${WEB_LAYOUT.sideWidth + WEB_LAYOUT.chatMaxWidth}px) and (hover: hover) and (pointer: fine) {
   .app { max-width: none; border: 0; grid-template-columns: max(var(--side-width), calc((100vw - var(--chat-max-width)) / 2)) var(--chat-max-width) minmax(0, 1fr); grid-template-areas: "top top top" "side tabs ." "side conn ." "side agents ." "side log ." "side compose ."; }

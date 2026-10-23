@@ -37,6 +37,8 @@ export interface SharedStore {
   target: AgentId | undefined;
   sheetAgent: AgentId | undefined;
   usageAgent: AgentId | undefined;
+  expandedStripAgent: AgentId | undefined;
+  stripViewKey: string | undefined;
   sheetKind:
     | "agent"
     | "agentSettings"
@@ -141,6 +143,7 @@ export interface ClientContext extends ClientDeps {
   agentControls: (agent: AgentState) => HTMLElement;
   closeUsage: () => void;
   refreshUsage: () => void;
+  toggleUsage: (agent: AgentId) => void;
   conversationList: () => HTMLElement[];
   syncTargetButtons: () => void;
   renderPending: () => void;
