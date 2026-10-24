@@ -150,6 +150,8 @@ export class McpManager {
   }
 
   private readCodex(): Current {
+    // CODEX_HOME が無いと codex が失敗するため、設定なしとして扱う
+    if (!existsSync(this.codexHome)) return {};
     const result = this.run(this.codexCommand, ["mcp", "list", "--json"], { ...process.env, CODEX_HOME: this.codexHome });
     if (result.status !== 0) throw new Error(`codex mcp list: ${result.stderr || result.stdout}`);
     const parsed: unknown = JSON.parse(result.stdout);

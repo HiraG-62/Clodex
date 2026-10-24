@@ -102,6 +102,19 @@ describe("McpManager", () => {
     expect(readFileSync(`${codexPath}.clodex-bak`, "utf8")).toBe(original);
   });
 
+  it("CODEX_HOME が無ければ codex を実行せず設定なしとして扱う", () => {
+    const paths = setup();
+    saveMcpServers(paths, "user", { mine: { ...server, agents: { codex: true } } });
+    const manager = new McpManager(paths, {
+      run: () => {
+        throw new Error("codex must not run");
+      },
+    });
+    const plan = manager.plan();
+    expect(plan.errors).toEqual([]);
+    expect(plan.entries.find(entry => entry.agent === "codex" && entry.name === "mine")?.status).toBe("missing");
+  });
+
   it("CLI アダプターの read / plan / apply は対象 CLI だけを扱う", () => {
     const paths = setup();
     const manager = new McpManager(paths, options);
