@@ -1693,6 +1693,36 @@ workspaces
 
 ---
 
+# 19. MCP Manager
+
+各 CLI（Claude Code / Codex CLI / Antigravity CLI）が使う MCP サーバーの設定を Clodex で一元管理する。**設定同期型**: Clodex は各 CLI の設定ファイルに登録を書き込むだけで、ツールの実行・認証は各 CLI に委任する（Clodex が中継・ホスティングはしない）。元の提案は `docs/specs/Clodex_MCP_Manager_Design.md`。
+
+## 内部モデル
+
+- 置き場所は既存の設定と同じ 2 層: グローバルは `~/.clodex/config.json`、プロジェクトは `<root>/.clodex.json`。どちらも `mcp.servers` キーに入れ、同名はプロジェクトが優先する（§13 Native configuration と同じ重ね方）
+- サーバーの形: `{ transport: "stdio" | "http", command?, args?, url?, env?, envRefs?, enabled, agents: { claude, codex, gemini } }`。`agents` で CLI ごとの適用を切り替える
+- `env` は秘密でない値のみ。API キーなどは `envRefs`（環境変数名への参照）で渡し、平文では保存しない。CLI が環境変数の展開に対応しない組み合わせは警告し、黙って省略しない
+- サーバー名 `clodex` は予約（Coordinator の formal message 用 MCP。§12。Manager からは登録・編集できない）
+
+## 同期（CLI アダプター）
+
+- 各 CLI の設定の読み書きは Adapter ごとに分け、**実測した**設定ファイルの場所・スキーマ・公式コマンドだけを使う（`docs/spikes/mcp-manager.md`）
+- 既存の設定を全置換しない。Clodex 管理対象（内部モデル由来）だけを差分更新し、CLI 側にだけある登録は「外部管理」として一覧に表示する（読み取りのみ）
+- 書き込みの前に対象ファイルを読み直して差分（プレビュー）を人に見せ、適用時はバックアップを取り atomic に書く
+- CLI が対応しない項目（トランスポート・スコープ・環境変数の展開など）は、その CLI の列に「未対応」と出す
+- 反映は各 CLI の次回起動から。接続・認証の成否は取得できないため、状態は設定の一致だけで判定する（`同期済み / 未設定 / 不一致 / 未対応 / 外部管理`。接続状態は「未確認」）
+
+## 画面
+
+- Web UI にサーバーの一覧・編集・Agent 割り当て・適用プレビューのシートを置く（§17 Web UI）。設定の変更は内部モデルに保存し、適用（同期）は明示の操作で行う
+
+## 対象外（初期版）
+
+- Clodex 自身による MCP ツールの実行・中継、OAuth 認証フローの代行、MCP サーバーのホスティング
+- 特定サービス（Google Sheets 等）専用の UI・API
+
+---
+
 # 20. v0.1 Acceptance Criteria
 
 以下がすべて成立したら v0.1 成功。
