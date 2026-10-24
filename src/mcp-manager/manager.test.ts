@@ -21,8 +21,12 @@ describe("McpManager", () => {
     const paths = setup();
     saveMcpServers(paths, "user", { mine: server });
     const agyPath = join(paths.homeDir, ".gemini", "config", "mcp_config.json");
+    const settingsPath = join(paths.homeDir, ".gemini", "antigravity-cli", "settings.json");
     mkdirSync(join(agyPath, ".."), { recursive: true });
+    mkdirSync(join(settingsPath, ".."), { recursive: true });
     writeFileSync(agyPath, JSON.stringify({ other: 1, mcpServers: { clodex: { command: "proxy" }, external: { command: "echo" } } }));
+    const settings = { theme: "dark", permissions: { ask: ["other"], allow: ["mcp(clodex/*)", "mcp(external/*)"] } };
+    writeFileSync(settingsPath, JSON.stringify(settings));
     const manager = new McpManager(paths, options);
     const plan = manager.plan();
     expect(plan.actions.filter(action => action.name === "mine").map(action => action.agent)).toEqual(["claude", "gemini"]);
@@ -33,9 +37,70 @@ describe("McpManager", () => {
       mine: { command: "node" },
     });
     expect(readFileSync(`${agyPath}.clodex-bak`, "utf8")).toContain("external");
+    expect(JSON.parse(readFileSync(settingsPath, "utf8"))).toEqual({
+      ...settings,
+      permissions: { ...settings.permissions, allow: [...settings.permissions.allow, "mcp(mine/*)"] },
+    });
+    expect(readFileSync(`${settingsPath}.clodex-bak`, "utf8")).toBe(JSON.stringify(settings));
     saveMcpServers(paths, "user", {});
     expect(manager.apply(manager.plan()).errors).toEqual([]);
     expect(JSON.parse(readFileSync(agyPath, "utf8")).mcpServers).toEqual({ clodex: { command: "proxy" }, external: { command: "echo" } });
+    expect(JSON.parse(readFileSync(settingsPath, "utf8"))).toEqual(settings);
+  });
+
+  it("Gemini 登録の更新で許可を重複追加せず、欠けた許可を再同期する", () => {
+    const paths = setup();
+    saveMcpServers(paths, "user", { mine: server });
+    const manager = new McpManager(paths, options);
+    expect(manager.apply(manager.plan()).errors).toEqual([]);
+    const settingsPath = join(paths.homeDir, ".gemini", "antigravity-cli", "settings.json");
+    const agyPath = join(paths.homeDir, ".gemini", "config", "mcp_config.json");
+    const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+    writeFileSync(agyPath, JSON.stringify({ mcpServers: { mine: { command: "old" } } }));
+    expect(manager.apply(manager.plan()).errors).toEqual([]);
+    expect(JSON.parse(readFileSync(settingsPath, "utf8")).permissions.allow).toEqual(["mcp(mine/*)"]);
+    writeFileSync(settingsPath, JSON.stringify({ ...settings, permissions: { allow: [] } }));
+    const plan = manager.plan();
+    expect(plan.actions).toContainEqual(expect.objectContaining({ agent: "gemini", name: "mine", kind: "update" }));
+    expect(manager.apply(plan).errors).toEqual([]);
+    expect(JSON.parse(readFileSync(settingsPath, "utf8")).permissions.allow).toEqual(["mcp(mine/*)"]);
+  });
+
+  it("Gemini の settings.json がプレビュー後に変わったら適用しない", () => {
+    const paths = setup();
+    saveMcpServers(paths, "user", { mine: server });
+    const manager = new McpManager(paths, options);
+    const plan = manager.plan();
+    const settingsPath = join(paths.homeDir, ".gemini", "antigravity-cli", "settings.json");
+    mkdirSync(join(settingsPath, ".."), { recursive: true });
+    writeFileSync(settingsPath, JSON.stringify({ permissions: { allow: ["external"] } }));
+    expect(manager.apply(plan).errors.join(" ")).toContain("changed since preview");
+    expect(readFileSync(settingsPath, "utf8")).toContain("external");
+  });
+
+  it("Gemini の登録が既に消えていても管理対象の許可を削除する", () => {
+    const paths = setup();
+    saveMcpServers(paths, "user", { mine: server });
+    const manager = new McpManager(paths, options);
+    expect(manager.apply(manager.plan()).errors).toEqual([]);
+    const agyPath = join(paths.homeDir, ".gemini", "config", "mcp_config.json");
+    const settingsPath = join(paths.homeDir, ".gemini", "antigravity-cli", "settings.json");
+    writeFileSync(agyPath, JSON.stringify({ mcpServers: {} }));
+    saveMcpServers(paths, "user", {});
+    const plan = manager.plan();
+    expect(plan.actions).toContainEqual(expect.objectContaining({ agent: "gemini", name: "mine", kind: "remove", skipWrite: true }));
+    expect(manager.apply(plan).errors).toEqual([]);
+    expect(JSON.parse(readFileSync(settingsPath, "utf8")).permissions.allow).toEqual([]);
+  });
+
+  it("Gemini の permissions.allow が壊れていれば plan のエラーにする", () => {
+    const paths = setup();
+    const settingsPath = join(paths.homeDir, ".gemini", "antigravity-cli", "settings.json");
+    mkdirSync(join(settingsPath, ".."), { recursive: true });
+    writeFileSync(settingsPath, JSON.stringify({ permissions: { allow: "mcp(external/*)" } }));
+    const plan = new McpManager(paths, options).plan();
+    expect(plan.errors.join(" ")).toContain("invalid permissions.allow");
+    expect(plan.actions).toEqual([]);
   });
 
   it("プレビュー後の外部変更を検出して書き込まない", () => {

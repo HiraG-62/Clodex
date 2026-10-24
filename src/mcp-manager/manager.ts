@@ -59,6 +59,8 @@ export interface McpManagerOptions {
 }
 
 const EMPTY_APPLIED = (): Applied => ({ claude: {}, codex: {}, gemini: {} });
+const AGY_PROXY_ALLOW_RULE = "mcp(clodex/*)";
+const agyAllowRule = (name: string): string => `mcp(${name}/*)`;
 const readText = (path: string): string | null => (existsSync(path) ? readFileSync(path, "utf8") : null);
 const record = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
@@ -115,6 +117,7 @@ export class McpManager {
   private readonly claudeProjectPath: string;
   private readonly codexPath: string;
   private readonly agyPath: string;
+  private readonly agySettingsPath: string;
   private readonly appliedPath: string;
   private readonly codexHome: string;
   private readonly codexCommand: string;
@@ -131,6 +134,7 @@ export class McpManager {
     this.claudeProjectPath = join(paths.projectRoot, ".mcp.json");
     this.codexPath = join(this.codexHome, "config.toml");
     this.agyPath = join(agyHome, ".gemini", "config", "mcp_config.json");
+    this.agySettingsPath = join(agyHome, ".gemini", "antigravity-cli", "settings.json");
     this.appliedPath = join(paths.homeDir, ".clodex", "mcp-applied.json");
     this.codexCommand = options.codexCommand ?? (process.platform === "win32" ? "codex.exe" : "codex");
     this.run = options.run ?? defaultRunner;
@@ -147,6 +151,16 @@ export class McpManager {
         return [name, parsed];
       }),
     );
+  }
+
+  private readAgySettings(): { root: Record<string, unknown>; permissions: Record<string, unknown>; allow: string[] } {
+    const root = parseObject(readText(this.agySettingsPath), this.agySettingsPath);
+    const permissions = root.permissions === undefined ? {} : record(root.permissions);
+    if (!permissions) throw new Error(`${this.agySettingsPath}: invalid permissions`);
+    const allow = permissions.allow === undefined ? [] : permissions.allow;
+    if (!Array.isArray(allow) || !allow.every((item): item is string => typeof item === "string"))
+      throw new Error(`${this.agySettingsPath}: invalid permissions.allow`);
+    return { root, permissions, allow };
   }
 
   private readCodex(): Current {
@@ -205,6 +219,7 @@ export class McpManager {
         this.claudeProjectPath,
         this.codexPath,
         this.agyPath,
+        this.agySettingsPath,
         this.appliedPath,
         join(this.paths.homeDir, ".clodex", "config.json"),
         join(this.paths.projectRoot, ".clodex.json"),
@@ -227,8 +242,10 @@ export class McpManager {
       : loadMcpServers(this.paths, "project");
     const desired = { ...user, ...project };
     let applied: Applied;
+    let agyAllow: string[];
     try {
       applied = this.readApplied();
+      agyAllow = this.readAgySettings().allow;
     } catch (error) {
       plan.errors.push(String(error));
       return plan;
@@ -292,7 +309,11 @@ export class McpManager {
           continue;
         }
         if (selected) {
-          const status: McpStatus = !actual ? "missing" : sameServer(actual, server) ? "synced" : "mismatch";
+          const status: McpStatus = !actual
+            ? "missing"
+            : sameServer(actual, server) && (agent !== "gemini" || agyAllow.includes(agyAllowRule(name)))
+              ? "synced"
+              : "mismatch";
           plan.entries.push({ name, agent, scope, status });
           if (status !== "synced") plan.actions.push({ name, agent, scope, kind: actual ? "update" : "add", server });
         } else if (managedScope) {
@@ -319,6 +340,19 @@ export class McpManager {
     const previous = readText(path);
     if (previous !== null) writeFileAtomic(`${path}.clodex-bak`, previous);
     writeFileAtomic(path, next);
+  }
+
+  private writeAgySettings(actions: McpAction[]): void {
+    const { root, permissions, allow } = this.readAgySettings();
+    let next = [...allow];
+    for (const action of actions) {
+      const rule = agyAllowRule(action.name);
+      if (rule === AGY_PROXY_ALLOW_RULE) continue;
+      if (action.kind === "remove") next = next.filter(item => item !== rule);
+      else if (!next.includes(rule)) next.push(rule);
+    }
+    if (JSON.stringify(next) === JSON.stringify(allow)) return;
+    this.writeWithBackup(this.agySettingsPath, `${JSON.stringify({ ...root, permissions: { ...permissions, allow: next } }, null, 2)}\n`);
   }
 
   private writeCodexActions(actions: McpAction[]): void {
@@ -373,6 +407,7 @@ export class McpManager {
           if (writes.length && agent === "claude") this.writeJsonActions(scope === "user" ? this.claudeUserPath : this.claudeProjectPath, writes, agent);
           else if (writes.length && agent === "gemini") this.writeJsonActions(this.agyPath, writes, agent);
           else if (writes.length) this.writeCodexActions(writes);
+          if (agent === "gemini") this.writeAgySettings(actions);
           for (const action of actions) {
             if (action.kind === "remove") delete applied[agent][action.name];
             else applied[agent][action.name] = scope;
