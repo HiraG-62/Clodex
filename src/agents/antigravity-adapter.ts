@@ -175,8 +175,10 @@ export class AntigravityAdapter extends BaseAgentAdapter {
       this.previousCached = cached;
       this.previousOutput = output;
     }
-    if (Array.isArray(result.denied_actions) && result.denied_actions.length)
-      process.stderr.write(`gemini denied actions: ${JSON.stringify(result.denied_actions)}\n`);
+    if (Array.isArray(result.denied_actions) && result.denied_actions.length) {
+      const names = result.denied_actions.map(action => record(action)?.display_name ?? record(action)?.action ?? "?").join(", ");
+      this.emit({ type: "error", message: `gemini: tools denied by permission mode: ${names}` });
+    }
     this.finishTurn({ status: result.status === "ERROR" ? "failed" : "completed", text: typeof result.response === "string" ? result.response : "" });
   }
 

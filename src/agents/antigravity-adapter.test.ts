@@ -34,6 +34,22 @@ describe("AntigravityAdapter", () => {
     expect(events).toContainEqual({ type: "input_total", total: 10 });
   });
 
+  it("denied_actions を error として画面に出す", async () => {
+    const fake = createFakeSpawner();
+    const adapter = new AntigravityAdapter(fake.spawn);
+    const events: unknown[] = [];
+    adapter.onEvent(event => events.push(event));
+    await adapter.start({ cwd: "C:\\project" });
+    fake.last.emit({ event: "init", conversation_id: "conversation-1" });
+    const turn = adapter.send("作業");
+    fake.last.emit({
+      event: "result",
+      result: { status: "SUCCESS", response: "", denied_actions: [{ action: "command", display_name: "RunCommand" }, { action: "mcp" }] },
+    });
+    expect(await turn).toEqual({ status: "completed", text: "" });
+    expect(events).toContainEqual({ type: "error", message: "gemini: tools denied by permission mode: RunCommand, mcp" });
+  });
+
   it("中断後は conversation を指定して再開する", async () => {
     const fake = createFakeSpawner();
     const adapter = new AntigravityAdapter(fake.spawn);
