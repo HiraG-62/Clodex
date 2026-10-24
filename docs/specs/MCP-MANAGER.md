@@ -59,6 +59,7 @@ mcp: z.strictObject({
   - 適用の直前にバックアップ（`<file>.clodex-bak`、上書き）を取り、atomic に書く
   - Codex の `config.toml` はコメント・未知のキーを保てる手段で更新する（spike の結果で、公式コマンド経由か、保てる書き方が確認できた場合のみ直接編集）。保てる手段が無ければその旨を返して書き込まない
   - agy は `src/agents/agy-mcp-config.ts` と同じファイルを触る。`clodex`（proxy）の登録を壊さない。共通化してよい
+  - agy へ同期するサーバーは `~/.gemini/antigravity-cli/settings.json` の `permissions.allow` に `mcp(<名前>/*)` も追加し、削除時は取り除く（ADD 2026-10-25。agy は headless だと承認待ちのツールを denied にしてターンを打ち切るため。`mcp(clodex/*)` と Clodex 管理外の allow 行は触らない。settings.json も plan の snapshot / バックアップ / atomic 書き込みの対象にする）
   - 未対応項目（例: その CLI が http に未対応、envRefs の展開に未対応、project scope が無い）は警告として plan に含め、黙って省略しない
 - 状態判定（サーバー × CLI）: `synced / missing / mismatch / unsupported / external`。接続・認証の成否は判定しない（UI では「未確認」扱い）
 - パス・環境変数はすべてコンストラクタ等で注入可能にし、ユニットテストは一時フォルダで実ファイル読み書きを検証する。**実ユーザーの設定に触れるテストを書かない**
