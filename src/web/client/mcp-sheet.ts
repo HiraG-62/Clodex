@@ -52,6 +52,35 @@ export function createMcpSheet(ctx: ClientContext) {
     wrap.append(ctx.el("span", "eyebrow", label), input);
     return { wrap, input };
   };
+  const choice = <T extends string>(label: string, options: readonly T[], current: T, name: (value: T) => string) => {
+    let value = current;
+    const wrap = ctx.el("div", "mcp-field");
+    const group = ctx.el("div", "seg mcp-segment");
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", label);
+    for (const option of options) {
+      const button = ctx.el("button", "", name(option)) as HTMLButtonElement;
+      button.type = "button";
+      button.setAttribute("aria-pressed", String(option === current));
+      button.addEventListener("click", () => {
+        value = option;
+        for (const selected of group.querySelectorAll<HTMLButtonElement>("button")) selected.setAttribute("aria-pressed", String(selected === button));
+        group.dispatchEvent(new Event("change"));
+      });
+      group.append(button);
+    }
+    wrap.append(ctx.el("span", "eyebrow", label), group);
+    return {
+      wrap,
+      group,
+      get value() {
+        return value;
+      },
+      disable: () => {
+        for (const button of group.querySelectorAll<HTMLButtonElement>("button")) button.disabled = true;
+      },
+    };
+  };
   const failure = (error: unknown) => ctx.showToast(error instanceof Error ? error.message : String(error), "warn");
 
   const reload = async () => {
@@ -69,25 +98,9 @@ export function createMcpSheet(ctx: ClientContext) {
     const form = ctx.el("form", "mcp-editor") as HTMLFormElement;
     const name = field(ctx.t("web.mcp.name"), oldName);
     if (oldName) name.input.disabled = true;
-    const scopeSelect = ctx.el("select") as HTMLSelectElement;
-    for (const optionName of ["user", "project"] as const) {
-      const option = ctx.el("option", "", ctx.t(`web.configSource.${optionName}`)) as HTMLOptionElement;
-      option.value = optionName;
-      scopeSelect.append(option);
-    }
-    scopeSelect.value = scope;
-    if (oldName) scopeSelect.disabled = true;
-    const scopeLabel = ctx.el("label", "mcp-field");
-    scopeLabel.append(ctx.el("span", "eyebrow", ctx.t("web.mcp.scope")), scopeSelect);
-    const transport = ctx.el("select") as HTMLSelectElement;
-    for (const optionName of ["stdio", "http"] as const) {
-      const option = ctx.el("option", "", optionName) as HTMLOptionElement;
-      option.value = optionName;
-      transport.append(option);
-    }
-    transport.value = original?.transport ?? "stdio";
-    const transportLabel = ctx.el("label", "mcp-field");
-    transportLabel.append(ctx.el("span", "eyebrow", ctx.t("web.mcp.transport")), transport);
+    const scopeChoice = choice(ctx.t("web.mcp.scope"), ["user", "project"] as const, scope, option => ctx.t(`web.configSource.${option}`));
+    if (oldName) scopeChoice.disable();
+    const transport = choice(ctx.t("web.mcp.transport"), ["stdio", "http"] as const, original?.transport ?? "stdio", option => option);
     const command = field(ctx.t("web.mcp.command"), original?.command);
     const args = field(ctx.t("web.mcp.args"), original?.args?.join("\n"), "textarea");
     const url = field(ctx.t("web.mcp.url"), original?.url);
@@ -99,44 +112,53 @@ export function createMcpSheet(ctx: ClientContext) {
       args.wrap.hidden = !stdio;
       url.wrap.hidden = stdio;
     };
-    transport.addEventListener("change", toggleTransport);
+    transport.group.addEventListener("change", toggleTransport);
     toggleTransport();
-    const enabled = ctx.el("input") as HTMLInputElement;
-    enabled.type = "checkbox";
-    enabled.checked = original?.enabled ?? true;
-    const enabledLabel = ctx.el("label", "mcp-check");
-    enabledLabel.append(enabled, ctx.el("span", "", ctx.t("web.mcp.enabled")));
+    const enabled = ctx.el("button", "settings-switch mcp-switch") as HTMLButtonElement;
+    enabled.type = "button";
+    enabled.setAttribute("role", "switch");
+    enabled.setAttribute("aria-label", ctx.t("web.mcp.enabled"));
+    enabled.setAttribute("aria-checked", String(original?.enabled ?? true));
+    enabled.addEventListener("click", () => enabled.setAttribute("aria-checked", String(enabled.getAttribute("aria-checked") !== "true")));
+    const enabledRow = ctx.el("div", "mcp-enabled");
+    enabledRow.append(ctx.el("span", "", ctx.t("web.mcp.enabled")), enabled);
     const agents = Object.fromEntries(
       ctx.AGENT_IDS.map(agent => {
-        const box = ctx.el("input") as HTMLInputElement;
-        box.type = "checkbox";
-        box.checked = original?.agents[agent] ?? false;
-        const label = ctx.el("label", "mcp-check");
-        label.append(box, ctx.el("span", "", ctx.AGENTS[agent].name));
-        return [agent, { box, label }];
+        const button = ctx.el("button", "mcp-agent-chip", ctx.AGENTS[agent].name) as HTMLButtonElement;
+        button.type = "button";
+        button.dataset.agent = agent;
+        button.setAttribute("aria-pressed", String(original?.agents[agent] ?? false));
+        button.addEventListener("click", () => button.setAttribute("aria-pressed", String(button.getAttribute("aria-pressed") !== "true")));
+        return [agent, button];
       }),
-    ) as Record<AgentId, { box: HTMLInputElement; label: HTMLElement }>;
+    ) as Record<AgentId, HTMLButtonElement>;
+    const agentGroup = ctx.el("div", "mcp-field");
+    const agentButtons = ctx.el("div", "mcp-agent-options");
+    agentButtons.setAttribute("role", "group");
+    agentButtons.setAttribute("aria-label", ctx.t("web.agents.label"));
+    agentButtons.append(...ctx.AGENT_IDS.map(agent => agents[agent]));
+    agentGroup.append(ctx.el("span", "eyebrow", ctx.t("web.agents.label")), agentButtons);
     const save = ctx.el("button", "primary-action", ctx.t("web.mcp.save")) as HTMLButtonElement;
     save.type = "submit";
     form.append(
       name.wrap,
-      scopeLabel,
-      transportLabel,
+      scopeChoice.wrap,
+      transport.wrap,
       command.wrap,
       args.wrap,
       url.wrap,
       env.wrap,
       envRefs.wrap,
       message(ctx.t("web.mcp.envHint")),
-      enabledLabel,
-      ...ctx.AGENT_IDS.map(agent => agents[agent].label),
+      enabledRow,
+      agentGroup,
       save,
     );
     form.addEventListener("submit", event => {
       event.preventDefault();
       const nextName = name.input.value.trim();
       if (!nextName) return;
-      const nextScope = scopeSelect.value as Scope;
+      const nextScope = scopeChoice.value;
       let next: McpServerConfig;
       try {
         next = {
@@ -146,8 +168,8 @@ export function createMcpSheet(ctx: ClientContext) {
             : { url: url.input.value.trim() }),
           env: readPairs(env.input.value),
           envRefs: readPairs(envRefs.input.value),
-          enabled: enabled.checked,
-          agents: Object.fromEntries(ctx.AGENT_IDS.map(agent => [agent, agents[agent].box.checked])) as McpServerConfig["agents"],
+          enabled: enabled.getAttribute("aria-checked") === "true",
+          agents: Object.fromEntries(ctx.AGENT_IDS.map(agent => [agent, agents[agent].getAttribute("aria-pressed") === "true"])) as McpServerConfig["agents"],
         };
       } catch (error) {
         failure(error);

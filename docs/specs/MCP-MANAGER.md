@@ -71,6 +71,19 @@ mcp: z.strictObject({
 - 適用: 「適用」操作で CLI ごとの差分（追加・更新・削除・警告）をプレビューに出し、確認してから書き込む。結果（成功・エラー）を表示する
 - 反映は各 CLI の次回起動からである旨を短く示す（起動中の Agent の再起動はしない）
 - UI 文言はリポジトリの流儀（体言止め・短く。CLAUDE.md の UI 文言ルール）と既存の i18n の仕組みに従う
+
+#### フォームの見た目（rework 2026-10-24）
+
+素の HTML コントロール（input / select / checkbox）のままでは画面の他の部分と不釣り合い。`style.css` の既存トークン（`--panel` `--sunken` `--line-strong` `--r` `--r-inner` `--ring` `--ease`、Agent 色 `--claude` `--codex` `--gemini`）で統一感のあるフォームにする。
+
+- テキスト入力・textarea: 枠は `border: 1px solid var(--line-strong)`・`border-radius: var(--r-inner)`・背景 `var(--sunken)`、focus で `box-shadow: var(--ring)`。`.model-form input` や `.brainstorm-form textarea` の流儀に合わせ、幅 100%・`box-sizing: border-box`
+- スコープ（ユーザー / プロジェクト）と接続方式（stdio / http）: select ではなく 2 択のセグメント切り替え（composer の送り先グループと同じ `aria-pressed` のボタン並び）にする
+- 有効: チェックボックスではなく `.settings-switch` と同じ見た目のトグル
+- Agent 割り当て: チェックボックスではなく Agent ごとのトグルチップ（選択時にその Agent の色で塗る。未選択は `--line-strong` の枠だけ）。並び・ラベルは `AGENT_META` の名前
+- 接続方式で不要な欄は隠す（stdio ならコマンド・引数、http なら URL だけを出す）
+- 一覧の状態（同期済み / 未設定 / 不一致 / 未対応 / 外部管理）はバッジ（小さい丸角のラベル）にし、不一致・未対応は `--warn` 系の色にする
+- ライト・ダーク両テーマで確認する（既存のテーマ切り替えボタンで切り替わる）
+- 新しい CSS は `style.css` の MCP の節にまとめ、既存のクラスを流用できるところは流用する
 - サーバー側は web-server に `/api/mcp` 系のエンドポイントを追加する（形は裁量）。プロジェクトのスコープは今開いている会話のプロジェクトを使う
 
 ### テスト方針
