@@ -34,6 +34,7 @@ ${UI_ICONS}
       ${button("detail", "list-tree", "web.top.detailTitle", "", 'aria-pressed="false"')}
       ${button("open-shared", "paperclip", "web.top.shared")}
       ${button("open-artifacts", "files", "web.top.artifacts")}
+      ${button("open-mcp", "terminal", "web.mcp.title")}
       ${button("open-conversations", "messages", "web.top.conversations")}
       ${button("cycle-theme", "monitor", "web.settings.theme")}
       ${button("open-settings", "settings", "web.top.settings")}

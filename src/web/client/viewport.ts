@@ -18,6 +18,7 @@ export function createViewport(ctx: ClientContext) {
     for (const [name, key, id] of [
       ["paperclip", "web.top.shared", "open-shared"],
       ["files", "web.top.artifacts", "open-artifacts"],
+      ["terminal", "web.mcp.title", "open-mcp"],
       ["settings", "web.top.settings", "open-settings"],
       ["list-tree", "web.mobile.detail", "detail"],
       ["folder-open", "web.mobile.openProject", "open-project"],
@@ -118,6 +119,7 @@ export function createViewport(ctx: ClientContext) {
   });
   ctx.$("#open-conversations").addEventListener("click", ctx.openConversations);
   ctx.$("#open-settings").addEventListener("click", ctx.openSettings);
+  ctx.$("#open-mcp").addEventListener("click", ctx.openMcp);
   ctx.$("#new-conversation").addEventListener("click", () => void ctx.send("/new", ctx.$("#new-conversation")));
   ctx.$("#new-brainstorm").addEventListener("click", ctx.openBrainstorm);
   ctx.$("#open-artifacts").addEventListener("click", ctx.openArtifacts);

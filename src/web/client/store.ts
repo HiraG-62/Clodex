@@ -43,6 +43,7 @@ export interface SharedStore {
     | "agent"
     | "agentSettings"
     | "settings"
+    | "mcp"
     | "mobileConnect"
     | "tokenConfirm"
     | "conversations"
@@ -189,6 +190,7 @@ export interface ClientContext extends ClientDeps {
   SWIPE_CLOSE_PX: 72;
   KEYBOARD_THRESHOLD_PX: 120;
   openSettings: () => void;
+  openMcp: () => void;
   mobileConnectSection: () => HTMLElement;
   openMobileConnect: () => Promise<void>;
   openArtifacts: () => void;

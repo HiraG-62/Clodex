@@ -1,4 +1,8 @@
+import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { McpManager } from "../mcp-manager/manager.js";
 import type { ConnectionStatus } from "./tailscale.js";
 import { type FeedItem, WebFeed, type WebState } from "./web-feed.js";
 import { buildWebPage } from "./web-page.js";
@@ -35,7 +39,12 @@ afterEach(async () => {
   server = undefined;
 });
 
-const setup = async (onInput?: (line: string) => Promise<void>, connect?: () => Promise<ConnectionStatus>, rotateToken?: () => string) => {
+const setup = async (
+  onInput?: (line: string) => Promise<void>,
+  connect?: () => Promise<ConnectionStatus>,
+  rotateToken?: () => string,
+  mcpPaths?: () => { homeDir: string; projectRoot: string } | undefined,
+) => {
   const feed = new WebFeed();
   const inputs: string[] = [];
   const errors: unknown[] = [];
@@ -47,6 +56,8 @@ const setup = async (onInput?: (line: string) => Promise<void>, connect?: () => 
     onInput: onInput ?? (async line => void inputs.push(line)),
     connect,
     rotateToken,
+    mcpPaths,
+    mcpManager: paths => new McpManager(paths, { run: () => ({ status: 0, stdout: "[]", stderr: "" }) }),
     onError: e => errors.push(e),
     listFiles: async () => ["README.md", "src/a.ts"],
     preview: {
@@ -85,6 +96,23 @@ const readEvents = async (response: Response, count: number): Promise<FeedItem[]
 };
 
 describe("startWebServer", () => {
+  it("MCP 設定を保存し、差分をプレビューしてから適用する", async () => {
+    const root = mkdtempSync(join(tmpdir(), "clodex-web-mcp-"));
+    const paths = { homeDir: join(root, "home"), projectRoot: join(root, "project") };
+    mkdirSync(paths.projectRoot, { recursive: true });
+    const { base } = await setup(undefined, undefined, undefined, () => paths);
+    const send = (path: string, body: unknown = {}) =>
+      fetch(`${base}/api/mcp/${path}`, { method: "POST", headers: { cookie: COOKIE, "content-type": "application/json" }, body: JSON.stringify(body) });
+    const server = { transport: "stdio", command: "node", enabled: true, agents: { claude: true } };
+    expect((await send("save", { scope: "user", servers: { mine: server } })).status).toBe(200);
+    const list = await fetch(`${base}/api/mcp`, { headers: { cookie: COOKIE } });
+    expect((await list.json()).user.mine).toEqual(server);
+    const preview = await (await send("preview")).json();
+    expect(preview.actions).toMatchObject([{ agent: "claude", name: "mine", kind: "add" }]);
+    expect((await send("apply", { id: "wrong" })).status).toBe(409);
+    expect((await send("apply", { id: preview.id })).status).toBe(200);
+    expect(JSON.parse(readFileSync(join(paths.homeDir, ".claude.json"), "utf8")).mcpServers.mine.command).toBe("node");
+  });
   it("同梱フォントだけを token なしで版付き URL から返す", async () => {
     const { base } = await setup();
     const fontUrl = PAGE.html.match(/url\((\/fonts\/geist-sans@[^/]+\/geist-sans-latin-400-normal\.woff2)\)/)?.[1];

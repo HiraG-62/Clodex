@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { clodexHomeDir, ensureUserConfigTemplate, loadConfig, loadConfigLayers, saveUserLanguage } from "./config.js";
+import { clodexHomeDir, ensureUserConfigTemplate, loadConfig, loadConfigLayers, saveMcpServers, saveUserLanguage } from "./config.js";
 
 const setup = (files: { user?: unknown; project?: unknown } = {}) => {
   const base = mkdtempSync(join(tmpdir(), "clodex-config-"));
@@ -40,6 +40,15 @@ describe("saveUserLanguage", () => {
 });
 
 describe("loadConfig", () => {
+  it("MCP サーバーを名前単位で重ね、予約名と不正な設定を拒否する", () => {
+    const server = { transport: "stdio", command: "node", enabled: true, agents: { claude: true } };
+    const override = { transport: "http", url: "https://example.invalid/mcp", enabled: false, agents: { codex: true } };
+    expect(
+      loadConfig(setup({ user: { mcp: { servers: { one: server, two: server } } }, project: { mcp: { servers: { two: override } } } })).mcp?.servers,
+    ).toEqual({ one: server, two: override });
+    expect(() => loadConfig(setup({ user: { mcp: { servers: { clodex: server } } } }))).toThrow(/clodex/);
+    expect(() => loadConfig(setup({ user: { mcp: { servers: { bad: { ...server, command: undefined } } } } }))).toThrow(/command/);
+  });
   it("検証設定を読み、オブジェクトはキーごとに重ねる", () => {
     expect(
       loadConfig(
@@ -225,6 +234,18 @@ describe("ensureUserConfigTemplate", () => {
     writeFileSync(blockedHome, "file");
     expect(() => ensureUserConfigTemplate(blockedHome)).not.toThrow();
   });
+});
+
+it("MCP 保存は指定スコープの mcp だけを書き換える", () => {
+  const paths = setup({ user: { web: { port: 5000 }, mcp: { servers: {} } }, project: { roles: { claude: "設計" } } });
+  const server = { transport: "http" as const, url: "https://example.invalid/mcp", enabled: true, agents: { codex: true } };
+  saveMcpServers(paths, "project", { shared: server });
+  expect(JSON.parse(readFileSync(join(paths.projectRoot, ".clodex.json"), "utf8"))).toEqual({
+    roles: { claude: "設計" },
+    mcp: { servers: { shared: server } },
+  });
+  expect(JSON.parse(readFileSync(join(paths.homeDir, ".clodex", "config.json"), "utf8"))).toEqual({ web: { port: 5000 }, mcp: { servers: {} } });
+  expect(() => saveMcpServers(paths, "user", { clodex: server })).toThrow(/clodex/);
 });
 
 it.each(["{ broken", '{/* comment */"language":"ja"}', '{"unknown":true}'])("言語保存の読み込みエラーに設定ファイルのパスを付ける: %s", user => {

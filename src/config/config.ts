@@ -19,6 +19,25 @@ const UPDATE_CHANNELS = ["stable", "dev"] as const;
 
 const nonNegativeInt = z.number().int().nonnegative();
 const role = z.string();
+const serverSchema = z
+  .strictObject({
+    transport: z.enum(["stdio", "http"]),
+    command: z.string().min(1).optional(),
+    args: z.array(z.string()).optional(),
+    url: z.url().optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    envRefs: z.record(z.string(), z.string().min(1)).optional(),
+    enabled: z.boolean(),
+    agents: z.strictObject(agentRecord(() => z.boolean().optional())),
+  })
+  .superRefine((server, context) => {
+    if (server.transport === "stdio" && !server.command) context.addIssue({ code: "custom", path: ["command"], message: "command is required" });
+    if (server.transport === "http" && !server.url) context.addIssue({ code: "custom", path: ["url"], message: "url is required" });
+  });
+const mcpServersSchema = z.record(z.string().min(1), serverSchema).superRefine((servers, context) => {
+  if ("clodex" in servers) context.addIssue({ code: "custom", path: ["clodex"], message: "clodex is reserved" });
+});
+export type McpServerConfig = z.infer<typeof serverSchema>;
 
 const configSchema = z.strictObject({
   sandbox: z.boolean().optional(),
@@ -50,6 +69,7 @@ const configSchema = z.strictObject({
       fiveHourThreshold: z.number().min(0).max(100).optional(),
     })
     .optional(),
+  mcp: z.strictObject({ servers: mcpServersSchema.optional() }).optional(),
 });
 
 export type ClodexConfig = z.infer<typeof configSchema>;
@@ -111,6 +131,7 @@ export const loadConfigLayers = ({ homeDir, projectRoot }: ConfigPaths): ConfigL
   for (const key of OBJECT_CONFIG_KEYS) {
     if (user[key] && project[key]) Object.assign(config, { [key]: { ...user[key], ...project[key] } });
   }
+  if (user.mcp || project.mcp) config.mcp = { servers: { ...user.mcp?.servers, ...project.mcp?.servers } };
   if (typeof user.threadTokenWarn === "object" && typeof project.threadTokenWarn === "object") {
     config.threadTokenWarn = { ...user.threadTokenWarn, ...project.threadTokenWarn };
   }
@@ -131,6 +152,15 @@ export const loadConfigLayers = ({ homeDir, projectRoot }: ConfigPaths): ConfigL
 };
 
 export const loadConfig = (paths: ConfigPaths): ClodexConfig => loadConfigLayers(paths).config;
+export const loadMcpServers = (paths: ConfigPaths, scope: ConfigSource): Record<string, McpServerConfig> =>
+  readConfigFile(scope === "user" ? join(paths.homeDir, USER_CONFIG_PATH) : join(paths.projectRoot, PROJECT_CONFIG_FILE)).mcp?.servers ?? {};
+
+export const saveMcpServers = (paths: ConfigPaths, scope: ConfigSource, servers: Record<string, McpServerConfig>): void => {
+  const path = scope === "user" ? join(paths.homeDir, USER_CONFIG_PATH) : join(paths.projectRoot, PROJECT_CONFIG_FILE);
+  const nextServers = mcpServersSchema.parse(servers);
+  const current = readConfigFile(path);
+  writeFileAtomic(path, `${JSON.stringify({ ...current, mcp: { ...current.mcp, servers: nextServers } }, null, 2)}\n`);
+};
 
 export const saveUserLanguage = (homeDir: string, language: Language): void => {
   const path = join(homeDir, USER_CONFIG_PATH);

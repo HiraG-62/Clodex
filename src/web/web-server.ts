@@ -1,10 +1,12 @@
 // スマホ等から clodex を操作・観測する Web サーバー（DESIGN.md §17 Web UI）
 // 127.0.0.1 だけで待ち受け、外部からは tailscale serve 経由で使う
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import * as QRCode from "qrcode";
+import { type ConfigPaths, clodexHomeDir, loadMcpServers, type McpServerConfig, saveMcpServers } from "../config/config.js";
+import { McpManager, type McpPlan } from "../mcp-manager/manager.js";
 import type { PreviewResult } from "../project/file-preview.js";
 import { APPLE_TOUCH_ICON_PNG_BASE64 } from "./apple-touch-icon.js";
 import { fontFilePath } from "./fonts.js";
@@ -52,6 +54,8 @@ export interface WebServerOptions {
   connect?: () => Promise<ConnectionStatus>;
   // スマホへの通知（DESIGN.md §28 スマホへの通知（Web Push））
   push?: PushEndpoints;
+  mcpPaths?: () => ConfigPaths | undefined;
+  mcpManager?: (paths: ConfigPaths) => McpManager;
 }
 
 export interface PushEndpoints {
@@ -163,7 +167,10 @@ export const startWebServer = async ({
   onError,
   connect,
   push,
+  mcpPaths,
+  mcpManager,
 }: WebServerOptions): Promise<WebServerHandle> => {
+  let mcpPreview: { id: string; projectRoot: string; plan: McpPlan } | undefined;
   const getConnection = connect ?? (() => queryTailscale(port));
   const connectionResult = async () => {
     const connection = await getConnection();
@@ -311,6 +318,53 @@ export const startWebServer = async ({
       }
     }
     if (!sameToken(cookieToken(req), token)) return void res.writeHead(HTTP.unauthorized).end();
+
+    if (url.pathname.startsWith("/api/mcp")) {
+      const paths = mcpPaths?.() ?? (feed.latestState()?.project ? { homeDir: clodexHomeDir(), projectRoot: feed.latestState()!.project } : undefined);
+      if (!paths) return void res.writeHead(HTTP.conflict).end();
+      const manager = mcpManager?.(paths) ?? new McpManager(paths);
+      try {
+        if (req.method === "GET" && url.pathname === "/api/mcp") {
+          const plan = manager.plan();
+          return sendJson(res, { user: loadMcpServers(paths, "user"), project: loadMcpServers(paths, "project"), entries: plan.entries, errors: plan.errors });
+        }
+        if (req.method === "POST" && url.pathname === "/api/mcp/save") {
+          const body = await readBody(req);
+          if (!body) return void res.writeHead(HTTP.badRequest).end();
+          const data: unknown = JSON.parse(body);
+          if (typeof data !== "object" || data === null || !("scope" in data) || !("servers" in data)) return void res.writeHead(HTTP.badRequest).end();
+          const input = data as { scope: unknown; servers: unknown };
+          if (
+            (input.scope !== "user" && input.scope !== "project") ||
+            typeof input.servers !== "object" ||
+            input.servers === null ||
+            Array.isArray(input.servers)
+          )
+            return void res.writeHead(HTTP.badRequest).end();
+          saveMcpServers(paths, input.scope, input.servers as Record<string, McpServerConfig>);
+          mcpPreview = undefined;
+          return sendJson(res, { ok: true });
+        }
+        if (req.method === "POST" && url.pathname === "/api/mcp/preview") {
+          const plan = manager.plan();
+          const id = randomUUID();
+          mcpPreview = { id, projectRoot: paths.projectRoot, plan };
+          return sendJson(res, { id, entries: plan.entries, actions: plan.actions, errors: plan.errors });
+        }
+        if (req.method === "POST" && url.pathname === "/api/mcp/apply") {
+          const body = await readBody(req);
+          const input: unknown = body ? JSON.parse(body) : undefined;
+          const id = typeof input === "object" && input !== null && "id" in input ? input.id : undefined;
+          if (!mcpPreview || mcpPreview.projectRoot !== paths.projectRoot || id !== mcpPreview.id) return void res.writeHead(HTTP.conflict).end();
+          const preview = mcpPreview;
+          mcpPreview = undefined;
+          return sendJson(res, manager.apply(preview.plan));
+        }
+      } catch (error) {
+        res.writeHead(HTTP.badRequest, { "content-type": "application/json; charset=utf-8" });
+        return void res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+      }
+    }
 
     if (req.method === "GET" && url.pathname === "/") {
       res.writeHead(HTTP.ok, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });

@@ -12,6 +12,13 @@ import { buildWebPage, ICON_SVG, MANIFEST } from "./web-page.js";
 const scriptsOf = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(match => match[1] ?? "");
 
 describe("buildWebPage", () => {
+  it("MCP シートへの入口と編集・プレビューのクライアントコードを含む", () => {
+    const html = buildWebPage("ja").html;
+    expect(html).toContain('id="open-mcp"');
+    expect(html).toContain("/api/mcp/save");
+    expect(html).toContain("/api/mcp/preview");
+    expect(html).toContain("/api/mcp/apply");
+  });
   it("添付一覧を枠内の本文より上に置き、独立したアップロードチップを出さない", () => {
     const html = buildWebPage("ja").html;
     const box = html.slice(html.indexOf('<div class="box">'), html.indexOf('<div class="bar">'));
