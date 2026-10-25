@@ -671,7 +671,8 @@ git:
 - 切り替えた値は `/new`・`/resume`・プロセスの再起動後も使う。project ごとに保存し、Clodex を起動し直しても使う（下記「Agent の設定の保存」）。失敗した切り替え（Claude が受け付けなかった値）は保存しない
 - 反映は次のターンから。実行中のターンには影響しない。停止中の Agent は次の起動時にその値で起動する
 - `/model` は model 名を検証しない（CLI が受け付けなければ、その返事を警告の通知で出す）。model 名は Agent ごとに違うので Agent の指定を必須にする
-- `/effort` の値: Claude は `low` / `medium` / `high` / `xhigh` / `max`（`claude --effort`）。Codex は `ReasoningEffort`（文字列。model ごとに対応する値が違う）。Agent を省略したときは両 Agent が受け付ける値だけを許す
+- `/effort` の値: Claude は `low` / `medium` / `high` / `xhigh` / `max`（`claude --effort`）。Codex は `ReasoningEffort`（文字列。model ごとに対応する値が違う）。Agent を省略したときは effort を持つ全 Agent が受け付ける値だけを許す
+- Gemini は effort を持たない（`agy models` の slug が effort 込みで、`--effort` を併用すると矛盾した組み合わせで起動が exit 1 になるため。model の切り替えが effort の切り替えを兼ねる）。`/effort gemini` は拒否し、画面にも effort を出さない
 - `/status` と Web UI に、各 Agent の今の model と effort を表示する。CLI の既定のままで実際の値が分からなければ `default`
 - 反映の方法（docs/spikes/model-effort.md で実測）: Codex は `turn/start` の `model` / `effort`（以降のターンにも引き継がれる）。Codex には毎ターン effort を明示して送る（依頼ごとの effort を次のターンに持ち越さない）。値は、依頼の `effort`（§11）があればそれ、無ければ人が `/effort` で決めた値、それも無ければ thread の開始時に読んだ既定の値。どれも分からなければ effort を付けず、依頼の `effort` も使わない（戻す値が無いまま上書きすると次のターンに持ち越すため。warn の notice を出す）。Claude は `/model <model>` / `/effort <level>` を user message として mailbox の 1 ターンで直列に送る。CLI の result 文言で成功を確認する。この設定用のターンは `turn_started` / `turn` を出さず、ログに Claude の枠を作らない（CLI の「this session only」という返事は Clodex の保存と食い違って見えるため出さない）。成功したら Clodex が「model を保存: <agent> → <model>」「effort を保存: <対象> → <level>」の 1 行を出し、失敗したら CLI の返事を警告の通知で出す
 
@@ -2382,7 +2383,7 @@ Google AI プランの購読で使える Antigravity CLI（`agy`）を 3 体目�
 
 G4（AntigravityAdapter）の設計（docs/spikes/antigravity.md の実測が根拠）:
 
-- `AGENT_IDS` に `gemini` を足す。registry は name `Gemini`・mark / 案 ID `G`・effort は `low|medium|high|xhigh|max`（agy の `--effort`）・message の `effort` は受けない（起動引数のみ）・usage は累積
+- `AGENT_IDS` に `gemini` を足す。registry は name `Gemini`・mark / 案 ID `G`・effort は持たない（model の slug が effort 込み。§9 Model / Effort）・message の `effort` は受けない・usage は累積
 - Adapter: `agy --input-format stream-json --output-format stream-json` の常駐プロセス（`AgentProcess` / `BaseAgentAdapter` の形）。実行ファイルは PATH に無ければ `%LOCALAPPDATA%agyinagy.exe`
   - session = `init` の `conversation_id`。再開・プロセスの入れ替えは `--conversation <id>`
   - event の対応: `step_update` の `agent_response`（`text_delta` を連結し、step の DONE で `text`）、`tool`（`tool_info.name` と parameters。`run_command` は検証の証跡の `command` に、ファイル系の tool は `files` に写す）、ターンごとの `result` で `turn`（本文は `response`）。`denied_actions` が付いたら warn の notice を出す

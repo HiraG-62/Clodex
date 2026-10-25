@@ -25,6 +25,7 @@
 - `agy models` の一覧は slug に effort 込み（`gemini-4-argon-medium`・`gemini-3.8-flash-low` など。プラン経由の Claude Opus/Sonnet 5.5・GPT-OSS 120B も並ぶ）。別に `--effort low|medium|high|xhigh|max` もある
 - `--mode accept-edits|auto|plan` がある。`--mode plan` でファイル作成を頼むと作成しなかった（ただし `init.permission_mode` は `request-review` のままで、モードはイベントに出ない）。Clodex の permission の対応候補: read-only=`--mode plan`、edit=`--mode accept-edits`、full=`--dangerously-skip-permissions`
 - 未知の `--model` は exit 1 の ERROR（フォールバックしない。docs）
+- `--model` と `--effort` の組み合わせが矛盾すると起動直後に exit 1（2026-10-25 実測、agy 1.4.7: `--model gemini-3.8-flash-low --effort high` → `error: invalid model selection (...): --model gemini-3.8-flash-low conflicts with --effort=high`。stdout に `result` の ERROR イベントも出る）。一覧の slug はすべて effort 込みなので、Clodex からは `--effort` を渡さない
 
 ## permission（headless）
 
