@@ -34,6 +34,22 @@ describe("AntigravityAdapter", () => {
     expect(events).toContainEqual({ type: "input_total", total: 10 });
   });
 
+  it("response が途中 text の連結なら最終回答だけを turn の text にする", async () => {
+    const fake = createFakeSpawner();
+    const adapter = new AntigravityAdapter(fake.spawn);
+    await adapter.start({ cwd: "C:\\project" });
+    fake.last.emit({ event: "init", conversation_id: "conversation-1" });
+    const turn = adapter.send("作業");
+    for (const [index, text] of ["構成を確認します\n", "読み込みます\n", "最終回答"].entries()) {
+      fake.last.emit({ event: "step_update", step_update: { step_type: "agent_response", step_index: index, state: "DONE", text_delta: text } });
+    }
+    fake.last.emit({ event: "result", result: { status: "SUCCESS", response: "構成を確認します\n読み込みます\n最終回答" } });
+    expect(await turn).toEqual({ status: "completed", text: "最終回答" });
+    const next = adapter.send("別の作業");
+    fake.last.emit({ event: "result", result: { status: "SUCCESS", response: "ストリーム無しの返答" } });
+    expect(await next).toEqual({ status: "completed", text: "ストリーム無しの返答" });
+  });
+
   it("denied_actions を error として画面に出す", async () => {
     const fake = createFakeSpawner();
     const adapter = new AntigravityAdapter(fake.spawn);

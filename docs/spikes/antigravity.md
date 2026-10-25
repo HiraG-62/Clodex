@@ -19,6 +19,7 @@
 - 再開: 別プロセスで `--conversation <conversation_id>`。前の会話の内容を覚えていた（pong の実測）。`-c` は直近の会話
 - Git Bash の pipe でも stdout は落ちない（古い版の既知問題は 1.4.6 では再現せず）
 - 診断（権限の拒否・認証・進捗）は stderr。成功は exit 0
+- `result.response` はそのターンの `agent_response` の全 text を区切りなしで連結した文字列（2026-10-25 に実ログで確認。途中経過の行も先頭に付くため、最終回答だけが欲しい側で切り出す）
 
 ## model / effort / mode
 

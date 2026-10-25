@@ -44,6 +44,7 @@ export class AntigravityAdapter extends BaseAgentAdapter {
   private restartNeeded = false;
   private instructionPending: string | undefined;
   private readonly responses = new Map<number, string>();
+  private turnTexts: string[] = [];
   private readonly toolsSeen = new Set<number>();
   private previousInput = 0;
   private previousCached = 0;
@@ -122,6 +123,7 @@ export class AntigravityAdapter extends BaseAgentAdapter {
   protected writeTurn(text: string, images: readonly string[]): void {
     this.responses.clear();
     this.toolsSeen.clear();
+    this.turnTexts = [];
     const content = [this.instructionPending, text, ...images.map(path => `${IMAGE_PREFIX}${path}`)].filter(Boolean).join("\n\n");
     this.instructionPending = undefined;
     this.proc?.write(JSON.stringify({ event: "user", message: { content } }));
@@ -171,7 +173,10 @@ export class AntigravityAdapter extends BaseAgentAdapter {
       const names = result.denied_actions.map(action => record(action)?.display_name ?? record(action)?.action ?? "?").join(", ");
       this.emit({ type: "error", message: `gemini: tools denied by permission mode: ${names}` });
     }
-    this.finishTurn({ status: result.status === "ERROR" ? "failed" : "completed", text: typeof result.response === "string" ? result.response : "" });
+    const response = typeof result.response === "string" ? result.response : "";
+    // agy の response は途中の text の素連結（docs/spikes/antigravity.md）。一致するときは最終回答だけを turn の text にする
+    const text = this.turnTexts.join("") === response ? (this.turnTexts.at(-1) ?? response) : response;
+    this.finishTurn({ status: result.status === "ERROR" ? "failed" : "completed", text });
   }
 
   private handleStep(event: Record<string, unknown>): void {
@@ -180,7 +185,10 @@ export class AntigravityAdapter extends BaseAgentAdapter {
       const text = `${this.responses.get(index) ?? ""}${typeof event.text_delta === "string" ? event.text_delta : ""}`;
       if (event.state === "DONE") {
         this.responses.delete(index);
-        if (text) this.emit({ type: "text", text });
+        if (text) {
+          this.turnTexts.push(text);
+          this.emit({ type: "text", text });
+        }
       } else this.responses.set(index, text);
       return;
     }
