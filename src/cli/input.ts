@@ -9,6 +9,7 @@ import {
   PERMISSION_LEVELS,
   type PermissionLevel,
 } from "../agents/agent-adapter.js";
+import { AGENT_META } from "../agents/agent-meta.js";
 import { LANGUAGES, type Language } from "../context/language.js";
 import { isLimitValue, LIMIT_NAMES, type LimitName } from "../coordinator/budget-manager.js";
 import type { SoloMode } from "../coordinator/coordinator.js";
@@ -51,7 +52,7 @@ export type ShellCommand =
   | { kind: "background"; command: string }
   | { kind: "processes"; id?: number }
   | { kind: "kill"; id: number }
-  | { kind: "invalid"; message: string };
+  | { kind: "invalid"; message: string; warning?: true };
 
 const MENTION_PATTERN = /^@(\S+)\s*([\s\S]*)$/;
 const COMMAND_PATTERN = /^\/(\S+)\s*(.*)$/;
@@ -92,6 +93,7 @@ const parseEffort = (arg: string): ShellCommand => {
     return (COMMON_EFFORT_LEVELS as readonly string[]).includes(first) ? { kind: "effort", level: first } : usage(EFFORT_USAGE);
   }
   if (!isAgentId(first)) return unknownAgent(first);
+  if (!AGENT_META[first].effortLevels.length) return { kind: "invalid", message: t("input.noEffort", { agent: AGENT_META[first].name }), warning: true };
   if (first === "claude" && !(CLAUDE_EFFORT_LEVELS as readonly string[]).includes(second)) {
     return usage(EFFORT_USAGE);
   }

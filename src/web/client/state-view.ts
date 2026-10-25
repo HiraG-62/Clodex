@@ -179,7 +179,7 @@ export function createStateView(ctx: ClientContext) {
         if (badge) h2.append(badge);
         const current = ctx.displayedAgent(agent);
         const summary = ctx.el("div", "strip-summary");
-        summary.title = ctx.t("web.agent.summary", {
+        summary.title = ctx.t(ctx.EFFORTS[agent.id].length ? "web.agent.summary" : "web.agent.summaryNoEffort", {
           model: current.modelLabel ?? ctx.displayDefault(current.model),
           effort: ctx.displayDefault(current.effort),
           permission: current.permission,
@@ -187,7 +187,7 @@ export function createStateView(ctx: ClientContext) {
         summary.setAttribute("aria-label", summary.title);
         summary.append(
           ctx.el("span", "model", current.modelLabel ?? ctx.displayDefault(current.model)),
-          ctx.el("span", "", `· ${ctx.displayDefault(current.effort)} ·`),
+          ...(ctx.EFFORTS[agent.id].length ? [ctx.el("span", "", `· ${ctx.displayDefault(current.effort)} ·`)] : [ctx.el("span", "", " · ")]),
           ctx.el("span", current.permission === "full" ? "permission-full" : "", current.permission),
         );
         if (Object.keys(ctx.store.pendingSettings[agent.id] ?? {}).length) {

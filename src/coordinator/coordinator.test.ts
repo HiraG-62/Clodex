@@ -917,14 +917,16 @@ describe("Coordinator", () => {
   it("起動時の設定（model・effort）は setModel / setEffort で保持し、AgentStartOptions には渡さない", async () => {
     const claude = new FakeAgentAdapter("claude");
     const codex = new FakeAgentAdapter("codex");
+    const gemini = new FakeAgentAdapter("gemini");
     const coordinator = new Coordinator({
       projectRoot: PROJECT_ROOT,
-      agents: { claude, codex, gemini: new FakeAgentAdapter("gemini") },
+      agents: { claude, codex, gemini },
       bus: new EventBus(),
       mcpUrlFor,
-      settings: { claude: { model: "haiku", effort: "high" }, codex: { effort: "low" } },
+      settings: { claude: { model: "haiku", effort: "high" }, codex: { effort: "low" }, gemini: { model: "gemini-3.8-flash-low", effort: "high" } },
     });
     expect([claude.model, claude.effort, codex.model, codex.effort]).toEqual(["haiku", "high", undefined, "low"]);
+    expect([gemini.model, gemini.effort]).toEqual(["gemini-3.8-flash-low", undefined]);
     void coordinator.sendToAgent("claude", "hi");
     await flush();
     expect(claude.starts[0]).not.toHaveProperty("model");
@@ -1508,7 +1510,7 @@ describe("Coordinator", () => {
     expect(coordinator.status().map(({ model, effort }) => ({ model, effort }))).toEqual([
       { model: "haiku", effort: "low" },
       { model: undefined, effort: "low" },
-      { model: undefined, effort: "low" },
+      { model: undefined, effort: undefined },
     ]);
   });
 

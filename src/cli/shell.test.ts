@@ -815,6 +815,16 @@ describe("createShell", () => {
     expect(printed).toEqual(["Saved model: claude → haiku", "Saved effort: codex → low", "Saved effort: all agents → high"]);
   });
 
+  it("/effort gemini を警告し、設定を保存しない", async () => {
+    const { coordinator, printed, notified, levels, saved, shell } = setup();
+    await shell.handleLine("/effort gemini high");
+    expect(coordinator.efforts).toEqual([]);
+    expect(saved).toEqual([]);
+    expect(printed).toEqual([]);
+    expect(notified).toEqual(["Gemini: effort is included in model"]);
+    expect(levels).toEqual(["warn"]);
+  });
+
   it("設定ターンが failed のとき成功表示を出さず、保存もしない", async () => {
     const { coordinator, printed, notified, levels, shell, saved } = setup();
     coordinator.settingResult = { status: "failed", text: "Model not found" };
@@ -836,7 +846,7 @@ describe("createShell", () => {
       { agents: ["claude", "codex", "gemini"], change: { permission: "full" } },
       { agents: ["codex"], change: { permission: "read-only" } },
       { agents: ["claude"], change: { model: "haiku" } },
-      { agents: ["claude", "codex", "gemini"], change: { effort: "low" } },
+      { agents: ["claude", "codex"], change: { effort: "low" } },
     ]);
   });
 

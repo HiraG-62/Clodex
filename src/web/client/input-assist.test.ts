@@ -22,8 +22,9 @@ describe("suggest", () => {
     for (const id of AGENT_IDS) {
       const text = `/effort ${id} `;
       const result = suggest(text, text.length, [], { agents: [], conversations: [], pendingInputs: [] });
-      expect(result?.items.map(item => item.label).sort()).toEqual([...AGENT_META[id].effortLevels].sort());
+      expect(result?.items.map(item => item.label).sort() ?? []).toEqual([...AGENT_META[id].effortLevels].sort());
     }
+    expect(suggest("/effort ", 8, [], { agents: [], conversations: [], pendingInputs: [] })?.items.map(item => item.label)).not.toContain("gemini");
   });
   it("@all を候補と強調表示に含める", () => {
     expect(suggest("@a", 2, [])?.items[0]?.insert).toBe("@all ");

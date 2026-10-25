@@ -417,7 +417,7 @@ export class Coordinator {
       const { permission, model, effort } = settings?.[id] ?? {};
       if (permission) this.detach(agents[id].setPermission(permission), id);
       if (model) this.detach(agents[id].setModel(model), id);
-      if (effort) this.detach(agents[id].setEffort(effort), id);
+      if (effort && AGENT_META[id].effortLevels.length) this.detach(agents[id].setEffort(effort), id);
     }
     const createMailbox = (id: AgentId) => {
       const resumeSessionId = options.resumeSessionIds?.[id];
@@ -1162,8 +1162,10 @@ export class Coordinator {
   }
 
   async setEffort(level: string, id?: AgentId): Promise<TurnResult | void> {
-    if (id) return this.mailboxes[id].enqueueEffort(level);
-    const results = await Promise.all(AGENT_IDS.map(agent => this.mailboxes[agent].enqueueEffort(level)));
+    if (id) return AGENT_META[id].effortLevels.length ? this.mailboxes[id].enqueueEffort(level) : undefined;
+    const results = await Promise.all(
+      AGENT_IDS.filter(agent => AGENT_META[agent].effortLevels.length).map(agent => this.mailboxes[agent].enqueueEffort(level)),
+    );
     return results.find(result => result.status === "failed") ?? results[0];
   }
 

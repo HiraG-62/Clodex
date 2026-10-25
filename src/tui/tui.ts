@@ -210,7 +210,7 @@ const StatusPanel = ({ state, feed, now }: { state: WebState; feed: TerminalFeed
             h(
               Text,
               { color: MUTED_COLOR },
-              `${agent.status === "busy" ? `${SPINNER_FRAMES[Math.floor(now / SPINNER_INTERVAL_MS) % SPINNER_FRAMES.length]} ` : ""}${status}${elapsed === undefined ? "" : ` · ${t("tui.elapsed", { seconds: elapsed })}`}${agent.subagents?.length ? ` · sub ${agent.subagents.length}` : ""}${agent.backgroundTasks?.length ? ` · bg ${agent.backgroundTasks.length}` : ""} · ${agent.modelLabel ?? agent.model ?? "default"} · ${agent.effort ?? "default"} ·`,
+              `${agent.status === "busy" ? `${SPINNER_FRAMES[Math.floor(now / SPINNER_INTERVAL_MS) % SPINNER_FRAMES.length]} ` : ""}${status}${elapsed === undefined ? "" : ` · ${t("tui.elapsed", { seconds: elapsed })}`}${agent.subagents?.length ? ` · sub ${agent.subagents.length}` : ""}${agent.backgroundTasks?.length ? ` · bg ${agent.backgroundTasks.length}` : ""} · ${agent.modelLabel ?? agent.model ?? "default"}${AGENT_META[agent.id].effortLevels.length ? ` · ${agent.effort ?? "default"}` : ""} ·`,
             ),
           ),
           h(Text, { color: agent.permission === "full" ? WARN_COLOR : MUTED_COLOR, bold: agent.permission === "full" }, agent.permission),

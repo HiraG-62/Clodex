@@ -186,6 +186,7 @@ describe("parseInput", () => {
     ["/effort max", /usage/],
     ["/effort claude minimal", /usage/],
     ["/effort codex", /usage/],
+    ["/effort gemini high", /Gemini.*effort.*model/],
   ])("不正な入力 %j は invalid", (line, pattern) => {
     const result = parseInput(line, "claude");
     expect(result.kind).toBe("invalid");

@@ -1,6 +1,7 @@
 // 人間の入力を Coordinator の操作に変換する（DESIGN.md §8）。readline 等の I/O は index.ts が持つ
 
 import { AGENT_IDS, type AgentId, type AgentStatus, type PermissionLevel, type SubagentState, type TurnResult } from "../agents/agent-adapter.js";
+import { AGENT_META } from "../agents/agent-meta.js";
 import type { ModelOption } from "../agents/startup-probe.js";
 import type { ConfigSources } from "../config/config.js";
 import { isRolePresetName, ROLE_PRESET_NAMES, ROLE_PRESETS, type RolePresetName } from "../config/role-presets.js";
@@ -398,7 +399,7 @@ export const createShell = ({
     }
     for (const { id, status, sessionId, permission, model, modelLabel, effort, usage } of coordinator().status()) {
       print(
-        t("shell.status", {
+        t(AGENT_META[id].effortLevels.length ? "shell.status" : "shell.statusNoEffort", {
           id,
           status,
           permission,
@@ -678,7 +679,10 @@ export const createShell = ({
       notify(result.text, "warn");
       return "continue";
     }
-    saveSettings(targets(command.agent), { effort: command.level });
+    saveSettings(
+      targets(command.agent).filter(id => AGENT_META[id].effortLevels.length),
+      { effort: command.level },
+    );
     print(t("shell.effort", { target: command.agent ?? t("shell.allAgents"), level: command.level }));
     return "continue";
   };
@@ -691,7 +695,8 @@ export const createShell = ({
     return "exit";
   };
   const handleInvalid = async (command: CommandOf<"invalid">): Promise<ShellOutcome> => {
-    print(command.message);
+    if (command.warning) notify(command.message, "warn");
+    else print(command.message);
     return "continue";
   };
   const handleBrainstorm = async (command: CommandOf<"brainstorm">): Promise<ShellOutcome> => {

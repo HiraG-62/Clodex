@@ -63,7 +63,6 @@ export class AntigravityAdapter extends BaseAgentAdapter {
       ...STREAM_ARGS,
       ...MODE_ARGS[this.permission],
       ...(this.model ? ["--model", this.model] : []),
-      ...(this.effort ? ["--effort", this.effort] : []),
       ...(options.resumeSessionId ? ["--conversation", options.resumeSessionId] : []),
     ];
     const command = findAgy(process.env);
@@ -108,13 +107,6 @@ export class AntigravityAdapter extends BaseAgentAdapter {
 
   override async setModel(model: string): Promise<void> {
     await super.setModel(model);
-    if (this.status === "stopped") return;
-    this.restartNeeded = true;
-    if (this.status === "idle") await this.restart();
-  }
-
-  override async setEffort(level: string): Promise<void> {
-    await super.setEffort(level);
     if (this.status === "stopped") return;
     this.restartNeeded = true;
     if (this.status === "idle") await this.restart();

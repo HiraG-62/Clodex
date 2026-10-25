@@ -214,29 +214,25 @@ export function createAgentStrip(ctx: ClientContext) {
       return button;
     };
     const modelChip = chip(agent.modelLabel ?? ctx.displayDefault(agent.model));
-    const effortChip = chip(ctx.displayDefault(agent.effort));
+    const effortChip = ctx.EFFORTS[agent.id].length ? chip(ctx.displayDefault(agent.effort)) : undefined;
     const permissionChip = chip(agent.permission);
     const updateChips = (incoming: AgentState) => {
       const current = ctx.displayedAgent(incoming);
       modelChip.textContent = current.modelLabel ?? ctx.displayDefault(current.model);
-      effortChip.textContent = ctx.displayDefault(current.effort);
+      if (effortChip) effortChip.textContent = ctx.displayDefault(current.effort);
       permissionChip.replaceChildren(
         ctx.icon(current.permission === "full" ? "shield-alert" : "shield"),
         document.createTextNode(current.permission === "full" ? "" : current.permission),
       );
       modelChip.prepend(ctx.icon("cpu"));
-      effortChip.prepend(ctx.icon("gauge"));
-      for (const button of [modelChip, effortChip, permissionChip]) {
+      effortChip?.prepend(ctx.icon("gauge"));
+      for (const button of [modelChip, effortChip, permissionChip].filter(button => button !== undefined)) {
         button.title = `${button === permissionChip ? current.permission : button.textContent}`;
         button.setAttribute("aria-label", button.title);
       }
       permissionChip.classList.toggle("warning", current.permission === "full");
       const pending = ctx.store.pendingSettings[agent.id];
-      for (const [button, key] of [
-        [modelChip, "model"],
-        [effortChip, "effort"],
-        [permissionChip, "permission"],
-      ] as const) {
+      for (const [button, key] of [[modelChip, "model"], ...(effortChip ? [[effortChip, "effort"] as const] : []), [permissionChip, "permission"]] as const) {
         button.classList.toggle("pending", pending?.[key] !== undefined);
         if (pending?.[key] !== undefined) button.title += ` · ${ctx.t("web.setting.pending")}`;
       }

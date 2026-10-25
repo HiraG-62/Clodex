@@ -26,5 +26,5 @@ export const AGENT_META: Record<AgentId, AgentMeta> = {
     cumulativeInput: false,
     ideaPrefix: "X",
   },
-  gemini: { name: "Gemini", effortLevels: CLAUDE_EFFORT_LEVELS, effortInMessage: false, usageHint: CLAUDE_USAGE_NOTE, cumulativeInput: true, ideaPrefix: "G" },
+  gemini: { name: "Gemini", effortLevels: [], effortInMessage: false, usageHint: CLAUDE_USAGE_NOTE, cumulativeInput: true, ideaPrefix: "G" },
 };

@@ -66,17 +66,18 @@ describe("AntigravityAdapter", () => {
     expect(await resumed).toEqual({ status: "completed", text: "完了" });
   });
 
-  it("permission・model・effort の変更でプロセスを入れ替える", async () => {
+  it("permission・model の変更でプロセスを入れ替え、effort は起動引数に含めない", async () => {
     const fake = createFakeSpawner();
     const adapter = new AntigravityAdapter(fake.spawn);
+    await adapter.setEffort("high");
     await adapter.start({ cwd: "C:\\project" });
+    expect(fake.calls[0]?.args).not.toContain("--effort");
     fake.last.emit({ event: "init", conversation_id: "conversation-1" });
     await adapter.setPermission("read-only");
     expect(fake.calls[1]?.args).toContain("plan");
     await adapter.setModel("flash");
     expect(fake.calls[2]?.args).toContain("flash");
-    await adapter.setEffort("high");
-    expect(fake.calls[3]?.args).toContain("high");
+    expect(fake.calls[2]?.args).not.toContain("--effort");
     expect(await adapter.steer()).toBe(false);
   });
 });

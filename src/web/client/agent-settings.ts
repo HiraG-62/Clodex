@@ -80,14 +80,16 @@ export function createAgentSettings(ctx: ClientContext) {
     });
     form.append(select, field, apply);
     model.append(form);
-    const effort = choice(
-      "effort",
-      ctx.t("web.agentSettings.effort"),
-      ctx.EFFORTS[id],
-      agent.effort ?? "",
-      v => v,
-      v => void ctx.requestSetting(id, "effort", v),
-    );
+    const effort = ctx.EFFORTS[id].length
+      ? choice(
+          "effort",
+          ctx.t("web.agentSettings.effort"),
+          ctx.EFFORTS[id],
+          agent.effort ?? "",
+          v => v,
+          v => void ctx.requestSetting(id, "effort", v),
+        )
+      : undefined;
     const restart = ctx.sheetButton(ctx.t("web.agentSettings.restart"), "secondary-action", () => {
       void ctx.send(`/new ${id}`, restart).then(ok => {
         if (ok) ctx.closeSheet();
@@ -101,7 +103,7 @@ export function createAgentSettings(ctx: ClientContext) {
       ...rules,
       permission,
       model,
-      effort,
+      ...(effort ? [effort] : []),
       ctx.el("div", "setting-pending"),
       restart,
     ]);

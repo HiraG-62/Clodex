@@ -124,7 +124,11 @@ export function createInputAssist(
           if (index === 1) values = simple(PERMISSIONS, labels.permission);
           break;
         case "effort":
-          if (index === 0) values = [...agentValues, ...simple(COMMON_EFFORTS, labels.effort)];
+          if (index === 0)
+            values = [
+              ...agentValues.filter(({ value }) => isAgentId(value) && AGENT_META[value].effortLevels.length),
+              ...simple(COMMON_EFFORTS, labels.effort),
+            ];
           if (index === 1 && previous[1] && isAgentId(previous[1])) {
             const levels = AGENT_META[previous[1]].effortLevels;
             const common = COMMON_EFFORTS.filter(level => levels.includes(level));
