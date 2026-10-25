@@ -19,6 +19,7 @@ const findGitToplevel = (cwd: string): string | undefined => {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
     }).trim();
     // git は Windows でも "E:/dev/x" 形式で返すので正規化する
     return out ? resolve(out) : undefined;
