@@ -76,6 +76,8 @@ const DEFAULT_RETRY_DELAY_MS = 30_000;
 const DEFAULT_LIMIT_RESUME_MARGIN_MS = 60_000;
 const MS_PER_SECOND = 1000;
 const LIMIT_CONTINUE = "[Clodex] Your usage limit has reset. Continue the task you were working on.";
+const DENIED_CONTINUE =
+  "Do not retry them. Continue with what you can, give your answer from what you already have, and say which permission is missing if needed.";
 const MAX_DELIVERY_ATTEMPTS = 2;
 const RETRY_NOTE =
   "[Clodex] Retry: your previous attempt at this message failed partway. Check the current state of the files before continuing; do not redo finished work.";
@@ -450,6 +452,12 @@ export class Coordinator {
           this.usage.clearContext(id);
         },
         message => this.metrics.deliver(message),
+        result => {
+          if (result.status !== "completed" || !result.deniedTools?.length) return undefined;
+          const text = `[Clodex] These tools were denied by the current permission mode: ${result.deniedTools.join(", ")}. ${DENIED_CONTINUE}`;
+          bus.publish({ kind: "notice", text });
+          return `${text}${this.reminder}`;
+        },
       );
     };
     this.mailboxes = agentRecord(createMailbox);

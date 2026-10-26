@@ -169,14 +169,14 @@ export class AntigravityAdapter extends BaseAgentAdapter {
       this.previousCached = cached;
       this.previousOutput = output;
     }
-    if (Array.isArray(result.denied_actions) && result.denied_actions.length) {
-      const names = result.denied_actions.map(action => record(action)?.display_name ?? record(action)?.action ?? "?").join(", ");
-      this.emit({ type: "error", message: `gemini: tools denied by permission mode: ${names}` });
-    }
+    const deniedTools = Array.isArray(result.denied_actions)
+      ? result.denied_actions.map(action => String(record(action)?.display_name ?? record(action)?.action ?? "?"))
+      : [];
+    if (deniedTools.length) this.emit({ type: "error", message: `gemini: tools denied by permission mode: ${deniedTools.join(", ")}` });
     const response = typeof result.response === "string" ? result.response : "";
     // agy の response は途中の text の素連結（docs/spikes/antigravity.md）。一致するときは最終回答だけを turn の text にする
     const text = this.turnTexts.join("") === response ? (this.turnTexts.at(-1) ?? response) : response;
-    this.finishTurn({ status: result.status === "ERROR" ? "failed" : "completed", text });
+    this.finishTurn({ status: result.status === "ERROR" ? "failed" : "completed", text, ...(deniedTools.length ? { deniedTools } : {}) });
   }
 
   private handleStep(event: Record<string, unknown>): void {

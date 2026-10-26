@@ -29,6 +29,7 @@ export interface AgentStartOptions {
 export interface TurnResult {
   status: "completed" | "interrupted" | "failed";
   text: string;
+  deniedTools?: readonly string[];
 }
 
 export interface AgentSendOptions {

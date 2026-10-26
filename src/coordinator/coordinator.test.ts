@@ -34,6 +34,98 @@ const setup = (projectRoot = PROJECT_ROOT, knownInputIds: readonly string[] = []
 
 const reviewRequest = { to: "codex", type: "REVIEW_REQUEST", taskId: "T-1", body: "review please", files: ["a.ts"] };
 
+describe("denied 後の続行", () => {
+  const denied = { status: "completed", text: "前置き", deniedTools: ["RunCommand", "CallMcpTool"] } as const;
+  const continuation =
+    "[Clodex] These tools were denied by the current permission mode: RunCommand, CallMcpTool. Do not retry them. Continue with what you can, give your answer from what you already have, and say which permission is missing if needed.";
+
+  it.each(["human", "message"])("%s の denied 後に一度だけ続行し、新しい入力で解除する", async source => {
+    const { coordinator, codex, events } = setup();
+    const send = () => {
+      if (source === "human") void coordinator.sendToAgent("codex", "調査");
+      else expect(coordinator.receiveMessage("claude", { to: "codex", type: "ISSUE", taskId: "T-1", body: "調査" }).ok).toBe(true);
+    };
+    send();
+    await flush();
+    codex.completeTurn(denied);
+    await flush();
+    expect(codex.sent).toHaveLength(2);
+    expect(codex.sent[1]).toBe(continuation);
+    expect(events).toContainEqual(expect.objectContaining({ kind: "notice", text: continuation }));
+    expect(events.filter(event => event.kind === "human")).toHaveLength(source === "human" ? 1 : 0);
+    codex.completeTurn(denied);
+    await flush();
+    expect(codex.sent).toHaveLength(2);
+    send();
+    await flush();
+    codex.completeTurn(denied);
+    await flush();
+    expect(codex.sent).toHaveLength(4);
+    expect(codex.sent[3]).toBe(continuation);
+    codex.completeTurn(denied);
+    await flush();
+    expect(coordinator.idle()).toBe(true);
+  });
+
+  it.each(["failed", "interrupted", "empty", "absent"])("%s では続行しない", async kind => {
+    const { coordinator, codex } = setup();
+    void coordinator.sendToAgent("codex", "調査");
+    await flush();
+    codex.completeTurn(
+      kind === "failed" || kind === "interrupted"
+        ? { ...denied, status: kind }
+        : { status: "completed", text: "回答", ...(kind === "empty" ? { deniedTools: [] } : {}) },
+    );
+    await flush();
+    expect(codex.sent).toHaveLength(1);
+    expect(coordinator.idle()).toBe(true);
+  });
+
+  it("model 設定の結果では続行しない", async () => {
+    const { coordinator, codex } = setup();
+    vi.spyOn(codex, "setModel").mockResolvedValue(denied);
+    await coordinator.setModel("model", "codex");
+    expect(codex.sent).toHaveLength(0);
+    expect(coordinator.idle()).toBe(true);
+  });
+
+  it("先に待機している新しい入力と続行入力の制限を分ける", async () => {
+    const { coordinator, codex } = setup();
+    void coordinator.sendToAgent("codex", "最初");
+    await flush();
+    void coordinator.sendToAgent("codex", "次");
+    for (let turn = 0; turn < 4; turn++) {
+      codex.completeTurn(denied);
+      await flush();
+    }
+    expect(codex.sent).toEqual(["最初", expect.stringContaining("次"), continuation, continuation]);
+    expect(coordinator.idle()).toBe(true);
+  });
+
+  it("続行入力は元の formal message の Budget chain を引き継がない", async () => {
+    const claude = new FakeAgentAdapter("claude");
+    const gemini = new FakeAgentAdapter("gemini");
+    const coordinator = new Coordinator({
+      projectRoot: PROJECT_ROOT,
+      agents: { claude, codex: new FakeAgentAdapter("codex"), gemini },
+      bus: new EventBus(),
+      mcpUrlFor,
+      limits: { maxMessagesPerChain: 1, maxReviewRoundsPerChain: 1, maxDelegationsPerChain: 1, maxDelegationDepth: 1 },
+    });
+    expect(coordinator.receiveMessage("claude", { to: "gemini", type: "ISSUE", taskId: "T-1", body: "調査" }).ok).toBe(true);
+    await flush();
+    gemini.completeTurn(denied);
+    await flush();
+    expect(gemini.sent[1]).toBe(continuation);
+    expect(coordinator.receiveMessage("gemini", { to: "claude", type: "QUESTION", taskId: "T-2", body: "確認" }).ok).toBe(true);
+    await flush();
+    gemini.completeTurn(denied);
+    claude.completeTurn({ status: "completed", text: "" });
+    await flush();
+    expect(coordinator.idle()).toBe(true);
+  });
+});
+
 describe("依頼の effort", () => {
   it.each(["DELEGATE", "REVIEW_REQUEST"])("%s の配送時に effort を渡し、人の入力には持ち越さない", async type => {
     const { coordinator, codex, events } = setup();

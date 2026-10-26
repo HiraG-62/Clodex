@@ -25,6 +25,7 @@ interface QueueItem {
   fresh?: true;
   signal?: AbortSignal;
   prepare?: PrepareSend;
+  deniedContinuation?: true;
   resolve: (result: TurnResult) => void;
 }
 
@@ -83,6 +84,7 @@ export class AgentMailbox {
     private readonly deliveryNote: () => string = () => "",
     private readonly onFreshSession: () => void = () => {},
     private readonly onDelivery: (message: AgentMessage) => void = () => {},
+    private readonly deniedContinuation: (result: TurnResult) => string | undefined = () => undefined,
   ) {}
 
   // 失敗しても reject せず failed の TurnResult を返す（呼び出し側は待たずに投げてよい）
@@ -310,6 +312,10 @@ export class AgentMailbox {
               : item.kind === "model" || item.kind === "effort"
                 ? await this.setting(item.kind, item.text)
                 : await this.deliver(item);
+          if (item.kind === "send" && !item.deniedContinuation && !this.closed) {
+            const text = this.deniedContinuation(result);
+            if (text) void this.push({ kind: "send", text, message: undefined, deniedContinuation: true });
+          }
           item.resolve(result);
           const hold = item.kind === "send" && result.status === "failed" ? this.limitHold() : undefined;
           if (hold) this.hold(hold);

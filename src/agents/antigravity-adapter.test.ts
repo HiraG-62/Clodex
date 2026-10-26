@@ -50,7 +50,7 @@ describe("AntigravityAdapter", () => {
     expect(await next).toEqual({ status: "completed", text: "ストリーム無しの返答" });
   });
 
-  it("denied_actions を error として画面に出す", async () => {
+  it("denied_actions を error と TurnResult に含める", async () => {
     const fake = createFakeSpawner();
     const adapter = new AntigravityAdapter(fake.spawn);
     const events: unknown[] = [];
@@ -62,8 +62,13 @@ describe("AntigravityAdapter", () => {
       event: "result",
       result: { status: "SUCCESS", response: "", denied_actions: [{ action: "command", display_name: "RunCommand" }, { action: "mcp" }] },
     });
-    expect(await turn).toEqual({ status: "completed", text: "" });
+    expect(await turn).toEqual({ status: "completed", text: "", deniedTools: ["RunCommand", "mcp"] });
     expect(events).toContainEqual({ type: "error", message: "gemini: tools denied by permission mode: RunCommand, mcp" });
+    expect(events).toContainEqual({ type: "turn", result: { status: "completed", text: "", deniedTools: ["RunCommand", "mcp"] } });
+    const next = adapter.send("続き");
+    await flush();
+    fake.last.emit({ event: "result", result: { status: "SUCCESS", response: "回答", denied_actions: [] } });
+    expect(await next).toEqual({ status: "completed", text: "回答" });
   });
 
   it("中断後は conversation を指定して再開する", async () => {
