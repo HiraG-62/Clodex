@@ -37,6 +37,11 @@
 
 両 Agent とも、短命のプロセスを起動して model の一覧と利用枠を取得できる。Agent の Lazy Start を待たずに Clodex の起動時に取得する。
 
+## 追記（2026-10-26）: probe は MCP サーバーを起動させない
+
+- `claude -p` は user 設定の MCP サーバーを全部起動する。npx / uvx / cmd の子孫のどれかが新しいコンソールを作り、Windows Terminal の窓が一瞬出る（実ログで確認）。`--mcp-config '{"mcpServers":{}}' --strict-mcp-config` を付けると起動せず、`initialize` の model 一覧は変わらず返る（実測: 13 件）
+- `agy models` も MCP サーバー（proxy・uvx）と `--bg-updater` を起動する。止めるオプションは無い（`agy models --help` は -h のみ）。隔離した実測では可視窓は出なかった
+
 ## 追記（2026-10-23）: 一覧は時期で変わる
 
 - Claude Code 2.1.308 で取り直すと、13 件（`default`・`opus`・`fable`・`sonnet`・`haiku` と、`claude-haiku-4-5-20251001`・`claude-sonnet-5`・`claude-opus-5`・`claude-fable-5`・`claude-opus-4-8`・`claude-opus-4-7`・`claude-opus-4-6`・`claude-sonnet-4-6`）。表示名はすべて版つき（`Fable 5.1`・`Fable 5` など）

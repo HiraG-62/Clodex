@@ -19,7 +19,18 @@ const CLAUDE_USAGE_REQUEST_ID = "startup-usage";
 const CODEX_INITIALIZE_ID = 1;
 const CODEX_USAGE_ID = 2;
 const CODEX_FIRST_LIST_ID = 3;
-const CLAUDE_ARGS = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"];
+// probe に MCP サーバーは不要。起動させると npx/uvx の子孫がコンソール窓を一瞬出すことがある
+const CLAUDE_ARGS = [
+  "-p",
+  "--input-format",
+  "stream-json",
+  "--output-format",
+  "stream-json",
+  "--verbose",
+  "--mcp-config",
+  '{"mcpServers":{}}',
+  "--strict-mcp-config",
+];
 const CODEX_ARGS = ["app-server"];
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
