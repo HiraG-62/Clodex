@@ -2,14 +2,14 @@ import { AGENT_IDS, type AgentId } from "../../agents/agent-adapter.js";
 import { chooseProjectPath } from "./project-picker.js";
 import { captureScrollPosition, restoreScrollPosition } from "./scroll-position.js";
 import type { ClientContext } from "./store.js";
+import { selectTarget } from "./targets.js";
 
 export const nextTarget = (current: AgentId): AgentId => AGENT_IDS[(AGENT_IDS.indexOf(current) + 1) % AGENT_IDS.length]!;
 
 export function createViewport(ctx: ClientContext) {
   ctx.$("#mobile-menu").addEventListener("click", ctx.openConversations);
   ctx.$("#target-toggle").addEventListener("click", () => {
-    ctx.store.target = nextTarget(ctx.store.target ?? ctx.store.state?.primary ?? AGENT_IDS[0]);
-    ctx.renderState();
+    selectTarget(ctx, nextTarget(ctx.store.target ?? ctx.store.state?.primary ?? AGENT_IDS[0]));
   });
   ctx.$("#mobile-more").addEventListener("click", () => {
     ctx.store.sheetKind = undefined;

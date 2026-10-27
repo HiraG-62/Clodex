@@ -4,6 +4,7 @@ import { connectionQuery } from "./connection-query.js";
 import { draftKey, staleDraftKeys } from "./drafts.js";
 import { nextCommandStarts, resolvePendingSettings } from "./pending.js";
 import type { ClientContext } from "./store.js";
+import { readTarget, staleTargetKeys, targetKey } from "./targets.js";
 import type { TimelineItem } from "./timeline.js";
 import {
   announcementKind,
@@ -142,6 +143,8 @@ export function createConnection(ctx: ClientContext) {
         const conversationId = ctx.store.state.conversations.find(conversation => conversation.current)?.id;
         const nextDraftKey = projectRoot && conversationId ? draftKey(projectRoot, conversationId) : undefined;
         if (ctx.store.currentDraftKey !== nextDraftKey) {
+          const solo = ctx.store.state.conversations.find(conversation => conversation.current)?.solo;
+          ctx.store.target = projectRoot && conversationId ? readTarget(ctx.storage, targetKey(projectRoot, conversationId), solo) : undefined;
           if (ctx.store.currentDraftKey) ctx.saveDraft(ctx.store.currentDraftKey, ctx.input.value);
           ctx.store.currentDraftKey = nextDraftKey;
           ctx.input.value = nextDraftKey ? (ctx.storage.get(nextDraftKey) ?? "") : "";
@@ -151,11 +154,9 @@ export function createConnection(ctx: ClientContext) {
           ctx.restoreAttachments();
         }
         if (projectRoot) {
-          for (const key of staleDraftKeys(
-            ctx.storage.keys(),
-            projectRoot,
-            ctx.store.state.conversations.map(conversation => conversation.id),
-          ))
+          const keys = ctx.storage.keys();
+          const conversationIds = ctx.store.state.conversations.map(conversation => conversation.id);
+          for (const key of [...staleDraftKeys(keys, projectRoot, conversationIds), ...staleTargetKeys(keys, projectRoot, conversationIds)])
             ctx.storage.remove(key);
         }
         ctx.store.pendingSettings = resolvePendingSettings(ctx.store.pendingSettings, ctx.store.state.agents, ctx.store.pendingDeadlines);

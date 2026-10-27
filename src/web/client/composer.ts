@@ -7,6 +7,7 @@ import { createInputAssist } from "./input-assist.js";
 import { isSendKey } from "./send-key.js";
 import { isShellInput } from "./shell-input.js";
 import type { ClientContext } from "./store.js";
+import { selectTarget } from "./targets.js";
 import { applyFeedItem, rebuildTimeline } from "./timeline.js";
 
 export function createComposer(ctx: ClientContext) {
@@ -242,8 +243,7 @@ export function createComposer(ctx: ClientContext) {
   ctx.input.placeholder = ctx.t(coarse ? "web.input.placeholderTouch" : "web.input.placeholder");
   for (const button of document.querySelectorAll<HTMLButtonElement>(".to button")) {
     button.addEventListener("click", () => {
-      ctx.store.target = button.dataset.agent as AgentId;
-      ctx.renderState();
+      selectTarget(ctx, button.dataset.agent as AgentId);
     });
   }
 
