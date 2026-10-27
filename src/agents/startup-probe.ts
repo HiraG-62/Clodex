@@ -31,7 +31,7 @@ const CLAUDE_ARGS = [
   '{"mcpServers":{}}',
   "--strict-mcp-config",
 ];
-const CODEX_ARGS = ["app-server"];
+const CODEX_ARGS = ["app-server", "-c", "mcp_servers={}"];
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 const nonempty = (value: unknown): value is string => typeof value === "string" && value.length > 0;

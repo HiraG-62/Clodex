@@ -40,7 +40,8 @@
 ## 追記（2026-10-26）: probe は MCP サーバーを起動させない
 
 - `claude -p` は user 設定の MCP サーバーを全部起動する。npx / uvx / cmd の子孫のどれかが新しいコンソールを作り、Windows Terminal の窓が一瞬出る（実ログで確認）。`--mcp-config '{"mcpServers":{}}' --strict-mcp-config` を付けると起動せず、`initialize` の model 一覧は変わらず返る（実測: 13 件）
-- `agy models` も MCP サーバー（proxy・uvx）と `--bg-updater` を起動する。止めるオプションは無い（`agy models --help` は -h のみ）。隔離した実測では可視窓は出なかった
+- `codex app-server` も config.toml の MCP サーバーを起動する。`-c mcp_servers={}` で止められ、`model/list` は変わらず返る（codex-cli 0.161 系で実測）
+- `agy models` も MCP サーバー（proxy・uvx）と `--bg-updater` を起動する。止めるオプションは無い（`agy models --help` は -h のみ、`--gemini_dir` 相当のグローバルフラグも無し）。`agy models` は出力後すぐ自然終了するため、起動途中の MCP 子プロセスが孤児になる。この「生成の瞬間に親が死んでいる」レースが Windows Terminal の窓が一瞬出る残りの経路（probe の kill では親が先に死んでいて木を辿れない）
 
 ## 追記（2026-10-23）: 一覧は時期で変わる
 
