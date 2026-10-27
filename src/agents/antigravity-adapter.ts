@@ -165,6 +165,8 @@ export class AntigravityAdapter extends BaseAgentAdapter {
         output: Math.max(0, output - this.previousOutput),
       });
       this.emit({ type: "input_total", total: input });
+      // agy の usage はセッション累積。差分がそのターンのプロンプト + 出力 = 今のコンテキスト量。上限は返さないので window なし
+      this.emit({ type: "context", tokens: Math.max(0, input - this.previousInput) + Math.max(0, output - this.previousOutput) });
       this.previousInput = input;
       this.previousCached = cached;
       this.previousOutput = output;

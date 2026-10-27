@@ -554,7 +554,7 @@ interface AgentAdapter {
 | `turn` | ターン完了（`TurnResult`）。自発ターンも含む |
 | `rate_limit` | 5 時間 / 7 日の利用率（%）と reset 時刻。プランに無い枠は含めない（Codex は枠の長さ `windowDurationMins` で見分ける。Pro は週の枠だけ） |
 | `compacted` | compact が行われた（Claude の `compact_boundary`）。コンテキストの大きさは次のターンまで unknown にする（§14）。Codex は compact 後の `thread/tokenUsage/updated` で大きさが届くので出さない |
-| `context` | 今のコンテキストの大きさ（token）と上限。Claude は最後の API 呼び出しの usage と `modelUsage[].contextWindow`、Codex は `thread/tokenUsage/updated` の `last.totalTokens` と `modelContextWindow` |
+| `context` | 今のコンテキストの大きさ（token）と上限。Claude は最後の API 呼び出しの usage と `modelUsage[].contextWindow`、Codex は `thread/tokenUsage/updated` の `last.totalTokens` と `modelContextWindow`。Gemini は `result.usage` の累積の差分（そのターンのプロンプト + 出力）。agy は上限を返さないので window なし（画面は token 数だけ出す） |
 | `exit` | プロセス終了 |
 | `error` | 認証違反・プロトコルエラー等 |
 

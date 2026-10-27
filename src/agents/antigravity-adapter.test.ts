@@ -32,6 +32,7 @@ describe("AntigravityAdapter", () => {
     expect(events).toContainEqual(expect.objectContaining({ type: "tool", name: "write_to_file", files: ["src/a.ts"] }));
     expect(events).toContainEqual({ type: "usage", input: 8, cachedInput: 2, output: 3 });
     expect(events).toContainEqual({ type: "input_total", total: 10 });
+    expect(events).toContainEqual({ type: "context", tokens: 13 });
   });
 
   it("response が途中 text の連結なら最終回答だけを turn の text にする", async () => {
