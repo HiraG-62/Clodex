@@ -63,6 +63,7 @@ describe("buildEnvelope", () => {
     expect(add).toContain("Send RESULT once when the corrected work is complete");
     const note = buildEnvelope({ ...followup, type: "NOTE" });
     expect(note).toContain("No reply is required. Take this into account in the current work.");
+    expect(buildEnvelope({ ...base, type: "NOTE" })).toContain("No reply is required. Keep this as reference information.");
     const cancel = buildEnvelope({ ...followup, type: "CANCEL" });
     expect(cancel).toContain('Reply with RESULT, status="canceled", replyTo="msg_original"');
     expect(cancel).toContain("Stop working on this request now");

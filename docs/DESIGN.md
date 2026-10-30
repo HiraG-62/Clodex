@@ -781,7 +781,7 @@ Formal message channel を別に持つ。
 | `DELEGATE` | 実装・調査の委譲 | 任意 |
 | `FIX` | 送った依頼（`DELEGATE` / `REVIEW_REQUEST`）の訂正 | 必須（元の依頼の ID） |
 | `ADD` | 送った依頼への要件・作業の追加 | 必須（元の依頼の ID） |
-| `NOTE` | 送った依頼の参考情報（作業を変えず知らせるだけ。返信不要） | 必須（元の依頼の ID） |
+| `NOTE` | 参考情報（作業を変えず知らせるだけ。返信不要）。`replyTo` 付きは送った依頼の続き、無しは単独の連絡（案の共有など） | 任意（付けるなら元の依頼の ID） |
 | `CANCEL` | 送った依頼の取りやめ | 必須（元の依頼の ID） |
 | `ANSWER` | `QUESTION` への回答 | 必須（`QUESTION` の ID） |
 | `RESULT` | 依頼（`DELEGATE` / `REVIEW_REQUEST`）の作業を終えたときの結果返却 | 必須 |
@@ -800,7 +800,7 @@ Agent が指定するフィールド:
 | `type` | ✓ | Message Types のいずれか |
 | `taskId` | ✓ | Task ID |
 | `body` | ✓ | 依頼内容・質問・結果の要約（自然文、最大 4,000 文字。§3.3 Minimal Context） |
-| `replyTo` | FIX / ADD / NOTE / CANCEL / ANSWER / RESULT / ACK で必須 | 返信元の message ID。`FIX` / `ADD` / `NOTE` / `CANCEL`（以下、続きの message）は自分が送った `DELEGATE` / `REVIEW_REQUEST` の ID でなければ拒否する。`ANSWER` は自分が受けた `QUESTION` の ID でなければ拒否する。`RESULT` で `QUESTION` に返したら拒否する（`ANSWER` を使うよう伝える） |
+| `replyTo` | FIX / ADD / CANCEL / ANSWER / RESULT / ACK で必須 | 返信元の message ID。`FIX` / `ADD` / `CANCEL` と `replyTo` 付きの `NOTE`（以下、続きの message）は自分が送った `DELEGATE` / `REVIEW_REQUEST` の ID でなければ拒否する。`replyTo` 無しの `NOTE` は単独の連絡として通常の message と同じに配送する（Budget も同じ。返信不要なので、依頼の処理中に送っても §12 の最終応答の自動転送は止めない）。`ANSWER` は自分が受けた `QUESTION` の ID でなければ拒否する。`RESULT` で `QUESTION` に返したら拒否する（`ANSWER` を使うよう伝える） |
 | `commit` | | 参照する commit hash |
 | `files` | | 参照する file path（project root からの相対パス） |
 | `spec` | | `DELEGATE` / `REVIEW_REQUEST` / `FIX` / `ADD` / `NOTE` / `ANSWER` / `RESULT` のみ。依頼の仕様を書いた設計書の path（project root からの相対パス）。`ANSWER` では、`QUESTION` に答えるために更新した設計書を渡す。送信時に通常ファイルとして存在しなければ拒否する（project root の外も拒否） |
@@ -870,7 +870,7 @@ Coordinator が付与するフィールド（Agent の自己申告は使わな�
 - `parallel`（省略可、boolean）: `DELEGATE` / `REVIEW_REQUEST` のみ。宛先が作業中（実行中のターンか配送待ちがある）なら、子の会話を立ててそこで受けさせる（§28 D1「子の会話で並列に受ける」）。作業中でなければ通常どおり配送する（`worktree: true` を除く。下記）。`interrupt`・`fresh` と両方 `true` なら拒否する（子の会話は常に新しい session）
 - `worktree`（省略可、boolean）: `parallel` のときだけ。子の会話を新しい worktree で作業させる（同じファイルに触る危険の判断は送る側が行う）。`worktree: true` なら、宛先が作業中でなくても子の会話を立てる（送る側が作業場所を分けるよう求めているので、本体の作業ツリーで動かさない）
 - `fresh`（省略可、boolean）: `DELEGATE` / `REVIEW_REQUEST` のみ（ほかの type は拒否する）。`true` なら、宛先の session を新しくしてから届ける（下記 §12「新しい session で届ける」）。省略時は設定の `freshThread` の既定（無ければ `false`）。`interrupt` と両方 `true` なら拒否する（新しい session には割り込めない）
-- 続きの message（`FIX` / `ADD` / `NOTE` / `CANCEL`）は `interrupt` の指定によらず、宛先が元の依頼（`replyTo`）を処理中なら、そのターンに足す。`fresh`・`parallel` は付けられない
+- 続きの message（`FIX` / `ADD` / `replyTo` 付きの `NOTE` / `CANCEL`）は `interrupt` の指定によらず、宛先が元の依頼（`replyTo`）を処理中なら、そのターンに足す。`fresh`・`parallel` は付けられない
   - `FIX` / `ADD` / `NOTE`: 処理中でなければ（まだ配送待ち・もう終えた）、今の session に通常どおり配送する（`fresh` にはしない。前の作業を覚えている session で受けるため）
   - `CANCEL`: 元の依頼がまだ配送待ちなら、mailbox から外して捨てる（宛先には届けない。message のカードには残す）。処理中なら割り込みで「この依頼の作業をやめ、どこまでやったかを `RESULT`（`status: canceled`）で返す」と伝える。配送待ちでも処理中でもなければ（もう終えた）拒否する
   - 子の会話（`parallel`）で受けた依頼にも同じに使える（子の会話へ届ける）

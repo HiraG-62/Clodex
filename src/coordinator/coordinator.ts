@@ -22,7 +22,7 @@ import { changedSections } from "../context/spec-sections.js";
 import { t } from "../i18n/i18n.js";
 import type { ConversationRecovery } from "../project/recovery-store.js";
 import { resolveSpecFile } from "../project/spec-file.js";
-import { type AgentMessage, type CreateMessageResult, createMessage, FOLLOWUP_TYPES, MAX_BODY_LENGTH } from "../protocol/messages.js";
+import { type AgentMessage, type CreateMessageResult, createMessage, isFollowup, MAX_BODY_LENGTH } from "../protocol/messages.js";
 import type { AskUserResult, PendingQuestion } from "../protocol/questions.js";
 import { AgentMailbox, type PreparedSend } from "./agent-mailbox.js";
 import { type BrainstormConfig, type BrainstormResponse, roundPrompt, summaryPrompt } from "./brainstorm.js";
@@ -713,19 +713,19 @@ export class Coordinator {
     if (message.type === "ANSWER" && (repliedTo?.type !== "QUESTION" || repliedTo.to !== message.from || repliedTo.from !== message.to))
       return { ok: false, error: "replyTo: ANSWER must reply to a QUESTION received from the recipient" };
     if (
-      FOLLOWUP_TYPES.has(message.type) &&
+      isFollowup(message) &&
       ((repliedTo?.type !== "DELEGATE" && repliedTo?.type !== "REVIEW_REQUEST") || repliedTo.from !== message.from || repliedTo.to !== message.to)
     )
       return { ok: false, error: `replyTo: ${message.type} must refer to a DELEGATE or REVIEW_REQUEST you sent to the recipient` };
     if (message.type === "RESULT" && repliedTo?.type === "QUESTION") return { ok: false, error: 'replyTo: reply to a QUESTION with type="ANSWER"' };
     const requestState =
-      FOLLOWUP_TYPES.has(message.type) && message.replyTo
+      isFollowup(message) && message.replyTo
         ? message.thread && this.options.threadRequestState
           ? this.options.threadRequestState(message.thread, message.replyTo, message.to)
           : this.requestState(message.replyTo, message.to)
         : undefined;
     if (message.type === "CANCEL" && requestState === "finished") return { ok: false, error: "replyTo: the request is already finished" };
-    if (FOLLOWUP_TYPES.has(message.type)) {
+    if (isFollowup(message)) {
       if (requestState === "active") message.interrupt = true;
       else delete message.interrupt;
     }
@@ -739,14 +739,14 @@ export class Coordinator {
     }
 
     // 送信元が処理中の message を親として chain を決める（DESIGN.md §14）
-    const parent = parentOverride ?? (FOLLOWUP_TYPES.has(message.type) ? repliedTo : this.mailboxes[message.from].current);
+    const parent = parentOverride ?? (isFollowup(message) ? repliedTo : this.mailboxes[message.from].current);
     const budgetError = this.budget.admit(message, parent);
     if (budgetError) {
       bus.publish({ kind: "agent", agent: message.from, event: { type: "error", message: humanBudgetError(budgetError) } });
       return { ok: false, error: budgetError };
     }
 
-    if (parent && RETRIED_TYPES.has(parent.type) && message.to === parent.from) this.repliedRequests.add(parent.id);
+    if (parent && RETRIED_TYPES.has(parent.type) && message.to === parent.from && message.type !== "NOTE") this.repliedRequests.add(parent.id);
     if (message.type === "CANCEL" && requestState === "active" && message.replyTo && !message.thread) this.repliedRequests.add(message.replyTo);
     if (!forwarded && message.type !== "ACK" && this.handoffTurns[message.from] !== undefined) this.handoffTurns[message.from] = true;
     this.messages.set(message.id, message);
@@ -836,12 +836,12 @@ export class Coordinator {
       return;
     }
     const mailbox = this.mailboxes[message.to];
-    const followsCurrentRequest = FOLLOWUP_TYPES.has(message.type) && mailbox.current?.id === message.replyTo;
+    const followsCurrentRequest = isFollowup(message) && mailbox.current?.id === message.replyTo;
     if (attempt > 1) this.options.bus.publish({ kind: "retry", to: message.to, messageId: message.id, attempt });
     const steerable =
       (message.type === "ANSWER" && this.options.agents[message.to].status === "busy") ||
       followsCurrentRequest ||
-      (!FOLLOWUP_TYPES.has(message.type) && message.interrupt && mailbox.current?.from === message.from);
+      (!isFollowup(message) && message.interrupt && mailbox.current?.from === message.from);
     if (message.type === "CANCEL" && !followsCurrentRequest) return;
     if (!message.fresh && steerable) {
       const prepared = await this.prepareMessage(message, attempt, true);

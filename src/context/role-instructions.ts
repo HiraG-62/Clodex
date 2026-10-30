@@ -18,7 +18,7 @@ const PERMISSION_NOTE = "The human cannot approve tool permissions interactively
 // 指示してから完了するまで何も見えない状態を避ける（DESIGN.md §17 ログの「方針」）
 // 割り込みは手戻りを防ぐときだけ（DESIGN.md §28 v0.3 C）
 const INTERRUPT_NOTE =
-  "For a DELEGATE / REVIEW_REQUEST you sent, use FIX to correct it, ADD for new requirements, NOTE for reference information, or CANCEL to withdraw it. Set replyTo to the original request ID. Use DELEGATE for a new task.";
+  "For a DELEGATE / REVIEW_REQUEST you sent, use FIX to correct it, ADD for new requirements, NOTE for reference information, or CANCEL to withdraw it. Set replyTo to the original request ID. Use DELEGATE for a new task. To share information that needs no reply and is not about a request you sent, send NOTE without replyTo.";
 const FRESH_NOTE =
   "You may use fresh: true when sending a new task. The recipient starts without its earlier context, so make the envelope and spec sufficient to do the work.";
 const PARALLEL_NOTE =

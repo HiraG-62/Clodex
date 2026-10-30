@@ -2046,6 +2046,24 @@ describe("FIX の配送", () => {
 });
 
 describe("続きの message", () => {
+  it("replyTo の無い NOTE は単独の連絡として配送し、依頼中でも最終応答の自動転送を止めない", async () => {
+    const { claude, codex, events, coordinator } = setup();
+    const request = coordinator.receiveMessage("claude", reviewRequest);
+    if (!request.ok) throw new Error("依頼の作成失敗");
+    await flush();
+    const note = coordinator.receiveMessage("codex", { to: "claude", type: "NOTE", taskId: "IDEA", body: "案の共有" });
+    expect(note).toMatchObject({ ok: true, message: { type: "NOTE" } });
+    if (note.ok) expect(note.message.interrupt).toBeUndefined();
+    await flush();
+    expect(claude.sent.at(-1)).toContain("Type: NOTE");
+    expect(claude.sent.at(-1)).toContain("Keep this as reference information.");
+    codex.completeTurn({ status: "completed", text: "レビュー完了" });
+    await flush();
+    const auto = events.flatMap(event => (event.kind === "message" && event.message.auto ? [event.message] : []));
+    expect(auto).toContainEqual(expect.objectContaining({ type: "RESULT", replyTo: request.message.id }));
+    claude.completeTurn({ status: "completed", text: "" });
+  });
+
   it.each(["ADD", "NOTE", "CANCEL"] as const)("%s は送信元の依頼だけを参照できる", type => {
     const { coordinator } = setup();
     const request = coordinator.receiveMessage("codex", { to: "claude", type: "DELEGATE", taskId: "T", body: "依頼" });

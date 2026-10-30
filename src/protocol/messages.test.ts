@@ -52,8 +52,13 @@ describe("createMessage", () => {
       message: { type, replyTo: "msg_original" },
     });
   });
-  it.each(["FIX", "ADD", "NOTE", "CANCEL"] as const)("%s は replyTo と利用可能なフィールドを検証する", type => {
+  it("NOTE は replyTo 無しでも単独の連絡として送れる", () => {
+    expect(createMessage({ ...reviewRequest, type: "NOTE" }, context)).toMatchObject({ ok: true, message: { type: "NOTE" } });
+  });
+  it.each(["FIX", "ADD", "CANCEL"] as const)("%s は replyTo が無ければ拒否する", type => {
     expect(createMessage({ ...reviewRequest, type }, context).ok).toBe(false);
+  });
+  it.each(["FIX", "ADD", "NOTE", "CANCEL"] as const)("%s は利用可能なフィールドを検証する", type => {
     for (const fields of [{ fresh: true }, { parallel: true }, { worktree: true }, { status: "done" }, { issues: [] }])
       expect(createMessage({ ...reviewRequest, type, replyTo: "msg_original", ...fields }, context).ok).toBe(false);
   });

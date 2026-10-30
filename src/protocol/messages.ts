@@ -14,7 +14,10 @@ const MESSAGE_ID_PREFIX = "msg_";
 const MESSAGE_ID_RANDOM_LENGTH = 8;
 
 export const FOLLOWUP_TYPES: ReadonlySet<MessageType> = new Set(["FIX", "ADD", "NOTE", "CANCEL"]);
-const TYPES_REQUIRING_REPLY_TO = new Set<MessageType>([...FOLLOWUP_TYPES, "ANSWER", "RESULT", "ACK"]);
+const TYPES_REQUIRING_REPLY_TO = new Set<MessageType>(["FIX", "ADD", "CANCEL", "ANSWER", "RESULT", "ACK"]);
+// replyTo の無い NOTE は単独の連絡で、依頼の続きではない（DESIGN.md §11）
+export const isFollowup = (message: { type: MessageType; replyTo?: string }): boolean =>
+  FOLLOWUP_TYPES.has(message.type) && (message.type !== "NOTE" || message.replyTo !== undefined);
 const TYPES_ALLOWING_ISSUES = new Set<MessageType>(["RESULT", "ISSUE"]);
 const TYPES_ALLOWING_FRESH = new Set<MessageType>(["DELEGATE", "REVIEW_REQUEST"]);
 const TYPES_ALLOWING_REWORK = new Set<MessageType>(["DELEGATE", "FIX", "ADD"]);
@@ -32,7 +35,7 @@ export const sendMessageShape = {
   type: z
     .enum(MESSAGE_TYPES)
     .describe(
-      "FIX corrects, ADD adds requirements to, NOTE informs about, CANCEL withdraws a DELEGATE / REVIEW_REQUEST you sent (replyTo = that request). Delivered into the recipient's running turn when it is working on it. ANSWER replies to a QUESTION; RESULT reports completed delegated work. Follow-ups, ANSWER, RESULT and ACK require replyTo",
+      "FIX corrects, ADD adds requirements to, NOTE informs about, CANCEL withdraws a DELEGATE / REVIEW_REQUEST you sent (replyTo = that request). Delivered into the recipient's running turn when it is working on it. NOTE without replyTo is a standalone note that needs no reply. ANSWER replies to a QUESTION; RESULT reports completed delegated work. FIX, ADD, CANCEL, ANSWER, RESULT and ACK require replyTo",
     ),
   taskId: z.string().min(1).describe("Task ID"),
   effort: z

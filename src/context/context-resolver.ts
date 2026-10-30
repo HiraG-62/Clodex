@@ -59,7 +59,8 @@ const specInstruction = (m: AgentMessage): string[] => {
 };
 
 const replyInstruction = (m: AgentMessage): string[] => {
-  if (m.type === "NOTE") return ["No reply is required. Take this into account in the current work."];
+  if (m.type === "NOTE")
+    return [m.replyTo ? "No reply is required. Take this into account in the current work." : "No reply is required. Keep this as reference information."];
   if (m.type === "CANCEL")
     return [`Stop working on this request now. Reply with RESULT, status="canceled", replyTo="${m.replyTo}", summarizing what was done and what was left.`];
   if (!REQUEST_TYPES.has(m.type)) return ["No reply is required."];
