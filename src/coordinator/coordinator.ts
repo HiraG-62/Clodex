@@ -58,7 +58,10 @@ export interface PendingMessage {
   type: AgentMessage["type"];
   taskId: string;
   text: string;
+  fresh?: true;
 }
+
+export type SteerQueuedResult = { ok: true } | { ok: false; reason: "missing" | "idle" | "holding" | "unsupported" | "fresh" | "rejected"; agent?: AgentId };
 
 const INPUT_ID_PREFIX = "in";
 export const RECOVERY_CONTINUE = "[Clodex] Clodex restarted and your previous turn was interrupted. Continue the task you were working on.";
@@ -1012,18 +1015,19 @@ export class Coordinator {
         type: message.type,
         taskId: message.taskId,
         text: message.body,
+        ...(message.fresh ? { fresh: true as const } : {}),
       })),
     );
   }
 
-  async steerQueued(id: string): Promise<{ ok: true } | { ok: false; reason: "missing" | "idle" | "holding" | "rejected"; agent?: AgentId }> {
+  async steerQueued(id: string): Promise<SteerQueuedResult> {
     const input = this.pendingInputs().find(item => item.id === id);
     const message = this.pendingMessages().find(item => item.id === id);
     const target = input ?? message;
     if (!target) return { ok: false, reason: "missing" };
     const mailbox = this.mailboxes[target.agent];
-    if (message && mailbox.pendingMessages.some(pending => pending.id === message.id && pending.fresh))
-      return { ok: false, reason: "rejected", agent: target.agent };
+    if (!AGENT_META[target.agent].steer) return { ok: false, reason: "unsupported", agent: target.agent };
+    if (message?.fresh) return { ok: false, reason: "fresh", agent: target.agent };
     if (mailbox.holding) return { ok: false, reason: "holding", agent: target.agent };
     if (this.options.agents[target.agent].status !== "busy") return { ok: false, reason: "idle", agent: target.agent };
     const steerId = input ? randomUUID() : id;

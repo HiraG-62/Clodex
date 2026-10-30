@@ -2058,6 +2058,7 @@ dogfooding で出た要望を 4 段階で入れる。小さく確実なものか
 - 人間: `@claude! <text>` / `@codex! <text>`。その Agent が実行中なら steer し、そうでなければ（steer できなければ）通常の送信としてキューに積む。人間の入力の event に `steer: true` を付け、画面は「割り込み」と出す
 - 送信待ちから: `/steer <id>`（Web UI は送信待ちの一覧の各行の「割り込み」。人間の入力・formal message の両方）。配送待ちの項目を mailbox から外し、宛先の実行中のターンに steer する。人間の入力は `@<agent>!` と同じ扱い（ログの発言に「割り込み」と届いた印を付ける。新しい発言は足さず、送ったときの発言を割り込みに変える）、formal message は `interrupt: true` と同じ扱い（Task envelope に `Interrupt: yes`、画面に「割り込み」）
   - 宛先が実行中でない・steer できなかったら、項目は送信待ちの元の位置に残し、`toast`（warn）で「{agent} は作業中でない」などと知らせる（失敗の理由に合わせて短く）。利用枠の上限で待っている宛先も steer しない
+  - steer に対応しない Agent（Gemini。agy の headless に実行中のターンへ足す手段が無い）と、新しい session で届ける（`fresh`）message は割り込めない。Web UI はその行の「割り込み」を押せなくし、`/steer` は理由（「{agent} は割り込み非対応」「新しい session の依頼は割り込み不可」）を返す。Agent ごとの対応可否は registry（§28 G1）に持つ
   - 成功の知らせは出さない（ログの発言の「割り込み」で分かる）
 - Agent: `send_message` の `interrupt: true`。宛先が**送信元からの message を処理中**のときだけ steer し（送信元が頼んだ作業の修正）、それ以外は通常どおりキューに積む。Budget の数え方は通常の message と同じ。Task envelope に `Interrupt: yes` を入れ、画面は「割り込み」と出す
 - tool の説明と定型文で「完了を待つと手戻りになる修正のときだけ `interrupt: true` にする」と伝える

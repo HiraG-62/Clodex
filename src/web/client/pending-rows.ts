@@ -1,4 +1,5 @@
 import type { AgentId } from "../../agents/agent-adapter.js";
+import { AGENT_META } from "../../agents/agent-meta.js";
 import type { PendingMessage } from "../../coordinator/coordinator.js";
 
 export type PendingRow = {
@@ -29,7 +30,7 @@ export function pendingRows(
   };
   const canSteer = (agent: AgentId): boolean => {
     const state = agents.find(item => item.id === agent);
-    return state?.status === "busy" && !state.holdUntil;
+    return AGENT_META[agent].steer && state?.status === "busy" && !state.holdUntil;
   };
   return [
     ...inputs.map(
@@ -51,7 +52,7 @@ export function pendingRows(
         type: message.type,
         text: message.text.split(/\r?\n/, 1)[0] ?? "",
         holdTime: holdTime(message.agent),
-        canSteer: canSteer(message.agent),
+        canSteer: !message.fresh && canSteer(message.agent),
       }),
     ),
   ];

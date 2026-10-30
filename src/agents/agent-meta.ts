@@ -15,9 +15,18 @@ interface AgentMeta {
   usageHint: string;
   cumulativeInput: boolean;
   ideaPrefix: string;
+  steer: boolean;
 }
 export const AGENT_META: Record<AgentId, AgentMeta> = {
-  claude: { name: "Claude", effortLevels: CLAUDE_EFFORT_LEVELS, effortInMessage: false, usageHint: CLAUDE_USAGE_NOTE, cumulativeInput: true, ideaPrefix: "C" },
+  claude: {
+    name: "Claude",
+    effortLevels: CLAUDE_EFFORT_LEVELS,
+    effortInMessage: false,
+    usageHint: CLAUDE_USAGE_NOTE,
+    cumulativeInput: true,
+    ideaPrefix: "C",
+    steer: true,
+  },
   codex: {
     name: "Codex",
     effortLevels: ["minimal", "low", "medium", "high", "xhigh"],
@@ -25,6 +34,8 @@ export const AGENT_META: Record<AgentId, AgentMeta> = {
     usageHint: CODEX_USAGE_NOTE,
     cumulativeInput: false,
     ideaPrefix: "X",
+    steer: true,
   },
-  gemini: { name: "Gemini", effortLevels: [], effortInMessage: false, usageHint: CLAUDE_USAGE_NOTE, cumulativeInput: true, ideaPrefix: "G" },
+  // agy の headless には実行中のターンへ入力を足す手段が無い（docs/spikes/antigravity.md）
+  gemini: { name: "Gemini", effortLevels: [], effortInMessage: false, usageHint: CLAUDE_USAGE_NOTE, cumulativeInput: true, ideaPrefix: "G", steer: false },
 };

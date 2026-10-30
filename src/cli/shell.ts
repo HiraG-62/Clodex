@@ -7,7 +7,7 @@ import type { ConfigSources } from "../config/config.js";
 import { isRolePresetName, ROLE_PRESET_NAMES, ROLE_PRESETS, type RolePresetName } from "../config/role-presets.js";
 import type { Language } from "../context/language.js";
 import { type BudgetLimits, DEFAULT_LIMITS, LIMIT_KEYS, LIMIT_NAMES, type LimitName } from "../coordinator/budget-manager.js";
-import type { PendingMessage, SoloMode } from "../coordinator/coordinator.js";
+import type { PendingMessage, SoloMode, SteerQueuedResult } from "../coordinator/coordinator.js";
 import type { ConversationTaskMetrics } from "../coordinator/task-metrics.js";
 import type { UsageSnapshot } from "../coordinator/usage-monitor.js";
 import type { HubProjectEntry, ProjectRemoveError } from "../hub/hub.js";
@@ -58,7 +58,7 @@ export interface ShellCoordinator {
   pendingQuestions(): PendingQuestion[];
   answer(id: string, answers: unknown): string | undefined;
   cancelInput(id?: string): PendingInput | PendingMessage | undefined;
-  steerQueued(id: string): Promise<{ ok: true } | { ok: false; reason: "missing" | "idle" | "holding" | "rejected"; agent?: AgentId }>;
+  steerQueued(id: string): Promise<SteerQueuedResult>;
   status(): AgentState[];
   // 作業中のターンも配送待ちも無い（solo の切り替えの条件）
   idle(): boolean;
@@ -520,15 +520,16 @@ export const createShell = ({
   const handleSteerQueued = async (command: CommandOf<"steerQueued">): Promise<ShellOutcome> => {
     const result = await coordinator().steerQueued(command.id);
     if (result.ok) return "continue";
-    const message =
-      result.reason === "missing"
-        ? t("shell.steerMissing", { id: command.id })
-        : result.reason === "idle"
-          ? t("shell.steerIdle", { agent: result.agent ?? "" })
-          : result.reason === "holding"
-            ? t("shell.steerHolding", { agent: result.agent ?? "" })
-            : t("shell.steerRejected");
-    notify(message, "warn");
+    const agent = result.agent ?? "";
+    const messages: Record<typeof result.reason, string> = {
+      missing: t("shell.steerMissing", { id: command.id }),
+      idle: t("shell.steerIdle", { agent }),
+      holding: t("shell.steerHolding", { agent }),
+      unsupported: t("shell.steerUnsupported", { agent }),
+      fresh: t("shell.steerFresh"),
+      rejected: t("shell.steerRejected"),
+    };
+    notify(messages[result.reason], "warn");
     return "continue";
   };
   const handleNew = async (command: CommandOf<"new">): Promise<ShellOutcome> => {

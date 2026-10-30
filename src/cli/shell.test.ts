@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentId, PermissionLevel, TurnResult } from "../agents/agent-adapter.js";
 import type { ConfigSources } from "../config/config.js";
 import { DEFAULT_LIMITS, LIMIT_KEYS } from "../coordinator/budget-manager.js";
-import type { PendingMessage, SoloMode } from "../coordinator/coordinator.js";
+import type { PendingMessage, SoloMode, SteerQueuedResult } from "../coordinator/coordinator.js";
 import { emptyTaskMetrics } from "../coordinator/task-metrics-summary.js";
 import type { Conversation, SavedSessions } from "../project/conversation-history.js";
 import type { CommandResult } from "./command-runner.js";
@@ -162,7 +162,7 @@ class FakeCoordinator implements ShellCoordinator {
     this.canceled.push(id);
     return this.pending.find(p => p.id === (id ?? "in2")) ?? this.messages.find(message => message.id === id);
   }
-  steerQueuedResult: { ok: true } | { ok: false; reason: "missing" | "idle" | "holding" | "rejected"; agent?: AgentId } = { ok: true };
+  steerQueuedResult: SteerQueuedResult = { ok: true };
   readonly queuedSteers: string[] = [];
   async steerQueued(id: string) {
     this.queuedSteers.push(id);
@@ -650,6 +650,12 @@ describe("createShell", () => {
     coordinator.steerQueuedResult = { ok: false, reason: "missing" };
     await shell.handleLine("/steer missing");
     expect(notified.at(-1)).toBe("not queued: missing");
+    coordinator.steerQueuedResult = { ok: false, reason: "unsupported", agent: "gemini" };
+    await shell.handleLine("/steer in3");
+    expect(notified.at(-1)).toBe("gemini does not support interrupts");
+    coordinator.steerQueuedResult = { ok: false, reason: "fresh", agent: "codex" };
+    await shell.handleLine("/steer msg_1");
+    expect(notified.at(-1)).toBe("new-session requests cannot interrupt");
   });
 
   it("/interrupt を Coordinator に渡し、Agent 指定なしなら実行中の command も止める", async () => {

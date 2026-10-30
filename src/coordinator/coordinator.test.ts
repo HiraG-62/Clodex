@@ -1935,6 +1935,24 @@ describe("Coordinator の割り込み（steer）", () => {
     coordinator["mailboxes"].codex.releaseHold();
     codex.completeTurn();
   });
+
+  it("割り込み非対応の Agent への割り込みは unsupported で断り、順番を保つ", async () => {
+    const gemini = new FakeAgentAdapter("gemini");
+    const coordinator = new Coordinator({
+      projectRoot: PROJECT_ROOT,
+      agents: { claude: new FakeAgentAdapter("claude"), codex: new FakeAgentAdapter("codex"), gemini },
+      bus: new EventBus(() => new Date(NOW)),
+      mcpUrlFor,
+    });
+    void coordinator.sendToAgent("gemini", "作業中");
+    await flush();
+    void coordinator.sendToAgent("gemini", "次");
+    expect(gemini.status).toBe("busy");
+    expect(await coordinator.steerQueued("in2")).toEqual({ ok: false, reason: "unsupported", agent: "gemini" });
+    expect(gemini.steered).toEqual([]);
+    expect(coordinator.pendingInputs().map(input => input.id)).toEqual(["in2"]);
+    gemini.completeTurn();
+  });
   it("/context の割り込みでは内部指示を Agent にだけ渡す", async () => {
     const { codex, events, coordinator } = setup();
     void coordinator.sendToAgent("codex", "作業中");

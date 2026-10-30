@@ -34,3 +34,13 @@ it("割り込みは宛先が作業中で上限待機中でない行だけ使え�
   expect(pendingRows(input, [], [{ id: "codex", status: "idle" }], "x")[0]?.canSteer).toBe(false);
   expect(pendingRows(input, [], [{ id: "codex", status: "busy", holdUntil: new Date().toISOString() }], "x")[0]?.canSteer).toBe(false);
 });
+
+it("割り込み非対応の Agent と新しい session の依頼は割り込めない", () => {
+  const busy = [
+    { id: "gemini" as const, status: "busy" },
+    { id: "codex" as const, status: "busy" },
+  ];
+  expect(pendingRows([{ id: "in1", agent: "gemini", text: "入力" }], [], busy, "x")[0]?.canSteer).toBe(false);
+  const fresh = { id: "msg_1", agent: "codex" as const, from: "claude" as const, type: "DELEGATE" as const, taskId: "T", text: "実装", fresh: true as const };
+  expect(pendingRows([], [fresh], busy, "x")[0]?.canSteer).toBe(false);
+});
