@@ -25,7 +25,18 @@ import { resolveSpecFile } from "../project/spec-file.js";
 import { type AgentMessage, type CreateMessageResult, createMessage, isFollowup, MAX_BODY_LENGTH } from "../protocol/messages.js";
 import type { AskUserResult, PendingQuestion } from "../protocol/questions.js";
 import { AgentMailbox, type PreparedSend } from "./agent-mailbox.js";
-import { type BrainstormConfig, type BrainstormResponse, roundPrompt, summaryPrompt } from "./brainstorm.js";
+import {
+  type BrainstormConfig,
+  type BrainstormPhase,
+  type BrainstormReason,
+  type BrainstormResponse,
+  type BrainstormStances,
+  debateOrder,
+  hasConsensus,
+  parseStance,
+  roundPrompt,
+  summaryPrompt,
+} from "./brainstorm.js";
 import { type BudgetLimits, BudgetManager, humanBudgetError } from "./budget-manager.js";
 import { DeliveryNotes } from "./delivery-notes.js";
 import type { EventBus } from "./event-bus.js";
@@ -107,6 +118,7 @@ export interface CoordinatorOptions {
   brainstormArtifactsDir?: string;
   brainstormPrimary?: AgentId;
   brainstormComplete?: boolean;
+  brainstormArtifact?: string;
   permissionLocked?: () => boolean;
   canStart?: () => boolean;
   onAgentStart?: () => void;
@@ -175,8 +187,16 @@ export class Coordinator {
   private readonly backgroundTasks: Record<AgentId, SubagentState[]> = agentRecord(() => []);
   private readonly recoveryListeners = new Set<() => void>();
   private stoppingRecovery: ConversationRecovery | undefined;
-  private brainstormPhase: "idle" | "round" | "summary" | "done" | "stopped" = "idle";
+  private brainstormPhase: BrainstormPhase = "idle";
   private brainstormRound = 0;
+  private brainstormTotal = 0;
+  private brainstormHumanTurn: ((value: { text?: string; conclude?: true }) => void) | undefined;
+  private readonly brainstormResponses: BrainstormResponse[] = [];
+  private readonly brainstormTurns = new Set<AgentId>();
+  private savedBrainstormArtifact: string | undefined;
+  get brainstormArtifact(): string | undefined {
+    return this.savedBrainstormArtifact;
+  }
   private brainstormHuman: Array<{ id: string; agent: AgentId; targets: readonly AgentId[]; text: string }> = [];
   private brainstormInFlightHuman: typeof this.brainstormHuman = [];
   private brainstormInterrupted = false;
@@ -184,11 +204,18 @@ export class Coordinator {
 
   get brainstormState(): { phase: string; round: number; total: number } | undefined {
     const config = this.options.brainstorm;
-    return config ? { phase: this.brainstormPhase, round: this.brainstormRound, total: config.rounds } : undefined;
+    return config ? { phase: this.brainstormPhase, round: this.brainstormRound, total: this.brainstormTotal } : undefined;
   }
 
   addBrainstormInput(agent: AgentId, text: string, targets: readonly AgentId[] = [agent]): void {
     const id = `${INPUT_ID_PREFIX}${++this.inputSeq}`;
+    if (this.brainstormPhase === "human" && this.brainstormHumanTurn) {
+      this.options.bus.publish({ kind: "human", agent, text, inputId: id });
+      const resume = this.brainstormHumanTurn;
+      this.brainstormHumanTurn = undefined;
+      resume({ text });
+      return;
+    }
     this.brainstormHuman.push({ id, agent, targets, text });
     this.options.bus.publish({ kind: "human", agent, text, inputId: id, nextRound: true });
     this.notifyRecoveryChange();
@@ -217,68 +244,133 @@ export class Coordinator {
     this.notifyRecoveryChange();
   }
 
-  async startBrainstorm(): Promise<void> {
-    const config = this.options.brainstorm;
-    if (!config || this.brainstormPhase !== "idle") return;
-    const responses: BrainstormResponse[] = [];
-    for (let round = 1; round <= config.rounds; round++) {
-      if (this.brainstormInterrupted) break;
-      this.brainstormPhase = "round";
-      this.brainstormRound = round;
-      this.options.bus.publish({ kind: "brainstorm", phase: "round", round, total: config.rounds });
-      this.notifyRecoveryChange();
-      const human = this.takeBrainstormInput();
-      const turns = AGENT_IDS.map(id =>
-        this.mailboxes[id].enqueue(
-          roundPrompt(
-            config,
-            round,
-            id,
-            responses.filter(response => response.round === round - 1 && peersOf(id).includes(response.agent)),
-            human,
-          ),
-          { suffix: this.reminder, signal: this.brainstormAbort.signal },
-        ),
-      );
-      const results = await Promise.all(turns);
-      const completed = !this.brainstormInterrupted && results.every(result => result.status === "completed");
+  advanceBrainstormHuman(action: "pass" | "conclude"): boolean {
+    if (this.brainstormPhase !== "human" || !this.brainstormHumanTurn) return false;
+    const resume = this.brainstormHumanTurn;
+    this.brainstormHumanTurn = undefined;
+    resume(action === "conclude" ? { conclude: true } : {});
+    return true;
+  }
+
+  private async waitBrainstormHuman(): Promise<{ text?: string; conclude?: true }> {
+    if (this.brainstormInterrupted) return {};
+    this.brainstormPhase = "human";
+    const input = new Promise<{ text?: string; conclude?: true }>(resolve => {
+      this.brainstormHumanTurn = resolve;
+    });
+    this.options.bus.publish({ kind: "brainstorm", phase: "human", round: this.brainstormRound, total: this.brainstormTotal });
+    this.notifyRecoveryChange();
+    const value = await input;
+    if (value.text) this.brainstormResponses.push({ round: this.brainstormRound, agent: "Human", text: value.text });
+    return value;
+  }
+
+  private async brainstormTurn(agent: AgentId, round: number): Promise<TurnResult> {
+    const config = this.options.brainstorm!;
+    const human = this.takeBrainstormInput();
+    const prompt = roundPrompt(config, round, agent, this.brainstormResponses, human);
+    for (const text of human) this.brainstormResponses.push({ round, agent: "Human", text });
+    this.brainstormTurns.add(agent);
+    try {
+      const result = await this.mailboxes[agent].enqueue(prompt, { suffix: this.reminder, signal: this.brainstormAbort.signal });
+      const completed = result.status === "completed" && !this.brainstormInterrupted;
       this.finishBrainstormInput(completed);
-      if (!completed) break;
-      for (const [index, id] of AGENT_IDS.entries()) responses.push({ round, agent: id, text: results[index]?.text ?? "" });
+      if (completed) this.brainstormResponses.push({ round, agent, text: result.text });
+      return result;
+    } finally {
+      this.brainstormTurns.delete(agent);
     }
-    if (responses.length === config.rounds * AGENT_IDS.length && !this.brainstormInterrupted) {
-      this.brainstormPhase = "summary";
-      this.options.bus.publish({ kind: "brainstorm", phase: "summary", total: config.rounds });
-      this.notifyRecoveryChange();
-      const primary = this.options.brainstormPrimary ?? "claude";
-      const result = await this.mailboxes[primary].enqueue(summaryPrompt(config, responses, this.takeBrainstormInput()), {
-        suffix: this.reminder,
-        signal: this.brainstormAbort.signal,
-      });
-      this.finishBrainstormInput(result.status === "completed" && !this.brainstormInterrupted);
-      if (result.status === "completed" && !this.brainstormInterrupted) {
-        const dir = this.options.brainstormArtifactsDir;
-        if (dir) {
-          try {
-            mkdirSync(dir, { recursive: true });
-            const path = join(dir, `brainstorm-${new Date().toISOString().replace(/[:.]/g, "-")}.md`);
-            writeFileSync(path, `${result.text}\n`, "utf8");
-            this.options.bus.publish({ kind: "brainstorm", phase: "summary", total: config.rounds, artifact: path });
-          } catch (error) {
-            this.options.bus.publish({ kind: "notice", text: error instanceof Error ? error.message : String(error), level: "warn" });
-            this.brainstormPhase = "stopped";
-            this.notifyRecoveryChange();
-            return;
-          }
-        }
-        this.brainstormPhase = "done";
-        this.notifyRecoveryChange();
-        return;
-      }
-    }
+  }
+
+  private stopBrainstorm(): void {
     this.brainstormPhase = "stopped";
     this.releaseBrainstormInput();
     this.options.bus.publish({ kind: "notice", text: t("notice.brainstormStopped"), level: "warn" });
+    this.notifyRecoveryChange();
+  }
+
+  async startBrainstorm(): Promise<void> {
+    const config = this.options.brainstorm;
+    if (!config || this.brainstormPhase !== "idle") return;
+    this.brainstormPhase = "opening";
+    this.options.bus.publish({ kind: "brainstorm", phase: "opening", round: 0, total: config.rounds });
+    this.notifyRecoveryChange();
+    const opening = await Promise.all(
+      AGENT_IDS.map(async agent => {
+        this.brainstormTurns.add(agent);
+        try {
+          const result = await this.mailboxes[agent].enqueue(roundPrompt(config, 0, agent, [], []), {
+            suffix: this.reminder,
+            signal: this.brainstormAbort.signal,
+          });
+          if (result.status === "completed") this.brainstormResponses.push({ round: 0, agent, text: result.text });
+          return result;
+        } finally {
+          this.brainstormTurns.delete(agent);
+        }
+      }),
+    );
+    if (this.brainstormInterrupted || opening.some(result => result.status !== "completed")) return this.stopBrainstorm();
+    let reason: BrainstormReason = "limit";
+    const stances: BrainstormStances = agentRecord(() => undefined);
+    if (config.join) {
+      const human = await this.waitBrainstormHuman();
+      if (human.conclude) reason = "human";
+    }
+    for (let round = 1; round <= this.brainstormTotal && reason !== "human"; round++) {
+      if (this.brainstormInterrupted) return this.stopBrainstorm();
+      this.brainstormPhase = "round";
+      this.brainstormRound = round;
+      this.options.bus.publish({ kind: "brainstorm", phase: "round", round, total: this.brainstormTotal, advocate: debateOrder(round)[0] });
+      this.notifyRecoveryChange();
+      for (const agent of debateOrder(round)) {
+        if (this.brainstormInterrupted) return this.stopBrainstorm();
+        const result = await this.brainstormTurn(agent, round);
+        if (result.status !== "completed" || this.brainstormInterrupted) return this.stopBrainstorm();
+        stances[agent] = parseStance(result.text);
+      }
+      const human = config.join && round <= config.rounds ? await this.waitBrainstormHuman() : {};
+      if (this.brainstormInterrupted) return this.stopBrainstorm();
+      if (human.conclude) {
+        reason = "human";
+        break;
+      }
+      if (!human.text && hasConsensus(stances)) {
+        reason = "consensus";
+        break;
+      }
+      if (human.text && round === config.rounds) this.brainstormTotal = config.rounds + 1;
+    }
+    if (this.brainstormInterrupted) return this.stopBrainstorm();
+    await this.summarizeBrainstorm(stances, reason);
+  }
+
+  private async summarizeBrainstorm(stances: BrainstormStances, reason: BrainstormReason): Promise<void> {
+    const config = this.options.brainstorm!;
+    this.brainstormPhase = "summary";
+    this.options.bus.publish({ kind: "brainstorm", phase: "summary", total: this.brainstormTotal, reason });
+    this.notifyRecoveryChange();
+    const primary = this.options.brainstormPrimary ?? "claude";
+    const result = await this.mailboxes[primary].enqueue(summaryPrompt(config, this.brainstormResponses, this.takeBrainstormInput(), stances, reason), {
+      suffix: this.reminder,
+      signal: this.brainstormAbort.signal,
+    });
+    this.finishBrainstormInput(result.status === "completed" && !this.brainstormInterrupted);
+    if (result.status !== "completed" || this.brainstormInterrupted) return this.stopBrainstorm();
+    const dir = this.options.brainstormArtifactsDir;
+    if (dir) {
+      try {
+        mkdirSync(dir, { recursive: true });
+        const path = join(dir, `brainstorm-${new Date().toISOString().replace(/[:.]/g, "-")}.md`);
+        writeFileSync(path, `${result.text}\n`, "utf8");
+        this.savedBrainstormArtifact = path;
+        this.options.bus.publish({ kind: "brainstorm", phase: "summary", total: this.brainstormTotal, reason, artifact: path });
+      } catch (error) {
+        this.options.bus.publish({ kind: "notice", text: error instanceof Error ? error.message : String(error), level: "warn" });
+        return this.stopBrainstorm();
+      }
+    }
+    this.brainstormPhase = "done";
     this.notifyRecoveryChange();
   }
 
@@ -364,6 +456,8 @@ export class Coordinator {
   }
 
   constructor(private readonly options: CoordinatorOptions) {
+    this.brainstormTotal = options.brainstorm?.rounds ?? 0;
+    this.savedBrainstormArtifact = options.brainstormArtifact;
     this.workBaselines = new WorkBaselines(options.projectRoot, options);
     this.metricsStore = options.metricsStore ?? new TaskMetricsStore();
     this.metrics = new TaskMetricsRecorder(options.conversationId ?? "", this.metricsStore);
@@ -399,7 +493,7 @@ export class Coordinator {
         this.workBaselines.record(id, event);
         for (const peer of peersOf(id)) this.deliveryNotes.recordPeerFiles(peer, files);
         if (["turn_started", "text", "tool", "turn"].includes(event.type)) this.notifyRecoveryChange();
-        const handoff = event.type === "turn" && this.handoffTurns[id] === true;
+        const handoff = event.type === "turn" && (this.handoffTurns[id] === true || (event.result.status === "completed" && this.brainstormTurns.has(id)));
         if (event.type === "turn") delete this.handoffTurns[id];
         const inputIds = event.type === "turn" && event.result.status === "interrupted" ? this.turnInputs[id] : undefined;
         if (event.type === "turn") delete this.turnInputs[id];
@@ -1140,9 +1234,8 @@ export class Coordinator {
 
   // Agent 指定なしは、Agent 間のやり取りも止める: 配送待ちの formal message を破棄し、chain を閉じる
   async interrupt(id?: AgentId): Promise<void> {
-    if (this.brainstormPhase === "round" || this.brainstormPhase === "summary") {
-      this.brainstormInterrupted = true;
-      this.brainstormAbort.abort();
+    if (["opening", "round", "human", "summary"].includes(this.brainstormPhase)) {
+      this.abortBrainstorm();
     }
     if (!id) this.stopExchanges();
     const targets = id ? [id] : AGENT_IDS;
@@ -1151,6 +1244,14 @@ export class Coordinator {
       this.deliveryNotes.clearHold(target);
     }
     await Promise.all(targets.map(target => this.options.agents[target].interrupt()));
+  }
+
+  private abortBrainstorm(): void {
+    this.brainstormInterrupted = true;
+    this.brainstormAbort.abort();
+    const resume = this.brainstormHumanTurn;
+    this.brainstormHumanTurn = undefined;
+    resume?.({});
   }
 
   private stopExchanges(): void {
@@ -1229,6 +1330,7 @@ export class Coordinator {
 
   async stop(): Promise<void> {
     this.stoppingRecovery = this.recoveryState();
+    if (this.options.brainstorm) this.abortBrainstorm();
     for (const id of AGENT_IDS) this.mailboxes[id].close();
     await Promise.all(AGENT_IDS.map(id => this.options.agents[id].stop()));
   }

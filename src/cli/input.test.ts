@@ -3,9 +3,16 @@ import { parseInput } from "./input.js";
 
 describe("parseInput", () => {
   it("/brainstorm の周回数とテーマを解釈する", () => {
-    expect(parseInput("/brainstorm 案", "claude")).toEqual({ kind: "brainstorm", rounds: 2, topic: "案" });
+    expect(parseInput("/brainstorm 案", "claude")).toEqual({ kind: "brainstorm", rounds: 3, topic: "案" });
+    expect(parseInput("/brainstorm 2 --join 案", "claude")).toEqual({ kind: "brainstorm", rounds: 2, join: true, topic: "案" });
+    expect(parseInput("/brainstorm --join 案", "claude")).toEqual({ kind: "brainstorm", rounds: 3, join: true, topic: "案" });
+    expect(parseInput("/develop C1 を採用", "claude")).toEqual({ kind: "develop", instruction: "C1 を採用" });
+    expect(parseInput("/brainstorm 100 案", "claude")).toEqual({ kind: "brainstorm", rounds: 100, topic: "案" });
+    expect(parseInput("/develop", "claude")).toEqual({ kind: "develop", instruction: "" });
+    expect(parseInput("/pass", "claude")).toEqual({ kind: "pass" });
+    expect(parseInput("/conclude", "claude")).toEqual({ kind: "conclude" });
     expect(parseInput("/brainstorm 3 新しい案", "claude")).toEqual({ kind: "brainstorm", rounds: 3, topic: "新しい案" });
-    for (const input of ["/brainstorm", "/brainstorm 0 案", "/brainstorm 6 案", "/brainstorm 2"]) {
+    for (const input of ["/brainstorm", "/brainstorm 0 案", "/brainstorm -1 案", "/brainstorm 2.5 案", "/brainstorm 2"]) {
       expect(parseInput(input, "claude").kind).toBe("invalid");
     }
   });

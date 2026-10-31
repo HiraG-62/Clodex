@@ -5,6 +5,7 @@ import type { AgentEvent, RateLimitWindow } from "../agents/agent-adapter.js";
 import type { CoordinatorEvent, EventBus } from "../coordinator/event-bus.js";
 import { t } from "../i18n/i18n.js";
 import type { AgentMessage } from "../protocol/messages.js";
+import { brainstormHeading } from "../web/client/brainstorm-view.js";
 
 const LOG_DIR = join(".clodex", "logs");
 const LOG_EXTENSION = ".jsonl";
@@ -102,7 +103,7 @@ export const formatEvent = (event: CoordinatorEvent, mode: DisplayMode): string 
       return mode === "verbose" ? `${time} [YOU -> ${event.agent.toUpperCase()}] ${indentContinuation(event.text)}` : undefined;
     case "brainstorm":
       if (event.artifact) return `${time} [CLODEX] [資料](<${event.artifact}>)`;
-      return `${time} [CLODEX] ${event.phase === "summary" ? t("web.brainstorm.summary") : t("web.brainstorm.round", { round: event.round ?? 1, total: event.total })}`;
+      return `${time} [CLODEX] ${brainstormHeading(event, t)}`;
     case "agent": {
       const text = mode === "verbose" ? describeAgentEvent(event.event) : describeNormal(event.event);
       return text === undefined ? undefined : `${time} [${event.agent.toUpperCase()}] ${indentContinuation(text)}`;

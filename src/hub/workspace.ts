@@ -4,8 +4,10 @@ import { randomUUID } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { AGENT_IDS, type AgentId } from "../agents/agent-adapter.js";
+import type { BrainstormConfig } from "../coordinator/brainstorm.js";
 import type { Coordinator, RequestState } from "../coordinator/coordinator.js";
 import type { CoordinatorEvent, EventBus } from "../coordinator/event-bus.js";
+import { t } from "../i18n/i18n.js";
 import type { Conversation, ConversationHistory } from "../project/conversation-history.js";
 import { inside } from "../project/path-scope.js";
 import type { ConversationRecovery, RecoveryState } from "../project/recovery-store.js";
@@ -51,6 +53,7 @@ export class Workspace {
   private readonly recoveryListeners: Array<() => void> = [];
   private readonly toolUse = new Map<string, Partial<Record<AgentId, boolean>>>();
   private readonly pendingFailure = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly brainstormArtifacts = new Map<string, string>();
 
   constructor(private readonly options: WorkspaceOptions) {
     options.history.onRemove(id => {
@@ -198,7 +201,7 @@ export class Workspace {
   }
 
   // worktree: 新しい会話用の worktree を作り、その会話の作業場所にする。作れなければ理由を返す（切り替えない）
-  async startNew({ worktree = false, brainstorm }: { worktree?: boolean; brainstorm?: { topic: string; rounds: number } } = {}): Promise<string | undefined> {
+  async startNew({ worktree = false, brainstorm }: { worktree?: boolean; brainstorm?: BrainstormConfig } = {}): Promise<string | undefined> {
     if (worktree) {
       const created = await this.options.createWorktree(this.options.projectRoot, randomUUID());
       if (!created.ok) return created.error;
@@ -212,6 +215,20 @@ export class Workspace {
       void runtime.coordinator.startBrainstorm().catch(error => {
         runtime.bus.publish({ kind: "notice", text: error instanceof Error ? error.message : String(error), level: "warn" });
       });
+    return undefined;
+  }
+
+  async develop(primary: AgentId, instruction: string): Promise<string | undefined> {
+    const source = this.options.history.current;
+    const artifact = this.brainstormArtifacts.get(source.id) ?? this.current.coordinator.brainstormArtifact;
+    if (source.mode !== "brainstorm" || !source.brainstorm || !artifact) return t("notice.developUnavailable");
+    this.options.history.startNew({ title: source.brainstorm.topic, from: { brainstorm: source.id } });
+    const runtime = await this.ensure(this.options.history.current);
+    this.notifySwitch(runtime);
+    const text =
+      `[Clodex] Continue from the brainstorm "${source.brainstorm.topic}". Read the summary at ${artifact}, then move the adopted ideas (adopted / adopted with changes) into development following your role (design document, delegation, and so on).` +
+      (instruction ? `\nHuman instruction: ${instruction}` : "");
+    void runtime.coordinator.sendToAgent(primary, text);
     return undefined;
   }
 
@@ -321,6 +338,7 @@ export class Workspace {
   }
 
   private handleEvent(runtime: ConversationRuntime, event: CoordinatorEvent): void {
+    if (event.kind === "brainstorm" && event.artifact) this.brainstormArtifacts.set(runtime.conversationId, event.artifact);
     if (event.kind === "agent" && event.event.type === "tool" && event.event.files?.length) {
       for (const conversation of this.options.history.list()) {
         if (conversation.parent?.conversationId !== runtime.conversationId) continue;
@@ -342,6 +360,7 @@ export class Workspace {
       (this.options.history.currentId === runtime.conversationId ? this.options.history.current.title : undefined);
     const base = { projectRoot: this.options.projectRoot, conversationTitle };
     if (event.kind === "question") this.options.notifyAgent({ ...base, kind: "question", agent: event.agent });
+    else if (event.kind === "brainstorm" && event.phase === "human") this.options.notifyAgent({ ...base, kind: "yourTurn" });
     else if (event.kind === "notice") {
       if (event.limitHold) {
         const key = `${runtime.conversationId}:${event.limitHold.agent}`;

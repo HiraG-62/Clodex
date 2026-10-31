@@ -95,6 +95,41 @@ const setup = (
 };
 
 describe("Workspace", () => {
+  it("まとめ済みのブレストを開発に引き継ぎ、通常の会話に元の ID を保存する", async () => {
+    const { workspace, history, created } = setup();
+    history.startNew({ mode: "brainstorm", title: "案", brainstorm: { topic: "元のテーマ", rounds: 3 } });
+    await workspace.init();
+    const source = history.currentId;
+    created[0]!.bus.publish({ kind: "brainstorm", phase: "summary", total: 3, artifact: "C:\\docs\\summary.md" });
+    expect(await workspace.develop("codex", "C1 を進める")).toBeUndefined();
+    await flush();
+    expect(history.currentId).not.toBe(source);
+    expect(history.current.from).toEqual({ brainstorm: source });
+    expect(history.current.mode).toBeUndefined();
+    expect(created[1]!.codex.sent[0]).toContain('Continue from the brainstorm "元のテーマ"');
+    expect(created[1]!.codex.sent[0]).toContain("C:\\docs\\summary.md");
+    expect(created[1]!.codex.sent[0]).toContain("Human instruction: C1 を進める");
+    created[1]!.codex.completeTurn();
+  });
+  it("普通の会話と未完了のブレストでは開発への引き継ぎを拒否する", async () => {
+    const { workspace, history } = setup();
+    await workspace.init();
+    const id = history.currentId;
+    expect(await workspace.develop("claude", "")).toBeTruthy();
+    expect(history.currentId).toBe(id);
+    await workspace.startNew({ brainstorm: { topic: "案", rounds: 3 } });
+    const brainstorm = history.currentId;
+    expect(await workspace.develop("claude", "")).toBeTruthy();
+    expect(history.currentId).toBe(brainstorm);
+  });
+  it("別会話で人の番になると Agent 名なしで通知する", async () => {
+    const { workspace, created, notify } = setup();
+    await workspace.init();
+    await workspace.startNew();
+    created[0]!.bus.publish({ kind: "brainstorm", phase: "human", round: 0, total: 3 });
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "yourTurn" }));
+    expect(notify.mock.calls.at(-1)![0]).not.toHaveProperty("agent");
+  });
   it.each([false, true])("親の編集は同じ作業ディレクトリの子だけに渡す: worktree=%s", async worktree => {
     const { workspace, created } = setup();
     await workspace.init();

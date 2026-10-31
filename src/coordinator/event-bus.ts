@@ -2,6 +2,7 @@
 import type { AgentEvent, AgentId } from "../agents/agent-adapter.js";
 import type { AgentMessage, SpecCheckResult } from "../protocol/messages.js";
 import type { UserQuestion } from "../protocol/questions.js";
+import type { BrainstormReason } from "./brainstorm.js";
 
 export type CoordinatorEventInput =
   | { kind: "agent"; agent: AgentId; event: AgentEvent; handoff?: true; inputIds?: string[] }
@@ -15,7 +16,15 @@ export type CoordinatorEventInput =
   | { kind: "question"; id: string; agent: AgentId; questions: UserQuestion[] }
   | { kind: "answer"; id: string; agent: AgentId; answers: string[][] }
   | { kind: "notice"; text: string; level?: "warn"; limitHold?: { agent: AgentId; time: string } }
-  | { kind: "brainstorm"; phase: "round" | "summary"; round?: number; total: number; artifact?: string };
+  | {
+      kind: "brainstorm";
+      phase: "opening" | "round" | "human" | "summary";
+      round?: number;
+      total: number;
+      advocate?: AgentId;
+      reason?: BrainstormReason;
+      artifact?: string;
+    };
 
 export type CoordinatorEvent = CoordinatorEventInput & { at: string };
 

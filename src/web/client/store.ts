@@ -52,6 +52,7 @@ export interface SharedStore {
     | "shared"
     | "artifacts"
     | "brainstorm"
+    | "develop"
     | "viewer"
     | undefined;
   sendKey: SendKey;
@@ -184,6 +185,7 @@ export interface ClientContext extends ClientDeps {
   syncLimitActions: (form: HTMLElement) => void;
   openConversations: () => void;
   openBrainstorm: () => void;
+  openDevelop: () => void;
   THEME_ICON: Record<Theme, string>;
   syncThemeButton: (button: HTMLButtonElement, text: boolean) => void;
   cycleTheme: () => void;

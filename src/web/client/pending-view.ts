@@ -99,6 +99,16 @@ export function createPendingView(ctx: ClientContext) {
       button.append(title, ctx.el("span", "m", meta));
       button.disabled = conversation.current;
       row.append(button);
+      if (conversation.from) {
+        const source = ctx.iconButton("lightbulb", ctx.t("web.brainstorm.source"), "conv-menu");
+        source.type = "button";
+        source.addEventListener("click", () => {
+          void ctx.send(`/tab ${conversation.from!.brainstorm} ${ctx.store.state!.project}`, source).then(ok => {
+            if (ok) ctx.closeSheet();
+          });
+        });
+        row.append(source);
+      }
       if (!conversation.parent) {
         button.dataset.command = `/resume ${index + 1}`;
         button.addEventListener("click", () => {

@@ -11,6 +11,13 @@ describe("recovery store", () => {
     return { home, project, path: recoveryPath(home, project) };
   };
 
+  it.each(["opening", "round", "human", "summary"] as const)("Agent が動いていなくてもブレストの %s を保存する", brainstormPhase => {
+    const { home, project } = setup();
+    const conversation = { brainstormPhase, interrupted: [], queue: { claude: [], codex: [], gemini: [] } };
+    saveRecovery(home, project, { current: "b", conversations: { b: conversation } });
+    expect(loadRecovery(home, project)?.conversations.b).toEqual(conversation);
+  });
+
   it("配送待ちと作業中の会話だけを保存し、読み直す", () => {
     const { home, project, path } = setup();
     const data = {

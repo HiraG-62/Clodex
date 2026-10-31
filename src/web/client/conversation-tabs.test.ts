@@ -17,6 +17,9 @@ class ElementStub extends EventTarget {
   append(...nodes: ElementStub[]) {
     this.children.push(...nodes);
   }
+  prepend(...nodes: ElementStub[]) {
+    this.children.unshift(...nodes);
+  }
   replaceChildren(...nodes: ElementStub[]) {
     this.children = nodes;
   }

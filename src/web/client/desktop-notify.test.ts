@@ -40,6 +40,11 @@ const session = () => {
 };
 
 describe("updateDesktopNotify", () => {
+  it("人の番はすぐ通知する", () => {
+    const next = session();
+    next(state());
+    expect(next({ type: "event", seq: 1, event: { kind: "brainstorm", phase: "human", total: 3, at: "now" } })).toEqual({ kind: "yourTurn" });
+  });
   it("tool の無いターンは全員が止まってから 1 回だけ応答通知にする", () => {
     const next = session();
     next(state());

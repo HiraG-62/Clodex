@@ -32,7 +32,8 @@ const conversationSchema = z.strictObject({
   solo: z.union([z.literal("free"), z.enum(AGENT_IDS)]).optional(),
   soloReleased: z.array(z.enum(AGENT_IDS)).optional(),
   mode: z.literal("brainstorm").optional(),
-  brainstorm: z.strictObject({ topic: z.string().min(1), rounds: z.number().int().min(1).max(5) }).optional(),
+  brainstorm: z.strictObject({ topic: z.string().min(1), rounds: z.number().int().min(1), join: z.boolean().optional() }).optional(),
+  from: z.strictObject({ brainstorm: z.string().min(1) }).optional(),
 });
 const stateSchema = z.strictObject({ conversations: z.array(conversationSchema) });
 
@@ -108,9 +109,9 @@ export class ConversationHistory {
   }
 
   // /new: 新しい会話を始める。前の会話は履歴に残る（session も入力も作業場所も無いうちは保存しない）
-  startNew(place: Pick<Conversation, "workDir" | "branch" | "mode" | "brainstorm" | "title"> = {}): void {
+  startNew(place: Pick<Conversation, "workDir" | "branch" | "mode" | "brainstorm" | "title" | "from"> = {}): void {
     this.currentConversation = { ...this.emptyConversation(), ...place, ...(place.title ? { title: place.title.slice(0, TITLE_LENGTH) } : {}) };
-    if (place.workDir || place.mode) this.save(list => list);
+    if (place.workDir || place.mode || place.from) this.save(list => list);
     this.notifySwitch();
   }
 

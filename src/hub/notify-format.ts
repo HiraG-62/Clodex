@@ -2,7 +2,7 @@ import type { AgentId } from "../agents/agent-adapter.js";
 import { AGENT_META } from "../agents/agent-meta.js";
 import type { Messages } from "../i18n/messages.js";
 
-export type NotificationKind = "work" | "reply" | "failed" | "interrupted" | "question" | "limitHold" | "error" | "notice";
+export type NotificationKind = "work" | "reply" | "failed" | "interrupted" | "question" | "yourTurn" | "limitHold" | "error" | "notice";
 
 export interface NotificationInput {
   kind: NotificationKind;
@@ -28,6 +28,7 @@ const MESSAGE_KEY = {
   failed: "notify.failed",
   interrupted: "notify.interrupted",
   question: "notify.question",
+  yourTurn: "notify.yourTurn",
   limitHold: "notify.limitHold",
   error: "notify.error",
 } as const;
@@ -54,4 +55,4 @@ export function formatNotification(input: NotificationInput, messages: Messages)
 }
 
 export const shouldPushNotification = (kind: NotificationKind): boolean =>
-  kind === "work" || kind === "reply" || kind === "failed" || kind === "interrupted" || kind === "question";
+  kind === "work" || kind === "reply" || kind === "failed" || kind === "interrupted" || kind === "question" || kind === "yourTurn";

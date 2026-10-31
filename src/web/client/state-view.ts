@@ -6,6 +6,19 @@ import type { ClientContext } from "./store.js";
 
 export function createStateView(ctx: ClientContext) {
   type ProjectEntry = NonNullable<WebState["projects"]>[number];
+  const humanTurn = ctx.el("div", "brainstorm-human");
+  humanTurn.hidden = true;
+  humanTurn.append(ctx.el("span", "", ctx.t("web.brainstorm.human")));
+  for (const [command, label] of [
+    ["/pass", "web.brainstorm.pass"],
+    ["/conclude", "web.brainstorm.conclude"],
+  ] as const) {
+    const button = ctx.el("button", "btn", ctx.t(label)) as HTMLButtonElement;
+    button.type = "button";
+    button.addEventListener("click", () => void ctx.send(command, button));
+    humanTurn.append(button);
+  }
+  ctx.$("#composer").prepend(humanTurn);
 
   const fillProjectSelect = (select: HTMLSelectElement, projects: readonly ProjectEntry[]) => {
     const key = JSON.stringify(projects.map(({ projectRoot, pinned }) => [projectRoot, pinned]));
@@ -52,6 +65,12 @@ export function createStateView(ctx: ClientContext) {
         main.dataset.command = command;
         main.addEventListener("click", () => void ctx.send(command, main));
         row.append(main);
+        if (tab.from) {
+          const source = ctx.iconButton("lightbulb", ctx.t("web.brainstorm.source"), "tab-action");
+          source.type = "button";
+          source.addEventListener("click", () => void ctx.send(`/tab ${tab.from!.brainstorm} ${tab.projectRoot}`, source));
+          row.append(source);
+        }
         const number = ctx.store.state?.conversations.findIndex(conversation => conversation.id === tab.conversationId && !conversation.parent) ?? -1;
         if (tab.tabbed || number >= 0) {
           const action = ctx.iconButton(tab.tabbed ? "x" : "pin", ctx.t(tab.tabbed ? "web.conv.closeTab" : "web.conv.keepTab"), "tab-action");
@@ -65,6 +84,7 @@ export function createStateView(ctx: ClientContext) {
   };
 
   const renderState = () => {
+    humanTurn.hidden = ctx.store.state?.brainstorm?.phase !== "human";
     ctx.renderQuestionDock();
     if (!ctx.store.state) return;
     const viewKey = `${ctx.store.state.project}\n${ctx.store.state.conversations.find(conversation => conversation.current)?.id ?? ""}`;

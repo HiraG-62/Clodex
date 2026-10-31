@@ -38,7 +38,7 @@ const itemSchema = z.discriminatedUnion("kind", [
 const workSchema = z.strictObject({ plan: z.string().optional(), actions: z.array(z.string()).max(5) });
 const lastWorkSchema = z.strictObject(agentRecord(() => workSchema.optional().catch(undefined)));
 const conversationSchema = z.strictObject({
-  brainstormPhase: z.enum(["idle", "round", "summary", "done", "stopped"]).optional(),
+  brainstormPhase: z.enum(["idle", "opening", "round", "human", "summary", "done", "stopped"]).optional(),
   questions: z.array(pendingQuestionSchema).optional(),
   interrupted: z.array(z.enum(AGENT_IDS)),
   queue: z.strictObject(agentRecord(() => z.array(itemSchema).default([]))),
@@ -53,8 +53,11 @@ export type RecoveryItem = z.infer<typeof itemSchema>;
 export type ConversationRecovery = z.infer<typeof conversationSchema>;
 export type RecoveryState = z.infer<typeof recoverySchema>;
 
-export const hasRecoveryWork = ({ interrupted, queue, questions }: ConversationRecovery): boolean =>
-  (questions?.length ?? 0) > 0 || interrupted.length > 0 || AGENT_IDS.some(agent => queue[agent].length > 0);
+export const hasRecoveryWork = ({ interrupted, queue, questions, brainstormPhase }: ConversationRecovery): boolean =>
+  ["opening", "round", "human", "summary"].includes(brainstormPhase ?? "") ||
+  (questions?.length ?? 0) > 0 ||
+  interrupted.length > 0 ||
+  AGENT_IDS.some(agent => queue[agent].length > 0);
 
 export const recoveryPath = (homeDir: string, projectRoot: string): string => conversationStatePath(homeDir, projectRoot).replace(/\.json$/, ".recovery.json");
 

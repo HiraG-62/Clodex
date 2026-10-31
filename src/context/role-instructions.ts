@@ -94,7 +94,7 @@ export const buildRoleInstructions = (
   if (brainstorm)
     return [
       header(agent, peers),
-      `You and ${peers.join(", ")} are brainstorming together. Offer concrete ideas in bullet points. Read code and documents if useful, but do not edit files. Do not use send_message or ask_user.`,
+      `You and ${peers.join(", ")} are brainstorming together. All other agents participate in the debate. Offer concrete ideas, critique ideas by ID, and answer named questions on your next turn. End every discussion response with a stance block. Read code and documents if useful, but do not edit files. Do not use send_message or ask_user.`,
       ...(language ? [languageDirective(language)] : []),
     ].join("\n");
   const scopeHeadings = [specSections?.owned, specSections?.forbidden].filter(heading => heading !== undefined);

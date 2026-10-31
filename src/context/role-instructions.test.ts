@@ -49,6 +49,9 @@ describe("buildRoleInstructions", () => {
   it("ブレストでは役割の指示を外して読み取り専用の定型文にする", () => {
     const text = buildRoleInstructions("codex", { codex: "実装", claude: "設計" }, { brainstorm: true, language: "ja" });
     expect(text).toContain("brainstorming together");
+    expect(text).toContain("critique ideas by ID");
+    expect(text).toContain("answer named questions on your next turn");
+    expect(text).toContain("stance block");
     expect(text).toContain("do not edit files");
     expect(text).toContain("Do not use send_message or ask_user.");
     expect(text).not.toContain("Your role:");

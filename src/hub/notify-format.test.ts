@@ -5,6 +5,11 @@ import { formatNotification, shouldPushNotification } from "./notify-format.js";
 const base = { projectRoot: "C:\\dev\\Clodex", conversationTitle: "改善", agent: "claude" as const };
 
 describe("formatNotification", () => {
+  it("人の番は Agent 名を付けず Web Push の対象にする", () => {
+    expect(formatNotification({ projectRoot: base.projectRoot, kind: "yourTurn" }, ja).body).toBe("あなたの番です。");
+    expect(formatNotification({ projectRoot: base.projectRoot, kind: "yourTurn" }, en).body).toBe("Your turn.");
+    expect(shouldPushNotification("yourTurn")).toBe(true);
+  });
   it.each([
     ["work", "作業完了しました。", "Work finished."],
     ["reply", "応答しました。", "Replied."],

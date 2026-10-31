@@ -305,6 +305,9 @@ export const openProject = async ({
             brainstormArtifactsDir: artifactsDir,
             brainstormPrimary: primary,
             brainstormComplete: savedFeed.some(item => item.type === "event" && item.event.kind === "brainstorm" && Boolean(item.event.artifact)),
+            brainstormArtifact: savedFeed
+              .flatMap(item => (item.type === "event" && item.event.kind === "brainstorm" && item.event.artifact ? [item.event.artifact] : []))
+              .at(-1),
           }
         : {}),
     });

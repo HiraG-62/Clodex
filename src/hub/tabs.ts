@@ -4,6 +4,7 @@ export interface TabConversation {
   id: string;
   title?: string;
   mode?: "brainstorm";
+  from?: { brainstorm: string };
   tabbed?: boolean;
   activity?: ConversationActivity;
   parent?: { conversationId: string };
@@ -14,6 +15,7 @@ export interface ConversationTab {
   conversationId: string;
   title: string;
   mode?: "brainstorm";
+  from?: { brainstorm: string };
   tabbed: boolean;
   current: boolean;
   activity?: ConversationActivity;
@@ -31,6 +33,7 @@ export function buildTabs(projects: readonly TabProject[], current?: { projectRo
     conversationId: conversation.id,
     title: conversation.title ?? "",
     ...(conversation.mode ? { mode: conversation.mode } : {}),
+    ...(conversation.from ? { from: conversation.from } : {}),
     tabbed: Boolean(conversation.tabbed),
     current: current?.projectRoot === projectRoot && current.conversation.id === conversation.id,
     ...(conversation.activity ? { activity: conversation.activity } : {}),

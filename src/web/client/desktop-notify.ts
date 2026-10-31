@@ -25,6 +25,7 @@ export function updateDesktopNotify(previous: DesktopNotifyState, item: FeedItem
     return { state: { ...previous, working: true, toolUsed: { ...previous.toolUsed, [event.agent]: false } } };
   if (event.kind === "agent" && event.event.type === "tool") return { state: { ...previous, toolUsed: { ...previous.toolUsed, [event.agent]: true } } };
   if (!previous.live) return { state: previous };
+  if (event.kind === "brainstorm" && event.phase === "human") return { state: previous, notification: { kind: "yourTurn" } };
   if (event.kind === "question") return { state: previous, notification: { kind: "question", agent: event.agent } };
   if (event.kind === "notice")
     return event.limitHold

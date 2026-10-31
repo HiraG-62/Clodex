@@ -11,6 +11,7 @@ import {
 } from "../agents/agent-adapter.js";
 import { AGENT_META } from "../agents/agent-meta.js";
 import { LANGUAGES, type Language } from "../context/language.js";
+import { DEFAULT_BRAINSTORM_ROUNDS } from "../coordinator/brainstorm.js";
 import { isLimitValue, LIMIT_NAMES, type LimitName } from "../coordinator/budget-manager.js";
 import type { SoloMode } from "../coordinator/coordinator.js";
 import { t } from "../i18n/i18n.js";
@@ -44,7 +45,10 @@ export type ShellCommand =
   | { kind: "steerQueued"; id: string }
   | { kind: "rename"; title: string; index?: number }
   | { kind: "solo"; mode?: SoloMode }
-  | { kind: "brainstorm"; rounds: number; topic: string }
+  | { kind: "brainstorm"; rounds: number; topic: string; join?: true }
+  | { kind: "develop"; instruction: string }
+  | { kind: "pass" }
+  | { kind: "conclude" }
   | { kind: "delete"; index: number }
   | { kind: "pin"; index: number }
   | { kind: "run"; command: string }
@@ -69,8 +73,7 @@ const PERMISSION_USAGE = `/permission [${AGENT_IDS.join("|")}] <${PERMISSION_LEV
 const MODEL_USAGE = `/model <${AGENT_IDS.join("|")}> <model>`;
 const EFFORT_USAGE = `/effort [${AGENT_IDS.join("|")}] <level>`;
 const LIMITS_USAGE = "/limits [<name> <n> ...|reset|unlimited]";
-const BRAINSTORM_USAGE = "/brainstorm [1-5] <topic>";
-const DEFAULT_BRAINSTORM_ROUNDS = 2;
+const BRAINSTORM_USAGE = "/brainstorm [rounds] [--join] <topic>";
 
 const parsePermission = (arg: string): ShellCommand => {
   const [first, second, ...extra] = arg.split(/\s+/).filter(Boolean);
@@ -240,14 +243,19 @@ const parseCommand = (name: string, arg: string, primary: AgentId): ShellCommand
       if (arg === "disable") return { kind: "solo" };
       return isAgentId(arg) ? { kind: "solo", mode: arg } : usage(`/solo [enable|disable|${AGENT_IDS.join("|")}]`);
     case "brainstorm": {
-      if (!arg) return usage(BRAINSTORM_USAGE);
-      const match = /^(\d+)(?:\s+([\s\S]+))?$/.exec(arg);
-      if (!match) return { kind: "brainstorm", rounds: DEFAULT_BRAINSTORM_ROUNDS, topic: arg };
-      const rounds = Number(match[1]);
-      return Number.isInteger(rounds) && rounds >= 1 && rounds <= 5 && match[2]?.trim()
-        ? { kind: "brainstorm", rounds, topic: match[2].trim() }
-        : usage(BRAINSTORM_USAGE);
+      const match = /^(-?\d+(?:\.\d+)?)(?:\s+([\s\S]+))?$/.exec(arg);
+      const rounds = match ? Number(match[1]) : DEFAULT_BRAINSTORM_ROUNDS;
+      let topic = (match ? (match[2] ?? "") : arg).trim();
+      const join = /^--join(?:\s|$)/.test(topic);
+      if (join) topic = topic.slice("--join".length).trim();
+      if (!topic || !Number.isInteger(rounds) || rounds < 1) return usage(BRAINSTORM_USAGE);
+      return { kind: "brainstorm", rounds, topic, ...(join ? { join: true } : {}) };
     }
+    case "develop":
+      return { kind: "develop", instruction: arg };
+    case "pass":
+    case "conclude":
+      return arg ? usage(`/${name}`) : { kind: name };
     case "delete":
     case "pin":
       return isConversationNumber(arg) ? { kind: name, index: Number(arg) } : usage(`/${name} <number>`);

@@ -98,9 +98,12 @@ describe("ConversationHistory", () => {
   it("ブレストの設定と名前を保存して復旧する", () => {
     const path = makePath();
     const { history } = setup(path);
-    history.startNew({ mode: "brainstorm", brainstorm: { topic: "新しい機能", rounds: 3 }, title: "新しい機能" });
+    history.startNew({ mode: "brainstorm", brainstorm: { topic: "新しい機能", rounds: 100, join: true }, title: "新しい機能" });
     const restored = new ConversationHistory(path, { resumeLatest: true });
-    expect(restored.current).toMatchObject({ mode: "brainstorm", brainstorm: { topic: "新しい機能", rounds: 3 }, title: "新しい機能" });
+    expect(restored.current).toMatchObject({ mode: "brainstorm", brainstorm: { topic: "新しい機能", rounds: 100, join: true }, title: "新しい機能" });
+    const source = restored.currentId;
+    restored.startNew({ title: "開発", from: { brainstorm: source } });
+    expect(new ConversationHistory(path, { resumeLatest: true }).current.from).toEqual({ brainstorm: source });
   });
   it("別プロセス相当の更新後に書くとき、他方の会話を消さない", () => {
     const path = makePath();

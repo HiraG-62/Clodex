@@ -27,6 +27,12 @@ class FakeHistory implements ConversationList {
   ];
   started: Array<{ worktree?: boolean } | undefined> = [];
   worktreeError: string | undefined;
+  developed: Array<{ primary: AgentId; instruction: string }> = [];
+  developError: string | undefined;
+  async develop(primary: AgentId, instruction: string) {
+    this.developed.push({ primary, instruction });
+    return this.developError;
+  }
   worktreeMove: "ok" | "already" | "busy" | "failed" = "ok";
   moved = 0;
   list() {
@@ -88,6 +94,17 @@ class FakeHistory implements ConversationList {
 }
 
 class FakeCoordinator implements ShellCoordinator {
+  brainstormState: { phase: string; round: number; total: number } | undefined;
+  brainstormInputs: Array<{ agent: AgentId; text: string; targets?: readonly AgentId[] }> = [];
+  brainstormActions: string[] = [];
+  addBrainstormInput(agent: AgentId, text: string, targets?: readonly AgentId[]) {
+    this.brainstormInputs.push({ agent, text, targets });
+  }
+  advanceBrainstormHuman(action: "pass" | "conclude") {
+    if (this.brainstormState?.phase !== "human") return false;
+    this.brainstormActions.push(action);
+    return true;
+  }
   metricsTasks = [] as ReturnType<typeof emptyTaskMetrics>[];
   taskMetrics() {
     return { tasks: this.metricsTasks, results: {} };
@@ -401,6 +418,36 @@ it("/language は現在値を表示し、正しい値だけ保存する", async 
 });
 
 describe("createShell", () => {
+  it("/develop は primary と指示を会話の操作に渡し、条件を満たさないと警告する", async () => {
+    const { shell, history, levels } = setup();
+    await shell.handleLine("/primary codex");
+    await shell.handleLine("/develop C1 を採用");
+    expect(history.developed).toEqual([{ primary: "codex", instruction: "C1 を採用" }]);
+    history.developError = "まとめの後に使える";
+    await shell.handleLine("/develop");
+    expect(levels.at(-1)).toBe("warn");
+  });
+  it.each(["opening", "round", "human"])("ブレストの %s では宛先によらず人の発言として渡す", async phase => {
+    const { shell, coordinator } = setup();
+    coordinator.brainstormState = { phase, round: 1, total: 3 };
+    await shell.handleLine("@gemini 発言");
+    await shell.handleLine("@all 全員へ");
+    expect(coordinator.brainstormInputs).toEqual([
+      { agent: "gemini", text: "発言", targets: undefined },
+      { agent: "claude", text: "全員へ", targets: ["claude", "codex", "gemini"] },
+    ]);
+    expect(coordinator.sent).toEqual([]);
+  });
+  it("/pass と /conclude は人の番だけ進め、その他は警告する", async () => {
+    const { shell, coordinator, levels } = setup();
+    await shell.handleLine("/pass");
+    await shell.handleLine("/conclude");
+    expect(levels).toEqual(["warn", "warn"]);
+    coordinator.brainstormState = { phase: "human", round: 0, total: 3 };
+    await shell.handleLine("/pass");
+    await shell.handleLine("/conclude");
+    expect(coordinator.brainstormActions).toEqual(["pass", "conclude"]);
+  });
   it("/tab で別 project の会話へ切り替え、無い会話なら project を開かない", async () => {
     const { shell, history, projects, notified, levels } = setup({ withoutProject: true });
     const opened: string[] = [];

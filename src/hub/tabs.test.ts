@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { buildTabs } from "./tabs.js";
 
 describe("buildTabs", () => {
+  it("開発へ引き継いだ会話の元の ID をタブに渡す", () => {
+    const conversation = { id: "development", from: { brainstorm: "original" } };
+    expect(buildTabs([], { projectRoot: "C:/project", conversation })[0]).toMatchObject({ from: { brainstorm: "original" } });
+  });
   const projects = [
     {
       projectRoot: "C:\\one",

@@ -1,3 +1,4 @@
+import { brainstormHeading } from "./brainstorm-view.js";
 import { discardMissingOpened } from "./log-diff.js";
 import { renderMarkdown } from "./markdown.js";
 import type { ClientContext } from "./store.js";
@@ -77,12 +78,20 @@ export function createLogView(ctx: ClientContext) {
         return ctx.renderMessage(item);
       case "notice":
         return ctx.el("div", "notice", item.compactAgent ? ctx.t("web.notice.compacted", { agent: ctx.AGENTS[item.compactAgent].name }) : item.text);
-      case "brainstorm":
-        return ctx.el(
-          "div",
-          "brainstorm-heading",
-          item.phase === "summary" ? ctx.t("web.brainstorm.summary") : ctx.t("web.brainstorm.round", { round: item.round ?? 1, total: item.total }),
-        );
+      case "brainstorm": {
+        const heading = ctx.el("div", "brainstorm-heading", brainstormHeading(item, ctx.t));
+        if (
+          item.phase === "summary" &&
+          item.artifact &&
+          ctx.store.state?.conversations.some(conversation => conversation.current && conversation.mode === "brainstorm")
+        ) {
+          const develop = ctx.el("button", "btn", ctx.t("web.brainstorm.develop")) as HTMLButtonElement;
+          develop.type = "button";
+          develop.addEventListener("click", () => ctx.openDevelop());
+          heading.append(develop);
+        }
+        return heading;
+      }
       case "error":
         return ctx.el("div", "error-row", `${ctx.AGENTS[item.agent].name}: ${item.text}`);
       case "output":

@@ -6,6 +6,7 @@ import { AGENT_META, agentRecord } from "../agents/agent-meta.js";
 import type { TaskMetrics } from "../coordinator/task-metrics-summary.js";
 import { t } from "../i18n/i18n.js";
 import type { AgentMessage, MessageType } from "../protocol/messages.js";
+import { brainstormHeading } from "../web/client/brainstorm-view.js";
 import { isShellInput } from "../web/client/shell-input.js";
 import { formatTaskMetrics } from "../web/client/task-metrics-format.js";
 import { applyFeedItem, type TimelineItem, turnContent } from "../web/client/timeline.js";
@@ -609,7 +610,7 @@ export const formatTimelineItem = (item: TimelineItem, labels: TerminalLabels, e
       kind: item.kind,
       color: TERMINAL_COLORS.muted,
       title: t("web.brainstorm"),
-      body: item.phase === "summary" ? t("web.brainstorm.summary") : t("web.brainstorm.round", { round: item.round ?? 1, total: item.total }),
+      body: brainstormHeading(item, t),
     };
   return { kind: item.kind, color: TERMINAL_COLORS.muted, title: labels.output, body: item.text };
 };

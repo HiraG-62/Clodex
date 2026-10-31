@@ -11,6 +11,56 @@ import { WebFeed } from "../web/web-feed.js";
 import { Hub } from "./hub.js";
 import { openProject, protectRecoverySave } from "./project-context.js";
 
+it("再起動後も保存済みのまとめを primary の通常の開発会話へ引き継ぐ", async () => {
+  const homeDir = mkdtempSync(join(tmpdir(), "clodex-develop-"));
+  const projectRoot = join(homeDir, "project");
+  mkdirSync(projectRoot);
+  const agents: FakeAgentAdapter[] = [];
+  const open = () =>
+    openProject({
+      projectRoot,
+      homeDir,
+      args: { models: {}, resume: true, web: false, serve: false },
+      language: "ja",
+      printTerminal: () => {},
+      notify: () => {},
+      notifyAgent: () => {},
+      displayMode: () => "normal",
+      isCurrent: () => true,
+      modelCatalog: EMPTY_MODEL_CATALOG,
+      registerCoordinator: () => () => {},
+      createAgents: () => {
+        const claude = new FakeAgentAdapter("claude");
+        agents.push(claude);
+        return { claude, codex: new FakeAgentAdapter("codex"), gemini: new FakeAgentAdapter("gemini") };
+      },
+    });
+  const first = await open();
+  first.history.startNew({ mode: "brainstorm", title: "テーマ", brainstorm: { topic: "テーマ", rounds: 3, join: true } });
+  const source = first.history.currentId;
+  const artifact = join(homeDir, "summary.md");
+  writeFileSync(artifact, "結論");
+  first.feedStore.append(source, {
+    type: "event",
+    seq: 1,
+    event: { kind: "brainstorm", phase: "summary", total: 3, reason: "consensus", artifact, at: "now" },
+  });
+  await first.close();
+  const restored = await open();
+  try {
+    expect(restored.workspace.current.coordinator.brainstormState?.phase).toBe("done");
+    expect(await restored.workspace.develop("claude", "")).toBeUndefined();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(restored.history.current.from).toEqual({ brainstorm: source });
+    expect(agents.at(-1)?.permission).toBe("edit");
+    expect(agents.at(-1)?.sent[0]).toContain(artifact);
+    expect(agents.at(-1)?.sent[0]).not.toContain("Human instruction:");
+    agents.at(-1)?.completeTurn();
+  } finally {
+    await restored.close();
+  }
+});
+
 it("Hub の利用枠通知は親子と別 project で共有し、session の警告は共有しない", async () => {
   const homeDir = mkdtempSync(join(tmpdir(), "clodex-usage-hub-"));
   const hub = new Hub({

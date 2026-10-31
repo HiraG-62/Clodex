@@ -1,6 +1,7 @@
 // feed からログの項目を組み立てる（DESIGN.md §17 Web UI）。
 // ブラウザ側にそのまま埋め込むため、外部のものを参照しない 1 つの関数として書く（型の import のみ）
 import type { AgentId, AgentStatus, SubagentState, TurnResult } from "../../agents/agent-adapter.js";
+import type { CoordinatorEvent } from "../../coordinator/event-bus.js";
 import type { AgentMessage } from "../../protocol/messages.js";
 import type { UserQuestion } from "../../protocol/questions.js";
 import type { FeedItem, HistoryItem } from "../web-feed.js";
@@ -43,7 +44,7 @@ export type TimelineItem =
     }
   | { kind: "message"; id: string; at: string; message: AgentMessage; envelope?: string }
   | { kind: "notice"; id: string; at: string; text: string; compactAgent?: AgentId }
-  | { kind: "brainstorm"; id: string; at: string; phase: "round" | "summary"; round?: number; total: number }
+  | (Extract<CoordinatorEvent, { kind: "brainstorm" }> & { id: string })
   | { kind: "error"; id: string; at: string; agent: AgentId; text: string }
   | { kind: "output"; id: string; text: string };
 
@@ -245,6 +246,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem, options: { 
     if (event.artifact) {
       const index = items.findLastIndex(entry => entry.kind === "turn" && entry.status === "completed");
       return items.map((entry, i) => {
+        if (entry.kind === "brainstorm" && entry.phase === "summary") return { ...entry, artifact: event.artifact };
         if (i !== index || entry.kind !== "turn") return entry;
         const text = `${entry.text}\n\n[資料](<${event.artifact}>)`;
         const lastSay = entry.steps.findLastIndex(step => step.kind === "say");
@@ -254,7 +256,7 @@ export function applyFeedItem(items: TimelineItem[], item: FeedItem, options: { 
         return { ...entry, text, steps };
       });
     }
-    return limit([...items, { kind: "brainstorm", id, at: event.at, phase: event.phase, ...(event.round ? { round: event.round } : {}), total: event.total }]);
+    return limit([...items, { ...event, id }]);
   }
   if (event.kind === "brainstormReleased")
     return items.map(entry => (entry.kind === "human" && entry.inputId === event.inputId ? { ...entry, nextRound: undefined } : entry));

@@ -1046,3 +1046,14 @@ it("ブレストの成果物は最後の本文へ加え、元の最終応答を�
       .map(block => block.text),
   ).toEqual(["まとめ\n\n[資料](<C:/docs/report.md>)"]);
 });
+
+it("ブレストの見出しに反論役と終了理由を残し、保存後にまとめへ資料を結び付ける", () => {
+  const items = run([
+    { type: "event", seq: ++seq, event: { kind: "brainstorm", at: AT, phase: "round", round: 2, total: 3, advocate: "codex" } },
+    { type: "event", seq: ++seq, event: { kind: "brainstorm", at: AT, phase: "summary", total: 3, reason: "consensus" } },
+    agent("claude", { type: "turn", result: { status: "completed", text: "まとめ" } }),
+    { type: "event", seq: ++seq, event: { kind: "brainstorm", at: AT, phase: "summary", total: 3, reason: "consensus", artifact: "C:/summary.md" } },
+  ]);
+  expect(items[0]).toMatchObject({ kind: "brainstorm", round: 2, advocate: "codex" });
+  expect(items[1]).toMatchObject({ kind: "brainstorm", phase: "summary", reason: "consensus", artifact: "C:/summary.md" });
+});
