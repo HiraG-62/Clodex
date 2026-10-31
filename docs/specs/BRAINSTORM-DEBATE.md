@@ -8,7 +8,7 @@
 
 ### 進行（`src/coordinator/brainstorm.ts`・`coordinator.ts` の `startBrainstorm`）
 
-- 周回数（`BrainstormConfig.rounds`）の意味を「議論の周の上限」に変える。既定 3、範囲 1〜5（`/brainstorm` の解釈・Web のフォームの既定値と範囲も合わせる）
+- 周回数（`BrainstormConfig.rounds`）の意味を「議論の周の上限」に変える。既定 3。1 以上の整数なら上限値の制限なし（`/brainstorm` の解釈・Web のフォームの既定値と範囲も合わせる。フォームは max を付けない数値入力）
 - **開幕**: 全 Agent に同時にテーマを送る（今の 1 周目と同じ。互いの案を見せない）。案 ID の指示は今どおり `AGENT_META.ideaPrefix`
 - **議論**: 周 n（1 始まり）で全員が 1 回ずつ、**1 体ずつ順に**発言する（前の発言者のターンが終わってから次へ送る）
   - 発言順: `AGENT_IDS` を周ごとに先頭を 1 つずらす（周 n の先頭は `AGENT_IDS[(n - 1) % N]`）
