@@ -13,7 +13,10 @@ describe("AntigravityAdapter", () => {
     expect(fake.calls[0]?.options.env.CLODEX_MCP_URL).toBe("http://localhost/mcp");
     fake.last.emit({ event: "init", conversation_id: "conversation-1", init: { model: "flash" } });
     const turn = adapter.send("調べる", ["C:\\image.png"]);
-    expect(fake.last.written.at(-1)).toEqual({ event: "user", message: { content: "調べる\n\n[image] C:\\image.png" } });
+    expect(fake.last.written.at(-1)).toEqual({
+      event: "user",
+      message: { content: expect.stringMatching(/Shell commands[\s\S]*\n\n調べる\n\n\[image\] C:\\image\.png$/) },
+    });
     fake.last.emit({ event: "step_update", step_update: { step_type: "agent_response", step_index: 1, state: "ACTIVE", text_delta: "結" } });
     fake.last.emit({ event: "step_update", step_update: { step_type: "agent_response", step_index: 1, state: "DONE", text_delta: "果" } });
     fake.last.emit({
@@ -86,6 +89,23 @@ describe("AntigravityAdapter", () => {
     await flush();
     fake.last.emit({ event: "result", result: { status: "SUCCESS", response: "完了" } });
     expect(await resumed).toEqual({ status: "completed", text: "完了" });
+  });
+
+  it("full 以外で起動したら、コマンドが拒否される旨を最初の指示に添える", async () => {
+    const fake = createFakeSpawner();
+    const adapter = new AntigravityAdapter(fake.spawn);
+    await adapter.start({ cwd: "C:\\project", instructions: "役割" });
+    void adapter.send("作業");
+    const content = (fake.last.written.at(-1) as { message: { content: string } }).message.content;
+    expect(content).toMatch(/^役割\n\n\[Clodex\] Shell commands \(run_command\) are denied/);
+    fake.last.emit({ event: "result", result: { status: "SUCCESS", response: "" } });
+    await flush();
+    await adapter.setPermission("full");
+    void adapter.send("次");
+    await flush();
+    const resumed = (fake.last.written.at(-1) as { message: { content: string } }).message.content;
+    expect(resumed).toContain("役割");
+    expect(resumed).not.toContain("Shell commands");
   });
 
   it("permission・model の変更でプロセスを入れ替え、effort は起動引数に含めない", async () => {

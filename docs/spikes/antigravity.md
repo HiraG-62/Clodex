@@ -31,6 +31,7 @@
 ## permission（headless）
 
 - 承認が要る tool（`run_command` など）は headless では**ソフト拒否**: ターンは SUCCESS で終わり、`result.denied_actions: [{action:"command", display_name:"RunCommand"}]` が付き、stderr に allow-rule の案内が出る
+- 2026-10-31 実測（agy 1.4.12、Windows、headless）: `--mode auto` でも `git log` は拒否された。`permissions.allow` の `command(git log)`・`command(git)`・`command(git log.*)` はどれも効かず拒否、効いたのは全許可の `command(*)` だけ（Windows で個別の command 許可が効かない既知の不具合と同じ症状。https://github.com/google-antigravity/antigravity-cli/issues/565 ）。拒否されるとターンがその場で終わる
 - 事前許可は `~/.gemini/antigravity-cli/settings.json` の `permissions.allow`（`command(git)`・`write_file(src/)`・`mcp(server/tool)`・`mcp(server/*)` の形。docs）。作業ディレクトリ内の読み書きは自動許可
 - 作業フォルダの信頼: settings.json に `trustedWorkspaces` があるが、信頼していない `E:\dev\` の下でも headless は普通に動いた（プロンプトで止まらない）
 

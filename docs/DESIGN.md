@@ -610,6 +610,7 @@ Adapter の必須処理:
 - 停止中の Agent は、次の起動時にそのレベルで起動する
 - 起動処理の途中で変更された場合は、起動が終わった時点で反映する
 - `/permission` で切り替えた値は project ごとに保存し、次の起動でも使う（下記「Agent の設定の保存」）
+- Gemini のシェルコマンド: Windows の agy は個別の `command(...)` 許可が効かず（`command(*)` だけ効く。docs/spikes/antigravity.md）、`full` 以外では全てのコマンドが拒否されてターンが終わる。`command(*)` は `edit` の範囲を超えるので使わない。代わりに、`full` 以外で起動したときは最初の指示に「シェルコマンドは拒否されてターンが終わる。ファイルはファイル用の tool で読む。人が full にしない限りコマンドを使わない」の一文（英語）を添える（Gemini は権限の変更でプロセスを入れ替えるので、起動のたびに今の権限で決める）
 - Gemini のソフト拒否からの自動続行: agy は headless だと承認が要る tool を denied にして**ターンをそこで終える**（`result.denied_actions`）。そのままだと途中経過だけ返して止まるため、Coordinator は denied 付きでターンが完了したら、同じ Agent の mailbox に続行の指示（英語の envelope: 拒否された tool 名を挙げ、再試行せず、できる範囲で答えを出すか、必要な権限を言うよう促す）を 1 回だけ積む。続行のターンも denied で終わったら、次の人間の入力までは積み直さない（ループ防止）。画面にはこれまでどおり denied のエラー通知を出す
 
 Agent は常にフル権限で動かし、project の外への書き込み・削除を OS で止める（docs/spikes/sandbox-hybrid.md の Spike M、docs/spikes/sandbox-deny-only.md の Spike N、docs/spikes/sandbox-product.md）。ネットワーク・プロセスの実行は止めない。読み取りは `clodex-agent` に許された範囲（人のプロファイルは読めない）。既定は off で、使う人だけが `/sandbox on` にする。

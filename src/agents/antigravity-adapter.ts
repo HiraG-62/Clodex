@@ -15,6 +15,9 @@ const EDIT_TOOLS = new Set(["write_to_file", "replace_file_content", "multi_repl
 const COMMAND_KEYS = ["command", "command_line", "CommandLine", "Command"];
 const FILE_KEYS = ["path", "file_path", "FilePath", "TargetFile", "target_file"];
 const IMAGE_PREFIX = "[image] ";
+// Windows の agy は個別の command(...) 許可が効かず、full 以外では全コマンドが拒否されてターンが終わる（docs/spikes/antigravity.md）
+const COMMAND_DENIED_NOTE =
+  "[Clodex] Shell commands (run_command) are denied at your current permission level and a denied command ends your turn. Use file tools to read files instead. Do not run commands unless the human switches you to full permission.";
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
@@ -59,7 +62,7 @@ export class AntigravityAdapter extends BaseAgentAdapter {
     this.options = options;
     this.status = "starting";
     this.launchPermission = this.permission;
-    this.instructionPending = options.instructions;
+    this.instructionPending = [options.instructions, this.permission === "full" ? undefined : COMMAND_DENIED_NOTE].filter(Boolean).join("\n\n");
     const args = [
       ...STREAM_ARGS,
       ...MODE_ARGS[this.permission],
